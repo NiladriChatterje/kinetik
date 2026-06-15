@@ -1,0 +1,217 @@
+import React from 'react';
+import {
+  TouchableOpacity,
+  Text,
+  StyleSheet,
+  ActivityIndicator,
+  ViewStyle,
+  TextStyle,
+} from 'react-native';
+import { LinearGradient } from 'expo-linear-gradient';
+import { colors, typography, radius, spacing, shadows } from '../../theme';
+
+type ButtonVariant = 'primary' | 'secondary' | 'outline' | 'ghost' | 'danger';
+type ButtonSize = 'sm' | 'md' | 'lg';
+
+interface ButtonProps {
+  title: string;
+  onPress: () => void;
+  variant?: ButtonVariant;
+  size?: ButtonSize;
+  disabled?: boolean;
+  loading?: boolean;
+  icon?: React.ReactNode;
+  style?: ViewStyle;
+  textStyle?: TextStyle;
+  fullWidth?: boolean;
+}
+
+export const Button: React.FC<ButtonProps> = ({
+  title,
+  onPress,
+  variant = 'primary',
+  size = 'md',
+  disabled = false,
+  loading = false,
+  icon,
+  style,
+  textStyle,
+  fullWidth = false,
+}) => {
+  const isPrimary = variant === 'primary';
+
+  const buttonContent = (
+    <TouchableOpacity
+      onPress={onPress}
+      disabled={disabled || loading}
+      style={[
+        styles.base,
+        styles[`size_${size}`],
+        styles[`variant_${variant}`],
+        fullWidth && styles.fullWidth,
+        disabled && styles.disabled,
+        style,
+      ]}
+      activeOpacity={0.8}
+    >
+      {loading ? (
+        <ActivityIndicator
+          color={isPrimary ? colors.textPrimary : colors.primary}
+          size="small"
+        />
+      ) : (
+        <>
+          {icon}
+          <Text
+            style={[
+              styles.text,
+              styles[`text_${size}`],
+              styles[`text_${variant}`],
+              icon ? { marginLeft: spacing.sm } : {},
+              textStyle,
+            ]}
+          >
+            {title}
+          </Text>
+        </>
+      )}
+    </TouchableOpacity>
+  );
+
+  if (isPrimary) {
+    return (
+      <LinearGradient
+        colors={[colors.primary, colors.primaryDark]}
+        start={{ x: 0, y: 0 }}
+        end={{ x: 1, y: 1 }}
+        style={[
+          styles.gradient,
+          styles[`size_${size}`],
+          fullWidth && styles.fullWidth,
+          disabled && styles.disabled,
+          style,
+        ]}
+      >
+        <TouchableOpacity
+          onPress={onPress}
+          disabled={disabled || loading}
+          style={[
+            styles.gradientInner,
+            styles[`size_${size}`],
+            fullWidth && styles.fullWidth,
+          ]}
+          activeOpacity={0.8}
+        >
+          {loading ? (
+            <ActivityIndicator color={colors.textPrimary} size="small" />
+          ) : (
+            <>
+              {icon}
+              <Text
+                style={[
+                  styles.text,
+                  styles[`text_${size}`],
+                  styles.text_primary,
+                  icon ? { marginLeft: spacing.sm } : {},
+                  textStyle,
+                ]}
+              >
+                {title}
+              </Text>
+            </>
+          )}
+        </TouchableOpacity>
+      </LinearGradient>
+    );
+  }
+
+  return buttonContent;
+};
+
+const styles = StyleSheet.create({
+  base: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderRadius: radius.full,
+  },
+  gradient: {
+    borderRadius: radius.full,
+    overflow: 'hidden',
+  },
+  gradientInner: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: spacing.md,
+    paddingHorizontal: spacing.xxl,
+  },
+  fullWidth: {
+    width: '100%',
+  },
+  disabled: {
+    opacity: 0.5,
+  },
+
+  // Sizes
+  size_sm: {
+    paddingVertical: spacing.sm,
+    paddingHorizontal: spacing.lg,
+  },
+  size_md: {
+    paddingVertical: spacing.md,
+    paddingHorizontal: spacing.xxl,
+  },
+  size_lg: {
+    paddingVertical: spacing.lg,
+    paddingHorizontal: spacing.xxxl,
+  },
+
+  // Variants
+  variant_primary: {
+    backgroundColor: colors.primary,
+  },
+  variant_secondary: {
+    backgroundColor: colors.secondary,
+  },
+  variant_outline: {
+    backgroundColor: 'transparent',
+    borderWidth: 1.5,
+    borderColor: colors.primary,
+  },
+  variant_ghost: {
+    backgroundColor: 'transparent',
+  },
+  variant_danger: {
+    backgroundColor: colors.error,
+  },
+
+  // Text styles
+  text: {
+    fontWeight: '600',
+  },
+  text_sm: {
+    fontSize: 14,
+  },
+  text_md: {
+    fontSize: 16,
+  },
+  text_lg: {
+    fontSize: 18,
+  },
+  text_primary: {
+    color: colors.textPrimary,
+  },
+  text_secondary: {
+    color: colors.textPrimary,
+  },
+  text_outline: {
+    color: colors.primary,
+  },
+  text_ghost: {
+    color: colors.textSecondary,
+  },
+  text_danger: {
+    color: colors.textPrimary,
+  },
+});

@@ -1,0 +1,28 @@
+{
+  "name": "kinetik",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Kinetik - The Inertia-Killing Dating Network",
+  "workspaces": [
+    "packages/*"
+  ],
+  "scripts": {
+    "dev": "concurrently \"npm run dev:api-core\" \"npm run dev:realtime\" \"npm run dev:match-engine\"",
+    "dev:api-core": "npm run dev -w packages/api-core",
+    "dev:realtime": "npm run dev -w packages/realtime",
+    "dev:match-engine": "npm run dev -w packages/match-engine",
+    "build": "npm run build -w packages/shared && npm run build -w packages/api-core && npm run build -w packages/realtime && npm run build -w packages/match-engine",
+    "lint": "eslint packages/*/src --ext .ts",
+    "typecheck": "tsc --noEmit",
+    "docker:up": "docker compose up -d",
+    "docker:down": "docker compose down",
+    "docker:build": "docker compose build",
+    "start:mobile": "cd packages/mobile && npx expo start",
+    "clean": "rm -rf packages/*/dist node_modules"
+  },
+  "devDependencies": {
+    "@types/node": "^20.11.0",
+    "concurrently": "^8.2.2",
+    "typescript": "^5.3.3"
+  }
+}

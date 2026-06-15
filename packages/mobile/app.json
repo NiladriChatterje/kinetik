@@ -1,0 +1,54 @@
+{
+  "expo": {
+    "name": "Kinetik",
+    "slug": "kinetik",
+    "version": "0.1.0",
+    "orientation": "portrait",
+    "icon": "./src/assets/images/icon.png",
+    "scheme": "kinetik",
+    "userInterfaceStyle": "dark",
+    "splash": {
+      "image": "./src/assets/images/splash.png",
+      "resizeMode": "contain",
+      "backgroundColor": "#0A0A0F"
+    },
+    "ios": {
+      "supportsTablet": false,
+      "bundleIdentifier": "com.kinetik.app",
+      "infoPlist": {
+        "NSCameraUsageDescription": "Kinetik needs camera access for profile photos and liveness verification.",
+        "NSLocationWhenInUseUsageDescription": "Kinetik uses your location to find matches nearby.",
+        "NSPhotoLibraryUsageDescription": "Kinetik needs photo library access to upload profile photos.",
+        "NSMicrophoneUsageDescription": "Kinetik needs microphone access for Vibe Check audio calls."
+      }
+    },
+    "android": {
+      "adaptiveIcon": {
+        "foregroundImage": "./src/assets/images/adaptive-icon.png",
+        "backgroundColor": "#0A0A0F"
+      },
+      "package": "com.kinetik.app",
+      "permissions": [
+        "CAMERA",
+        "ACCESS_FINE_LOCATION",
+        "ACCESS_COARSE_LOCATION",
+        "RECORD_AUDIO",
+        "READ_EXTERNAL_STORAGE"
+      ]
+    },
+    "plugins": [
+      "expo-location",
+      "expo-camera",
+      "expo-image-picker",
+      "expo-secure-store",
+      "expo-font"
+    ],
+    "extra": {
+      "apiUrl": "http://localhost:3001",
+      "wsUrl": "http://localhost:3002",
+      "eas": {
+        "projectId": "kinetik-app"
+      }
+    }
+  }
+}
