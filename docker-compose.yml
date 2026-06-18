@@ -204,8 +204,8 @@ services:
   # ─── Core API Service ────────────────────────────────────
   api-core:
     build:
-      context: ./packages/api-core
-      dockerfile: Dockerfile
+      context: .
+      dockerfile: packages/api-core/Dockerfile
     container_name: kinetik-api-core
     restart: unless-stopped
     ports:
@@ -240,8 +240,8 @@ services:
   # ─── Real-Time WebSocket Service ─────────────────────────
   realtime:
     build:
-      context: ./packages/realtime
-      dockerfile: Dockerfile
+      context: .
+      dockerfile: packages/realtime/Dockerfile
     container_name: kinetik-realtime
     restart: unless-stopped
     ports:
@@ -275,8 +275,8 @@ services:
   # ─── Match Engine Service ────────────────────────────────
   match-engine:
     build:
-      context: ./packages/match-engine
-      dockerfile: Dockerfile
+      context: .
+      dockerfile: packages/match-engine/Dockerfile
     container_name: kinetik-match-engine
     restart: unless-stopped
     ports:
