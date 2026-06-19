@@ -2,18 +2,19 @@ import React, { useState } from 'react';
 import { View, Text, StyleSheet, ScrollView, TouchableOpacity } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import Slider from '@react-native-community/slider';
+import { Ionicons } from '@expo/vector-icons';
 import { Button } from '../../components/common/Button';
 import { Card } from '../../components/common/Card';
 import { api } from '../../services/api';
 import { colors, typography, spacing, radius } from '../../theme';
 
 const VALUE_OPTIONS = [
-  { key: 'valuesAmbition', label: 'Ambition', emoji: '🚀', desc: 'Driven, career-focused, goal-oriented' },
-  { key: 'valuesSocial', label: 'Social', emoji: '🎉', desc: 'Outgoing, loves parties and group activities' },
-  { key: 'valuesAdventure', label: 'Adventure', emoji: '🏔️', desc: 'Spontaneous, loves travel and new experiences' },
-  { key: 'valuesTradition', label: 'Tradition', emoji: '🏠', desc: 'Values family, stability, and routine' },
-  { key: 'valuesIntellect', label: 'Intellect', emoji: '🧠', desc: 'Deep conversations, learning, curiosity' },
-  { key: 'valuesEmotional', label: 'Emotional', emoji: '💖', desc: 'Empathetic, emotionally available, caring' },
+  { key: 'valuesAmbition', label: 'Ambition', icon: 'rocket-outline' as const, desc: 'Driven, career-focused, goal-oriented' },
+  { key: 'valuesSocial', label: 'Social', icon: 'people-outline' as const, desc: 'Outgoing, loves parties and group activities' },
+  { key: 'valuesAdventure', label: 'Adventure', icon: 'compass-outline' as const, desc: 'Spontaneous, loves travel and new experiences' },
+  { key: 'valuesTradition', label: 'Tradition', icon: 'home-outline' as const, desc: 'Values family, stability, and routine' },
+  { key: 'valuesIntellect', label: 'Intellect', icon: 'bulb-outline' as const, desc: 'Deep conversations, learning, curiosity' },
+  { key: 'valuesEmotional', label: 'Emotional', icon: 'heart-half-outline' as const, desc: 'Empathetic, emotionally available, caring' },
 ];
 
 export const ValueMatrixScreen: React.FC<{ navigation: any }> = ({ navigation }) => {
@@ -37,7 +38,7 @@ export const ValueMatrixScreen: React.FC<{ navigation: any }> = ({ navigation })
         {VALUE_OPTIONS.map((v) => (
           <Card key={v.key} style={styles.valueCard}>
             <View style={styles.valueHeader}>
-              <Text style={styles.valueEmoji}>{v.emoji}</Text>
+              <Ionicons name={v.icon} size={28} color={values[v.key] > 0.6 ? colors.primary : colors.textSecondary} />
               <View style={{ flex: 1 }}>
                 <Text style={styles.valueLabel}>{v.label}</Text>
                 <Text style={styles.valueDesc}>{v.desc}</Text>
@@ -72,7 +73,6 @@ const styles = StyleSheet.create({
   subtitle: { ...typography.body1, color: colors.textSecondary, marginBottom: spacing.xxl },
   valueCard: { marginBottom: spacing.md },
   valueHeader: { flexDirection: 'row', alignItems: 'center', marginBottom: spacing.sm, gap: spacing.md },
-  valueEmoji: { fontSize: 28 },
   valueLabel: { ...typography.body1, color: colors.textPrimary },
   valueDesc: { ...typography.caption, color: colors.textMuted },
   valueScore: { ...typography.h3, color: colors.primary },

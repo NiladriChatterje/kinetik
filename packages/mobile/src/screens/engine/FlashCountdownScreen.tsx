@@ -2,6 +2,7 @@ import React, { useState, useEffect, useRef } from 'react';
 import { View, Text, StyleSheet, Animated } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { LinearGradient } from 'expo-linear-gradient';
+import { Ionicons } from '@expo/vector-icons';
 import { Button } from '../../components/common/Button';
 import { Card } from '../../components/common/Card';
 import { colors, typography, spacing, radius } from '../../theme';
@@ -36,7 +37,8 @@ export const FlashCountdownScreen: React.FC<{ navigation: any }> = ({ navigation
       <View style={styles.header}>
         <Text style={styles.greeting}>Tonight's Window</Text>
         <View style={styles.locationBadge}>
-          <Text style={styles.locationText}>📍 {city}</Text>
+          <Ionicons name="location-outline" size={16} color={colors.textSecondary} style={{ marginRight: 4 }} />
+          <Text style={styles.locationText}>{city}</Text>
         </View>
       </View>
 
@@ -81,7 +83,7 @@ export const FlashCountdownScreen: React.FC<{ navigation: any }> = ({ navigation
           onPress={handleJoin}
           fullWidth
           size="lg"
-          icon={<Text>🎯 </Text>}
+          icon={<Ionicons name="enter-outline" size={20} color={colors.textPrimary} />}
         />
         <Text style={styles.hintText}>2,340 people are queued in your area</Text>
       </View>
@@ -93,7 +95,7 @@ const styles = StyleSheet.create({
   container: { flex: 1, paddingHorizontal: spacing.xxl },
   header: { alignItems: 'center', marginTop: spacing.xxl },
   greeting: { ...typography.h2, color: colors.textPrimary },
-  locationBadge: { marginTop: spacing.sm, paddingHorizontal: spacing.lg, paddingVertical: spacing.xs, backgroundColor: colors.surfaceHighlight, borderRadius: radius.full },
+  locationBadge: { flexDirection: 'row', alignItems: 'center', marginTop: spacing.sm, paddingHorizontal: spacing.lg, paddingVertical: spacing.xs, backgroundColor: colors.surfaceHighlight, borderRadius: radius.full },
   locationText: { ...typography.body2, color: colors.textSecondary },
   countdownSection: { flex: 1, justifyContent: 'center', alignItems: 'center' },
   countdownCircle: { width: 220, height: 220, borderRadius: 110, overflow: 'hidden' },

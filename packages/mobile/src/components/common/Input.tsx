@@ -7,6 +7,7 @@ import {
   TouchableOpacity,
   ViewStyle,
 } from 'react-native';
+import { Ionicons } from '@expo/vector-icons';
 import { colors, typography, radius, spacing } from '../../theme';
 
 interface InputProps {
@@ -46,14 +47,14 @@ export const Input: React.FC<InputProps> = ({
   const [showPassword, setShowPassword] = useState(false);
 
   return (
-    <View style={[styles.container, style]}>
+    <View style={[styles.container, style as any]}>
       {label && <Text style={styles.label}>{label}</Text>}
       <View
         style={[
           styles.inputContainer,
-          isFocused && styles.inputFocused,
-          error && styles.inputError,
-          !editable && styles.inputDisabled,
+          isFocused ? styles.inputFocused : undefined,
+          error ? styles.inputError : undefined,
+          !editable ? styles.inputDisabled : undefined,
         ]}
       >
         {icon && <View style={styles.icon}>{icon}</View>}
@@ -71,9 +72,9 @@ export const Input: React.FC<InputProps> = ({
           maxLength={maxLength}
           style={[
             styles.input,
-            multiline && styles.multiline,
-            icon ? { marginLeft: spacing.sm } : {},
-          ]}
+            multiline ? styles.multiline : undefined,
+            icon ? { marginLeft: spacing.sm } : undefined,
+          ].filter(Boolean) as any}
           onFocus={() => setIsFocused(true)}
           onBlur={() => setIsFocused(false)}
         />
@@ -82,7 +83,7 @@ export const Input: React.FC<InputProps> = ({
             onPress={() => setShowPassword(!showPassword)}
             style={styles.eyeButton}
           >
-            <Text style={styles.eyeIcon}>{showPassword ? '🙈' : '👁️'}</Text>
+            <Ionicons name={showPassword ? 'eye-off-outline' : 'eye-outline'} size={20} color={colors.textSecondary} />
           </TouchableOpacity>
         )}
       </View>
@@ -140,9 +141,7 @@ const styles = StyleSheet.create({
   eyeButton: {
     padding: spacing.sm,
   },
-  eyeIcon: {
-    fontSize: 18,
-  },
+
   error: {
     ...typography.caption,
     color: colors.error,

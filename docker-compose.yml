@@ -1,5 +1,3 @@
-version: "3.9"
-
 x-logging: &default-logging
   driver: "json-file"
   options:
@@ -85,8 +83,10 @@ services:
     environment:
       KAFKA_BROKER_ID: 1
       KAFKA_ZOOKEEPER_CONNECT: zookeeper:2181
-      KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://localhost:9092
-      KAFKA_LISTENERS: PLAINTEXT://0.0.0.0:9092
+      KAFKA_LISTENERS: PLAINTEXT://0.0.0.0:9092,PLAINTEXT_INTERNAL://0.0.0.0:29092
+      KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://localhost:9092,PLAINTEXT_INTERNAL://kafka:29092
+      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: PLAINTEXT:PLAINTEXT,PLAINTEXT_INTERNAL:PLAINTEXT
+      KAFKA_INTER_BROKER_LISTENER_NAME: PLAINTEXT
       KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
       KAFKA_AUTO_CREATE_TOPICS_ENABLE: "true"
       KAFKA_LOG_RETENTION_HOURS: 24
@@ -104,6 +104,36 @@ services:
           memory: 256M
     logging: *default-logging
 
+  # ─── Kafka Topic Init (runs once on startup) ──────────────
+  kafka-init:
+    image: node:20-alpine
+    container_name: kinetik-kafka-init
+    restart: "no"
+    environment:
+      KAFKA_BROKERS: kafka:29092
+    entrypoint: ["/bin/sh", "-c"]
+    command:
+      - |
+        set -e
+        cd /scripts
+        echo "📦 Installing dependencies..."
+        npm init -y > /dev/null 2>&1
+        npm install kafkajs tsx > /dev/null 2>&1
+        echo "⏳ Creating Kafka topics..."
+        for i in $$(seq 1 10); do
+          npx tsx kafkaAdmin.ts && echo "✅ Kafka topics ready" && exit 0
+          echo "⚠️  Attempt $$i/10 failed, retrying in 5s..."
+          sleep 5
+        done
+        echo "❌ Failed to create Kafka topics after 10 attempts"
+        exit 1
+    volumes:
+      - ./scripts:/scripts
+    depends_on:
+      kafka:
+        condition: service_started
+    logging: *default-logging
+
   # ─── Milvus Vector Database ──────────────────────────────
   milvus-etcd:
     image: quay.io/coreos/etcd:v3.5.5
@@ -117,6 +147,11 @@ services:
     command: etcd --advertise-client-urls=http://0.0.0.0:2379 --listen-client-urls=http://0.0.0.0:2379 --data-dir=/etcd
     volumes:
       - milvus-etcd-data:/etcd
+    healthcheck:
+      test: ["CMD", "etcdctl", "--endpoints=http://localhost:2379", "endpoint", "health"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
     deploy:
       resources:
         limits:
@@ -143,8 +178,8 @@ services:
           memory: 128M
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:9000/minio/health/live"]
-      interval: 30s
-      timeout: 10s
+      interval: 10s
+      timeout: 5s
       retries: 3
     logging: *default-logging
 
@@ -152,9 +187,12 @@ services:
     image: milvusdb/milvus:v2.4.1
     container_name: kinetik-milvus
     restart: unless-stopped
+    command: ["milvus", "run", "standalone"]
     depends_on:
-      - milvus-etcd
-      - milvus-minio
+      milvus-etcd:
+        condition: service_healthy
+      milvus-minio:
+        condition: service_healthy
     ports:
       - "${MILVUS_PORT:-19530}:19530"
       - "9091:9091"
@@ -183,16 +221,16 @@ services:
       - "7880:7880"
       - "7881:7881"
       - "7882:7882/udp"
+      - "3478:3478/udp"
+      - "3479:3479/tcp"
+    volumes:
+      - ./config/livekit.yaml:/etc/livekit.yaml
+    command: ["--config", "/etc/livekit.yaml"]
     environment:
-      LIVEKIT_KEYS: "${LIVEKIT_API_KEY:-kinetik_livekit_key}: ${LIVEKIT_API_SECRET:-kinetik_livekit_secret_2024}"
-      LIVEKIT_ADDRESS: "0.0.0.0"
-      LIVEKIT_PORT: 7880
-      LIVEKIT_RTC_PORT: 7882
-      LIVEKIT_RTC_TCP_PORT: 7881
-      LIVEKIT_NODE_IP: "127.0.0.1"
-      LIVEKIT_TURN_ENABLED: "true"
-      LIVEKIT_TURN_DOMAIN: "localhost"
-      LIVEKIT_LOG_LEVEL: "info"
+      LIVEKIT_LOG_LEVEL: info
+    depends_on:
+      redis:
+        condition: service_healthy
     deploy:
       resources:
         limits:
@@ -217,7 +255,7 @@ services:
       REDIS_HOST: redis
       REDIS_PORT: 6379
       REDIS_PASSWORD: ${REDIS_PASSWORD:-kinetik_redis_2024}
-      KAFKA_BROKERS: kafka:9092
+      KAFKA_BROKERS: kafka:29092
       JWT_SECRET: ${JWT_SECRET:-super-secret-jwt-key-change-in-production-2024}
       JWT_EXPIRES_IN: 7d
       RAZORPAY_KEY_ID: ${RAZORPAY_KEY_ID:-rzp_test_xxxxxxxxxxxx}
@@ -229,6 +267,8 @@ services:
         condition: service_healthy
       kafka:
         condition: service_started
+      kafka-init:
+        condition: service_completed_successfully
     deploy:
       resources:
         limits:
@@ -252,16 +292,18 @@ services:
       REDIS_HOST: redis
       REDIS_PORT: 6379
       REDIS_PASSWORD: ${REDIS_PASSWORD:-kinetik_redis_2024}
-      KAFKA_BROKERS: kafka:9092
+      KAFKA_BROKERS: kafka:29092
       JWT_SECRET: ${JWT_SECRET:-super-secret-jwt-key-change-in-production-2024}
       LIVEKIT_HOST: livekit:7880
       LIVEKIT_API_KEY: ${LIVEKIT_API_KEY:-kinetik_livekit_key}
-      LIVEKIT_API_SECRET: ${LIVEKIT_API_SECRET:-kinetik_livekit_secret_2024}
+      LIVEKIT_API_SECRET: ${LIVEKIT_API_SECRET:-kinetik_livekit_secret_2024_dev_xyz}
     depends_on:
       redis:
         condition: service_healthy
       kafka:
         condition: service_started
+      kafka-init:
+        condition: service_completed_successfully
       livekit:
         condition: service_started
     deploy:
@@ -287,7 +329,7 @@ services:
       REDIS_HOST: redis
       REDIS_PORT: 6379
       REDIS_PASSWORD: ${REDIS_PASSWORD:-kinetik_redis_2024}
-      KAFKA_BROKERS: kafka:9092
+      KAFKA_BROKERS: kafka:29092
       MILVUS_HOST: milvus
       MILVUS_PORT: 19530
       JWT_SECRET: ${JWT_SECRET:-super-secret-jwt-key-change-in-production-2024}
@@ -297,6 +339,8 @@ services:
         condition: service_healthy
       kafka:
         condition: service_started
+      kafka-init:
+        condition: service_completed_successfully
       milvus:
         condition: service_started
     deploy:

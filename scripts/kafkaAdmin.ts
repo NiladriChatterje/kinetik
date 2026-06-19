@@ -43,11 +43,11 @@ const TOPICS: TopicDefinition[] = [
   },
   {
     topic: 'kinetik.vibe.events',
-    numPartitions: 3,
+    numPartitions: 1,
     replicationFactor: 1,
     description: 'Vibe check session events: start, phase changes, decisions, end',
     configEntries: [
-      { name: 'retention.ms', value: '86400000' },         // 1 day
+      { name: 'retention.ms', value: '21600000' },         // 6 hours
       { name: 'cleanup.policy', value: 'delete' },
       { name: 'compression.type', value: 'producer' },
     ],
@@ -58,7 +58,7 @@ const TOPICS: TopicDefinition[] = [
     replicationFactor: 1,
     description: 'Flash window lifecycle events: scheduled, activated, countdown, closed',
     configEntries: [
-      { name: 'retention.ms', value: '604800000' },        // 7 days
+      { name: 'retention.ms', value: '259200000' },        // 3 days
       { name: 'cleanup.policy', value: 'delete' },
       { name: 'compression.type', value: 'producer' },
     ],
@@ -76,7 +76,7 @@ const TOPICS: TopicDefinition[] = [
   },
   {
     topic: 'kinetik.notification.events',
-    numPartitions: 2,
+    numPartitions: 1,
     replicationFactor: 1,
     description: 'Push notification triggers: match alerts, vibe reminders, promotional',
     configEntries: [

@@ -1,14 +1,15 @@
 import React from 'react';
 import { View, Text, StyleSheet, ScrollView, TouchableOpacity } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
+import { Ionicons } from '@expo/vector-icons';
 import { Button } from '../../components/common/Button';
 import { Card } from '../../components/common/Card';
 import { colors, typography, spacing, radius } from '../../theme';
 
 const TOKENS = [
-  { emoji: '⚡', name: 'Fast Passes', count: 3, desc: 'Skip visual blur in Vibe Checks' },
-  { emoji: '☔', name: 'Rain Checks', count: 1, desc: 'Save a profile for 24 hours' },
-  { emoji: '❤️', name: 'Super Likes', count: 5, desc: 'Stand out from the queue' },
+  { icon: 'flash-outline' as const, name: 'Fast Passes', count: 3, desc: 'Skip visual blur in Vibe Checks' },
+  { icon: 'umbrella-outline' as const, name: 'Rain Checks', count: 1, desc: 'Save a profile for 24 hours' },
+  { icon: 'heart-outline' as const, name: 'Super Likes', count: 5, desc: 'Stand out from the queue' },
 ];
 
 export const TokenVaultScreen: React.FC = () => {
@@ -27,7 +28,7 @@ export const TokenVaultScreen: React.FC = () => {
         {TOKENS.map((t) => (
           <Card key={t.name} style={styles.tokenCard}>
             <View style={styles.tokenRow}>
-              <Text style={styles.tokenEmoji}>{t.emoji}</Text>
+              <Ionicons name={t.icon} size={28} color={t.count > 0 ? colors.primary : colors.textMuted} />
               <View style={{ flex: 1 }}>
                 <Text style={styles.tokenName}>{t.name}</Text>
                 <Text style={styles.tokenDesc}>{t.desc}</Text>
@@ -38,7 +39,8 @@ export const TokenVaultScreen: React.FC = () => {
         ))}
 
         <TouchableOpacity style={styles.upgradeBtn}>
-          <Text style={styles.upgradeText}>Upgrade to Infinite →</Text>
+          <Text style={styles.upgradeText}>Upgrade to Unlimited</Text>
+          <Ionicons name="arrow-forward" size={18} color={colors.secondary} style={{ marginLeft: spacing.sm }} />
         </TouchableOpacity>
       </ScrollView>
     </SafeAreaView>
@@ -56,10 +58,9 @@ const styles = StyleSheet.create({
   balanceDate: { ...typography.caption, color: colors.textMuted },
   tokenCard: { marginBottom: spacing.md, padding: spacing.lg },
   tokenRow: { flexDirection: 'row', alignItems: 'center', gap: spacing.md },
-  tokenEmoji: { fontSize: 28 },
   tokenName: { ...typography.body1, color: colors.textPrimary },
   tokenDesc: { ...typography.caption, color: colors.textMuted },
   tokenCount: { ...typography.h3, color: colors.primary },
-  upgradeBtn: { alignItems: 'center', marginTop: spacing.lg },
+  upgradeBtn: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', marginTop: spacing.lg },
   upgradeText: { ...typography.body1, color: colors.secondary },
 });

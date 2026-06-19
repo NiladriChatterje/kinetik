@@ -4,7 +4,10 @@
   "private": true,
   "description": "Kinetik - The Inertia-Killing Dating Network",
   "workspaces": [
-    "packages/*"
+    "packages/api-core",
+    "packages/realtime",
+    "packages/match-engine",
+    "packages/shared"
   ],
   "scripts": {
     "dev": "concurrently \"npm run dev:api-core\" \"npm run dev:realtime\" \"npm run dev:match-engine\"",
@@ -14,10 +17,10 @@
     "build": "npm run build -w packages/shared && npm run build -w packages/api-core && npm run build -w packages/realtime && npm run build -w packages/match-engine",
     "lint": "eslint packages/*/src --ext .ts",
     "typecheck": "tsc --noEmit",
+    "kafka:admin": "npx tsx scripts/kafkaAdmin.ts",
     "docker:up": "docker compose up -d",
     "docker:down": "docker compose down",
     "docker:build": "docker compose build",
-    "start:mobile": "cd packages/mobile && npx expo start",
     "clean": "rm -rf packages/*/dist node_modules"
   },
   "devDependencies": {

@@ -2,16 +2,17 @@ import React, { useState } from 'react';
 import { View, Text, StyleSheet, ScrollView } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import Slider from '@react-native-community/slider';
+import { Ionicons } from '@expo/vector-icons';
 import { Button } from '../../components/common/Button';
 import { Card } from '../../components/common/Card';
 import { api } from '../../services/api';
 import { colors, typography, spacing, radius } from '../../theme';
 
 const WEIGHTS = [
-  { key: 'weightValues', label: 'Values', emoji: '💝', desc: 'Shared values and life priorities' },
-  { key: 'weightAge', label: 'Age', emoji: '🎂', desc: 'Age range compatibility' },
-  { key: 'weightDistance', label: 'Distance', emoji: '📍', desc: 'Physical proximity importance' },
-  { key: 'weightInterests', label: 'Interests', emoji: '🎯', desc: 'Shared hobbies and interests' },
+  { key: 'weightValues', label: 'Values', icon: 'heart-outline' as const, desc: 'Shared values and life priorities' },
+  { key: 'weightAge', label: 'Age', icon: 'calendar-outline' as const, desc: 'Age range compatibility' },
+  { key: 'weightDistance', label: 'Distance', icon: 'location-outline' as const, desc: 'Physical proximity importance' },
+  { key: 'weightInterests', label: 'Interests', icon: 'bulb-outline' as const, desc: 'Shared hobbies and interests' },
 ];
 
 export const PriorityWeightingScreen: React.FC<{ navigation: any }> = ({ navigation }) => {
@@ -34,7 +35,7 @@ export const PriorityWeightingScreen: React.FC<{ navigation: any }> = ({ navigat
         {WEIGHTS.map((w) => (
           <Card key={w.key} style={styles.weightCard}>
             <View style={styles.weightHeader}>
-              <Text style={styles.weightEmoji}>{w.emoji}</Text>
+              <Ionicons name={w.icon} size={28} color={weights[w.key] > 0.7 ? colors.primary : colors.textSecondary} />
               <View style={{ flex: 1 }}>
                 <Text style={styles.weightLabel}>{w.label}</Text>
                 <Text style={styles.weightDesc}>{w.desc}</Text>
@@ -63,7 +64,6 @@ const styles = StyleSheet.create({
   subtitle: { ...typography.body1, color: colors.textSecondary, marginBottom: spacing.xxl },
   weightCard: { marginBottom: spacing.md },
   weightHeader: { flexDirection: 'row', alignItems: 'center', marginBottom: spacing.sm, gap: spacing.md },
-  weightEmoji: { fontSize: 28 },
   weightLabel: { ...typography.body1, color: colors.textPrimary },
   weightDesc: { ...typography.caption, color: colors.textMuted },
   weightScore: { ...typography.h3, color: colors.textSecondary },

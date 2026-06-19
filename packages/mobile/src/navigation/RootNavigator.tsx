@@ -3,6 +3,7 @@ import { ActivityIndicator, View, StyleSheet } from 'react-native';
 import { NavigationContainer } from '@react-navigation/native';
 import { createStackNavigator } from '@react-navigation/stack';
 import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
+import { Ionicons } from '@expo/vector-icons';
 import { useAuthStore } from '../store/authStore';
 import { colors, typography } from '../theme';
 
@@ -141,27 +142,42 @@ function MainTabNavigator() {
       <MainTab.Screen
         name="FlashCountdown"
         component={FlashCountdownScreen}
-        options={{ tabBarLabel: 'Flash', tabBarIcon: () => null }}
+        options={{
+          tabBarLabel: 'Flash',
+          tabBarIcon: ({ color }) => <Ionicons name="flash-outline" size={22} color={color} />,
+        }}
       />
       <MainTab.Screen
         name="ActiveRadar"
         component={ActiveRadarScreen}
-        options={{ tabBarLabel: 'Radar', tabBarIcon: () => null }}
+        options={{
+          tabBarLabel: 'Radar',
+          tabBarIcon: ({ color }) => <Ionicons name="radio-outline" size={22} color={color} />,
+        }}
       />
       <MainTab.Screen
         name="DuoWingman"
         component={DuoWingmanScreen}
-        options={{ tabBarLabel: 'Duo', tabBarIcon: () => null }}
+        options={{
+          tabBarLabel: 'Duo',
+          tabBarIcon: ({ color }) => <Ionicons name="people-outline" size={22} color={color} />,
+        }}
       />
       <MainTab.Screen
         name="TokenVault"
         component={TokenVaultScreen}
-        options={{ tabBarLabel: 'Wallet', tabBarIcon: () => null }}
+        options={{
+          tabBarLabel: 'Wallet',
+          tabBarIcon: ({ color }) => <Ionicons name="wallet-outline" size={22} color={color} />,
+        }}
       />
       <MainTab.Screen
         name="Profile"
         component={ProfileLedgerScreen}
-        options={{ tabBarLabel: 'Profile', tabBarIcon: () => null }}
+        options={{
+          tabBarLabel: 'Profile',
+          tabBarIcon: ({ color }) => <Ionicons name="person-outline" size={22} color={color} />,
+        }}
       />
     </MainTab.Navigator>
   );

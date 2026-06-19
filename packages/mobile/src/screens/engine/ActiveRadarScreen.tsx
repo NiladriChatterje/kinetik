@@ -2,6 +2,7 @@ import React, { useState, useEffect, useRef } from 'react';
 import { View, Text, StyleSheet, Animated, Dimensions } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { LinearGradient } from 'expo-linear-gradient';
+import { Ionicons } from '@expo/vector-icons';
 import { Button } from '../../components/common/Button';
 import { colors, typography, spacing, radius } from '../../theme';
 
@@ -10,7 +11,7 @@ const RADAR_SIZE = width * 0.7;
 
 export const ActiveRadarScreen: React.FC<{ navigation: any }> = ({ navigation }) => {
   const [isInQueue, setIsInQueue] = useState(false);
-  const [queueSize, setQueueSize] = useState(842);
+  const [queueSize] = useState(842);
   const pulseAnim = useRef(new Animated.Value(1)).current;
   const rotateAnim = useRef(new Animated.Value(0)).current;
 
@@ -79,7 +80,7 @@ export const ActiveRadarScreen: React.FC<{ navigation: any }> = ({ navigation })
           <>
             <Text style={styles.matchingText}>Tap to enter the Flash Window</Text>
             <Text style={styles.avgText}>Over 800 people are live right now</Text>
-            <Button title="Enter Queue" onPress={() => setIsInQueue(true)} fullWidth icon={<Text>⚡</Text>} />
+            <Button title="Enter Queue" onPress={() => setIsInQueue(true)} fullWidth icon={<Ionicons name="flash-outline" size={20} color={colors.textPrimary} />} />
           </>
         )}
       </View>

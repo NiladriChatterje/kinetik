@@ -2,6 +2,7 @@ import React, { useEffect, useRef } from 'react';
 import { View, Text, StyleSheet, Animated } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { LinearGradient } from 'expo-linear-gradient';
+import { Ionicons } from '@expo/vector-icons';
 import { colors, typography, spacing, radius } from '../../theme';
 
 interface Props { navigation: any; route: any; }
@@ -28,7 +29,7 @@ export const UnmaskingScreen: React.FC<Props> = ({ navigation, route }) => {
       <Text style={styles.subtitle}>Your conversation reveals your match</Text>
       <View style={styles.imageContainer}>
         <Animated.View style={[styles.profileCircle, { opacity: revealAnim }]}>
-          <Text style={styles.emoji}>😊</Text>
+          <Ionicons name="happy-outline" size={80} color={colors.textMuted} />
         </Animated.View>
       </View>
       <View style={styles.progressSection}>
@@ -47,7 +48,6 @@ const styles = StyleSheet.create({
   subtitle: { ...typography.body1, color: colors.textSecondary, textAlign: 'center', marginBottom: spacing.xxl },
   imageContainer: { flex: 1, justifyContent: 'center', alignItems: 'center' },
   profileCircle: { width: 200, height: 200, borderRadius: 100, backgroundColor: colors.surfaceHighlight, alignItems: 'center', justifyContent: 'center' },
-  emoji: { fontSize: 80 },
   progressSection: { padding: spacing.xxl, paddingBottom: spacing.huge },
   progressBar: { height: 6, backgroundColor: colors.surfaceHighlight, borderRadius: 3, marginBottom: spacing.md },
   progressFill: { height: 6, backgroundColor: colors.primary, borderRadius: 3 },

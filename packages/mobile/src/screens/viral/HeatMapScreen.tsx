@@ -1,6 +1,7 @@
 import React from 'react';
 import { View, Text, StyleSheet } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
+import { Ionicons } from '@expo/vector-icons';
 import { Card } from '../../components/common/Card';
 import { colors, typography, spacing, radius } from '../../theme';
 
@@ -20,7 +21,7 @@ export const HeatMapScreen: React.FC = () => {
       <Text style={styles.title}>Local Heat Map</Text>
       <Text style={styles.subtitle}>See where the action is right now</Text>
       <View style={styles.mapPlaceholder}>
-        <Text style={styles.mapEmoji}>🗺️</Text>
+        <Ionicons name="map-outline" size={48} color={colors.textMuted} />
         <Text style={styles.mapLabel}>Live density map</Text>
       </View>
       <View style={styles.zonesList}>
@@ -43,8 +44,7 @@ const styles = StyleSheet.create({
   title: { ...typography.h1, color: colors.textPrimary, marginBottom: spacing.sm },
   subtitle: { ...typography.body1, color: colors.textSecondary, marginBottom: spacing.xxl },
   mapPlaceholder: { height: 200, backgroundColor: colors.surfaceHighlight, borderRadius: radius.xl, alignItems: 'center', justifyContent: 'center', marginBottom: spacing.xxl },
-  mapEmoji: { fontSize: 48, marginBottom: spacing.sm },
-  mapLabel: { ...typography.body1, color: colors.textMuted },
+  mapLabel: { ...typography.body1, color: colors.textMuted, marginTop: spacing.sm },
   zonesList: { gap: spacing.md },
   zoneRow: { flexDirection: 'row', alignItems: 'center', gap: spacing.md },
   zoneName: { ...typography.body2, color: colors.textPrimary, width: 110 },

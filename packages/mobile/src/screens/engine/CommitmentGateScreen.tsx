@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { View, Text, StyleSheet, TouchableOpacity } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { LinearGradient } from 'expo-linear-gradient';
+import { Ionicons } from '@expo/vector-icons';
 import { colors, typography, spacing, radius } from '../../theme';
 
 interface Props { navigation: any; route: any; }
@@ -44,7 +45,7 @@ export const CommitmentGateScreen: React.FC<Props> = ({ navigation, route }) => 
             onPress={() => decide('pass')}
             disabled={hasDecided !== null}
           >
-            <Text style={styles.decisionEmoji}>✕</Text>
+            <Ionicons name="close-outline" size={36} color={colors.error} />
             <Text style={styles.decisionLabel}>Pass</Text>
             <Text style={styles.decisionDesc}>Move to next match</Text>
           </TouchableOpacity>
@@ -54,7 +55,7 @@ export const CommitmentGateScreen: React.FC<Props> = ({ navigation, route }) => 
             onPress={() => decide('lock')}
             disabled={hasDecided !== null}
           >
-            <Text style={styles.decisionEmoji}>🔒</Text>
+            <Ionicons name="lock-closed-outline" size={36} color={colors.vibeLock} />
             <Text style={styles.decisionLabel}>Lock It In</Text>
             <Text style={styles.decisionDesc}>Schedule a date</Text>
           </TouchableOpacity>
@@ -83,8 +84,7 @@ const styles = StyleSheet.create({
   passBtn: { backgroundColor: 'rgba(239, 68, 68, 0.1)', borderColor: 'rgba(239, 68, 68, 0.3)' },
   lockBtn: { backgroundColor: 'rgba(124, 58, 237, 0.1)', borderColor: 'rgba(124, 58, 237, 0.3)' },
   selectedBtn: { borderColor: colors.textPrimary, borderWidth: 2 },
-  decisionEmoji: { fontSize: 36, marginBottom: spacing.sm },
-  decisionLabel: { ...typography.h3, color: colors.textPrimary, marginBottom: spacing.xs },
+  decisionLabel: { ...typography.h3, color: colors.textPrimary, marginBottom: spacing.xs, marginTop: spacing.sm },
   decisionDesc: { ...typography.caption, color: colors.textMuted },
   waitingText: { ...typography.body1, color: colors.textSecondary, textAlign: 'center', paddingBottom: spacing.huge },
 });

@@ -1,7 +1,9 @@
 import React, { useState, useEffect } from 'react';
 import { View, Text, StyleSheet } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
+import { Ionicons } from '@expo/vector-icons';
 import { Button } from '../../components/common/Button';
+import { api } from '../../services/api';
 import { colors, typography, spacing, radius } from '../../theme';
 
 const POSES = ['Turn left', 'Smile', 'Blink', 'Turn right', 'Look up'];
@@ -19,7 +21,7 @@ export const PoseVerificationScreen: React.FC<{ navigation: any }> = ({ navigati
   };
 
   const handleContinue = async () => {
-    await (await import('../../services/api')).api.updateOnboardingStep('pose');
+    await api.updateOnboardingStep('pose');
     navigation.navigate('KYC');
   };
 
@@ -31,7 +33,7 @@ export const PoseVerificationScreen: React.FC<{ navigation: any }> = ({ navigati
         <Text style={styles.subtitle}>Follow the prompts to complete liveness verification</Text>
 
         <View style={styles.cameraPlaceholder}>
-          <Text style={styles.cameraEmoji}>📷</Text>
+          <Ionicons name="camera-outline" size={48} color={colors.textMuted} />
           <Text style={styles.poseText}>{POSES[currentPose]}</Text>
 
           {/* Pose progress dots */}
@@ -44,7 +46,7 @@ export const PoseVerificationScreen: React.FC<{ navigation: any }> = ({ navigati
 
         {verified ? (
           <View style={styles.verifiedContainer}>
-            <Text style={styles.verifiedEmoji}>✅</Text>
+            <Ionicons name="checkmark-circle" size={48} color={colors.success} />
             <Text style={styles.verifiedText}>Identity Verified!</Text>
           </View>
         ) : (
@@ -68,13 +70,11 @@ const styles = StyleSheet.create({
   title: { ...typography.h1, color: colors.textPrimary, marginBottom: spacing.sm, alignSelf: 'flex-start' },
   subtitle: { ...typography.body1, color: colors.textSecondary, marginBottom: spacing.xxl, alignSelf: 'flex-start' },
   cameraPlaceholder: { width: 280, height: 340, borderRadius: radius.xl, backgroundColor: colors.surfaceHighlight, alignItems: 'center', justifyContent: 'center', marginBottom: spacing.xxl },
-  cameraEmoji: { fontSize: 48, marginBottom: spacing.lg },
-  poseText: { ...typography.h3, color: colors.primary },
+  poseText: { ...typography.h3, color: colors.primary, marginTop: spacing.lg },
   poseDots: { flexDirection: 'row', gap: spacing.sm, marginTop: spacing.xl },
   dot: { width: 10, height: 10, borderRadius: 5, backgroundColor: colors.surfaceLight },
   dotActive: { backgroundColor: colors.primary },
   verifiedContainer: { alignItems: 'center', marginTop: spacing.lg },
-  verifiedEmoji: { fontSize: 48, marginBottom: spacing.sm },
-  verifiedText: { ...typography.h3, color: colors.success },
+  verifiedText: { ...typography.h3, color: colors.success, marginTop: spacing.sm },
   footer: { padding: spacing.xxl, paddingBottom: spacing.huge },
 });

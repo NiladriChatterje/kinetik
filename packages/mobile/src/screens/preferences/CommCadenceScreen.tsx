@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { View, Text, StyleSheet, TouchableOpacity } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
+import { Ionicons } from '@expo/vector-icons';
 import { Button } from '../../components/common/Button';
 import { Card } from '../../components/common/Card';
 import { colors, typography, spacing, radius } from '../../theme';
@@ -8,7 +9,7 @@ import { colors, typography, spacing, radius } from '../../theme';
 const QUESTIONS = [
   { q: "How do you prefer to communicate?", a: ['Quick texts', 'Deep calls', 'Voice notes', 'In person'] },
   { q: "Your ideal first date is...", a: ['Coffee walk', 'Fancy dinner', 'Concert', 'Outdoor adventure'] },
-  { q: "How fast should things move?", a: ['Slow burn', 'See where it goes', 'Let's meet ASAP', 'Marathon not sprint'] },
+  { q: "How fast should things move?", a: ['Slow burn', 'See where it goes', "Let's meet ASAP", 'Marathon not sprint'] },
 ];
 
 export const CommCadenceScreen: React.FC<{ navigation: any }> = ({ navigation }) => {
@@ -51,7 +52,7 @@ export const CommCadenceScreen: React.FC<{ navigation: any }> = ({ navigation })
           </Card>
         ) : (
           <Card style={styles.doneCard}>
-            <Text style={styles.doneEmoji}>🎯</Text>
+            <Ionicons name="checkmark-circle-outline" size={64} color={colors.primary} />
             <Text style={styles.doneText}>Profile Complete!</Text>
             <Text style={styles.doneDesc}>You're ready to join the next flash window</Text>
             <Button title="Enter Kinetik" onPress={handleFinish} fullWidth />
@@ -76,7 +77,6 @@ const styles = StyleSheet.create({
   answerBtn: { paddingVertical: spacing.md, paddingHorizontal: spacing.lg, backgroundColor: colors.surfaceHighlight, borderRadius: radius.md, marginBottom: spacing.sm },
   answerText: { ...typography.body1, color: colors.textPrimary },
   doneCard: { alignItems: 'center', padding: spacing.xxl },
-  doneEmoji: { fontSize: 64, marginBottom: spacing.lg },
   doneText: { ...typography.h2, color: colors.textPrimary, marginBottom: spacing.sm },
   doneDesc: { ...typography.body1, color: colors.textSecondary, marginBottom: spacing.xxl, textAlign: 'center' },
 });

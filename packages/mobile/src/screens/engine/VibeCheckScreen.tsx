@@ -2,6 +2,7 @@ import React, { useState, useEffect, useRef } from 'react';
 import { View, Text, StyleSheet, Animated, TouchableOpacity } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { LinearGradient } from 'expo-linear-gradient';
+import { Ionicons } from '@expo/vector-icons';
 import { colors, typography, spacing, radius } from '../../theme';
 
 interface Props { navigation: any; route: any; }
@@ -54,23 +55,23 @@ export const VibeCheckScreen: React.FC<Props> = ({ navigation, route }) => {
         <Animated.View style={[styles.partnerImage, { opacity: phase === 'silhouette' ? 1 : 1 }]}>
           {phase === 'silhouette' && (
             <View style={styles.silhouette}>
-              <Text style={styles.silhouetteEmoji}>👤</Text>
+              <Ionicons name="person-outline" size={64} color={colors.textMuted} />
               <Text style={styles.silhouetteName}>{partnerName || 'Stranger'}</Text>
-              <Text style={styles.silhouetteLabel}>Audio Only · 0:00 - 1:00</Text>
+              <Text style={styles.silhouetteLabel}>Audio Only - 0:00 to 1:00</Text>
             </View>
           )}
           {phase === 'blurred' && (
             <View style={styles.blurredView}>
-              <Text style={styles.blurredEmoji}>👤</Text>
+              <Ionicons name="person-outline" size={64} color={colors.textSecondary} />
               <Text style={styles.silhouetteName}>{partnerName}</Text>
-              <Text style={styles.silhouetteLabel}>Image revealing... · 1:00 - 2:00</Text>
+              <Text style={styles.silhouetteLabel}>Image revealing... - 1:00 to 2:00</Text>
             </View>
           )}
           {phase === 'revealed' && (
             <View style={styles.revealedView}>
-              <Text style={styles.revealedEmoji}>😊</Text>
+              <Ionicons name="happy-outline" size={64} color={colors.textPrimary} />
               <Text style={styles.silhouetteName}>{partnerName}</Text>
-              <Text style={styles.silhouetteLabel}>Full profile visible · 2:00 - 3:00</Text>
+              <Text style={styles.silhouetteLabel}>Full profile visible - 2:00 to 3:00</Text>
             </View>
           )}
         </Animated.View>
@@ -79,15 +80,15 @@ export const VibeCheckScreen: React.FC<Props> = ({ navigation, route }) => {
       {/* Audio Controls */}
       <View style={styles.controls}>
         <TouchableOpacity style={styles.controlBtn} onPress={() => setIsMuted(!isMuted)}>
-          <Text style={styles.controlEmoji}>{isMuted ? '🔇' : '🎤'}</Text>
+          <Ionicons name={isMuted ? 'volume-mute-outline' : 'mic-outline'} size={28} color={isMuted ? colors.textMuted : colors.textPrimary} />
           <Text style={styles.controlLabel}>{isMuted ? 'Unmute' : 'Mute'}</Text>
         </TouchableOpacity>
         <TouchableOpacity style={[styles.controlBtn, styles.endCallBtn]}>
-          <Text style={styles.controlEmoji}>🔴</Text>
+          <Ionicons name="stop-circle-outline" size={28} color={colors.error} />
           <Text style={styles.controlLabel}>End</Text>
         </TouchableOpacity>
         <TouchableOpacity style={styles.controlBtn}>
-          <Text style={styles.controlEmoji}>📞</Text>
+          <Ionicons name="call-outline" size={28} color={colors.textPrimary} />
           <Text style={styles.controlLabel}>Speaker</Text>
         </TouchableOpacity>
       </View>
@@ -98,10 +99,12 @@ export const VibeCheckScreen: React.FC<Props> = ({ navigation, route }) => {
           <Text style={styles.decisionLabel}>Mutual interest?</Text>
           <View style={styles.decisionBtns}>
             <TouchableOpacity style={[styles.decisionBtn, styles.passBtn]} onPress={() => handleDecision('pass')}>
-              <Text style={styles.decisionBtnText}>✕ Pass</Text>
+              <Ionicons name="close-outline" size={20} color={colors.textPrimary} style={{ marginRight: spacing.sm }} />
+              <Text style={styles.decisionBtnText}>Pass</Text>
             </TouchableOpacity>
             <TouchableOpacity style={[styles.decisionBtn, styles.lockBtn]} onPress={() => handleDecision('lock')}>
-              <Text style={styles.decisionBtnText}>✓ Lock It In</Text>
+              <Ionicons name="lock-closed-outline" size={20} color={colors.textPrimary} style={{ marginRight: spacing.sm }} />
+              <Text style={styles.decisionBtnText}>Lock It In</Text>
             </TouchableOpacity>
           </View>
         </View>
@@ -121,22 +124,18 @@ const styles = StyleSheet.create({
   partnerSection: { flex: 1, justifyContent: 'center', alignItems: 'center' },
   partnerImage: { width: 200, height: 200, borderRadius: 100, backgroundColor: colors.surfaceHighlight, alignItems: 'center', justifyContent: 'center' },
   silhouette: { alignItems: 'center' },
-  silhouetteEmoji: { fontSize: 64 },
   silhouetteName: { ...typography.h3, color: colors.textPrimary, marginTop: spacing.sm },
   silhouetteLabel: { ...typography.caption, color: colors.textMuted, marginTop: spacing.xs },
   blurredView: { alignItems: 'center', opacity: 0.3 },
-  blurredEmoji: { fontSize: 64 },
   revealedView: { alignItems: 'center' },
-  revealedEmoji: { fontSize: 64 },
   controls: { flexDirection: 'row', justifyContent: 'center', gap: spacing.xxl, paddingBottom: spacing.xxl },
   controlBtn: { alignItems: 'center' },
-  controlEmoji: { fontSize: 28, marginBottom: spacing.xs },
-  controlLabel: { ...typography.caption, color: colors.textSecondary },
+  controlLabel: { ...typography.caption, color: colors.textSecondary, marginTop: spacing.xs },
   endCallBtn: {},
   decisionBar: { paddingHorizontal: spacing.xxl, paddingBottom: spacing.huge },
   decisionLabel: { ...typography.h4, color: colors.textPrimary, textAlign: 'center', marginBottom: spacing.lg },
   decisionBtns: { flexDirection: 'row', gap: spacing.lg },
-  decisionBtn: { flex: 1, paddingVertical: spacing.lg, borderRadius: radius.full, alignItems: 'center' },
+  decisionBtn: { flex: 1, flexDirection: 'row', paddingVertical: spacing.lg, borderRadius: radius.full, alignItems: 'center', justifyContent: 'center' },
   passBtn: { backgroundColor: colors.error },
   lockBtn: { backgroundColor: colors.vibeLock },
   decisionBtnText: { ...typography.button, color: colors.textPrimary },

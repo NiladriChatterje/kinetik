@@ -1,8 +1,10 @@
 import React, { useState } from 'react';
 import { View, Text, StyleSheet, Image, TouchableOpacity, ScrollView } from 'react-native';
 import * as ImagePicker from 'expo-image-picker';
+import { Ionicons } from '@expo/vector-icons';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Button } from '../../components/common/Button';
+import { api } from '../../services/api';
 import { colors, typography, spacing, radius } from '../../theme';
 
 export const PhotoUploadScreen: React.FC<{ navigation: any }> = ({ navigation }) => {
@@ -26,7 +28,7 @@ export const PhotoUploadScreen: React.FC<{ navigation: any }> = ({ navigation })
   };
 
   const handleContinue = async () => {
-    await (await import('../../services/api')).api.updateOnboardingStep('photos');
+    await api.updateOnboardingStep('photos');
     navigation.navigate('PoseVerification');
   };
 
@@ -41,19 +43,20 @@ export const PhotoUploadScreen: React.FC<{ navigation: any }> = ({ navigation })
           {[0, 1, 2, 3, 4, 5].map((i) => (
             <TouchableOpacity
               key={i}
-              style={[styles.photoSlot, photos[i] && styles.photoSlotFilled]}
+              style={[styles.photoSlot, photos[i] ? styles.photoSlotFilled : undefined]}
               onPress={photos[i] ? undefined : i === 0 ? takePhoto : pickPhoto}
             >
               {photos[i] ? (
                 <Image source={{ uri: photos[i] }} style={styles.photo} />
               ) : (
-                <Text style={styles.photoPlaceholder}>{i === 0 ? '📸' : '➕'}</Text>
+                <Ionicons name={i === 0 ? 'camera-outline' : 'add-outline'} size={28} color={colors.textMuted} />
               )}
             </TouchableOpacity>
           ))}
         </View>
 
         <TouchableOpacity style={styles.uploadButton} onPress={pickPhoto}>
+          <Ionicons name="images-outline" size={20} color={colors.primary} style={{ marginRight: spacing.sm }} />
           <Text style={styles.uploadText}>Upload from Gallery</Text>
         </TouchableOpacity>
       </ScrollView>
@@ -76,8 +79,7 @@ const styles = StyleSheet.create({
   photoSlot: { width: 100, height: 130, borderRadius: radius.md, backgroundColor: colors.surfaceHighlight, alignItems: 'center', justifyContent: 'center', borderWidth: 1, borderColor: colors.cardBorder },
   photoSlotFilled: { borderColor: colors.primary },
   photo: { width: '100%', height: '100%', borderRadius: radius.md, resizeMode: 'cover' },
-  photoPlaceholder: { fontSize: 28 },
-  uploadButton: { marginTop: spacing.xxl, paddingVertical: spacing.md, alignItems: 'center', backgroundColor: colors.surfaceHighlight, borderRadius: radius.md },
+  uploadButton: { marginTop: spacing.xxl, paddingVertical: spacing.md, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', backgroundColor: colors.surfaceHighlight, borderRadius: radius.md },
   uploadText: { ...typography.body1, color: colors.primary },
   footer: { position: 'absolute', bottom: 40, left: spacing.xxl, right: spacing.xxl },
   hintText: { ...typography.caption, color: colors.textMuted, textAlign: 'center', marginBottom: spacing.sm },

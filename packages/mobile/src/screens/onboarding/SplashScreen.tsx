@@ -4,6 +4,7 @@ import {
   KeyboardAvoidingView, Platform, TouchableOpacity,
 } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
+import { Ionicons } from '@expo/vector-icons';
 import { useAuthStore } from '../../store/authStore';
 import { Button } from '../../components/common/Button';
 import { Input } from '../../components/common/Input';
@@ -31,7 +32,7 @@ export const SplashScreen: React.FC<{ navigation: any }> = ({ navigation }) => {
   const handleSubmit = async () => {
     if (mode === 'login') {
       const success = await login(phone, password);
-      if (success) navigation.replace('Main');
+      if (success) navigation.navigate('Identity');
     } else if (mode === 'register') {
       const success = await register({ phone, email, password });
       if (success) navigation.navigate('Identity');
@@ -49,7 +50,7 @@ export const SplashScreen: React.FC<{ navigation: any }> = ({ navigation }) => {
         {/* Logo */}
         <View style={styles.logoContainer}>
           <View style={styles.logoIcon}>
-            <Text style={styles.logoEmoji}>⚡</Text>
+            <Ionicons name="flash" size={36} color={colors.primary} />
           </View>
           <Text style={styles.title}>Kinetik</Text>
           <Text style={styles.tagline}>Skip the chat. Meet already.</Text>
@@ -148,10 +149,10 @@ export const SplashScreen: React.FC<{ navigation: any }> = ({ navigation }) => {
               </View>
               <View style={styles.socialButtons}>
                 <TouchableOpacity style={styles.socialButton}>
-                  <Text style={styles.socialEmoji}>🍎</Text>
+                  <Ionicons name="logo-apple" size={24} color={colors.textPrimary} />
                 </TouchableOpacity>
                 <TouchableOpacity style={styles.socialButton}>
-                  <Text style={styles.socialEmoji}>🔵</Text>
+                  <Ionicons name="logo-google" size={24} color={colors.textPrimary} />
                 </TouchableOpacity>
               </View>
             </View>
@@ -173,7 +174,6 @@ const styles = StyleSheet.create({
     alignItems: 'center', justifyContent: 'center',
     marginBottom: spacing.lg,
   },
-  logoEmoji: { fontSize: 40 },
   title: { ...typography.h1, color: colors.textPrimary, marginBottom: spacing.sm },
   tagline: { ...typography.body1, color: colors.textSecondary },
   form: { width: '100%' },
@@ -189,5 +189,4 @@ const styles = StyleSheet.create({
     backgroundColor: colors.surfaceHighlight,
     alignItems: 'center', justifyContent: 'center',
   },
-  socialEmoji: { fontSize: 24 },
 });

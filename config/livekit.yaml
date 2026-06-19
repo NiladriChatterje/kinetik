@@ -1,0 +1,30 @@
+# Kinetik - LiveKit Server Configuration (Development)
+port: 7880
+bind_addresses:
+  - "0.0.0.0"
+
+rtc:
+  tcp_port: 7881
+  port_range_start: 50000
+  port_range_end: 60000
+  use_external_ip: false
+  allow_tcp_fallback: true
+
+keys:
+  kinetik_livekit_key: kinetik_livekit_secret_2024_dev_xyz
+
+logging:
+  level: info
+  json: false
+  pion_level: error
+
+turn:
+  enabled: false
+  domain: localhost
+  udp_port: 3478
+  tls_port: 3479
+
+
+redis:
+  address: redis:6379
+  password: kinetik_redis_2024

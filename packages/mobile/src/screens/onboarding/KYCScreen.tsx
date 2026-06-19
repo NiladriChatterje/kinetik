@@ -1,15 +1,23 @@
 import React, { useState } from 'react';
 import { View, Text, StyleSheet, TouchableOpacity } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
+import { Ionicons } from '@expo/vector-icons';
 import { Button } from '../../components/common/Button';
+import { api } from '../../services/api';
 import { colors, typography, spacing, radius } from '../../theme';
+
+const DOC_TYPES = [
+  { id: 'passport', icon: 'id-card-outline' as const, name: 'Passport' },
+  { id: 'license', icon: 'car-outline' as const, name: "Driver's License" },
+  { id: 'national_id', icon: 'card-outline' as const, name: 'National ID' },
+];
 
 export const KYCScreen: React.FC<{ navigation: any }> = ({ navigation }) => {
   const [docType, setDocType] = useState<string | null>(null);
   const [uploaded, setUploaded] = useState(false);
 
   const handleFinish = async () => {
-    await (await import('../../services/api')).api.updateOnboardingStep('complete', { kycCompleted: true });
+    await api.updateOnboardingStep('complete', { kycCompleted: true });
     navigation.reset({ index: 0, routes: [{ name: 'Main' }] });
   };
 
@@ -22,31 +30,29 @@ export const KYCScreen: React.FC<{ navigation: any }> = ({ navigation }) => {
 
         <Text style={styles.fieldLabel}>Select Document Type</Text>
         <View style={styles.docOptions}>
-          {[
-            { id: 'passport', emoji: '🛂', name: 'Passport' },
-            { id: 'license', emoji: '🚗', name: "Driver's License" },
-            { id: 'national_id', emoji: '🆔', name: 'National ID' },
-          ].map((doc) => (
+          {DOC_TYPES.map((doc) => (
             <TouchableOpacity
               key={doc.id}
               style={[styles.docOption, docType === doc.id && styles.docOptionActive]}
               onPress={() => setDocType(doc.id)}
             >
-              <Text style={styles.docEmoji}>{doc.emoji}</Text>
-              <Text style={styles.docName}>{doc.name}</Text>
+              <Ionicons name={doc.icon} size={28} color={docType === doc.id ? colors.primary : colors.textSecondary} />
+              <Text style={[styles.docName, docType === doc.id && styles.docNameActive]}>{doc.name}</Text>
             </TouchableOpacity>
           ))}
         </View>
 
         {docType && (
           <TouchableOpacity style={styles.uploadArea} onPress={() => setUploaded(true)}>
-            <Text style={styles.uploadEmoji}>{uploaded ? '✅' : '📄'}</Text>
-            <Text style={styles.uploadText}>{uploaded ? 'Document uploaded' : 'Tap to upload document'}</Text>
+            <Ionicons name={uploaded ? 'checkmark-circle-outline' : 'document-outline'} size={32} color={uploaded ? colors.success : colors.textSecondary} />
+            <Text style={[styles.uploadText, uploaded && { color: colors.success }]}>
+              {uploaded ? 'Document uploaded' : 'Tap to upload document'}
+            </Text>
           </TouchableOpacity>
         )}
 
         <View style={styles.securityNote}>
-          <Text style={styles.securityEmoji}>🔒</Text>
+          <Ionicons name="lock-closed-outline" size={18} color={colors.textMuted} />
           <Text style={styles.securityText}>Your documents are encrypted and verified securely</Text>
         </View>
       </View>
@@ -69,13 +75,11 @@ const styles = StyleSheet.create({
   docOptions: { flexDirection: 'row', gap: spacing.md, marginBottom: spacing.xxl },
   docOption: { flex: 1, padding: spacing.lg, backgroundColor: colors.surfaceHighlight, borderRadius: radius.md, alignItems: 'center', borderWidth: 1, borderColor: colors.cardBorder },
   docOptionActive: { borderColor: colors.primary },
-  docEmoji: { fontSize: 32, marginBottom: spacing.sm },
-  docName: { ...typography.caption, color: colors.textPrimary },
+  docName: { ...typography.caption, color: colors.textSecondary, marginTop: spacing.sm },
+  docNameActive: { color: colors.primary },
   uploadArea: { padding: spacing.xxl, backgroundColor: colors.surfaceHighlight, borderRadius: radius.md, alignItems: 'center', borderWidth: 1, borderColor: colors.cardBorder, borderStyle: 'dashed', marginBottom: spacing.xxl },
-  uploadEmoji: { fontSize: 36, marginBottom: spacing.sm },
-  uploadText: { ...typography.body1, color: colors.textSecondary },
+  uploadText: { ...typography.body1, color: colors.textSecondary, marginTop: spacing.sm },
   securityNote: { flexDirection: 'row', gap: spacing.sm, alignItems: 'center' },
-  securityEmoji: { fontSize: 20 },
   securityText: { ...typography.caption, color: colors.textMuted, flex: 1 },
   footer: { padding: spacing.xxl, paddingBottom: spacing.huge },
   skipText: { ...typography.caption, color: colors.textMuted, textAlign: 'center', marginTop: spacing.md },

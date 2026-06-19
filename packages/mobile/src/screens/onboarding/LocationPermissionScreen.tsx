@@ -1,9 +1,11 @@
 import React, { useState } from 'react';
 import { View, Text, StyleSheet, Alert } from 'react-native';
 import * as Location from 'expo-location';
+import { Ionicons } from '@expo/vector-icons';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Button } from '../../components/common/Button';
 import { Card } from '../../components/common/Card';
+import { api } from '../../services/api';
 import { colors, typography, spacing, radius } from '../../theme';
 
 export const LocationPermissionScreen: React.FC<{ navigation: any }> = ({ navigation }) => {
@@ -16,8 +18,8 @@ export const LocationPermissionScreen: React.FC<{ navigation: any }> = ({ naviga
     if (status === 'granted') {
       setPermissionStatus('granted');
       const loc = await Location.getCurrentPositionAsync({});
-      await (await import('../../services/api')).api.updateLocation(loc.coords.latitude, loc.coords.longitude);
-      await (await import('../../services/api')).api.updateOnboardingStep('location');
+      await api.updateLocation(loc.coords.latitude, loc.coords.longitude);
+      await api.updateOnboardingStep('location');
       setTimeout(() => navigation.navigate('Photos'), 800);
     } else {
       setPermissionStatus('denied');
@@ -44,14 +46,14 @@ export const LocationPermissionScreen: React.FC<{ navigation: any }> = ({ naviga
 
         <View style={styles.permissions}>
           <View style={styles.permissionRow}>
-            <Text style={styles.permissionEmoji}>📍</Text>
+            <Ionicons name="location-outline" size={28} color={colors.primary} />
             <View>
               <Text style={styles.permissionTitle}>Precise GPS</Text>
               <Text style={styles.permissionDesc}>Pinpoints your exact H3 hexagonal cell</Text>
             </View>
           </View>
           <View style={styles.permissionRow}>
-            <Text style={styles.permissionEmoji}>🔄</Text>
+            <Ionicons name="sync-outline" size={28} color={colors.secondary} />
             <View>
               <Text style={styles.permissionTitle}>Background Updates</Text>
               <Text style={styles.permissionDesc}>Keeps your queue position fresh during windows</Text>
@@ -62,9 +64,12 @@ export const LocationPermissionScreen: React.FC<{ navigation: any }> = ({ naviga
 
       <View style={styles.footer}>
         {permissionStatus === 'granted' ? (
-          <Text style={styles.grantedText}>✅ Location access granted</Text>
+          <View style={styles.grantedRow}>
+            <Ionicons name="checkmark-circle" size={20} color={colors.success} />
+            <Text style={styles.grantedText}> Location access granted</Text>
+          </View>
         ) : (
-          <Button title="Enable Location" onPress={requestLocation} fullWidth loading={loading} icon={<Text>📍</Text>} />
+          <Button title="Enable Location" onPress={requestLocation} fullWidth loading={loading} icon={<Ionicons name="location-outline" size={20} color={colors.textPrimary} />} />
         )}
       </View>
     </SafeAreaView>
@@ -84,9 +89,9 @@ const styles = StyleSheet.create({
   mapLabel: { ...typography.caption, color: colors.textMuted, textAlign: 'center', marginTop: spacing.lg },
   permissions: { gap: spacing.lg },
   permissionRow: { flexDirection: 'row', gap: spacing.md, alignItems: 'center' },
-  permissionEmoji: { fontSize: 28 },
   permissionTitle: { ...typography.body1, color: colors.textPrimary },
   permissionDesc: { ...typography.caption, color: colors.textSecondary },
   footer: { padding: spacing.xxl, paddingBottom: spacing.huge },
+  grantedRow: { flexDirection: 'row', justifyContent: 'center', alignItems: 'center' },
   grantedText: { ...typography.body1, color: colors.success, textAlign: 'center' },
 });
