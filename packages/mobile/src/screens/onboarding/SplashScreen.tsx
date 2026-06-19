@@ -56,6 +56,8 @@ export const SplashScreen: React.FC<{ navigation: any }> = ({ navigation }) => {
             showsVerticalScrollIndicator={false}
             style={{ flex: 1 }}
           >
+          {/* Spacer pushes logo+form down; collapses on keyboard open without shifting focus */}
+          <View style={{ flex: 1 }} />
           {/* Logo */}
           <View style={styles.logoContainer}>
             <View style={styles.logoIcon}>
@@ -177,7 +179,6 @@ const styles = StyleSheet.create({
   content: { flex: 1 },
   scrollContent: {
     flexGrow: 1,
-    justifyContent: 'center',
     paddingHorizontal: spacing.xxl,
     paddingVertical: spacing.huge,
   },

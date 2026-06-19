@@ -27,7 +27,7 @@ interface InputProps {
   maxLength?: number;
 }
 
-export const Input: React.FC<InputProps> = ({
+export const Input: React.FC<InputProps> = React.memo(({
   label,
   value,
   onChangeText,
@@ -90,7 +90,8 @@ export const Input: React.FC<InputProps> = ({
       {error && <Text style={styles.error}>{error}</Text>}
     </View>
   );
-};
+});
+Input.displayName = 'Input';
 
 const styles = StyleSheet.create({
   container: {
