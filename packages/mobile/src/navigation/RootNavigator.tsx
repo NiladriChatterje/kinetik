@@ -91,7 +91,7 @@ const MainTab = createBottomTabNavigator<MainTabParamList>();
 const screenOptions = {
   headerShown: false,
   cardStyle: { backgroundColor: colors.background },
-  gestureEnabled: true,
+  gestureEnabled: false,
 };
 
 function AuthNavigator() {

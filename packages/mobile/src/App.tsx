@@ -23,7 +23,7 @@ export default function App() {
   }, []);
 
   return (
-    <GestureHandlerRootView style={{ flex: 1, backgroundColor: colors.background }}>
+    <GestureHandlerRootView style={{ flex: 1, backgroundColor: colors.background }} pointerEvents="box-none">
       <SafeAreaProvider>
         <StatusBar style="light" />
         <RootNavigator />

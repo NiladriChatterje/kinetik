@@ -52,7 +52,7 @@ export const SplashScreen: React.FC<{ navigation: any }> = ({ navigation }) => {
         <Animated.View style={[{ flex: 1 }, { opacity: fadeAnim, transform: [{ translateY: slideAnim }] }]}>
           <ScrollView
             contentContainerStyle={styles.scrollContent}
-            keyboardShouldPersistTaps="handled"
+            keyboardShouldPersistTaps="always"
             showsVerticalScrollIndicator={false}
             style={{ flex: 1 }}
           >
