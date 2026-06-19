@@ -1,6 +1,6 @@
 import React, { useState, useRef } from 'react';
 import {
-  View, Text, StyleSheet, Animated, Dimensions,
+  View, Text, StyleSheet, Animated,
   KeyboardAvoidingView, Platform, TouchableOpacity,
 } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
@@ -9,8 +9,6 @@ import { useAuthStore } from '../../store/authStore';
 import { Button } from '../../components/common/Button';
 import { Input } from '../../components/common/Input';
 import { colors, typography, spacing, radius } from '../../theme';
-
-const { width } = Dimensions.get('window');
 
 export const SplashScreen: React.FC<{ navigation: any }> = ({ navigation }) => {
   const [mode, setMode] = useState<'login' | 'register' | 'otp'>('login');
@@ -165,7 +163,7 @@ export const SplashScreen: React.FC<{ navigation: any }> = ({ navigation }) => {
 
 const styles = StyleSheet.create({
   container: { flex: 1 },
-  background: { ...StyleSheet.absoluteFillObject },
+  background: { position: 'absolute', top: 0, left: 0, right: 0, bottom: 0 },
   content: { flex: 1, justifyContent: 'center', paddingHorizontal: spacing.xxl },
   logoContainer: { alignItems: 'center', marginBottom: spacing.huge },
   logoIcon: {
