@@ -1,4 +1,4 @@
-import React, { useState, useRef, useEffect } from 'react';
+import React, { useState, useRef, useEffect, useLayoutEffect } from 'react';
 import {
   View,
   TextInput,
@@ -28,19 +28,20 @@ interface InputProps {
 }
 
 /**
- * Uncontrolled TextInput wrapper.
+ * Fully uncontrolled TextInput wrapper.
  *
- * Uses `defaultValue` + `setNativeProps` instead of a `value` prop to prevent
- * React Native 0.85+ (Fabric/New Architecture) from tearing down and
- * recreating the native TextInput view on every parent re-render. This
- * eliminates the "keyboard closes immediately on tap" bug common with
- * controlled TextInputs in the new architecture.
+ * Does NOT pass `value` or `defaultValue` to the native TextInput, so Fabric
+ * never reconciles the native view during parent re-renders — eliminating
+ * the "keyboard closes on tap" bug in RN 0.85+ / New Architecture.
  *
- * The parent's `value` is still kept in sync:
- *   - `onChangeText` propagates user input to the parent.
- *   - `setNativeProps({ text })` updates the native view directly when the
- *     parent resets the value externally (e.g. form clear), but ONLY when the
- *     input is not actively focused, preventing focus loss.
+ * Text management:
+ *   - On mount, `setNativeProps({ text })` sets the initial text before paint.
+ *   - During typing, the native TextInput manages its own text. `onChangeText`
+ *     propagates changes to the parent for form state, but the native view is
+ *     never touched by React.
+ *   - On blur, native text is synced back to the controlled value.
+ *   - On external value changes (form reset), `setNativeProps` updates the
+ *     native view directly, but ONLY when NOT focused.
  */
 export const Input: React.FC<InputProps> = React.memo(({
   label,
@@ -64,6 +65,7 @@ export const Input: React.FC<InputProps> = React.memo(({
   const isFocusedRef = useRef(false);
   const onChangeTextRef = useRef(onChangeText);
   const latestValueRef = useRef(value);
+  const isInitialRender = useRef(true);
 
   // Keep callback ref current (handler identity changes don't affect native text)
   useEffect(() => {
@@ -75,8 +77,17 @@ export const Input: React.FC<InputProps> = React.memo(({
     latestValueRef.current = value;
   }, [value]);
 
+  // Set initial text before paint via setNativeProps (no defaultValue prop to trip Fabric)
+  useLayoutEffect(() => {
+    if (inputRef.current) {
+      inputRef.current.setNativeProps({ text: value });
+    }
+    isInitialRender.current = false;
+  }, []);
+
   // Sync parent value to native input when NOT focused (form reset, prefill)
   useEffect(() => {
+    if (isInitialRender.current) return; // skip — handled by mount effect
     if (inputRef.current && !isFocusedRef.current) {
       inputRef.current.setNativeProps({ text: value });
     }
@@ -115,7 +126,6 @@ export const Input: React.FC<InputProps> = React.memo(({
         {icon && <View style={styles.icon}>{icon}</View>}
         <TextInput
           ref={inputRef}
-          defaultValue={value}
           onChangeText={handleChangeText}
           placeholder={placeholder}
           placeholderTextColor={colors.textMuted}
