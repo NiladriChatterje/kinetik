@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useRef, useEffect } from 'react';
 import {
   View,
   TextInput,
@@ -29,7 +29,7 @@ interface InputProps {
 
 export const Input: React.FC<InputProps> = React.memo(({
   label,
-  value,
+  value: controlledValue,
   onChangeText,
   placeholder,
   secureTextEntry,
@@ -45,6 +45,32 @@ export const Input: React.FC<InputProps> = React.memo(({
 }) => {
   const [isFocused, setIsFocused] = useState(false);
   const [showPassword, setShowPassword] = useState(false);
+  const [localValue, setLocalValue] = useState(controlledValue);
+  const isFocusedRef = useRef(false);
+
+  // Sync from parent when NOT focused (e.g., form reset)
+  useEffect(() => {
+    if (!isFocusedRef.current) {
+      setLocalValue(controlledValue);
+    }
+  }, [controlledValue]);
+
+  const handleChangeText = (text: string) => {
+    setLocalValue(text);
+    onChangeText(text);
+  };
+
+  const handleFocus = () => {
+    isFocusedRef.current = true;
+    setIsFocused(true);
+  };
+
+  const handleBlur = () => {
+    isFocusedRef.current = false;
+    setIsFocused(false);
+    // Sync local value back to parent on blur
+    setLocalValue(controlledValue);
+  };
 
   return (
     <View style={[styles.container, style as any]}>
@@ -59,8 +85,8 @@ export const Input: React.FC<InputProps> = React.memo(({
       >
         {icon && <View style={styles.icon}>{icon}</View>}
         <TextInput
-          value={value}
-          onChangeText={onChangeText}
+          value={localValue}
+          onChangeText={handleChangeText}
           placeholder={placeholder}
           placeholderTextColor={colors.textMuted}
           secureTextEntry={secureTextEntry && !showPassword}
@@ -75,8 +101,8 @@ export const Input: React.FC<InputProps> = React.memo(({
             multiline ? styles.multiline : undefined,
             icon ? { marginLeft: spacing.sm } : undefined,
           ].filter(Boolean) as any}
-          onFocus={() => setIsFocused(true)}
-          onBlur={() => setIsFocused(false)}
+          onFocus={handleFocus}
+          onBlur={handleBlur}
         />
         {secureTextEntry && (
           <TouchableOpacity

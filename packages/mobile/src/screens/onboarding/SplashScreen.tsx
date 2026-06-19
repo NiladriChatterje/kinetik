@@ -1,7 +1,6 @@
-import React, { useState, useRef } from 'react';
+import React, { useState } from 'react';
 import {
-  View, Text, StyleSheet, Animated,
-  KeyboardAvoidingView, Platform, TouchableOpacity,
+  View, Text, StyleSheet, Platform, TouchableOpacity,
   ScrollView,
 } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
@@ -17,16 +16,7 @@ export const SplashScreen: React.FC<{ navigation: any }> = ({ navigation }) => {
   const [password, setPassword] = useState('');
   const [otp, setOtp] = useState('');
   const [email, setEmail] = useState('');
-  const fadeAnim = useRef(new Animated.Value(0)).current;
-  const slideAnim = useRef(new Animated.Value(50)).current;
   const { login, register, verifyOtp } = useAuthStore();
-
-  React.useEffect(() => {
-    Animated.parallel([
-      Animated.timing(fadeAnim, { toValue: 1, duration: 800, useNativeDriver: true }),
-      Animated.timing(slideAnim, { toValue: 0, duration: 600, useNativeDriver: true }),
-    ]).start();
-  }, [mode]);
 
   const handleSubmit = async () => {
     if (mode === 'login') {
@@ -45,29 +35,26 @@ export const SplashScreen: React.FC<{ navigation: any }> = ({ navigation }) => {
     <View style={styles.container}>
       <LinearGradient colors={['#0A0A0F', '#141418']} style={StyleSheet.absoluteFill} />
       
-      <KeyboardAvoidingView
-        style={styles.content}
-        behavior={Platform.OS === 'ios' ? 'padding' : undefined}
-      >
-        <Animated.View style={[{ flex: 1 }, { opacity: fadeAnim, transform: [{ translateY: slideAnim }] }]}>
-          <ScrollView
-            contentContainerStyle={styles.scrollContent}
-            keyboardShouldPersistTaps="always"
-            showsVerticalScrollIndicator={false}
-            style={{ flex: 1 }}
-          >
-          {/* Spacer pushes logo+form down; collapses on keyboard open without shifting focus */}
-          <View style={{ flex: 1 }} />
-          {/* Logo */}
-          <View style={styles.logoContainer}>
-            <View style={styles.logoIcon}>
-              <Ionicons name="flash" size={36} color={colors.primary} />
-            </View>
-            <Text style={styles.title}>Kinetik</Text>
-            <Text style={styles.tagline}>Skip the chat. Meet already.</Text>
+      <View style={styles.content}>
+        <ScrollView
+          contentContainerStyle={styles.scrollContent}
+          keyboardShouldPersistTaps="always"
+          showsVerticalScrollIndicator={false}
+          style={{ flex: 1 }}
+          keyboardDismissMode={Platform.OS === 'ios' ? 'interactive' : 'none'}
+        >
+        {/* Spacer pushes logo+form down; collapses on keyboard open without shifting focus */}
+        <View style={{ flex: 1 }} />
+        {/* Logo */}
+        <View style={styles.logoContainer}>
+          <View style={styles.logoIcon}>
+            <Ionicons name="flash" size={36} color={colors.primary} />
           </View>
+          <Text style={styles.title}>Kinetik</Text>
+          <Text style={styles.tagline}>Skip the chat. Meet already.</Text>
+        </View>
 
-          {/* Auth Form */}
+        {/* Auth Form */}
           <View style={styles.form}>
             {mode !== 'otp' ? (
               <>
@@ -167,9 +154,8 @@ export const SplashScreen: React.FC<{ navigation: any }> = ({ navigation }) => {
               </View>
             </View>
           </View>
-        </ScrollView>
-        </Animated.View>
-      </KeyboardAvoidingView>
+      </ScrollView>
+      </View>
     </View>
   );
 };
