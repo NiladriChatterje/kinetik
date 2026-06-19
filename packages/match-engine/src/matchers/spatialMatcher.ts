@@ -1,6 +1,6 @@
 import { Redis } from 'ioredis';
 import { Pool } from 'pg';
-import { REDIS_KEYS } from '@kinetik/shared';
+import { REDIS_KEYS, VECTOR_DIMENSIONS } from '@kinetik/shared';
 import {
   geoToH3,
   getNeighborCells,
@@ -186,7 +186,7 @@ export class SpatialMatcher {
 
     return {
       userId,
-      vector: data.vector || new Array(128).fill(0.5),
+      vector: data.vector || new Array(VECTOR_DIMENSIONS).fill(0.5),
       latitude: lat,
       longitude: lng,
       age,
