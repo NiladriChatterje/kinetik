@@ -2,6 +2,7 @@ import React, { useState, useRef } from 'react';
 import {
   View, Text, StyleSheet, Animated,
   KeyboardAvoidingView, Platform, TouchableOpacity,
+  ScrollView,
 } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import { Ionicons } from '@expo/vector-icons';
@@ -42,130 +43,141 @@ export const SplashScreen: React.FC<{ navigation: any }> = ({ navigation }) => {
 
   return (
     <View style={styles.container}>
-      <LinearGradient colors={['#0A0A0F', '#141418']} style={styles.background} />
+      <LinearGradient colors={['#0A0A0F', '#141418']} style={StyleSheet.absoluteFill} />
       
-      <Animated.View style={[styles.content, { opacity: fadeAnim, transform: [{ translateY: slideAnim }] }]}>
-        {/* Logo */}
-        <View style={styles.logoContainer}>
-          <View style={styles.logoIcon}>
-            <Ionicons name="flash" size={36} color={colors.primary} />
+      <Animated.View style={[styles.content, { opacity: fadeAnim, transform: [{ translateY: slideAnim }] }]}>          <ScrollView
+            style={StyleSheet.absoluteFill}
+            contentContainerStyle={styles.scrollContent}
+            keyboardShouldPersistTaps="handled"
+            showsVerticalScrollIndicator={false}
+          >
+          {/* Logo */}
+          <View style={styles.logoContainer}>
+            <View style={styles.logoIcon}>
+              <Ionicons name="flash" size={36} color={colors.primary} />
+            </View>
+            <Text style={styles.title}>Kinetik</Text>
+            <Text style={styles.tagline}>Skip the chat. Meet already.</Text>
           </View>
-          <Text style={styles.title}>Kinetik</Text>
-          <Text style={styles.tagline}>Skip the chat. Meet already.</Text>
-        </View>
 
-        {/* Auth Form */}
-        <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : 'height'}>
-          <View style={styles.form}>
-            {mode !== 'otp' ? (
-              <>
-                <Input
-                  label="Phone Number"
-                  value={phone}
-                  onChangeText={setPhone}
-                  placeholder="+1 555-0123"
-                  keyboardType="phone-pad"
-                />
-                {mode === 'register' && (
+          {/* Auth Form */}
+          <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
+            <View style={styles.form}>
+              {mode !== 'otp' ? (
+                <>
                   <Input
-                    label="Email"
-                    value={email}
-                    onChangeText={setEmail}
-                    placeholder="you@example.com"
-                    keyboardType="email-address"
-                    autoCapitalize="none"
+                    label="Phone Number"
+                    value={phone}
+                    onChangeText={setPhone}
+                    placeholder="+1 555-0123"
+                    keyboardType="phone-pad"
                   />
-                )}
+                  {mode === 'register' && (
+                    <Input
+                      label="Email"
+                      value={email}
+                      onChangeText={setEmail}
+                      placeholder="you@example.com"
+                      keyboardType="email-address"
+                      autoCapitalize="none"
+                    />
+                  )}
+                  {mode === 'login' && (
+                    <Input
+                      label="Password"
+                      value={password}
+                      onChangeText={setPassword}
+                      placeholder="Enter your password"
+                      secureTextEntry
+                    />
+                  )}
+                </>
+              ) : (
+                <>
+                  <Input
+                    label="Phone Number"
+                    value={phone}
+                    onChangeText={setPhone}
+                    placeholder="+1 555-0123"
+                    keyboardType="phone-pad"
+                    editable={false}
+                  />
+                  <Input
+                    label="Verification Code"
+                    value={otp}
+                    onChangeText={setOtp}
+                    placeholder="000000"
+                    keyboardType="numeric"
+                    maxLength={6}
+                  />
+                </>
+              )}
+
+              <Button
+                title={mode === 'login' ? 'Sign In' : mode === 'register' ? 'Create Account' : 'Verify Code'}
+                onPress={handleSubmit}
+                fullWidth
+                size="lg"
+              />
+
+              {/* Mode switcher */}
+              <View style={styles.switchContainer}>
                 {mode === 'login' && (
-                  <Input
-                    label="Password"
-                    value={password}
-                    onChangeText={setPassword}
-                    placeholder="Enter your password"
-                    secureTextEntry
-                  />
+                  <TouchableOpacity onPress={() => setMode('otp')}>
+                    <Text style={styles.switchText}>Use OTP instead</Text>
+                  </TouchableOpacity>
                 )}
-              </>
-            ) : (
-              <>
-                <Input
-                  label="Phone Number"
-                  value={phone}
-                  onChangeText={setPhone}
-                  placeholder="+1 555-0123"
-                  keyboardType="phone-pad"
-                  editable={false}
-                />
-                <Input
-                  label="Verification Code"
-                  value={otp}
-                  onChangeText={setOtp}
-                  placeholder="000000"
-                  keyboardType="numeric"
-                  maxLength={6}
-                />
-              </>
-            )}
-
-            <Button
-              title={mode === 'login' ? 'Sign In' : mode === 'register' ? 'Create Account' : 'Verify Code'}
-              onPress={handleSubmit}
-              fullWidth
-              size="lg"
-            />
-
-            {/* Mode switcher */}
-            <View style={styles.switchContainer}>
-              {mode === 'login' && (
-                <TouchableOpacity onPress={() => setMode('otp')}>
-                  <Text style={styles.switchText}>Use OTP instead</Text>
-                </TouchableOpacity>
-              )}
-              {mode !== 'register' && mode !== 'otp' && (
-                <TouchableOpacity onPress={() => setMode('register')}>
-                  <Text style={styles.switchText}>No account? Sign up</Text>
-                </TouchableOpacity>
-              )}
-              {mode === 'register' && (
-                <TouchableOpacity onPress={() => setMode('login')}>
-                  <Text style={styles.switchText}>Already have an account? Sign in</Text>
-                </TouchableOpacity>
-              )}
-              {mode === 'otp' && (
-                <TouchableOpacity onPress={() => setMode('login')}>
-                  <Text style={styles.switchText}>Back to sign in</Text>
-                </TouchableOpacity>
-              )}
-            </View>
-
-            {/* Social auth */}
-            <View style={styles.socialContainer}>
-              <View style={styles.divider}>
-                <View style={styles.dividerLine} />
-                <Text style={styles.dividerText}>or continue with</Text>
-                <View style={styles.dividerLine} />
+                {mode !== 'register' && mode !== 'otp' && (
+                  <TouchableOpacity onPress={() => setMode('register')}>
+                    <Text style={styles.switchText}>No account? Sign up</Text>
+                  </TouchableOpacity>
+                )}
+                {mode === 'register' && (
+                  <TouchableOpacity onPress={() => setMode('login')}>
+                    <Text style={styles.switchText}>Already have an account? Sign in</Text>
+                  </TouchableOpacity>
+                )}
+                {mode === 'otp' && (
+                  <TouchableOpacity onPress={() => setMode('login')}>
+                    <Text style={styles.switchText}>Back to sign in</Text>
+                  </TouchableOpacity>
+                )}
               </View>
-              <View style={styles.socialButtons}>
-                <TouchableOpacity style={styles.socialButton}>
-                  <Ionicons name="logo-apple" size={24} color={colors.textPrimary} />
-                </TouchableOpacity>
-                <TouchableOpacity style={styles.socialButton}>
-                  <Ionicons name="logo-google" size={24} color={colors.textPrimary} />
-                </TouchableOpacity>
+
+              {/* Social auth */}
+              <View style={styles.socialContainer}>
+                <View style={styles.divider}>
+                  <View style={styles.dividerLine} />
+                  <Text style={styles.dividerText}>or continue with</Text>
+                  <View style={styles.dividerLine} />
+                </View>
+                <View style={styles.socialButtons}>
+                  <TouchableOpacity style={styles.socialButton}>
+                    <Ionicons name="logo-apple" size={24} color={colors.textPrimary} />
+                  </TouchableOpacity>
+                  <TouchableOpacity style={styles.socialButton}>
+                    <Ionicons name="logo-google" size={24} color={colors.textPrimary} />
+                  </TouchableOpacity>
+                </View>
               </View>
             </View>
-          </View>
-        </KeyboardAvoidingView>
+          </KeyboardAvoidingView>
+        </ScrollView>
       </Animated.View>
     </View>
   );
 };
 
 const styles = StyleSheet.create({
-  container: { flex: 1 },
-  background: { position: 'absolute', top: 0, left: 0, right: 0, bottom: 0 },
-  content: { flex: 1, justifyContent: 'center', paddingHorizontal: spacing.xxl },
-  logoContainer: { alignItems: 'center', marginBottom: spacing.huge },
+  container: { flex: 1, backgroundColor: colors.background },
+  content: { flex: 1 },
+  scrollContent: {
+    flexGrow: 1,
+    justifyContent: 'center',
+    paddingHorizontal: spacing.xxl,
+    paddingVertical: spacing.huge,
+  },
+  logoContainer: { alignItems: 'center', marginBottom: spacing.xxxl },
   logoIcon: {
     width: 80, height: 80, borderRadius: 40,
     backgroundColor: colors.surfaceHighlight,
