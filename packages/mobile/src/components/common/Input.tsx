@@ -1,4 +1,4 @@
-import React, { useState, useRef, useEffect, useLayoutEffect } from 'react';
+import React, { useRef, useEffect, useLayoutEffect, useState, useCallback, useMemo } from 'react';
 import {
   View,
   TextInput,
@@ -28,20 +28,14 @@ interface InputProps {
 }
 
 /**
- * Fully uncontrolled TextInput wrapper.
+ * Zero-re-render TextInput wrapper.
  *
- * Does NOT pass `value` or `defaultValue` to the native TextInput, so Fabric
- * never reconciles the native view during parent re-renders — eliminating
- * the "keyboard closes on tap" bug in RN 0.85+ / New Architecture.
- *
- * Text management:
- *   - On mount, `setNativeProps({ text })` sets the initial text before paint.
- *   - During typing, the native TextInput manages its own text. `onChangeText`
- *     propagates changes to the parent for form state, but the native view is
- *     never touched by React.
- *   - On blur, native text is synced back to the controlled value.
- *   - On external value changes (form reset), `setNativeProps` updates the
- *     native view directly, but ONLY when NOT focused.
+ * After mount, this component NEVER re-renders due to user interaction. Focus
+ * styling is applied directly to the container View via setNativeProps instead
+ * of React state. Text is managed via setNativeProps (no value/defaultValue
+ * props on the native TextInput). This prevents Fabric from ever reconciling
+ * the native TextInput view during typing, eliminating the focus-loss bug
+ * on React Native 0.85+ / New Architecture.
  */
 export const Input: React.FC<InputProps> = React.memo(({
   label,
@@ -59,15 +53,14 @@ export const Input: React.FC<InputProps> = React.memo(({
   editable = true,
   maxLength,
 }) => {
-  const [isFocused, setIsFocused] = useState(false);
   const [showPassword, setShowPassword] = useState(false);
   const inputRef = useRef<TextInput>(null);
+  const containerRef = useRef<View>(null);
   const isFocusedRef = useRef(false);
   const onChangeTextRef = useRef(onChangeText);
   const latestValueRef = useRef(value);
-  const isInitialRender = useRef(true);
 
-  // Keep callback ref current (handler identity changes don't affect native text)
+  // Keep callback ref current
   useEffect(() => {
     onChangeTextRef.current = onChangeText;
   }, [onChangeText]);
@@ -77,48 +70,73 @@ export const Input: React.FC<InputProps> = React.memo(({
     latestValueRef.current = value;
   }, [value]);
 
-  // Set initial text before paint via setNativeProps (no defaultValue prop to trip Fabric)
+  // Set initial text before paint
   useLayoutEffect(() => {
     if (inputRef.current) {
       inputRef.current.setNativeProps({ text: value });
     }
-    isInitialRender.current = false;
   }, []);
 
   // Sync parent value to native input when NOT focused (form reset, prefill)
   useEffect(() => {
-    if (isInitialRender.current) return; // skip — handled by mount effect
     if (inputRef.current && !isFocusedRef.current) {
       inputRef.current.setNativeProps({ text: value });
     }
   }, [value]);
 
-  const handleChangeText = (text: string) => {
-    latestValueRef.current = text;
-    onChangeTextRef.current(text);
-  };
-
-  const handleFocus = () => {
+  const handleFocus = useCallback(() => {
     isFocusedRef.current = true;
-    setIsFocused(true);
-  };
+    // Apply focus styles via setNativeProps — no React state change
+    containerRef.current?.setNativeProps({
+      style: {
+        borderColor: colors.inputFocusBorder,
+        shadowColor: colors.primary,
+        shadowOffset: { width: 0, height: 0 },
+        shadowOpacity: 0.3,
+        shadowRadius: 8,
+        elevation: 4,
+      },
+    });
+  }, []);
 
-  const handleBlur = () => {
+  const handleBlur = useCallback(() => {
     isFocusedRef.current = false;
-    setIsFocused(false);
-    // Ensure native text matches the controlled value on blur
+    // Restore default border styles
+    containerRef.current?.setNativeProps({
+      style: {
+        borderColor: colors.inputBorder,
+        shadowColor: undefined,
+        shadowOffset: undefined,
+        shadowOpacity: undefined,
+        shadowRadius: undefined,
+        elevation: undefined,
+      },
+    });
+    // Ensure native text matches controlled value on blur
     if (inputRef.current) {
       inputRef.current.setNativeProps({ text: latestValueRef.current });
     }
-  };
+  }, []);
+
+  const handleChangeText = useCallback((text: string) => {
+    latestValueRef.current = text;
+    onChangeTextRef.current(text);
+  }, []);
+
+  // Memoize style so Fabric never sees a new reference on re-render
+  const inputStyle = useMemo(
+    () =>
+      [styles.input, multiline ? styles.multiline : undefined, icon ? { marginLeft: spacing.sm } : undefined].filter(Boolean) as any,
+    [multiline, icon],
+  );
 
   return (
-    <View style={[styles.container, style as any]} collapsable={false}>
+    <View style={[styles.container, style]} collapsable={false}>
       {label && <Text style={styles.label}>{label}</Text>}
       <View
+        ref={containerRef}
         style={[
           styles.inputContainer,
-          isFocused ? styles.inputFocused : undefined,
           error ? styles.inputError : undefined,
           !editable ? styles.inputDisabled : undefined,
         ]}
@@ -136,11 +154,7 @@ export const Input: React.FC<InputProps> = React.memo(({
           autoCapitalize={autoCapitalize}
           editable={editable}
           maxLength={maxLength}
-          style={[
-            styles.input,
-            multiline ? styles.multiline : undefined,
-            icon ? { marginLeft: spacing.sm } : undefined,
-          ].filter(Boolean) as any}
+          style={inputStyle}
           onFocus={handleFocus}
           onBlur={handleBlur}
         />
@@ -178,14 +192,6 @@ const styles = StyleSheet.create({
     paddingHorizontal: spacing.lg,
     minHeight: 50,
   },
-  inputFocused: {
-    borderColor: colors.inputFocusBorder,
-    shadowColor: colors.primary,
-    shadowOffset: { width: 0, height: 0 },
-    shadowOpacity: 0.3,
-    shadowRadius: 8,
-    elevation: 4,
-  },
   inputError: {
     borderColor: colors.error,
   },
@@ -208,7 +214,6 @@ const styles = StyleSheet.create({
   eyeButton: {
     padding: spacing.sm,
   },
-
   error: {
     ...typography.caption,
     color: colors.error,
