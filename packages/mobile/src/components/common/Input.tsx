@@ -27,9 +27,24 @@ interface InputProps {
   maxLength?: number;
 }
 
+/**
+ * Uncontrolled TextInput wrapper.
+ *
+ * Uses `defaultValue` + `setNativeProps` instead of a `value` prop to prevent
+ * React Native 0.85+ (Fabric/New Architecture) from tearing down and
+ * recreating the native TextInput view on every parent re-render. This
+ * eliminates the "keyboard closes immediately on tap" bug common with
+ * controlled TextInputs in the new architecture.
+ *
+ * The parent's `value` is still kept in sync:
+ *   - `onChangeText` propagates user input to the parent.
+ *   - `setNativeProps({ text })` updates the native view directly when the
+ *     parent resets the value externally (e.g. form clear), but ONLY when the
+ *     input is not actively focused, preventing focus loss.
+ */
 export const Input: React.FC<InputProps> = React.memo(({
   label,
-  value: controlledValue,
+  value,
   onChangeText,
   placeholder,
   secureTextEntry,
@@ -45,19 +60,31 @@ export const Input: React.FC<InputProps> = React.memo(({
 }) => {
   const [isFocused, setIsFocused] = useState(false);
   const [showPassword, setShowPassword] = useState(false);
-  const [localValue, setLocalValue] = useState(controlledValue);
+  const inputRef = useRef<TextInput>(null);
   const isFocusedRef = useRef(false);
+  const onChangeTextRef = useRef(onChangeText);
+  const latestValueRef = useRef(value);
 
-  // Sync from parent when NOT focused (e.g., form reset)
+  // Keep callback ref current (handler identity changes don't affect native text)
   useEffect(() => {
-    if (!isFocusedRef.current) {
-      setLocalValue(controlledValue);
+    onChangeTextRef.current = onChangeText;
+  }, [onChangeText]);
+
+  // Track latest controlled value for blur-sync
+  useEffect(() => {
+    latestValueRef.current = value;
+  }, [value]);
+
+  // Sync parent value to native input when NOT focused (form reset, prefill)
+  useEffect(() => {
+    if (inputRef.current && !isFocusedRef.current) {
+      inputRef.current.setNativeProps({ text: value });
     }
-  }, [controlledValue]);
+  }, [value]);
 
   const handleChangeText = (text: string) => {
-    setLocalValue(text);
-    onChangeText(text);
+    latestValueRef.current = text;
+    onChangeTextRef.current(text);
   };
 
   const handleFocus = () => {
@@ -68,12 +95,14 @@ export const Input: React.FC<InputProps> = React.memo(({
   const handleBlur = () => {
     isFocusedRef.current = false;
     setIsFocused(false);
-    // Sync local value back to parent on blur
-    setLocalValue(controlledValue);
+    // Ensure native text matches the controlled value on blur
+    if (inputRef.current) {
+      inputRef.current.setNativeProps({ text: latestValueRef.current });
+    }
   };
 
   return (
-    <View style={[styles.container, style as any]}>
+    <View style={[styles.container, style as any]} collapsable={false}>
       {label && <Text style={styles.label}>{label}</Text>}
       <View
         style={[
@@ -85,7 +114,8 @@ export const Input: React.FC<InputProps> = React.memo(({
       >
         {icon && <View style={styles.icon}>{icon}</View>}
         <TextInput
-          value={localValue}
+          ref={inputRef}
+          defaultValue={value}
           onChangeText={handleChangeText}
           placeholder={placeholder}
           placeholderTextColor={colors.textMuted}
