@@ -134,84 +134,6 @@ services:
         condition: service_started
     logging: *default-logging
 
-  # ─── Milvus Vector Database ──────────────────────────────
-  milvus-etcd:
-    image: quay.io/coreos/etcd:v3.5.5
-    container_name: kinetik-milvus-etcd
-    restart: unless-stopped
-    environment:
-      ETCD_AUTO_COMPACTION_MODE: revision
-      ETCD_AUTO_COMPACTION_RETENTION: "1000"
-      ETCD_QUOTA_BACKEND_BYTES: "4294967296"
-      ETCD_SNAPSHOT_COUNT: "50000"
-    command: etcd --advertise-client-urls=http://0.0.0.0:2379 --listen-client-urls=http://0.0.0.0:2379 --data-dir=/etcd
-    volumes:
-      - milvus-etcd-data:/etcd
-    healthcheck:
-      test: ["CMD", "etcdctl", "--endpoints=http://localhost:2379", "endpoint", "health"]
-      interval: 10s
-      timeout: 5s
-      retries: 5
-    deploy:
-      resources:
-        limits:
-          memory: 256M
-        reservations:
-          memory: 128M
-    logging: *default-logging
-
-  milvus-minio:
-    image: minio/minio:RELEASE.2023-03-20T20-16-18Z
-    container_name: kinetik-milvus-minio
-    restart: unless-stopped
-    environment:
-      MINIO_ACCESS_KEY: minioadmin
-      MINIO_SECRET_KEY: minioadmin
-    command: minio server /minio-data --console-address ":9001"
-    volumes:
-      - milvus-minio-data:/minio-data
-    deploy:
-      resources:
-        limits:
-          memory: 256M
-        reservations:
-          memory: 128M
-    healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:9000/minio/health/live"]
-      interval: 10s
-      timeout: 5s
-      retries: 3
-    logging: *default-logging
-
-  milvus:
-    image: milvusdb/milvus:v2.4.1
-    container_name: kinetik-milvus
-    restart: unless-stopped
-    command: ["milvus", "run", "standalone"]
-    depends_on:
-      milvus-etcd:
-        condition: service_healthy
-      milvus-minio:
-        condition: service_healthy
-    ports:
-      - "${MILVUS_PORT:-19530}:19530"
-      - "9091:9091"
-    environment:
-      ETCD_ENDPOINTS: milvus-etcd:2379
-      MINIO_ADDRESS: milvus-minio:9000
-      MINIO_ACCESS_KEY: minioadmin
-      MINIO_SECRET_KEY: minioadmin
-      MINIO_USE_SSL: "false"
-    volumes:
-      - milvus-data:/var/lib/milvus
-    deploy:
-      resources:
-        limits:
-          memory: 512M
-        reservations:
-          memory: 256M
-    logging: *default-logging
-
   # ─── LiveKit WebRTC SFU ──────────────────────────────────
   livekit:
     image: livekit/livekit-server:latest
@@ -330,8 +252,6 @@ services:
       REDIS_PORT: 6379
       REDIS_PASSWORD: ${REDIS_PASSWORD:-kinetik_redis_2024}
       KAFKA_BROKERS: kafka:29092
-      MILVUS_HOST: milvus
-      MILVUS_PORT: 19530
       JWT_SECRET: ${JWT_SECRET:-super-secret-jwt-key-change-in-production-2024}
       DATABASE_URL: postgresql://${POSTGRES_USER:-kinetik}:${POSTGRES_PASSWORD:-kinetik_dev_2024}@postgres:5432/${POSTGRES_DB:-kinetik}
     depends_on:
@@ -341,8 +261,6 @@ services:
         condition: service_started
       kafka-init:
         condition: service_completed_successfully
-      milvus:
-        condition: service_started
     deploy:
       resources:
         limits:
@@ -355,6 +273,4 @@ volumes:
   postgres-data:
   redis-data:
   kafka-data:
-  milvus-etcd-data:
-  milvus-minio-data:
-  milvus-data:
+
