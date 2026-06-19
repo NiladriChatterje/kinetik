@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import {
   View, Text, StyleSheet, Platform, TouchableOpacity,
-  ScrollView,
+  ScrollView, KeyboardAvoidingView,
 } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import { Ionicons } from '@expo/vector-icons';
@@ -34,27 +34,27 @@ export const SplashScreen: React.FC<{ navigation: any }> = ({ navigation }) => {
   return (
     <View style={styles.container}>
       <LinearGradient colors={['#0A0A0F', '#141418']} style={StyleSheet.absoluteFill} />
-      
-      <View style={styles.content}>
+      <KeyboardAvoidingView
+        style={{ flex: 1 }}
+        behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+        keyboardVerticalOffset={Platform.OS === 'ios' ? 0 : 0}
+      >
         <ScrollView
           contentContainerStyle={styles.scrollContent}
           keyboardShouldPersistTaps="always"
           showsVerticalScrollIndicator={false}
-          style={{ flex: 1 }}
-          keyboardDismissMode={Platform.OS === 'ios' ? 'interactive' : 'none'}
+          bounces={false}
         >
-        {/* Spacer pushes logo+form down; collapses on keyboard open without shifting focus */}
-        <View style={{ flex: 1 }} />
-        {/* Logo */}
-        <View style={styles.logoContainer}>
-          <View style={styles.logoIcon}>
-            <Ionicons name="flash" size={36} color={colors.primary} />
+          {/* Logo */}
+          <View style={styles.logoContainer}>
+            <View style={styles.logoIcon}>
+              <Ionicons name="flash" size={36} color={colors.primary} />
+            </View>
+            <Text style={styles.title}>Kinetik</Text>
+            <Text style={styles.tagline}>Skip the chat. Meet already.</Text>
           </View>
-          <Text style={styles.title}>Kinetik</Text>
-          <Text style={styles.tagline}>Skip the chat. Meet already.</Text>
-        </View>
 
-        {/* Auth Form */}
+          {/* Auth Form */}
           <View style={styles.form}>
             {mode !== 'otp' ? (
               <>
@@ -154,17 +154,17 @@ export const SplashScreen: React.FC<{ navigation: any }> = ({ navigation }) => {
               </View>
             </View>
           </View>
-      </ScrollView>
-      </View>
+        </ScrollView>
+      </KeyboardAvoidingView>
     </View>
   );
 };
 
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: colors.background },
-  content: { flex: 1 },
   scrollContent: {
     flexGrow: 1,
+    justifyContent: 'center',
     paddingHorizontal: spacing.xxl,
     paddingVertical: spacing.huge,
   },
@@ -175,8 +175,8 @@ const styles = StyleSheet.create({
     alignItems: 'center', justifyContent: 'center',
     marginBottom: spacing.lg,
   },
-  title: { ...typography.h1, color: colors.textPrimary, marginBottom: spacing.sm },
-  tagline: { ...typography.body1, color: colors.textSecondary },
+  title: { ...typography.h1, color: colors.textPrimary, marginBottom: spacing.sm, textAlign: 'center' },
+  tagline: { ...typography.body1, color: colors.textSecondary, textAlign: 'center' },
   form: { width: '100%' },
   switchContainer: { alignItems: 'center', marginTop: spacing.lg },
   switchText: { ...typography.body2, color: colors.primary, marginTop: spacing.sm },

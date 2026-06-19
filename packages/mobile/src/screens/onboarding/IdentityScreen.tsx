@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { View, Text, StyleSheet, ScrollView } from 'react-native';
+import { View, Text, StyleSheet, ScrollView, Platform, KeyboardAvoidingView } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Button } from '../../components/common/Button';
 import { Input } from '../../components/common/Input';
@@ -32,44 +32,49 @@ export const IdentityScreen: React.FC<{ navigation: any }> = ({ navigation }) =>
 
   return (
     <SafeAreaView style={styles.container}>
-      <ScrollView contentContainerStyle={styles.content} keyboardShouldPersistTaps="always">
-        <Text style={styles.step}>Step 1 of 5</Text>
-        <Text style={styles.title}>Who are you?</Text>
-        <Text style={styles.subtitle}>This helps us find your best matches</Text>
+      <KeyboardAvoidingView
+        style={{ flex: 1 }}
+        behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+      >
+        <ScrollView contentContainerStyle={styles.content} keyboardShouldPersistTaps="always" bounces={false}>
+          <Text style={styles.step}>Step 1 of 5</Text>
+          <Text style={styles.title}>Who are you?</Text>
+          <Text style={styles.subtitle}>This helps us find your best matches</Text>
 
-        <Input label="Full Name" value={name} onChangeText={setName} placeholder="Alex Johnson" autoCapitalize="words" />
-        <Input label="Date of Birth" value={dob} onChangeText={setDob} placeholder="DD/MM/YYYY" keyboardType="numeric" />
-        
-        <Text style={styles.fieldLabel}>Gender</Text>
-        <View style={styles.genderGrid}>
-          {GENDER_OPTIONS.map((g) => (
-            <View
-              key={g}
-              style={[styles.genderChip, gender === g && styles.genderChipActive]}
-            >
-              <Text
-                style={[styles.genderChipText, gender === g && styles.genderChipTextActive]}
-                onPress={() => setGender(g)}
+          <Input label="Full Name" value={name} onChangeText={setName} placeholder="Alex Johnson" autoCapitalize="words" />
+          <Input label="Date of Birth" value={dob} onChangeText={setDob} placeholder="DD/MM/YYYY" keyboardType="numeric" />
+          
+          <Text style={styles.fieldLabel}>Gender</Text>
+          <View style={styles.genderGrid}>
+            {GENDER_OPTIONS.map((g) => (
+              <View
+                key={g}
+                style={[styles.genderChip, gender === g && styles.genderChipActive]}
               >
-                {g}
-              </Text>
-            </View>
-          ))}
+                <Text
+                  style={[styles.genderChipText, gender === g && styles.genderChipTextActive]}
+                  onPress={() => setGender(g)}
+                >
+                  {g}
+                </Text>
+              </View>
+            ))}
+          </View>
+
+          <Input label="Pronouns (optional)" value={pronouns} onChangeText={setPronouns} placeholder="they/them, she/her, he/him" />
+        </ScrollView>
+
+        <View style={styles.footer}>
+          <Button title="Continue" onPress={handleSubmit} disabled={!canProceed} loading={loading} fullWidth />
         </View>
-
-        <Input label="Pronouns (optional)" value={pronouns} onChangeText={setPronouns} placeholder="they/them, she/her, he/him" />
-      </ScrollView>
-
-      <View style={styles.footer}>
-        <Button title="Continue" onPress={handleSubmit} disabled={!canProceed} loading={loading} fullWidth />
-      </View>
+      </KeyboardAvoidingView>
     </SafeAreaView>
   );
 };
 
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: colors.background },
-  content: { padding: spacing.xxl, paddingBottom: 100 },
+  content: { padding: spacing.xxl, paddingBottom: 100, flexGrow: 1 },
   step: { ...typography.label, color: colors.primary, marginBottom: spacing.sm },
   title: { ...typography.h1, color: colors.textPrimary, marginBottom: spacing.sm },
   subtitle: { ...typography.body1, color: colors.textSecondary, marginBottom: spacing.xxl },
