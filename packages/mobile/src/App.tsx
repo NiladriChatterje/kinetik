@@ -1,7 +1,6 @@
 import React, { useEffect } from 'react';
-import { LogBox } from 'react-native';
+import { LogBox, View } from 'react-native';
 import { StatusBar } from 'expo-status-bar';
-import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 import { RootNavigator } from './navigation/RootNavigator';
 import { useAuthStore } from './store/authStore';
@@ -23,11 +22,11 @@ export default function App() {
   }, []);
 
   return (
-    <GestureHandlerRootView style={{ flex: 1, backgroundColor: colors.background }} pointerEvents="box-none">
+    <View style={{ flex: 1, backgroundColor: colors.background }}>
       <SafeAreaProvider>
         <StatusBar style="light" />
         <RootNavigator />
       </SafeAreaProvider>
-    </GestureHandlerRootView>
+    </View>
   );
 }
