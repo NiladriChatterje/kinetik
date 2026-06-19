@@ -198,23 +198,21 @@ export function RootNavigator() {
 
   return (
     <NavigationContainer>
-      <RootStack.Navigator screenOptions={screenOptions}>
-        {showOnboarding ? (
-          <RootStack.Screen name="Onboarding" component={AuthNavigator} />
-        ) : (
-          <>
-            <RootStack.Screen name="Main" component={MainTabNavigator} />
-            <RootStack.Screen name="VibeCheck" component={VibeCheckScreen} />
-            <RootStack.Screen name="Unmasking" component={UnmaskingScreen} />
-            <RootStack.Screen name="Commitment" component={CommitmentGateScreen} />
-            <RootStack.Screen name="LockStatus" component={LockStatusScreen} />
-            <RootStack.Screen name="CalendarSync" component={CalendarSyncScreen} />
-            <RootStack.Screen name="VenueSelector" component={VenueSelectorScreen} />
-            <RootStack.Screen name="ReservationLocker" component={ReservationLockerScreen} />
-            <RootStack.Screen name="DoubleDate" component={DoubleDateScreen} />
-            <RootStack.Screen name="HeatMap" component={HeatMapScreen} />
-          </>
-        )}
+      <RootStack.Navigator
+        screenOptions={screenOptions}
+        initialRouteName={showOnboarding ? 'Onboarding' : 'Main'}
+      >
+        <RootStack.Screen name="Onboarding" component={AuthNavigator} />
+        <RootStack.Screen name="Main" component={MainTabNavigator} />
+        <RootStack.Screen name="VibeCheck" component={VibeCheckScreen} />
+        <RootStack.Screen name="Unmasking" component={UnmaskingScreen} />
+        <RootStack.Screen name="Commitment" component={CommitmentGateScreen} />
+        <RootStack.Screen name="LockStatus" component={LockStatusScreen} />
+        <RootStack.Screen name="CalendarSync" component={CalendarSyncScreen} />
+        <RootStack.Screen name="VenueSelector" component={VenueSelectorScreen} />
+        <RootStack.Screen name="ReservationLocker" component={ReservationLockerScreen} />
+        <RootStack.Screen name="DoubleDate" component={DoubleDateScreen} />
+        <RootStack.Screen name="HeatMap" component={HeatMapScreen} />
       </RootStack.Navigator>
     </NavigationContainer>
   );

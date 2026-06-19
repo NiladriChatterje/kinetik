@@ -4,6 +4,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { Button } from '../../components/common/Button';
 import { Card } from '../../components/common/Card';
+import { useAuthStore } from '../../store/authStore';
 import { colors, typography, spacing, radius } from '../../theme';
 
 const QUESTIONS = [
@@ -25,7 +26,8 @@ export const CommCadenceScreen: React.FC<{ navigation: any }> = ({ navigation })
   };
 
   const handleFinish = () => {
-    navigation.reset({ index: 0, routes: [{ name: 'Main' }] });
+    useAuthStore.getState().setOnboardingStep('complete');
+    navigation.getParent()?.reset({ index: 0, routes: [{ name: 'Main' }] });
   };
 
   const done = answers.length === QUESTIONS.length;
