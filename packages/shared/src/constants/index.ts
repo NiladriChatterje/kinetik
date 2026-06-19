@@ -43,7 +43,7 @@ export const DEFAULT_MAX_DISTANCE_KM = 50;
 
 // ─── Vector Dimensions ───────────────────────────────────
 
-export const VECTOR_DIMENSIONS = 128;
+export const VECTOR_DIMENSIONS = 1024;
 export const VECTOR_SIMILARITY_TOP_K = 10;
 export const MATCH_QUEUE_BATCH_SIZE = 50;
 

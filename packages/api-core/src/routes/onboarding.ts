@@ -3,6 +3,7 @@ import { z } from 'zod';
 import { ERROR_CODES, ONBOARDING_STEPS } from '@kinetik/shared';
 import { updateUser, findUserById } from '../services/database';
 import { getRedis } from '../services/redis';
+import { syncVectorForUser } from '../services/vectorService';
 
 const OnboardingStepSchema = z.object({
   step: z.enum(ONBOARDING_STEPS as any),
@@ -68,6 +69,15 @@ export async function onboardingRoutes(app: FastifyInstance) {
         JSON.stringify(data),
         'EX',
         86400, // 24 hours
+      );
+    }
+
+    // When onboarding completes, trigger vector computation for the user.
+    // The user has likely set preferences by this point, so the vector
+    // will include meaningful values. Fail-safe: errors are logged internally.
+    if (isComplete) {
+      syncVectorForUser(userId).catch((err) =>
+        console.error('[vector] syncVectorForUser failed for user', userId, err)
       );
     }
 

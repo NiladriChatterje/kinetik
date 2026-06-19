@@ -3,6 +3,7 @@ import { z } from 'zod';
 import { ERROR_CODES, geoToH3 } from '@kinetik/shared';
 import { query, TABLES, findUserById, updateUser, getPreferences, upsertPreferences } from '../services/database';
 import { kafkaProducer } from '../services/kafka';
+import { syncVectorForUser } from '../services/vectorService';
 
 const UpdateProfileSchema = z.object({
   displayName: z.string().min(1).max(100).optional(),
@@ -175,6 +176,12 @@ export async function userRoutes(app: FastifyInstance) {
     }
 
     const prefs = await upsertPreferences(userId, validation.data);
+
+    // Fire-and-forget: sync user vector from updated preferences
+    // This runs asynchronously — errors are logged internally, never crash the request
+    syncVectorForUser(userId).catch((err) =>
+      console.error('[vector] syncVectorForUser failed for user', userId, err)
+    );
 
     await kafkaProducer.sendUserEvent({
       type: 'preferences.updated',
