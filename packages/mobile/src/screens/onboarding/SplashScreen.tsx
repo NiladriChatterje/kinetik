@@ -45,11 +45,16 @@ export const SplashScreen: React.FC<{ navigation: any }> = ({ navigation }) => {
     <View style={styles.container}>
       <LinearGradient colors={['#0A0A0F', '#141418']} style={StyleSheet.absoluteFill} />
       
-      <Animated.View style={[styles.content, { opacity: fadeAnim, transform: [{ translateY: slideAnim }] }]}>          <ScrollView
-            style={StyleSheet.absoluteFill}
+      <KeyboardAvoidingView
+        style={styles.content}
+        behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+      >
+        <Animated.View style={[{ flex: 1 }, { opacity: fadeAnim, transform: [{ translateY: slideAnim }] }]}>
+          <ScrollView
             contentContainerStyle={styles.scrollContent}
             keyboardShouldPersistTaps="handled"
             showsVerticalScrollIndicator={false}
+            style={{ flex: 1 }}
           >
           {/* Logo */}
           <View style={styles.logoContainer}>
@@ -61,109 +66,108 @@ export const SplashScreen: React.FC<{ navigation: any }> = ({ navigation }) => {
           </View>
 
           {/* Auth Form */}
-          <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
-            <View style={styles.form}>
-              {mode !== 'otp' ? (
-                <>
-                  <Input
-                    label="Phone Number"
-                    value={phone}
-                    onChangeText={setPhone}
-                    placeholder="+1 555-0123"
-                    keyboardType="phone-pad"
-                  />
-                  {mode === 'register' && (
-                    <Input
-                      label="Email"
-                      value={email}
-                      onChangeText={setEmail}
-                      placeholder="you@example.com"
-                      keyboardType="email-address"
-                      autoCapitalize="none"
-                    />
-                  )}
-                  {mode === 'login' && (
-                    <Input
-                      label="Password"
-                      value={password}
-                      onChangeText={setPassword}
-                      placeholder="Enter your password"
-                      secureTextEntry
-                    />
-                  )}
-                </>
-              ) : (
-                <>
-                  <Input
-                    label="Phone Number"
-                    value={phone}
-                    onChangeText={setPhone}
-                    placeholder="+1 555-0123"
-                    keyboardType="phone-pad"
-                    editable={false}
-                  />
-                  <Input
-                    label="Verification Code"
-                    value={otp}
-                    onChangeText={setOtp}
-                    placeholder="000000"
-                    keyboardType="numeric"
-                    maxLength={6}
-                  />
-                </>
-              )}
-
-              <Button
-                title={mode === 'login' ? 'Sign In' : mode === 'register' ? 'Create Account' : 'Verify Code'}
-                onPress={handleSubmit}
-                fullWidth
-                size="lg"
-              />
-
-              {/* Mode switcher */}
-              <View style={styles.switchContainer}>
-                {mode === 'login' && (
-                  <TouchableOpacity onPress={() => setMode('otp')}>
-                    <Text style={styles.switchText}>Use OTP instead</Text>
-                  </TouchableOpacity>
-                )}
-                {mode !== 'register' && mode !== 'otp' && (
-                  <TouchableOpacity onPress={() => setMode('register')}>
-                    <Text style={styles.switchText}>No account? Sign up</Text>
-                  </TouchableOpacity>
-                )}
+          <View style={styles.form}>
+            {mode !== 'otp' ? (
+              <>
+                <Input
+                  label="Phone Number"
+                  value={phone}
+                  onChangeText={setPhone}
+                  placeholder="+1 555-0123"
+                  keyboardType="phone-pad"
+                />
                 {mode === 'register' && (
-                  <TouchableOpacity onPress={() => setMode('login')}>
-                    <Text style={styles.switchText}>Already have an account? Sign in</Text>
-                  </TouchableOpacity>
+                  <Input
+                    label="Email"
+                    value={email}
+                    onChangeText={setEmail}
+                    placeholder="you@example.com"
+                    keyboardType="email-address"
+                    autoCapitalize="none"
+                  />
                 )}
-                {mode === 'otp' && (
-                  <TouchableOpacity onPress={() => setMode('login')}>
-                    <Text style={styles.switchText}>Back to sign in</Text>
-                  </TouchableOpacity>
+                {mode === 'login' && (
+                  <Input
+                    label="Password"
+                    value={password}
+                    onChangeText={setPassword}
+                    placeholder="Enter your password"
+                    secureTextEntry
+                  />
                 )}
-              </View>
+              </>
+            ) : (
+              <>
+                <Input
+                  label="Phone Number"
+                  value={phone}
+                  onChangeText={setPhone}
+                  placeholder="+1 555-0123"
+                  keyboardType="phone-pad"
+                  editable={false}
+                />
+                <Input
+                  label="Verification Code"
+                  value={otp}
+                  onChangeText={setOtp}
+                  placeholder="000000"
+                  keyboardType="numeric"
+                  maxLength={6}
+                />
+              </>
+            )}
 
-              {/* Social auth */}
-              <View style={styles.socialContainer}>
-                <View style={styles.divider}>
-                  <View style={styles.dividerLine} />
-                  <Text style={styles.dividerText}>or continue with</Text>
-                  <View style={styles.dividerLine} />
-                </View>
-                <View style={styles.socialButtons}>
-                  <TouchableOpacity style={styles.socialButton}>
-                    <Ionicons name="logo-apple" size={24} color={colors.textPrimary} />
-                  </TouchableOpacity>
-                  <TouchableOpacity style={styles.socialButton}>
-                    <Ionicons name="logo-google" size={24} color={colors.textPrimary} />
-                  </TouchableOpacity>
-                </View>
+            <Button
+              title={mode === 'login' ? 'Sign In' : mode === 'register' ? 'Create Account' : 'Verify Code'}
+              onPress={handleSubmit}
+              fullWidth
+              size="lg"
+            />
+
+            {/* Mode switcher */}
+            <View style={styles.switchContainer}>
+              {mode === 'login' && (
+                <TouchableOpacity onPress={() => setMode('otp')}>
+                  <Text style={styles.switchText}>Use OTP instead</Text>
+                </TouchableOpacity>
+              )}
+              {mode !== 'register' && mode !== 'otp' && (
+                <TouchableOpacity onPress={() => setMode('register')}>
+                  <Text style={styles.switchText}>No account? Sign up</Text>
+                </TouchableOpacity>
+              )}
+              {mode === 'register' && (
+                <TouchableOpacity onPress={() => setMode('login')}>
+                  <Text style={styles.switchText}>Already have an account? Sign in</Text>
+                </TouchableOpacity>
+              )}
+              {mode === 'otp' && (
+                <TouchableOpacity onPress={() => setMode('login')}>
+                  <Text style={styles.switchText}>Back to sign in</Text>
+                </TouchableOpacity>
+              )}
+            </View>
+
+            {/* Social auth */}
+            <View style={styles.socialContainer}>
+              <View style={styles.divider}>
+                <View style={styles.dividerLine} />
+                <Text style={styles.dividerText}>or continue with</Text>
+                <View style={styles.dividerLine} />
+              </View>
+              <View style={styles.socialButtons}>
+                <TouchableOpacity style={styles.socialButton}>
+                  <Ionicons name="logo-apple" size={24} color={colors.textPrimary} />
+                </TouchableOpacity>
+                <TouchableOpacity style={styles.socialButton}>
+                  <Ionicons name="logo-google" size={24} color={colors.textPrimary} />
+                </TouchableOpacity>
               </View>
             </View>
-          </KeyboardAvoidingView>
+          </View>
         </ScrollView>
-      </Animated.View>
+        </Animated.View>
+      </KeyboardAvoidingView>
     </View>
   );
 };
