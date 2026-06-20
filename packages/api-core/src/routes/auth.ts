@@ -5,7 +5,7 @@ import { ERROR_CODES } from '@kinetik/shared';
 import { createUser, findUserByPhone, findUserByEmail, createSubscription, updateUser } from '../services/database';
 
 const RegisterSchema = z.object({
-  phone: z.string().min(10).max(20).optional(),
+  phone: z.string().min(8).max(20).optional(),
   email: z.string().email().optional(),
   password: z.string().min(8).max(128).optional(),
   authProvider: z.enum(['phone', 'google', 'apple']),
@@ -14,7 +14,7 @@ const RegisterSchema = z.object({
 });
 
 const LoginSchema = z.object({
-  phone: z.string().min(10).max(20).optional(),
+  phone: z.string().min(8).max(20).optional(),
   email: z.string().email().optional(),
   password: z.string().optional(),
   authProvider: z.enum(['phone', 'google', 'apple']).optional(),
@@ -22,7 +22,7 @@ const LoginSchema = z.object({
 });
 
 const VerifyOtpSchema = z.object({
-  phone: z.string().min(10).max(20),
+  phone: z.string().min(8).max(20),
   otp: z.string().length(6),
 });
 
@@ -76,6 +76,7 @@ export async function authRoutes(app: FastifyInstance) {
       passwordHash,
       authProvider: data.authProvider,
       authProviderId: data.authProviderId,
+      displayName: data.displayName,
     });
 
     // Generate JWT
@@ -90,7 +91,7 @@ export async function authRoutes(app: FastifyInstance) {
     return reply.status(201).send({
       success: true,
       data: {
-        user: { id: user.id, phone: user.phone, email: user.email },
+        user: { id: user.id, phone: user.phone, email: user.email, displayName: user.display_name },
         token,
       },
     });

@@ -66,18 +66,18 @@ export const colors = {
 
 // ─── Typography ──────────────────────────────────────────
 export const typography = {
-  h1: { fontSize: 32, lineHeight: 40, fontWeight: '700' as const, letterSpacing: -0.5 },
-  h2: { fontSize: 26, lineHeight: 34, fontWeight: '700' as const, letterSpacing: -0.3 },
-  h3: { fontSize: 22, lineHeight: 30, fontWeight: '600' as const, letterSpacing: -0.2 },
-  h4: { fontSize: 18, lineHeight: 26, fontWeight: '600' as const },
-  body1: { fontSize: 16, lineHeight: 24, fontWeight: '400' as const },
-  body2: { fontSize: 14, lineHeight: 20, fontWeight: '400' as const },
-  caption: { fontSize: 12, lineHeight: 16, fontWeight: '400' as const },
-  button: { fontSize: 16, lineHeight: 24, fontWeight: '600' as const, letterSpacing: 0.5 },
-  buttonSmall: { fontSize: 14, lineHeight: 20, fontWeight: '600' as const, letterSpacing: 0.3 },
-  label: { fontSize: 12, lineHeight: 16, fontWeight: '500' as const, letterSpacing: 0.5, textTransform: 'uppercase' as const },
-  countdown: { fontSize: 64, lineHeight: 72, fontWeight: '700' as const, letterSpacing: -2 },
-  timer: { fontSize: 48, lineHeight: 56, fontWeight: '300' as const, letterSpacing: 2 },
+  h1: { fontSize: 28, lineHeight: 34, fontWeight: '700' as const, letterSpacing: -0.5 },
+  h2: { fontSize: 22, lineHeight: 28, fontWeight: '700' as const, letterSpacing: -0.3 },
+  h3: { fontSize: 18, lineHeight: 24, fontWeight: '600' as const, letterSpacing: -0.2 },
+  h4: { fontSize: 16, lineHeight: 22, fontWeight: '600' as const },
+  body1: { fontSize: 14, lineHeight: 20, fontWeight: '400' as const },
+  body2: { fontSize: 13, lineHeight: 18, fontWeight: '400' as const },
+  caption: { fontSize: 11, lineHeight: 15, fontWeight: '400' as const },
+  button: { fontSize: 14, lineHeight: 20, fontWeight: '600' as const, letterSpacing: 0.5 },
+  buttonSmall: { fontSize: 12, lineHeight: 17, fontWeight: '600' as const, letterSpacing: 0.3 },
+  label: { fontSize: 11, lineHeight: 15, fontWeight: '500' as const, letterSpacing: 0.5, textTransform: 'uppercase' as const },
+  countdown: { fontSize: 56, lineHeight: 64, fontWeight: '700' as const, letterSpacing: -2 },
+  timer: { fontSize: 42, lineHeight: 48, fontWeight: '300' as const, letterSpacing: 2 },
 };
 
 // ─── Spacing ─────────────────────────────────────────────

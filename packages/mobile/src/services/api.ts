@@ -4,6 +4,11 @@ import * as SecureStore from 'expo-secure-store';
 const API_URL = Constants.expoConfig?.extra?.apiUrl || 'http://localhost:3001';
 const WS_URL = Constants.expoConfig?.extra?.wsUrl || 'http://localhost:3002';
 
+if (typeof __DEV__ !== 'undefined' && __DEV__) {
+  console.log('[API] Base URL:', API_URL);
+  console.log('[API] WS URL:', WS_URL);
+}
+
 interface ApiResponse<T = any> {
   success: boolean;
   data?: T;
@@ -39,15 +44,68 @@ class ApiClient {
       headers['Authorization'] = `Bearer ${this.token}`;
     }
 
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), 15000);
+
     try {
       const response = await fetch(`${API_URL}${endpoint}`, {
         ...options,
         headers,
+        signal: controller.signal,
       });
 
-      const data = await response.json();
+      clearTimeout(timeout);
+
+      // Try to parse JSON — non-JSON responses (e.g. nginx 502) should not crash
+      let data: any;
+      try {
+        data = await response.json();
+      } catch {
+        if (__DEV__) {
+          console.error(`[API] Non-JSON response ${response.status} from ${endpoint}`);
+        }
+        return {
+          success: false,
+          error: {
+            code: 'SERVER_ERROR',
+            message: response.status === 502
+              ? 'Server is unavailable. Please try again later.'
+              : `Unexpected server response (${response.status})`,
+          },
+        };
+      }
+
+      if (!response.ok && __DEV__) {
+        console.error(`[API] ${response.status} ${endpoint}:`, JSON.stringify(data));
+      }
+
       return data as ApiResponse<T>;
     } catch (error: any) {
+      clearTimeout(timeout);
+
+      if (__DEV__) {
+        console.error(`[API] Request failed ${endpoint}:`, error.message);
+      }
+
+      // Timeout
+      if (error.name === 'AbortError') {
+        return {
+          success: false,
+          error: { code: 'TIMEOUT', message: 'Request timed out. Please check your connection and try again.' },
+        };
+      }
+
+      // Network unreachable (fetch TypeError)
+      if (error instanceof TypeError) {
+        return {
+          success: false,
+          error: {
+            code: 'NETWORK_ERROR',
+            message: 'Cannot reach server. Make sure you are on the same Wi-Fi and the backend is running.',
+          },
+        };
+      }
+
       return {
         success: false,
         error: { code: 'NETWORK_ERROR', message: error.message || 'Network request failed' },
@@ -55,8 +113,27 @@ class ApiClient {
     }
   }
 
+  // ─── Health ─────────────────────────────────────────
+  async healthCheck(): Promise<{ ok: boolean; error?: string }> {
+    try {
+      const controller = new AbortController();
+      const timeout = setTimeout(() => controller.abort(), 5000);
+      const response = await fetch(`${API_URL}/health`, {
+        method: 'GET',
+        signal: controller.signal,
+      });
+      clearTimeout(timeout);
+      if (response.ok) return { ok: true };
+      return { ok: false, error: `Server returned ${response.status}` };
+    } catch (e: any) {
+      if (e.name === 'AbortError') return { ok: false, error: 'Connection timed out' };
+      if (e instanceof TypeError) return { ok: false, error: 'Server unreachable' };
+      return { ok: false, error: e.message || 'Connection failed' };
+    }
+  }
+
   // ─── Auth ───────────────────────────────────────────
-  async register(data: { phone?: string; email?: string; password?: string; authProvider: string; authProviderId?: string }) {
+  async register(data: { phone?: string; email?: string; password?: string; authProvider: string; authProviderId?: string; displayName?: string }) {
     return this.request<{ user: any; token: string }>('/api/v1/auth/register', {
       method: 'POST',
       body: JSON.stringify(data),

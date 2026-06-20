@@ -50,8 +50,8 @@
       "output": "single"
     },
     "extra": {
-      "apiUrl": "http://localhost:3001",
-      "wsUrl": "http://localhost:3002"
+      "apiUrl": "http://192.168.31.144:8080",
+      "wsUrl": "http://192.168.31.144:8080"
     }
   }
 }

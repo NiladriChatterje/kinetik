@@ -17,20 +17,44 @@ export const SplashScreen: React.FC<{ navigation: any }> = ({ navigation }) => {
   const [lastName, setLastName] = useState('');
   const [middleName, setMiddleName] = useState('');
   const [otp, setOtp] = useState('');
+  const [error, setError] = useState<string | null>(null);
+  const [loading, setLoading] = useState(false);
   const { login, register, verifyOtp } = useAuthStore();
 
   const handleSubmit = async () => {
-    if (mode === 'login') {
-      const success = await login(phone, password);
-      if (success) navigation.navigate('Identity');
-    } else if (mode === 'register') {
-      const payload: { phone: string; password: string; displayName?: string } = { phone, password };
-      if (firstName) payload.displayName = firstName;
-      const success = await register(payload);
-      if (success) navigation.navigate('Identity');
-    } else if (mode === 'otp') {
-      const success = await verifyOtp(phone, otp);
-      if (success) navigation.navigate('Identity');
+    setError(null);
+
+    // Client-side validation
+    if (!phone || !password) {
+      setError('Please fill in all required fields.');
+      return;
+    }
+    if (mode === 'register' && !firstName) {
+      setError('Please enter your first name.');
+      return;
+    }
+
+    setLoading(true);
+    try {
+      if (mode === 'login') {
+        const result = await login(phone, password);
+        if (result.success) navigation.navigate('Identity');
+        else setError(result.error || 'Invalid phone or password. Please try again.');
+      } else if (mode === 'register') {
+        const payload: { phone: string; password: string; displayName?: string } = { phone, password };
+        if (firstName) payload.displayName = firstName;
+        const result = await register(payload);
+        if (result.success) navigation.navigate('Identity');
+        else setError(result.error || 'Registration failed. Please try again.');
+      } else if (mode === 'otp') {
+        const result = await verifyOtp(phone, otp);
+        if (result.success) navigation.navigate('Identity');
+        else setError(result.error || 'Invalid verification code. Please try again.');
+      }
+    } catch (e: any) {
+      setError(e?.message || 'Something went wrong. Please try again.');
+    } finally {
+      setLoading(false);
     }
   };
 
@@ -61,6 +85,7 @@ export const SplashScreen: React.FC<{ navigation: any }> = ({ navigation }) => {
                 onChangeText={setPhone}
                 placeholder="+1 555-0123"
                 keyboardType="phone-pad"
+                required
               />
 
               <Input
@@ -69,6 +94,7 @@ export const SplashScreen: React.FC<{ navigation: any }> = ({ navigation }) => {
                 onChangeText={setPassword}
                 placeholder="Enter your password"
                 secureTextEntry
+                required
               />
 
               {mode === 'register' && (
@@ -79,6 +105,7 @@ export const SplashScreen: React.FC<{ navigation: any }> = ({ navigation }) => {
                     onChangeText={setFirstName}
                     placeholder="John"
                     autoCapitalize="words"
+                    required
                   />
                   <Input
                     label="Last Name"
@@ -86,6 +113,7 @@ export const SplashScreen: React.FC<{ navigation: any }> = ({ navigation }) => {
                     onChangeText={setLastName}
                     placeholder="Doe"
                     autoCapitalize="words"
+                    required
                   />
                   <Input
                     label="Middle Name (optional)"
@@ -106,6 +134,7 @@ export const SplashScreen: React.FC<{ navigation: any }> = ({ navigation }) => {
                 placeholder="+1 555-0123"
                 keyboardType="phone-pad"
                 editable={false}
+                required
               />
               <Input
                 label="Verification Code"
@@ -114,13 +143,18 @@ export const SplashScreen: React.FC<{ navigation: any }> = ({ navigation }) => {
                 placeholder="000000"
                 keyboardType="numeric"
                 maxLength={6}
+                required
               />
             </>
           )}
 
+          {error && <Text style={styles.errorText}>{error}</Text>}
+
           <Button
             title={mode === 'login' ? 'Sign In' : mode === 'register' ? 'Create Account' : 'Verify Code'}
             onPress={handleSubmit}
+            loading={loading}
+            disabled={loading}
             fullWidth
             size="lg"
           />
@@ -177,6 +211,7 @@ const styles = StyleSheet.create({
   title: { ...typography.h1, color: colors.textPrimary, marginBottom: spacing.sm, textAlign: 'center' },
   tagline: { ...typography.body1, color: colors.textSecondary, textAlign: 'center' },
   form: { width: '100%' },
+  errorText: { ...typography.body2, color: '#FF6B6B', textAlign: 'center', marginBottom: spacing.md },
   switchContainer: { alignItems: 'center', marginTop: spacing.lg },
   switchText: { ...typography.body2, color: colors.textPrimary, marginTop: spacing.sm },
 });

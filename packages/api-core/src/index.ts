@@ -100,25 +100,20 @@ async function bootstrap() {
     await app.listen({ port: PORT, host: '0.0.0.0' });
     console.log(`🚀 Kinetik Core API running on port ${PORT}`);
     console.log(`📝 Environment: ${process.env.NODE_ENV || 'development'}`);
+
+    // Graceful shutdown — must be inside bootstrap() so kafka/redis are in scope
+    const shutdown = async (signal: string) => {
+      console.log(`${signal} received. Shutting down gracefully...`);
+      await kafka.disconnect();
+      await redis.quit();
+      process.exit(0);
+    };
+    process.on('SIGTERM', () => shutdown('SIGTERM'));
+    process.on('SIGINT', () => shutdown('SIGINT'));
   } catch (err) {
     app.log.error(err);
     process.exit(1);
   }
 }
-
-// Graceful shutdown
-process.on('SIGTERM', async () => {
-  console.log('SIGTERM received. Shutting down gracefully...');
-  await kafka.disconnect();
-  await redis.quit();
-  process.exit(0);
-});
-
-process.on('SIGINT', async () => {
-  console.log('SIGINT received. Shutting down gracefully...');
-  await kafka.disconnect();
-  await redis.quit();
-  process.exit(0);
-});
 
 bootstrap();

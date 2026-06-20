@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useCallback } from 'react';
 import { View, Text, StyleSheet, ScrollView } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Button } from '../../components/common/Button';
@@ -9,9 +9,25 @@ import { colors, typography, spacing, radius } from '../../theme';
 
 const GENDER_OPTIONS = ['Male', 'Female', 'Non-binary', 'Other', 'Prefer not to say'] as const;
 
+/** Auto-format DOB input as DD/MM/YYYY */
+function formatDob(raw: string): string {
+  // Strip everything except digits
+  const digits = raw.replace(/\D/g, '');
+  let formatted = '';
+  for (let i = 0; i < digits.length && i < 8; i++) {
+    if (i === 2 || i === 4) formatted += '/';
+    formatted += digits[i];
+  }
+  return formatted;
+}
+
 export const IdentityScreen: React.FC<{ navigation: any }> = ({ navigation }) => {
   const [name, setName] = useState('');
   const [dob, setDob] = useState('');
+
+  const handleDobChange = useCallback((text: string) => {
+    setDob(formatDob(text));
+  }, []);
   const [gender, setGender] = useState<string | null>(null);
   const [pronouns, setPronouns] = useState('');
   const [loading, setLoading] = useState(false);
@@ -37,10 +53,10 @@ export const IdentityScreen: React.FC<{ navigation: any }> = ({ navigation }) =>
         <Text style={styles.title}>Who are you?</Text>
         <Text style={styles.subtitle}>This helps us find your best matches</Text>
 
-        <Input label="Full Name" value={name} onChangeText={setName} placeholder="Alex Johnson" autoCapitalize="words" />
-        <Input label="Date of Birth" value={dob} onChangeText={setDob} placeholder="DD/MM/YYYY" keyboardType="numeric" />
+        <Input label="Full Name" value={name} onChangeText={setName} placeholder="Alex Johnson" autoCapitalize="words" required />
+        <Input label="Date of Birth" value={dob} onChangeText={handleDobChange} placeholder="DD/MM/YYYY" keyboardType="numeric" maxLength={10} required />
 
-        <Text style={styles.fieldLabel}>Gender</Text>
+        <Text style={styles.fieldLabel}>Gender *</Text>
         <View style={styles.genderGrid}>
           {GENDER_OPTIONS.map((g) => (
             <View
@@ -57,7 +73,7 @@ export const IdentityScreen: React.FC<{ navigation: any }> = ({ navigation }) =>
           ))}
         </View>
 
-        <Input label="Pronouns (optional)" value={pronouns} onChangeText={setPronouns} placeholder="they/them, she/her, he/him" />
+        <Input label="Pronouns" value={pronouns} onChangeText={setPronouns} placeholder="they/them, she/her, he/him" required />
       </ScrollView>
 
       <View style={styles.footer}>
@@ -80,8 +96,8 @@ const styles = StyleSheet.create({
     borderRadius: radius.full, backgroundColor: colors.inputBg,
     borderWidth: 1, borderColor: colors.inputBorder,
   },
-  genderChipActive: { borderColor: colors.textPrimary, backgroundColor: colors.surfaceHighlight },
+  genderChipActive: { borderColor: colors.primary, backgroundColor: colors.primary },
   genderChipText: { ...typography.body2, color: colors.textSecondary },
-  genderChipTextActive: { color: colors.textPrimary },
+  genderChipTextActive: { color: colors.textInverse },
   footer: { position: 'absolute', bottom: 40, left: spacing.xxl, right: spacing.xxl },
 });

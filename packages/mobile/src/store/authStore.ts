@@ -11,18 +11,28 @@ interface User {
   onboardingStep?: string;
 }
 
+type ConnectionStatus = 'checking' | 'connected' | 'disconnected';
+
+interface AuthResult {
+  success: boolean;
+  error?: string;
+}
+
 interface AuthState {
   user: User | null;
   token: string | null;
   isAuthenticated: boolean;
   isLoading: boolean;
   onboardingStep: string;
+  connectionStatus: ConnectionStatus;
+  connectionError: string | null;
 
   // Actions
   initialize: () => Promise<void>;
-  login: (phone: string, password: string) => Promise<boolean>;
-  register: (data: { phone?: string; email?: string; password?: string }) => Promise<boolean>;
-  verifyOtp: (phone: string, otp: string) => Promise<boolean>;
+  checkConnection: () => Promise<void>;
+  login: (phone: string, password: string) => Promise<AuthResult>;
+  register: (data: { phone?: string; email?: string; password?: string; displayName?: string }) => Promise<AuthResult>;
+  verifyOtp: (phone: string, otp: string) => Promise<AuthResult>;
   logout: () => void;
   setUser: (user: User) => void;
   setOnboardingStep: (step: string) => void;
@@ -34,6 +44,19 @@ export const useAuthStore = create<AuthState>((set, get) => ({
   isAuthenticated: false,
   isLoading: true,
   onboardingStep: 'splash',
+  connectionStatus: 'checking' as ConnectionStatus,
+  connectionError: null,
+
+  checkConnection: async () => {
+    const prev = get().connectionStatus;
+    // On first run show 'checking'; on retry keep current status to avoid banner flicker
+    if (prev === 'checking' || prev === 'connected') set({ connectionStatus: 'checking', connectionError: null });
+    const result = await api.healthCheck();
+    set({
+      connectionStatus: result.ok ? 'connected' : 'disconnected',
+      connectionError: result.ok ? null : result.error || 'Server unreachable',
+    });
+  },
 
   initialize: async () => {
     try {
@@ -70,9 +93,9 @@ export const useAuthStore = create<AuthState>((set, get) => ({
         token: response.data.token,
         isAuthenticated: true,
       });
-      return true;
+      return { success: true };
     }
-    return false;
+    return { success: false, error: response.error?.message || 'Invalid phone or password.' };
   },
 
   register: async (data) => {
@@ -84,9 +107,9 @@ export const useAuthStore = create<AuthState>((set, get) => ({
         token: response.data.token,
         isAuthenticated: true,
       });
-      return true;
+      return { success: true };
     }
-    return false;
+    return { success: false, error: response.error?.message || 'Registration failed.' };
   },
 
   verifyOtp: async (phone, otp) => {
@@ -98,9 +121,9 @@ export const useAuthStore = create<AuthState>((set, get) => ({
         token: response.data.token,
         isAuthenticated: true,
       });
-      return true;
+      return { success: true };
     }
-    return false;
+    return { success: false, error: response.error?.message || 'Invalid verification code.' };
   },
 
   logout: () => {

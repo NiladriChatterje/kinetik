@@ -25,6 +25,7 @@ interface InputProps {
   style?: ViewStyle;
   editable?: boolean;
   maxLength?: number;
+  required?: boolean;
 }
 
 /**
@@ -52,6 +53,7 @@ export const Input: React.FC<InputProps> = React.memo(({
   style,
   editable = true,
   maxLength,
+  required,
 }) => {
   const [showPassword, setShowPassword] = useState(false);
   const inputRef = useRef<TextInput>(null);
@@ -132,7 +134,7 @@ export const Input: React.FC<InputProps> = React.memo(({
 
   return (
     <View style={[styles.container, style]} collapsable={false}>
-      {label && <Text style={styles.label}>{label}</Text>}
+      {label && <Text style={styles.label}>{label}{required ? <Text style={styles.required}> *</Text> : null}</Text>}
       <View
         ref={containerRef}
         style={[
@@ -181,6 +183,9 @@ const styles = StyleSheet.create({
     ...typography.label,
     color: colors.textSecondary,
     marginBottom: spacing.sm,
+  },
+  required: {
+    color: colors.textPrimary,
   },
   inputContainer: {
     flexDirection: 'row',

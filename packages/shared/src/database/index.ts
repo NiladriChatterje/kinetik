@@ -25,14 +25,39 @@ export async function query<T = any>(
 ): Promise<QueryResult<T>> {
   const client = getDatabasePool();
   const start = Date.now();
-  const result = await client.query<T>(text, params);
-  const duration = Date.now() - start;
+  try {
+    const result = await client.query<T>(text, params);
+    const duration = Date.now() - start;
 
-  if (duration > 1000) {
-    console.warn(`Slow query (${duration}ms):`, text.slice(0, 100));
+    if (duration > 1000) {
+      console.warn(`[DB] Slow query (${duration}ms):`, text.slice(0, 100));
+    }
+
+    return result;
+  } catch (error: any) {
+    const duration = Date.now() - start;
+    const errorMessage = error?.message || String(error);
+    const errorCode = error?.code || 'UNKNOWN';  // PostgreSQL error codes like '23505' (unique violation), '42P01' (undefined table), etc.
+    const detail = error?.detail || '';
+
+    console.error(
+      `[DB] Query failed after ${duration}ms | code=${errorCode} | message=${errorMessage}` +
+        (detail ? ` | detail=${detail}` : ''),
+    );
+    console.error(`[DB] SQL: ${text.slice(0, 500)}${text.length > 500 ? '...' : ''}`);
+    if (params && params.length > 0) {
+      // Log param types and lengths (not raw values, to avoid leaking PII like passwords)
+      const paramSummary = params.map((p, i) => {
+        if (p === null || p === undefined) return `$${i + 1}=null`;
+        if (typeof p === 'string') return `$${i + 1}=string(${p.length})`;
+        if (Buffer.isBuffer(p)) return `$${i + 1}=buffer(${p.length})`;
+        return `$${i + 1}=${typeof p}`;
+      });
+      console.error(`[DB] Params: [${paramSummary.join(', ')}]`);
+    }
+
+    throw error;
   }
-
-  return result;
 }
 
 export async function transaction<T>(
