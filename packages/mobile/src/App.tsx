@@ -1,8 +1,10 @@
 import React, { useEffect, useRef } from 'react';
-import { LogBox, View, Text, StyleSheet, Animated, TouchableOpacity } from 'react-native';
+import { LogBox, View, Text, StyleSheet, Animated, TouchableOpacity, Platform } from 'react-native';
 import { StatusBar } from 'expo-status-bar';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
+import * as NavigationBar from 'expo-navigation-bar';
+import Toast, { BaseToastProps } from 'react-native-toast-message';
 import { RootNavigator } from './navigation/RootNavigator';
 import { useAuthStore } from './store/authStore';
 import { colors, typography, spacing, radius, animation } from './theme';
@@ -15,6 +17,88 @@ LogBox.ignoreLogs([
   'InteractionManager.runAfterInteractions',
 ]);
 
+// ─── Animated Toast Wrapper ───────────────────────────────
+
+const AnimatedToastWrapper: React.FC<{ children: React.ReactNode }> = ({ children }) => {
+  const slideAnim = useRef(new Animated.Value(1)).current;
+
+  useEffect(() => {
+    Animated.spring(slideAnim, {
+      toValue: 0,
+      damping: 20,
+      stiffness: 200,
+      useNativeDriver: true,
+    }).start();
+  }, []);
+
+  return (
+    <Animated.View
+      style={{
+        transform: [
+          {
+            translateX: slideAnim.interpolate({
+              inputRange: [0, 1],
+              outputRange: [0, 350],
+            }),
+          },
+        ],
+        opacity: slideAnim.interpolate({
+          inputRange: [0, 1],
+          outputRange: [1, 0],
+        }),
+      }}
+    >
+      {children}
+    </Animated.View>
+  );
+};
+
+// ─── Toast Card ───────────────────────────────────────────
+
+const cardStyle = {
+  alignSelf: 'flex-end' as const,
+  marginRight: 16,
+  marginTop: 60,
+  backgroundColor: '#1a1a1a',
+  borderRadius: 12,
+  paddingHorizontal: 18,
+  paddingVertical: 14,
+  maxWidth: 300,
+  ...Platform.select({
+    ios: {
+      shadowColor: '#000',
+      shadowOffset: { width: 0, height: 8 } as const,
+      shadowOpacity: 0.35,
+      shadowRadius: 16,
+    },
+    android: { elevation: 12 },
+  }),
+};
+
+const ToastCard: React.FC<BaseToastProps & { accentColor: string }> = ({ text1, text2, hide, accentColor }) => (
+  <TouchableOpacity activeOpacity={0.9} onPress={hide} style={cardStyle}>
+    <View style={{ flexDirection: 'row', alignItems: 'center' }}>
+      <Text style={{ color: accentColor, fontWeight: '600', fontSize: 12, letterSpacing: 0.3 }}>{text1}</Text>
+      {text2 ? <Text style={{ color: '#e0e0e0', fontSize: 11, marginLeft: 6, flexShrink: 1 }} numberOfLines={1}>{text2}</Text> : null}
+    </View>
+  </TouchableOpacity>
+);
+
+// ─── Custom Toast Config ──────────────────────────────────
+
+const toastConfig = {
+  error: (props: BaseToastProps) => (
+    <AnimatedToastWrapper>
+      <ToastCard {...props} accentColor="#FF6B6B" />
+    </AnimatedToastWrapper>
+  ),
+  success: (props: BaseToastProps) => (
+    <AnimatedToastWrapper>
+      <ToastCard {...props} accentColor="#4CAF50" />
+    </AnimatedToastWrapper>
+  ),
+};
+
 export default function App() {
   const initialize = useAuthStore((s) => s.initialize);
   const checkConnection = useAuthStore((s) => s.checkConnection);
@@ -24,10 +108,15 @@ export default function App() {
   const bannerVisible = useRef(false);
   const [isRetrying, setIsRetrying] = React.useState(false);
 
-  // Initial health check
+  // Initialize auth state (checks for stored token), but don't pre-call any API until credentials are provided
   useEffect(() => {
     initialize();
-    checkConnection();
+
+    // Hide Android system navigation bar for a more immersive experience
+    if (Platform.OS === 'android') {
+      NavigationBar.setVisibilityAsync('hidden');
+      NavigationBar.setBehaviorAsync('overlay-swipe');
+    }
   }, []);
 
   // Animate banner in/out
@@ -74,6 +163,8 @@ export default function App() {
             </TouchableOpacity>
           </View>
         </Animated.View>
+        {/* Floating toast messages — positioned at top-right with dark card style */}
+        <Toast position="top" config={toastConfig} topOffset={0} visibilityTime={4000} />
       </SafeAreaProvider>
     </View>
   );

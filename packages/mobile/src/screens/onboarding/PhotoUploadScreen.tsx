@@ -4,11 +4,13 @@ import * as ImagePicker from 'expo-image-picker';
 import { Ionicons } from '@expo/vector-icons';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Button } from '../../components/common/Button';
+import { useToast } from '../../hooks/useToast';
 import { api } from '../../services/api';
 import { colors, typography, spacing, radius } from '../../theme';
 
 export const PhotoUploadScreen: React.FC<{ navigation: any }> = ({ navigation }) => {
   const [photos, setPhotos] = useState<string[]>([]);
+  const toast = useToast();
 
   const pickPhoto = async () => {
     const result = await ImagePicker.launchImageLibraryAsync({
@@ -28,6 +30,7 @@ export const PhotoUploadScreen: React.FC<{ navigation: any }> = ({ navigation })
   };
 
   const handleContinue = async () => {
+    toast.showSuccess('Photos Saved', 'Your photos have been uploaded.');
     await api.updateOnboardingStep('photos');
     navigation.navigate('PoseVerification');
   };

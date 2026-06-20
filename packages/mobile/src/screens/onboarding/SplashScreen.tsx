@@ -5,6 +5,7 @@ import {
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useAuthStore } from '../../store/authStore';
+import { useToast } from '../../hooks/useToast';
 import { Button } from '../../components/common/Button';
 import { Input } from '../../components/common/Input';
 import { colors, typography, spacing } from '../../theme';
@@ -17,20 +18,18 @@ export const SplashScreen: React.FC<{ navigation: any }> = ({ navigation }) => {
   const [lastName, setLastName] = useState('');
   const [middleName, setMiddleName] = useState('');
   const [otp, setOtp] = useState('');
-  const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
   const { login, register, verifyOtp } = useAuthStore();
+  const toast = useToast();
 
   const handleSubmit = async () => {
-    setError(null);
-
     // Client-side validation
     if (!phone || !password) {
-      setError('Please fill in all required fields.');
+      toast.showError('Validation Error', 'Please fill in all required fields.');
       return;
     }
     if (mode === 'register' && !firstName) {
-      setError('Please enter your first name.');
+      toast.showError('Validation Error', 'Please enter your first name.');
       return;
     }
 
@@ -38,21 +37,27 @@ export const SplashScreen: React.FC<{ navigation: any }> = ({ navigation }) => {
     try {
       if (mode === 'login') {
         const result = await login(phone, password);
-        if (result.success) navigation.navigate('Identity');
-        else setError(result.error || 'Invalid phone or password. Please try again.');
+        if (result.success) {
+          toast.showSuccess('Welcome back!', 'You have signed in successfully.');
+          navigation.navigate('Identity');
+        } else toast.showError('Login Failed', result.error || 'Please check your credentials and try again.');
       } else if (mode === 'register') {
         const payload: { phone: string; password: string; displayName?: string } = { phone, password };
         if (firstName) payload.displayName = firstName;
         const result = await register(payload);
-        if (result.success) navigation.navigate('Identity');
-        else setError(result.error || 'Registration failed. Please try again.');
+        if (result.success) {
+          toast.showSuccess('Account Created', 'Welcome to Kinetik!');
+          navigation.navigate('Identity');
+        } else toast.showError('Registration Failed', result.error || 'Could not create your account. Please try again.');
       } else if (mode === 'otp') {
         const result = await verifyOtp(phone, otp);
-        if (result.success) navigation.navigate('Identity');
-        else setError(result.error || 'Invalid verification code. Please try again.');
+        if (result.success) {
+          toast.showSuccess('Verified!', 'You have signed in successfully.');
+          navigation.navigate('Identity');
+        } else toast.showError('Verification Failed', result.error || 'Invalid verification code. Please try again.');
       }
     } catch (e: any) {
-      setError(e?.message || 'Something went wrong. Please try again.');
+      toast.showError('Network Error', e?.message || 'Something went wrong. Please try again.');
     } finally {
       setLoading(false);
     }
@@ -148,8 +153,6 @@ export const SplashScreen: React.FC<{ navigation: any }> = ({ navigation }) => {
             </>
           )}
 
-          {error && <Text style={styles.errorText}>{error}</Text>}
-
           <Button
             title={mode === 'login' ? 'Sign In' : mode === 'register' ? 'Create Account' : 'Verify Code'}
             onPress={handleSubmit}
@@ -211,7 +214,6 @@ const styles = StyleSheet.create({
   title: { ...typography.h1, color: colors.textPrimary, marginBottom: spacing.sm, textAlign: 'center' },
   tagline: { ...typography.body1, color: colors.textSecondary, textAlign: 'center' },
   form: { width: '100%' },
-  errorText: { ...typography.body2, color: '#FF6B6B', textAlign: 'center', marginBottom: spacing.md },
   switchContainer: { alignItems: 'center', marginTop: spacing.lg },
   switchText: { ...typography.body2, color: colors.textPrimary, marginTop: spacing.sm },
 });

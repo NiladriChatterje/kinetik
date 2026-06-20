@@ -119,7 +119,7 @@ export async function authRoutes(app: FastifyInstance) {
       if (!user) {
         return reply.status(401).send({
           success: false,
-          error: { code: ERROR_CODES.UNAUTHORIZED, message: 'Invalid credentials' },
+          error: { code: ERROR_CODES.USER_NOT_FOUND, message: 'No account found with this phone number' },
         });
       }
 
@@ -135,7 +135,7 @@ export async function authRoutes(app: FastifyInstance) {
       if (!validPassword) {
         return reply.status(401).send({
           success: false,
-          error: { code: ERROR_CODES.UNAUTHORIZED, message: 'Invalid credentials' },
+          error: { code: ERROR_CODES.INVALID_PASSWORD, message: 'Incorrect password. Please try again.' },
         });
       }
 

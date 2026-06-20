@@ -1,29 +1,32 @@
 import React, { useState } from 'react';
-import { View, Text, StyleSheet, Alert } from 'react-native';
+import { View, Text, StyleSheet } from 'react-native';
 import * as Location from 'expo-location';
 import { Ionicons } from '@expo/vector-icons';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Button } from '../../components/common/Button';
 import { Card } from '../../components/common/Card';
+import { useToast } from '../../hooks/useToast';
 import { api } from '../../services/api';
 import { colors, typography, spacing, radius } from '../../theme';
 
 export const LocationPermissionScreen: React.FC<{ navigation: any }> = ({ navigation }) => {
   const [loading, setLoading] = useState(false);
   const [permissionStatus, setPermissionStatus] = useState<'pending' | 'granted' | 'denied'>('pending');
+  const toast = useToast();
 
   const requestLocation = async () => {
     setLoading(true);
     const { status } = await Location.requestForegroundPermissionsAsync();
     if (status === 'granted') {
       setPermissionStatus('granted');
+      toast.showSuccess('Location Enabled', 'Your location has been set up for matching.');
       const loc = await Location.getCurrentPositionAsync({});
       await api.updateLocation(loc.coords.latitude, loc.coords.longitude);
       await api.updateOnboardingStep('location');
       setTimeout(() => navigation.navigate('Photos'), 800);
     } else {
       setPermissionStatus('denied');
-      Alert.alert('Location Required', 'Kinetik needs location access to find matches near you.');
+      toast.showError('Location Required', 'Kinetik needs location access to find matches near you.');
     }
     setLoading(false);
   };

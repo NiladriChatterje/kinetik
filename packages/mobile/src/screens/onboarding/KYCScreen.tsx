@@ -4,6 +4,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { Button } from '../../components/common/Button';
 import { useAuthStore } from '../../store/authStore';
+import { useToast } from '../../hooks/useToast';
 import { api } from '../../services/api';
 import { colors, typography, spacing, radius } from '../../theme';
 
@@ -16,9 +17,11 @@ const DOC_TYPES = [
 export const KYCScreen: React.FC<{ navigation: any }> = ({ navigation }) => {
   const [docType, setDocType] = useState<string | null>(null);
   const [uploaded, setUploaded] = useState(false);
+  const toast = useToast();
 
   const handleFinish = async () => {
     await api.updateOnboardingStep('complete', { kycCompleted: true });
+    toast.showSuccess('Welcome to Kinetik!', 'Your profile is ready. Start matching!');
     // Update local store so RootStack registers Main screen
     useAuthStore.getState().setOnboardingStep('complete');
     // Navigate to Main via the RootStack (parent navigator)

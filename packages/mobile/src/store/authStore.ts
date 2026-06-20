@@ -64,18 +64,7 @@ export const useAuthStore = create<AuthState>((set, get) => ({
       const token = await SecureStore.getItemAsync('auth_token');
       if (token) {
         api.setToken(token);
-        set({ token, isAuthenticated: true, isLoading: true });
-        const response = await api.getProfile();
-        if (response.success && response.data) {
-          set({
-            user: response.data as User,
-            isAuthenticated: true,
-            isLoading: false,
-            onboardingStep: (response.data as any).onboardingStep || 'splash',
-          });
-        } else {
-          set({ isAuthenticated: false, isLoading: false, token: null });
-        }
+        set({ token, isLoading: false });
       } else {
         set({ isLoading: false });
       }

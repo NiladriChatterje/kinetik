@@ -3,6 +3,7 @@ import { View, Text, StyleSheet } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { Button } from '../../components/common/Button';
+import { useToast } from '../../hooks/useToast';
 import { api } from '../../services/api';
 import { colors, typography, spacing, radius } from '../../theme';
 
@@ -11,12 +12,14 @@ const POSES = ['Turn left', 'Smile', 'Blink', 'Turn right', 'Look up'];
 export const PoseVerificationScreen: React.FC<{ navigation: any }> = ({ navigation }) => {
   const [currentPose, setCurrentPose] = useState(0);
   const [verified, setVerified] = useState(false);
+  const toast = useToast();
 
   const handlePoseComplete = () => {
     if (currentPose < POSES.length - 1) {
       setCurrentPose((p) => p + 1);
     } else {
       setVerified(true);
+      toast.showSuccess('Identity Verified!', 'Liveness check passed successfully.');
     }
   };
 

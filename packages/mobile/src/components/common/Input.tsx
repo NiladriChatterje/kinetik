@@ -26,6 +26,9 @@ interface InputProps {
   editable?: boolean;
   maxLength?: number;
   required?: boolean;
+  /** When true, syncs the parent's controlled value to the native input even while focused.
+   *  Use for fields where the parent reformats the text (e.g. auto-formatted DOB). */
+  syncOnChange?: boolean;
 }
 
 /**
@@ -54,6 +57,7 @@ export const Input: React.FC<InputProps> = React.memo(({
   editable = true,
   maxLength,
   required,
+  syncOnChange,
 }) => {
   const [showPassword, setShowPassword] = useState(false);
   const inputRef = useRef<TextInput>(null);
@@ -61,6 +65,7 @@ export const Input: React.FC<InputProps> = React.memo(({
   const isFocusedRef = useRef(false);
   const onChangeTextRef = useRef(onChangeText);
   const latestValueRef = useRef(value);
+  const valueRef = useRef(value);
 
   // Keep callback ref current
   useEffect(() => {
@@ -70,6 +75,7 @@ export const Input: React.FC<InputProps> = React.memo(({
   // Track latest controlled value for blur-sync
   useEffect(() => {
     latestValueRef.current = value;
+    valueRef.current = value;
   }, [value]);
 
   // Set initial text before paint
@@ -79,12 +85,13 @@ export const Input: React.FC<InputProps> = React.memo(({
     }
   }, []);
 
-  // Sync parent value to native input when NOT focused (form reset, prefill)
+  // Sync parent value to native input when NOT focused (form reset, prefill),
+  // or always when syncOnChange is true (for auto-formatted fields like DOB)
   useEffect(() => {
-    if (inputRef.current && !isFocusedRef.current) {
+    if (inputRef.current && (!isFocusedRef.current || syncOnChange)) {
       inputRef.current.setNativeProps({ text: value });
     }
-  }, [value]);
+  }, [value, syncOnChange]);
 
   const handleFocus = useCallback(() => {
     isFocusedRef.current = true;
@@ -115,8 +122,9 @@ export const Input: React.FC<InputProps> = React.memo(({
       },
     });
     // Ensure native text matches controlled value on blur
+    // Use the parent's formatted value (not raw input) for fields with syncOnChange
     if (inputRef.current) {
-      inputRef.current.setNativeProps({ text: latestValueRef.current });
+      inputRef.current.setNativeProps({ text: syncOnChange ? valueRef.current : latestValueRef.current });
     }
   }, []);
 
