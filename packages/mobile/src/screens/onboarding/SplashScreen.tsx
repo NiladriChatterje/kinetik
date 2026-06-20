@@ -1,9 +1,10 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   View, Text, StyleSheet, TouchableOpacity,
-  ScrollView,
+  ScrollView, Platform,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
+import { useOtpVerify } from 'react-native-otp-verify';
 import { useAuthStore } from '../../store/authStore';
 import { useToast } from '../../hooks/useToast';
 import { Button } from '../../components/common/Button';
@@ -21,6 +22,22 @@ export const SplashScreen: React.FC<{ navigation: any }> = ({ navigation }) => {
   const [loading, setLoading] = useState(false);
   const { login, register, verifyOtp } = useAuthStore();
   const toast = useToast();
+  const { otp: detectedOtp, hash } = useOtpVerify({ numberOfDigits: 6 });
+
+  // Auto-fill OTP when detected from SMS (Android SMS Retriever API)
+  useEffect(() => {
+    if (detectedOtp && detectedOtp !== otp) {
+      setOtp(detectedOtp);
+      toast.showSuccess('OTP Detected', 'Code has been auto-filled.');
+    }
+  }, [detectedOtp]);
+
+  // Log app hash for backend SMS template configuration
+  useEffect(() => {
+    if (hash) {
+      console.log('[OTP] App Hash:', hash);
+    }
+  }, [hash]);
 
   const handleSubmit = async () => {
     // Client-side validation
@@ -149,6 +166,7 @@ export const SplashScreen: React.FC<{ navigation: any }> = ({ navigation }) => {
                 keyboardType="numeric"
                 maxLength={6}
                 required
+                textContentType={Platform.OS === 'ios' ? 'oneTimeCode' : undefined}
               />
             </>
           )}

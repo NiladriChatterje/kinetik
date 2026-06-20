@@ -55,31 +55,56 @@ const AnimatedToastWrapper: React.FC<{ children: React.ReactNode }> = ({ childre
 
 // ─── Toast Card ───────────────────────────────────────────
 
-const cardStyle = {
-  alignSelf: 'flex-end' as const,
-  marginRight: 16,
-  marginTop: 60,
-  backgroundColor: '#1a1a1a',
-  borderRadius: 12,
-  paddingHorizontal: 18,
-  paddingVertical: 14,
-  maxWidth: 300,
-  ...Platform.select({
-    ios: {
-      shadowColor: '#000',
-      shadowOffset: { width: 0, height: 8 } as const,
-      shadowOpacity: 0.35,
-      shadowRadius: 16,
-    },
-    android: { elevation: 12 },
-  }),
+const ICON_MAP = {
+  error: 'close-circle-outline' as const,
+  success: 'checkmark-circle-outline' as const,
 };
 
-const ToastCard: React.FC<BaseToastProps & { accentColor: string }> = ({ text1, text2, hide, accentColor }) => (
-  <TouchableOpacity activeOpacity={0.9} onPress={hide} style={cardStyle}>
-    <View style={{ flexDirection: 'row', alignItems: 'center' }}>
-      <Text style={{ color: accentColor, fontWeight: '600', fontSize: 12, letterSpacing: 0.3 }}>{text1}</Text>
-      {text2 ? <Text style={{ color: '#e0e0e0', fontSize: 11, marginLeft: 6, flexShrink: 1 }} numberOfLines={1}>{text2}</Text> : null}
+const ACCENT_MAP = {
+  error: '#FF6B6B' as const,
+  success: '#4CAF50' as const,
+};
+
+const ToastCard: React.FC<BaseToastProps & { accentColor: string; iconName: keyof typeof ICON_MAP }> = ({ text1, text2, hide, accentColor, iconName }) => (
+  <TouchableOpacity
+    activeOpacity={0.85}
+    onPress={hide}
+    style={{
+      flexDirection: 'row',
+      alignItems: 'center',
+      backgroundColor: '#1c1c1e',
+      borderRadius: 10,
+      maxWidth: 320,
+      ...Platform.select({
+        ios: {
+          shadowColor: '#000',
+          shadowOffset: { width: 0, height: 10 } as const,
+          shadowOpacity: 0.4,
+          shadowRadius: 20,
+        },
+        android: { elevation: 16 },
+      }),
+    }}
+  >
+    {/* Accent bar on the left */}
+    <View style={{ width: 4, backgroundColor: accentColor, alignSelf: 'stretch', borderTopLeftRadius: 10, borderBottomLeftRadius: 10 }} />
+
+    {/* Icon */}
+    <View style={{ paddingLeft: 14, paddingRight: 4 }}>
+      <Ionicons name={ICON_MAP[iconName]} size={18} color={accentColor} />
+    </View>
+
+    {/* Text content */}
+    <View style={{ flexDirection: 'row', alignItems: 'center', paddingVertical: 12, paddingRight: 16, flex: 1 }}>
+      <Text style={{ color: '#ffffff', fontWeight: '600', fontSize: 12, letterSpacing: 0.2 }}>{text1}</Text>
+      {text2 ? (
+        <>
+          <View style={{ width: 4, height: 4, borderRadius: 2, backgroundColor: '#555', marginHorizontal: 6 }} />
+          <Text style={{ color: '#b0b0b0', fontSize: 11, flexShrink: 1 }} numberOfLines={1}>
+            {text2}
+          </Text>
+        </>
+      ) : null}
     </View>
   </TouchableOpacity>
 );
@@ -89,12 +114,12 @@ const ToastCard: React.FC<BaseToastProps & { accentColor: string }> = ({ text1, 
 const toastConfig = {
   error: (props: BaseToastProps) => (
     <AnimatedToastWrapper>
-      <ToastCard {...props} accentColor="#FF6B6B" />
+      <ToastCard {...props} accentColor={ACCENT_MAP.error} iconName="error" />
     </AnimatedToastWrapper>
   ),
   success: (props: BaseToastProps) => (
     <AnimatedToastWrapper>
-      <ToastCard {...props} accentColor="#4CAF50" />
+      <ToastCard {...props} accentColor={ACCENT_MAP.success} iconName="success" />
     </AnimatedToastWrapper>
   ),
 };
@@ -163,8 +188,14 @@ export default function App() {
             </TouchableOpacity>
           </View>
         </Animated.View>
-        {/* Floating toast messages — positioned at top-right with dark card style */}
-        <Toast position="top" config={toastConfig} topOffset={0} visibilityTime={4000} />
+        {/* Floating toast messages — pinned to top-right corner */}
+        <Toast
+          position="top"
+          config={toastConfig}
+          topOffset={0}
+          visibilityTime={4000}
+          contentContainerStyle={{ alignItems: 'flex-end', paddingRight: 16, paddingTop: 60 }}
+        />
       </SafeAreaProvider>
     </View>
   );

@@ -29,6 +29,8 @@ interface InputProps {
   /** When true, syncs the parent's controlled value to the native input even while focused.
    *  Use for fields where the parent reformats the text (e.g. auto-formatted DOB). */
   syncOnChange?: boolean;
+  /** iOS only: Sets the autocorrection and autocomplete type (e.g. 'oneTimeCode' for OTP auto-fill). */
+  textContentType?: string;
 }
 
 /**
@@ -58,6 +60,7 @@ export const Input: React.FC<InputProps> = React.memo(({
   maxLength,
   required,
   syncOnChange,
+  textContentType,
 }) => {
   const [showPassword, setShowPassword] = useState(false);
   const inputRef = useRef<TextInput>(null);
@@ -165,6 +168,7 @@ export const Input: React.FC<InputProps> = React.memo(({
           editable={editable}
           maxLength={maxLength}
           style={inputStyle}
+          textContentType={textContentType}
           onFocus={handleFocus}
           onBlur={handleBlur}
         />
