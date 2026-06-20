@@ -35,7 +35,7 @@ export const PriorityWeightingScreen: React.FC<{ navigation: any }> = ({ navigat
         {WEIGHTS.map((w) => (
           <Card key={w.key} style={styles.weightCard}>
             <View style={styles.weightHeader}>
-              <Ionicons name={w.icon} size={28} color={weights[w.key] > 0.7 ? colors.primary : colors.textSecondary} />
+              <Ionicons name={w.icon} size={28} color={weights[w.key] > 0.7 ? colors.textPrimary : colors.textSecondary} />
               <View style={{ flex: 1 }}>
                 <Text style={styles.weightLabel}>{w.label}</Text>
                 <Text style={styles.weightDesc}>{w.desc}</Text>
@@ -44,7 +44,7 @@ export const PriorityWeightingScreen: React.FC<{ navigation: any }> = ({ navigat
                 {Math.round(weights[w.key] * 100)}%
               </Text>
             </View>
-            <Slider style={{ width: '100%', height: 40 }} minimumValue={0} maximumValue={1} value={weights[w.key]} onValueChange={(v) => setWeights((p) => ({ ...p, [w.key]: v }))} minimumTrackTintColor={colors.secondary} maximumTrackTintColor={colors.surfaceHighlight} thumbTintColor={colors.secondary} />
+            <Slider style={{ width: '100%', height: 40 }} minimumValue={0} maximumValue={1} value={weights[w.key]} onValueChange={(v) => setWeights((p) => ({ ...p, [w.key]: v }))} minimumTrackTintColor={colors.textSecondary} maximumTrackTintColor={colors.surfaceHighlight} thumbTintColor={colors.textSecondary} />
           </Card>
         ))}
       </ScrollView>
@@ -59,7 +59,7 @@ export const PriorityWeightingScreen: React.FC<{ navigation: any }> = ({ navigat
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: colors.background },
   content: { padding: spacing.xxl, paddingBottom: 100 },
-  step: { ...typography.label, color: colors.primary, marginBottom: spacing.sm },
+  step: { ...typography.label, color: colors.textPrimary, marginBottom: spacing.sm },
   title: { ...typography.h1, color: colors.textPrimary, marginBottom: spacing.sm },
   subtitle: { ...typography.body1, color: colors.textSecondary, marginBottom: spacing.xxl },
   weightCard: { marginBottom: spacing.md },
@@ -67,6 +67,6 @@ const styles = StyleSheet.create({
   weightLabel: { ...typography.body1, color: colors.textPrimary },
   weightDesc: { ...typography.caption, color: colors.textMuted },
   weightScore: { ...typography.h3, color: colors.textSecondary },
-  weightScoreHigh: { color: colors.primary },
+  weightScoreHigh: { color: colors.textPrimary },
   footer: { position: 'absolute', bottom: 40, left: spacing.xxl, right: spacing.xxl },
 });

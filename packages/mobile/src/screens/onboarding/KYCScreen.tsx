@@ -40,7 +40,7 @@ export const KYCScreen: React.FC<{ navigation: any }> = ({ navigation }) => {
               style={[styles.docOption, docType === doc.id && styles.docOptionActive]}
               onPress={() => setDocType(doc.id)}
             >
-              <Ionicons name={doc.icon} size={28} color={docType === doc.id ? colors.primary : colors.textSecondary} />
+              <Ionicons name={doc.icon} size={28} color={docType === doc.id ? colors.textPrimary : colors.textSecondary} />
               <Text style={[styles.docName, docType === doc.id && styles.docNameActive]}>{doc.name}</Text>
             </TouchableOpacity>
           ))}
@@ -48,8 +48,8 @@ export const KYCScreen: React.FC<{ navigation: any }> = ({ navigation }) => {
 
         {docType && (
           <TouchableOpacity style={styles.uploadArea} onPress={() => setUploaded(true)}>
-            <Ionicons name={uploaded ? 'checkmark-circle-outline' : 'document-outline'} size={32} color={uploaded ? colors.success : colors.textSecondary} />
-            <Text style={[styles.uploadText, uploaded && { color: colors.success }]}>
+            <Ionicons name={uploaded ? 'checkmark-circle-outline' : 'document-outline'} size={32} color={uploaded ? colors.textPrimary : colors.textSecondary} />
+            <Text style={[styles.uploadText, uploaded && { color: colors.textPrimary }]}>
               {uploaded ? 'Document uploaded' : 'Tap to upload document'}
             </Text>
           </TouchableOpacity>
@@ -72,15 +72,15 @@ export const KYCScreen: React.FC<{ navigation: any }> = ({ navigation }) => {
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: colors.background },
   content: { flex: 1, padding: spacing.xxl },
-  step: { ...typography.label, color: colors.primary, marginBottom: spacing.sm },
+  step: { ...typography.label, color: colors.textPrimary, marginBottom: spacing.sm },
   title: { ...typography.h1, color: colors.textPrimary, marginBottom: spacing.sm },
   subtitle: { ...typography.body1, color: colors.textSecondary, marginBottom: spacing.xxl },
   fieldLabel: { ...typography.label, color: colors.textSecondary, marginBottom: spacing.sm },
   docOptions: { flexDirection: 'row', gap: spacing.md, marginBottom: spacing.xxl },
   docOption: { flex: 1, padding: spacing.lg, backgroundColor: colors.surfaceHighlight, borderRadius: radius.md, alignItems: 'center', borderWidth: 1, borderColor: colors.cardBorder },
-  docOptionActive: { borderColor: colors.primary },
+  docOptionActive: { borderColor: colors.textPrimary },
   docName: { ...typography.caption, color: colors.textSecondary, marginTop: spacing.sm },
-  docNameActive: { color: colors.primary },
+  docNameActive: { color: colors.textPrimary },
   uploadArea: { padding: spacing.xxl, backgroundColor: colors.surfaceHighlight, borderRadius: radius.md, alignItems: 'center', borderWidth: 1, borderColor: colors.cardBorder, borderStyle: 'dashed', marginBottom: spacing.xxl },
   uploadText: { ...typography.body1, color: colors.textSecondary, marginTop: spacing.sm },
   securityNote: { flexDirection: 'row', gap: spacing.sm, alignItems: 'center' },

@@ -29,8 +29,8 @@ export const FilterConstraintsScreen: React.FC<{ navigation: any }> = ({ navigat
           <Text style={styles.sliderValue}>{ageMin} - {ageMax} years</Text>
           <View style={styles.sliderRow}>
             <Text style={styles.sliderMin}>18</Text>
-            <Slider style={styles.slider} minimumValue={18} maximumValue={80} value={ageMin} onValueChange={setAgeMin} minimumTrackTintColor={colors.primary} maximumTrackTintColor={colors.surfaceHighlight} thumbTintColor={colors.primary} />
-            <Slider style={styles.slider} minimumValue={18} maximumValue={80} value={ageMax} onValueChange={setAgeMax} minimumTrackTintColor={colors.primary} maximumTrackTintColor={colors.surfaceHighlight} thumbTintColor={colors.primary} />
+            <Slider style={styles.slider} minimumValue={18} maximumValue={80} value={ageMin} onValueChange={setAgeMin} minimumTrackTintColor={colors.textPrimary} maximumTrackTintColor={colors.surfaceHighlight} thumbTintColor={colors.textPrimary} />
+            <Slider style={styles.slider} minimumValue={18} maximumValue={80} value={ageMax} onValueChange={setAgeMax} minimumTrackTintColor={colors.textPrimary} maximumTrackTintColor={colors.surfaceHighlight} thumbTintColor={colors.textPrimary} />
             <Text style={styles.sliderMax}>80</Text>
           </View>
         </Card>
@@ -38,7 +38,7 @@ export const FilterConstraintsScreen: React.FC<{ navigation: any }> = ({ navigat
         <Card style={styles.sliderCard}>
           <Text style={styles.sliderLabel}>Maximum Distance</Text>
           <Text style={styles.sliderValue}>{maxDistance} km</Text>
-          <Slider style={styles.slider} minimumValue={1} maximumValue={300} value={maxDistance} onValueChange={setMaxDistance} minimumTrackTintColor={colors.secondary} maximumTrackTintColor={colors.surfaceHighlight} thumbTintColor={colors.secondary} />
+          <Slider style={styles.slider} minimumValue={1} maximumValue={300} value={maxDistance} onValueChange={setMaxDistance} minimumTrackTintColor={colors.textSecondary} maximumTrackTintColor={colors.surfaceHighlight} thumbTintColor={colors.textSecondary} />
           <View style={styles.distanceLabels}>
             <Text style={styles.distanceLabel}>1 km</Text>
             <Text style={styles.distanceLabel}>300 km</Text>
@@ -56,12 +56,12 @@ export const FilterConstraintsScreen: React.FC<{ navigation: any }> = ({ navigat
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: colors.background },
   content: { padding: spacing.xxl },
-  step: { ...typography.label, color: colors.primary, marginBottom: spacing.sm },
+  step: { ...typography.label, color: colors.textPrimary, marginBottom: spacing.sm },
   title: { ...typography.h1, color: colors.textPrimary, marginBottom: spacing.sm },
   subtitle: { ...typography.body1, color: colors.textSecondary, marginBottom: spacing.xxl },
   sliderCard: { marginBottom: spacing.lg },
   sliderLabel: { ...typography.body1, color: colors.textPrimary, marginBottom: spacing.xs },
-  sliderValue: { ...typography.h3, color: colors.primary, marginBottom: spacing.lg },
+  sliderValue: { ...typography.h3, color: colors.textPrimary, marginBottom: spacing.lg },
   slider: { width: '100%', height: 40, marginVertical: spacing.xs },
   sliderRow: { flexDirection: 'row', alignItems: 'center', gap: spacing.sm },
   sliderMin: { ...typography.caption, color: colors.textMuted },

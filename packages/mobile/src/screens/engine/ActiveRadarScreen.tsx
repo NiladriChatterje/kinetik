@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { View, Text, StyleSheet, Animated, Dimensions } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { LinearGradient } from 'expo-linear-gradient';
+
 import { Ionicons } from '@expo/vector-icons';
 import { Button } from '../../components/common/Button';
 import { colors, typography, spacing, radius } from '../../theme';
@@ -49,7 +49,7 @@ export const ActiveRadarScreen: React.FC<{ navigation: any }> = ({ navigation })
       <View style={styles.radarContainer}>
         <Animated.View style={[styles.radarRing, { opacity: pulseAnim }]} />
         <Animated.View style={[styles.radarSweep, { transform: [{ rotate: rotation }] }]}>
-          <LinearGradient colors={['transparent', colors.radarPulse]} style={styles.radarGradient} />
+          <View style={styles.radarSweepFill} />
         </Animated.View>
         <View style={styles.radarCenter}>
           <View style={styles.centerDot} />
@@ -93,11 +93,11 @@ const styles = StyleSheet.create({
   header: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingHorizontal: spacing.xxl, paddingTop: spacing.lg },
   title: { ...typography.h2, color: colors.textPrimary },
   queueBadge: { backgroundColor: colors.surfaceHighlight, paddingHorizontal: spacing.lg, paddingVertical: spacing.xs, borderRadius: radius.full },
-  queueText: { ...typography.body2, color: colors.primary },
+  queueText: { ...typography.body2, color: colors.textPrimary },
   radarContainer: { flex: 1, alignItems: 'center', justifyContent: 'center' },
   radarRing: { width: RADAR_SIZE, height: RADAR_SIZE, borderRadius: RADAR_SIZE / 2, borderWidth: 2, borderColor: colors.radarRing, position: 'absolute' },
   radarSweep: { width: RADAR_SIZE, height: RADAR_SIZE, borderRadius: RADAR_SIZE / 2, overflow: 'hidden', position: 'absolute' },
-  radarGradient: { flex: 1, borderTopLeftRadius: RADAR_SIZE / 2, borderTopRightRadius: RADAR_SIZE / 2, opacity: 0.3 },
+  radarSweepFill: { flex: 1, borderTopLeftRadius: RADAR_SIZE / 2, borderTopRightRadius: RADAR_SIZE / 2, opacity: 0.15, backgroundColor: colors.textPrimary },
   radarCenter: { width: 20, height: 20, borderRadius: 10, backgroundColor: colors.primary, alignItems: 'center', justifyContent: 'center', position: 'absolute' },
   centerDot: { width: 8, height: 8, borderRadius: 4, backgroundColor: colors.textPrimary },
   blip: { width: 8, height: 8, borderRadius: 4, backgroundColor: colors.vibeActive, position: 'absolute' },

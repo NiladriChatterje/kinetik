@@ -53,14 +53,16 @@ const styles = StyleSheet.create({
   sectionTitle: { ...typography.h4, color: colors.textPrimary, marginBottom: spacing.lg },
   datesRow: { flexDirection: 'row', gap: spacing.sm },
   dateChip: { paddingHorizontal: spacing.lg, paddingVertical: spacing.md, backgroundColor: colors.surfaceHighlight, borderRadius: radius.full },
-  dateChipActive: { backgroundColor: colors.primary },
+  dateChipActive: { backgroundColor: colors.textPrimary },
   dateText: { ...typography.body2, color: colors.textSecondary },
-  dateTextActive: { color: colors.textPrimary },
+  dateTextActive: { color: colors.textInverse },
+
   timeCard: { marginBottom: spacing.lg },
   timeGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: spacing.sm },
   timeSlot: { paddingHorizontal: spacing.lg, paddingVertical: spacing.md, backgroundColor: colors.surfaceHighlight, borderRadius: radius.md },
-  timeSlotActive: { backgroundColor: colors.secondary },
+  timeSlotActive: { backgroundColor: colors.textSecondary },
   timeText: { ...typography.body2, color: colors.textSecondary },
-  timeTextActive: { color: colors.textPrimary },
+  timeTextActive: { color: colors.textInverse },
+
   footer: { position: 'absolute', bottom: 40, left: spacing.xxl, right: spacing.xxl },
 });

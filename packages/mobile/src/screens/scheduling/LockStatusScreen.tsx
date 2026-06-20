@@ -1,7 +1,7 @@
 import React, { useEffect, useRef } from 'react';
 import { View, Text, StyleSheet, Animated } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { LinearGradient } from 'expo-linear-gradient';
+
 import { Ionicons } from '@expo/vector-icons';
 import { Button } from '../../components/common/Button';
 import { colors, typography, spacing, radius } from '../../theme';
@@ -18,7 +18,7 @@ export const LockStatusScreen: React.FC<Props> = ({ navigation, route }) => {
 
   return (
     <SafeAreaView style={styles.container}>
-      <LinearGradient colors={['#0A0A0F', '#1a0010']} style={StyleSheet.absoluteFill} />
+      <View style={StyleSheet.absoluteFill} />
       <Animated.View style={[styles.content, { transform: [{ scale: scaleAnim }] }]}>
         <Ionicons name="sparkles-outline" size={80} color={colors.primary} />
         <Text style={styles.title}>It's a Match!</Text>
@@ -40,7 +40,7 @@ export const LockStatusScreen: React.FC<Props> = ({ navigation, route }) => {
 };
 
 const styles = StyleSheet.create({
-  container: { flex: 1 },
+  container: { flex: 1, backgroundColor: colors.background },
   content: { flex: 1, alignItems: 'center', justifyContent: 'center', padding: spacing.xxl },
   title: { ...typography.h1, color: colors.textPrimary, marginBottom: spacing.sm, marginTop: spacing.lg },
   subtitle: { ...typography.body1, color: colors.textSecondary, textAlign: 'center', marginBottom: spacing.xxl },

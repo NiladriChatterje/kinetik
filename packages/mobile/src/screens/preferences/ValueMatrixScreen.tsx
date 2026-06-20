@@ -38,7 +38,7 @@ export const ValueMatrixScreen: React.FC<{ navigation: any }> = ({ navigation })
         {VALUE_OPTIONS.map((v) => (
           <Card key={v.key} style={styles.valueCard}>
             <View style={styles.valueHeader}>
-              <Ionicons name={v.icon} size={28} color={values[v.key] > 0.6 ? colors.primary : colors.textSecondary} />
+              <Ionicons name={v.icon} size={28} color={values[v.key] > 0.6 ? colors.textPrimary : colors.textSecondary} />
               <View style={{ flex: 1 }}>
                 <Text style={styles.valueLabel}>{v.label}</Text>
                 <Text style={styles.valueDesc}>{v.desc}</Text>
@@ -50,9 +50,9 @@ export const ValueMatrixScreen: React.FC<{ navigation: any }> = ({ navigation })
               minimumValue={0} maximumValue={1}
               value={values[v.key]}
               onValueChange={(val) => setValues((p) => ({ ...p, [v.key]: val }))}
-              minimumTrackTintColor={colors.primary}
+              minimumTrackTintColor={colors.textPrimary}
               maximumTrackTintColor={colors.surfaceHighlight}
-              thumbTintColor={colors.primary}
+              thumbTintColor={colors.textPrimary}
             />
           </Card>
         ))}
@@ -68,13 +68,13 @@ export const ValueMatrixScreen: React.FC<{ navigation: any }> = ({ navigation })
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: colors.background },
   content: { padding: spacing.xxl, paddingBottom: 100 },
-  step: { ...typography.label, color: colors.primary, marginBottom: spacing.sm },
+  step: { ...typography.label, color: colors.textPrimary, marginBottom: spacing.sm },
   title: { ...typography.h1, color: colors.textPrimary, marginBottom: spacing.sm },
   subtitle: { ...typography.body1, color: colors.textSecondary, marginBottom: spacing.xxl },
   valueCard: { marginBottom: spacing.md },
   valueHeader: { flexDirection: 'row', alignItems: 'center', marginBottom: spacing.sm, gap: spacing.md },
   valueLabel: { ...typography.body1, color: colors.textPrimary },
   valueDesc: { ...typography.caption, color: colors.textMuted },
-  valueScore: { ...typography.h3, color: colors.primary },
+  valueScore: { ...typography.h3, color: colors.textPrimary },
   footer: { position: 'absolute', bottom: 40, left: spacing.xxl, right: spacing.xxl },
 });

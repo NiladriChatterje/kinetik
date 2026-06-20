@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { View, Text, StyleSheet, TouchableOpacity } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { LinearGradient } from 'expo-linear-gradient';
+
 import { Ionicons } from '@expo/vector-icons';
 import { colors, typography, spacing, radius } from '../../theme';
 
@@ -29,7 +29,7 @@ export const CommitmentGateScreen: React.FC<Props> = ({ navigation, route }) => 
 
   return (
     <SafeAreaView style={styles.container}>
-      <LinearGradient colors={['#0A0A0F', '#1a0a1a']} style={StyleSheet.absoluteFill} />
+      <View style={StyleSheet.absoluteFill} />
       
       <View style={styles.content}>
         <Text style={styles.title}>Time to Decide</Text>
@@ -72,17 +72,17 @@ export const CommitmentGateScreen: React.FC<Props> = ({ navigation, route }) => 
 };
 
 const styles = StyleSheet.create({
-  container: { flex: 1 },
+  container: { flex: 1, backgroundColor: colors.background },
   content: { flex: 1, alignItems: 'center', justifyContent: 'center', padding: spacing.xxl },
   title: { ...typography.h2, color: colors.textPrimary, marginBottom: spacing.xxl },
-  countdownCircle: { width: 120, height: 120, borderRadius: 60, backgroundColor: colors.surfaceHighlight, alignItems: 'center', justifyContent: 'center', marginBottom: spacing.lg, borderWidth: 3, borderColor: colors.primary },
-  countdownText: { ...typography.countdown, color: colors.primary, fontSize: 48 },
+  countdownCircle: { width: 120, height: 120, borderRadius: 60, backgroundColor: colors.surfaceHighlight, alignItems: 'center', justifyContent: 'center', marginBottom: spacing.lg, borderWidth: 3, borderColor: colors.textPrimary },
+  countdownText: { ...typography.countdown, color: colors.textPrimary, fontSize: 48 },
   countdownLabel: { ...typography.caption, color: colors.textMuted },
   subtitle: { ...typography.h4, color: colors.textPrimary, marginBottom: spacing.xxl, marginTop: spacing.lg },
   decisionContainer: { flexDirection: 'row', gap: spacing.lg },
   decisionBtn: { flex: 1, padding: spacing.xxl, borderRadius: radius.xl, alignItems: 'center', borderWidth: 1 },
-  passBtn: { backgroundColor: 'rgba(239, 68, 68, 0.1)', borderColor: 'rgba(239, 68, 68, 0.3)' },
-  lockBtn: { backgroundColor: 'rgba(124, 58, 237, 0.1)', borderColor: 'rgba(124, 58, 237, 0.3)' },
+  passBtn: { backgroundColor: colors.surfaceHighlight, borderColor: colors.textMuted },
+  lockBtn: { backgroundColor: colors.surfaceHighlight, borderColor: colors.textMuted },
   selectedBtn: { borderColor: colors.textPrimary, borderWidth: 2 },
   decisionLabel: { ...typography.h3, color: colors.textPrimary, marginBottom: spacing.xs, marginTop: spacing.sm },
   decisionDesc: { ...typography.caption, color: colors.textMuted },

@@ -86,30 +86,30 @@ export const Input: React.FC<InputProps> = React.memo(({
 
   const handleFocus = useCallback(() => {
     isFocusedRef.current = true;
-    // Apply focus styles via setNativeProps — no React state change
     containerRef.current?.setNativeProps({
       style: {
         borderColor: colors.inputFocusBorder,
-        shadowColor: colors.primary,
-        shadowOffset: { width: 0, height: 0 },
-        shadowOpacity: 0.3,
-        shadowRadius: 8,
-        elevation: 4,
+        backgroundColor: '#000000',
+      },
+    });
+    inputRef.current?.setNativeProps({
+      style: {
+        color: '#FFFFFF',
       },
     });
   }, []);
 
   const handleBlur = useCallback(() => {
     isFocusedRef.current = false;
-    // Restore default border styles
     containerRef.current?.setNativeProps({
       style: {
         borderColor: colors.inputBorder,
-        shadowColor: undefined,
-        shadowOffset: undefined,
-        shadowOpacity: undefined,
-        shadowRadius: undefined,
-        elevation: undefined,
+        backgroundColor: colors.inputBg,
+      },
+    });
+    inputRef.current?.setNativeProps({
+      style: {
+        color: colors.textPrimary,
       },
     });
     // Ensure native text matches controlled value on blur

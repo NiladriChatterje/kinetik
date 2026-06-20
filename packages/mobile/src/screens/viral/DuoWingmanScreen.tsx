@@ -18,7 +18,7 @@ export const DuoWingmanScreen: React.FC<{ navigation: any }> = ({ navigation }) 
   return (
     <SafeAreaView style={styles.container}>
       <View style={styles.content}>
-        <Ionicons name={friendJoined ? 'sparkles-outline' : 'people-outline'} size={64} color={friendJoined ? colors.success : colors.primary} />
+        <Ionicons name={friendJoined ? 'sparkles-outline' : 'people-outline'} size={64} color={friendJoined ? colors.textPrimary : colors.textPrimary} />
         <Text style={styles.title}>{friendJoined ? 'Duo Crew Ready!' : 'Duo Wingman'}</Text>
         <Text style={styles.subtitle}>
           {friendJoined ? 'You and your friend are ready for a double date!' : 'Invite a single friend and double your match power'}
@@ -32,7 +32,7 @@ export const DuoWingmanScreen: React.FC<{ navigation: any }> = ({ navigation }) 
 
         {friendJoined && (
           <View style={styles.friendCard}>
-            <Ionicons name="person-outline" size={28} color={colors.success} />
+            <Ionicons name="person-outline" size={28} color={colors.textPrimary} />
             <Text style={styles.friendName}>Your friend has joined!</Text>
           </View>
         )}
@@ -56,9 +56,9 @@ const styles = StyleSheet.create({
   subtitle: { ...typography.body1, color: colors.textSecondary, textAlign: 'center', marginBottom: spacing.xxl },
   inviteCard: { alignItems: 'center', padding: spacing.xl, marginBottom: spacing.lg, width: '100%' },
   inviteLabel: { ...typography.label, color: colors.textMuted, marginBottom: spacing.sm },
-  inviteCode: { ...typography.h1, color: colors.primary, letterSpacing: 4, marginBottom: spacing.sm },
+  inviteCode: { ...typography.h1, color: colors.textPrimary, letterSpacing: 4, marginBottom: spacing.sm },
   inviteHint: { ...typography.caption, color: colors.textMuted },
   friendCard: { flexDirection: 'row', alignItems: 'center', gap: spacing.md, backgroundColor: colors.surfaceHighlight, padding: spacing.lg, borderRadius: radius.md, width: '100%' },
-  friendName: { ...typography.body1, color: colors.success },
+  friendName: { ...typography.body1, color: colors.textPrimary },
   footer: { padding: spacing.xxl, paddingBottom: spacing.huge },
 });

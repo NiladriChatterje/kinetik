@@ -72,15 +72,15 @@ export const PhotoUploadScreen: React.FC<{ navigation: any }> = ({ navigation })
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: colors.background },
   content: { padding: spacing.xxl, paddingBottom: 120 },
-  step: { ...typography.label, color: colors.primary, marginBottom: spacing.sm },
+  step: { ...typography.label, color: colors.textPrimary, marginBottom: spacing.sm },
   title: { ...typography.h1, color: colors.textPrimary, marginBottom: spacing.sm },
   subtitle: { ...typography.body1, color: colors.textSecondary, marginBottom: spacing.xxl },
   photoGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: spacing.md, justifyContent: 'center' },
   photoSlot: { width: 100, height: 130, borderRadius: radius.md, backgroundColor: colors.surfaceHighlight, alignItems: 'center', justifyContent: 'center', borderWidth: 1, borderColor: colors.cardBorder },
-  photoSlotFilled: { borderColor: colors.primary },
+  photoSlotFilled: { borderColor: colors.textPrimary },
   photo: { width: '100%', height: '100%', borderRadius: radius.md, resizeMode: 'cover' },
   uploadButton: { marginTop: spacing.xxl, paddingVertical: spacing.md, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', backgroundColor: colors.surfaceHighlight, borderRadius: radius.md },
-  uploadText: { ...typography.body1, color: colors.primary },
+  uploadText: { ...typography.body1, color: colors.textPrimary },
   footer: { position: 'absolute', bottom: 40, left: spacing.xxl, right: spacing.xxl },
   hintText: { ...typography.caption, color: colors.textMuted, textAlign: 'center', marginBottom: spacing.sm },
 });

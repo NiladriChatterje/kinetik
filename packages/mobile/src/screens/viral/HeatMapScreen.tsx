@@ -6,11 +6,11 @@ import { Card } from '../../components/common/Card';
 import { colors, typography, spacing, radius } from '../../theme';
 
 const HEAT_ZONES = [
-  { name: 'Mission District', count: 234, color: '#FF3B7F' },
-  { name: 'SOMA', count: 189, color: '#FF6B9D' },
-  { name: 'Marina', count: 156, color: '#7C3AED' },
-  { name: 'Castro', count: 98, color: '#A78BFA' },
-  { name: 'Hayes Valley', count: 67, color: '#06D6A0' },
+  { name: 'Mission District', count: 234, color: '#000000' },
+  { name: 'SOMA', count: 189, color: '#333333' },
+  { name: 'Marina', count: 156, color: '#666666' },
+  { name: 'Castro', count: 98, color: '#999999' },
+  { name: 'Hayes Valley', count: 67, color: '#CCCCCC' },
 ];
 
 export const HeatMapScreen: React.FC = () => {

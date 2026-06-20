@@ -70,7 +70,7 @@ export const IdentityScreen: React.FC<{ navigation: any }> = ({ navigation }) =>
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: colors.background },
   content: { padding: spacing.xxl, paddingBottom: 100, flexGrow: 1 },
-  step: { ...typography.label, color: colors.primary, marginBottom: spacing.sm },
+  step: { ...typography.label, color: colors.textPrimary, marginBottom: spacing.sm },
   title: { ...typography.h1, color: colors.textPrimary, marginBottom: spacing.sm },
   subtitle: { ...typography.body1, color: colors.textSecondary, marginBottom: spacing.xxl },
   fieldLabel: { ...typography.label, color: colors.textSecondary, marginBottom: spacing.sm },
@@ -80,8 +80,8 @@ const styles = StyleSheet.create({
     borderRadius: radius.full, backgroundColor: colors.inputBg,
     borderWidth: 1, borderColor: colors.inputBorder,
   },
-  genderChipActive: { borderColor: colors.primary, backgroundColor: 'rgba(255, 59, 127, 0.1)' },
+  genderChipActive: { borderColor: colors.textPrimary, backgroundColor: colors.surfaceHighlight },
   genderChipText: { ...typography.body2, color: colors.textSecondary },
-  genderChipTextActive: { color: colors.primary },
+  genderChipTextActive: { color: colors.textPrimary },
   footer: { position: 'absolute', bottom: 40, left: spacing.xxl, right: spacing.xxl },
 });

@@ -1,7 +1,7 @@
 import React, { useEffect, useRef } from 'react';
 import { View, Text, StyleSheet, Animated } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { LinearGradient } from 'expo-linear-gradient';
+
 import { Ionicons } from '@expo/vector-icons';
 import { colors, typography, spacing, radius } from '../../theme';
 
@@ -24,7 +24,7 @@ export const UnmaskingScreen: React.FC<Props> = ({ navigation, route }) => {
 
   return (
     <SafeAreaView style={styles.container}>
-      <LinearGradient colors={['#0A0A0F', '#1a0a1a']} style={StyleSheet.absoluteFill} />
+      <View style={StyleSheet.absoluteFill} />
       <Text style={styles.title}>Gradient Unmasking</Text>
       <Text style={styles.subtitle}>Your conversation reveals your match</Text>
       <View style={styles.imageContainer}>
@@ -50,6 +50,6 @@ const styles = StyleSheet.create({
   profileCircle: { width: 200, height: 200, borderRadius: 100, backgroundColor: colors.surfaceHighlight, alignItems: 'center', justifyContent: 'center' },
   progressSection: { padding: spacing.xxl, paddingBottom: spacing.huge },
   progressBar: { height: 6, backgroundColor: colors.surfaceHighlight, borderRadius: 3, marginBottom: spacing.md },
-  progressFill: { height: 6, backgroundColor: colors.primary, borderRadius: 3 },
+  progressFill: { height: 6, backgroundColor: colors.textPrimary, borderRadius: 3 },
   progressText: { ...typography.body2, color: colors.textMuted, textAlign: 'center' },
 });

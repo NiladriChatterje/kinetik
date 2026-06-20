@@ -54,7 +54,7 @@ export const CommCadenceScreen: React.FC<{ navigation: any }> = ({ navigation })
           </Card>
         ) : (
           <Card style={styles.doneCard}>
-            <Ionicons name="checkmark-circle-outline" size={64} color={colors.primary} />
+            <Ionicons name="checkmark-circle-outline" size={64} color={colors.textPrimary} />
             <Text style={styles.doneText}>Profile Complete!</Text>
             <Text style={styles.doneDesc}>You're ready to join the next flash window</Text>
             <Button title="Enter Kinetik" onPress={handleFinish} fullWidth />
@@ -68,12 +68,12 @@ export const CommCadenceScreen: React.FC<{ navigation: any }> = ({ navigation })
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: colors.background },
   content: { flex: 1, padding: spacing.xxl },
-  step: { ...typography.label, color: colors.primary, marginBottom: spacing.sm },
+  step: { ...typography.label, color: colors.textPrimary, marginBottom: spacing.sm },
   title: { ...typography.h1, color: colors.textPrimary, marginBottom: spacing.sm },
   subtitle: { ...typography.body1, color: colors.textSecondary, marginBottom: spacing.xxl },
   questionCard: { padding: spacing.xl },
   progressBar: { height: 4, backgroundColor: colors.surfaceHighlight, borderRadius: 2, marginBottom: spacing.md },
-  progressFill: { height: 4, backgroundColor: colors.primary, borderRadius: 2 },
+  progressFill: { height: 4, backgroundColor: colors.textPrimary, borderRadius: 2 },
   questionCount: { ...typography.caption, color: colors.textMuted, marginBottom: spacing.lg },
   question: { ...typography.h3, color: colors.textPrimary, marginBottom: spacing.xl },
   answerBtn: { paddingVertical: spacing.md, paddingHorizontal: spacing.lg, backgroundColor: colors.surfaceHighlight, borderRadius: radius.md, marginBottom: spacing.sm },

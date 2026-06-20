@@ -12,7 +12,7 @@ export const ReservationLockerScreen: React.FC<{ navigation: any }> = ({ navigat
   return (
     <SafeAreaView style={styles.container}>
       <View style={styles.content}>
-        <Ionicons name={booked ? 'checkmark-circle-outline' : 'lock-closed-outline'} size={64} color={booked ? colors.success : colors.primary} />
+        <Ionicons name={booked ? 'checkmark-circle-outline' : 'lock-closed-outline'} size={64} color={colors.textPrimary} />
         <Text style={styles.title}>{booked ? 'Reserved!' : 'Confirm Reservation'}</Text>
         <Text style={styles.subtitle}>
           {booked ? 'Your date is set. Both of you will receive a reminder.' : 'Secure your spot with a small deposit'}

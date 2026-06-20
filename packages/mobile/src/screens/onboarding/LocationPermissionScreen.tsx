@@ -46,14 +46,14 @@ export const LocationPermissionScreen: React.FC<{ navigation: any }> = ({ naviga
 
         <View style={styles.permissions}>
           <View style={styles.permissionRow}>
-            <Ionicons name="location-outline" size={28} color={colors.primary} />
+            <Ionicons name="location-outline" size={28} color={colors.textPrimary} />
             <View>
               <Text style={styles.permissionTitle}>Precise GPS</Text>
               <Text style={styles.permissionDesc}>Pinpoints your exact H3 hexagonal cell</Text>
             </View>
           </View>
           <View style={styles.permissionRow}>
-            <Ionicons name="sync-outline" size={28} color={colors.secondary} />
+            <Ionicons name="sync-outline" size={28} color={colors.textSecondary} />
             <View>
               <Text style={styles.permissionTitle}>Background Updates</Text>
               <Text style={styles.permissionDesc}>Keeps your queue position fresh during windows</Text>
@@ -65,7 +65,7 @@ export const LocationPermissionScreen: React.FC<{ navigation: any }> = ({ naviga
       <View style={styles.footer}>
         {permissionStatus === 'granted' ? (
           <View style={styles.grantedRow}>
-            <Ionicons name="checkmark-circle" size={20} color={colors.success} />
+            <Ionicons name="checkmark-circle" size={20} color={colors.textPrimary} />
             <Text style={styles.grantedText}> Location access granted</Text>
           </View>
         ) : (
@@ -79,13 +79,13 @@ export const LocationPermissionScreen: React.FC<{ navigation: any }> = ({ naviga
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: colors.background },
   content: { flex: 1, padding: spacing.xxl },
-  step: { ...typography.label, color: colors.primary, marginBottom: spacing.sm },
+  step: { ...typography.label, color: colors.textPrimary, marginBottom: spacing.sm },
   title: { ...typography.h1, color: colors.textPrimary, marginBottom: spacing.sm },
   subtitle: { ...typography.body1, color: colors.textSecondary, marginBottom: spacing.xxl },
   mapPreview: { alignItems: 'center', padding: spacing.xl, marginBottom: spacing.xl },
   hexGrid: { flexDirection: 'row', flexWrap: 'wrap', justifyContent: 'center', width: 200, gap: 4 },
   hexCell: { width: 32, height: 28, backgroundColor: colors.surfaceHighlight, borderRadius: 4, transform: [{ rotate: '30deg' }] },
-  hexActive: { backgroundColor: colors.primary },
+  hexActive: { backgroundColor: colors.textPrimary },
   mapLabel: { ...typography.caption, color: colors.textMuted, textAlign: 'center', marginTop: spacing.lg },
   permissions: { gap: spacing.lg },
   permissionRow: { flexDirection: 'row', gap: spacing.md, alignItems: 'center' },
@@ -93,5 +93,5 @@ const styles = StyleSheet.create({
   permissionDesc: { ...typography.caption, color: colors.textSecondary },
   footer: { padding: spacing.xxl, paddingBottom: spacing.huge },
   grantedRow: { flexDirection: 'row', justifyContent: 'center', alignItems: 'center' },
-  grantedText: { ...typography.body1, color: colors.success, textAlign: 'center' },
+  grantedText: { ...typography.body1, color: colors.textPrimary, textAlign: 'center' },
 });

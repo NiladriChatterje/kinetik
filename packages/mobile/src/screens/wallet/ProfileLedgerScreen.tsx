@@ -32,7 +32,7 @@ export const ProfileLedgerScreen: React.FC = () => {
           <Avatar size={80} isOnline />
           <Text style={styles.name}>{user?.displayName || 'Alex Johnson'}</Text>
           <View style={styles.verifiedBadge}>
-            <Ionicons name="checkmark-circle" size={14} color={colors.success} style={{ marginRight: 4 }} />
+            <Ionicons name="checkmark-circle" size={14} color={colors.textPrimary} style={{ marginRight: 4 }} />
             <Text style={styles.verifiedText}>Identity Verified</Text>
           </View>
         </View>
@@ -40,7 +40,7 @@ export const ProfileLedgerScreen: React.FC = () => {
         <View style={styles.metricsRow}>
           {METRICS.map((m) => (
             <Card key={m.label} style={styles.metricCard}>
-              <Ionicons name={m.icon} size={24} color={colors.primary} />
+              <Ionicons name={m.icon} size={24} color={colors.textPrimary} />
               <Text style={styles.metricValue}>{m.value}</Text>
               <Text style={styles.metricLabel}>{m.label}</Text>
             </Card>
@@ -70,8 +70,8 @@ const styles = StyleSheet.create({
   content: { padding: spacing.xxl, paddingBottom: 100 },
   profileHeader: { alignItems: 'center', marginBottom: spacing.xxl },
   name: { ...typography.h2, color: colors.textPrimary, marginTop: spacing.md, marginBottom: spacing.sm },
-  verifiedBadge: { flexDirection: 'row', alignItems: 'center', backgroundColor: 'rgba(6, 214, 160, 0.1)', paddingHorizontal: spacing.lg, paddingVertical: spacing.xs, borderRadius: radius.full },
-  verifiedText: { ...typography.caption, color: colors.success },
+  verifiedBadge: { flexDirection: 'row', alignItems: 'center', backgroundColor: colors.surfaceHighlight, paddingHorizontal: spacing.lg, paddingVertical: spacing.xs, borderRadius: radius.full },
+  verifiedText: { ...typography.caption, color: colors.textPrimary },
   metricsRow: { flexDirection: 'row', flexWrap: 'wrap', gap: spacing.sm, marginBottom: spacing.xxl },
   metricCard: { width: '47%', alignItems: 'center', padding: spacing.md },
   metricValue: { ...typography.h3, color: colors.textPrimary, marginTop: spacing.sm },

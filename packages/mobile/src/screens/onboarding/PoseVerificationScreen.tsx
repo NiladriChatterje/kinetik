@@ -46,7 +46,7 @@ export const PoseVerificationScreen: React.FC<{ navigation: any }> = ({ navigati
 
         {verified ? (
           <View style={styles.verifiedContainer}>
-            <Ionicons name="checkmark-circle" size={48} color={colors.success} />
+            <Ionicons name="checkmark-circle" size={48} color={colors.textPrimary} />
             <Text style={styles.verifiedText}>Identity Verified!</Text>
           </View>
         ) : (
@@ -66,15 +66,15 @@ export const PoseVerificationScreen: React.FC<{ navigation: any }> = ({ navigati
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: colors.background },
   content: { flex: 1, padding: spacing.xxl, alignItems: 'center' },
-  step: { ...typography.label, color: colors.primary, marginBottom: spacing.sm, alignSelf: 'flex-start' },
+  step: { ...typography.label, color: colors.textPrimary, marginBottom: spacing.sm, alignSelf: 'flex-start' },
   title: { ...typography.h1, color: colors.textPrimary, marginBottom: spacing.sm, alignSelf: 'flex-start' },
   subtitle: { ...typography.body1, color: colors.textSecondary, marginBottom: spacing.xxl, alignSelf: 'flex-start' },
   cameraPlaceholder: { width: 280, height: 340, borderRadius: radius.xl, backgroundColor: colors.surfaceHighlight, alignItems: 'center', justifyContent: 'center', marginBottom: spacing.xxl },
-  poseText: { ...typography.h3, color: colors.primary, marginTop: spacing.lg },
+  poseText: { ...typography.h3, color: colors.textPrimary, marginTop: spacing.lg },
   poseDots: { flexDirection: 'row', gap: spacing.sm, marginTop: spacing.xl },
   dot: { width: 10, height: 10, borderRadius: 5, backgroundColor: colors.surfaceLight },
-  dotActive: { backgroundColor: colors.primary },
+  dotActive: { backgroundColor: colors.textPrimary },
   verifiedContainer: { alignItems: 'center', marginTop: spacing.lg },
-  verifiedText: { ...typography.h3, color: colors.success, marginTop: spacing.sm },
+  verifiedText: { ...typography.h3, color: colors.textPrimary, marginTop: spacing.sm },
   footer: { padding: spacing.xxl, paddingBottom: spacing.huge },
 });

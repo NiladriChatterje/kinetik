@@ -5,63 +5,63 @@ const { width: SCREEN_WIDTH, height: SCREEN_HEIGHT } = Dimensions.get('window');
 // ─── Colors ──────────────────────────────────────────────
 export const colors = {
   // Primary palette
-  primary: '#FF3B7F',
-  primaryLight: '#FF6B9D',
-  primaryDark: '#CC2F66',
+  primary: '#000000',
+  primaryLight: '#333333',
+  primaryDark: '#000000',
 
   // Secondary
-  secondary: '#7C3AED',
-  secondaryLight: '#A78BFA',
-  secondaryDark: '#5B21B6',
+  secondary: '#666666',
+  secondaryLight: '#999999',
+  secondaryDark: '#333333',
 
   // Accent
-  accent: '#06D6A0',
-  accentLight: '#34E8B4',
+  accent: '#000000',
+  accentLight: '#333333',
 
   // Neutrals
-  background: '#0A0A0F',
-  surface: '#141418',
-  surfaceLight: '#1C1C24',
-  surfaceHighlight: '#252533',
+  background: '#FFFFFF',
+  surface: '#F8F8F8',
+  surfaceLight: '#F0F0F0',
+  surfaceHighlight: '#E8E8E8',
 
   // Text
-  textPrimary: '#FFFFFF',
-  textSecondary: '#9CA3AF',
-  textMuted: '#6B7280',
-  textInverse: '#0A0A0F',
+  textPrimary: '#000000',
+  textSecondary: '#666666',
+  textMuted: '#999999',
+  textInverse: '#FFFFFF',
 
   // Status
-  success: '#06D6A0',
-  warning: '#FBBF24',
-  error: '#EF4444',
-  info: '#3B82F6',
+  success: '#000000',
+  warning: '#666666',
+  error: '#000000',
+  info: '#666666',
 
   // Match Engine
-  vibeActive: '#FF3B7F',
-  vibeConnecting: '#FBBF24',
-  vibeConnected: '#06D6A0',
-  vibeLock: '#7C3AED',
+  vibeActive: '#000000',
+  vibeConnecting: '#666666',
+  vibeConnected: '#333333',
+  vibeLock: '#000000',
 
   // Gradients
-  gradientStart: '#FF3B7F',
-  gradientEnd: '#7C3AED',
-  gradientMatch: ['#FF3B7F', '#FF6B9D', '#7C3AED'] as const,
+  gradientStart: '#000000',
+  gradientEnd: '#000000',
+  gradientMatch: ['#000000', '#333333', '#666666'] as const,
 
   // Overlays
   overlay: 'rgba(0, 0, 0, 0.6)',
   overlayLight: 'rgba(0, 0, 0, 0.3)',
-  shimmer: ['rgba(255,255,255,0.1)', 'rgba(255,255,255,0.05)', 'rgba(255,255,255,0.1)'] as const,
+  shimmer: ['rgba(0,0,0,0.08)', 'rgba(0,0,0,0.04)', 'rgba(0,0,0,0.08)'] as const,
 
   // Specific UI
-  radarBg: '#0D0D1A',
-  radarPulse: '#FF3B7F',
-  radarRing: 'rgba(255, 59, 127, 0.2)',
-  cardBorder: 'rgba(255, 255, 255, 0.08)',
-  inputBg: '#1C1C24',
-  inputBorder: 'rgba(255, 255, 255, 0.12)',
-  inputFocusBorder: '#FF3B7F',
-  tabBarBg: '#0A0A0F',
-  tabBarBorder: 'rgba(255, 255, 255, 0.08)',
+  radarBg: '#FFFFFF',
+  radarPulse: '#000000',
+  radarRing: 'rgba(0, 0, 0, 0.15)',
+  cardBorder: 'rgba(0, 0, 0, 0.08)',
+  inputBg: '#F5F5F5',
+  inputBorder: 'rgba(0, 0, 0, 0.12)',
+  inputFocusBorder: '#000000',
+  tabBarBg: '#FFFFFF',
+  tabBarBorder: 'rgba(0, 0, 0, 0.08)',
 };
 
 // ─── Typography ──────────────────────────────────────────
@@ -113,9 +113,9 @@ export const shadows = {
     elevation: 2,
   },
   md: {
-    shadowColor: '#FF3B7F',
+    shadowColor: '#000',
     shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.2,
+    shadowOpacity: 0.15,
     shadowRadius: 8,
     elevation: 4,
   },
@@ -127,10 +127,10 @@ export const shadows = {
     elevation: 8,
   },
   glow: {
-    shadowColor: '#FF3B7F',
+    shadowColor: '#000',
     shadowOffset: { width: 0, height: 0 },
-    shadowOpacity: 0.4,
-    shadowRadius: 20,
+    shadowOpacity: 0.2,
+    shadowRadius: 12,
     elevation: 6,
   },
 };

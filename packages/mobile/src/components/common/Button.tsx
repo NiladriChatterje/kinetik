@@ -7,7 +7,7 @@ import {
   ViewStyle,
   TextStyle,
 } from 'react-native';
-import { LinearGradient } from 'expo-linear-gradient';
+
 import { colors, typography, radius, spacing, shadows } from '../../theme';
 
 type ButtonVariant = 'primary' | 'secondary' | 'outline' | 'ghost' | 'danger';
@@ -78,53 +78,6 @@ export const Button: React.FC<ButtonProps> = ({
     </TouchableOpacity>
   );
 
-  if (isPrimary) {
-    return (
-      <LinearGradient
-        colors={[colors.primary, colors.primaryDark]}
-        start={{ x: 0, y: 0 }}
-        end={{ x: 1, y: 1 }}
-        style={[
-          styles.gradient,
-          styles[`size_${size}`],
-          fullWidth && styles.fullWidth,
-          disabled && styles.disabled,
-          style,
-        ]}
-      >
-        <TouchableOpacity
-          onPress={onPress}
-          disabled={disabled || loading}
-          style={[
-            styles.gradientInner,
-            styles[`size_${size}`],
-            fullWidth && styles.fullWidth,
-          ]}
-          activeOpacity={0.8}
-        >
-          {loading ? (
-            <ActivityIndicator color={colors.textPrimary} size="small" />
-          ) : (
-            <>
-              {icon}
-              <Text
-                style={[
-                  styles.text,
-                  styles[`text_${size}`],
-                  styles.text_primary,
-                  icon ? { marginLeft: spacing.sm } : {},
-                  textStyle,
-                ]}
-              >
-                {title}
-              </Text>
-            </>
-          )}
-        </TouchableOpacity>
-      </LinearGradient>
-    );
-  }
-
   return buttonContent;
 };
 
@@ -135,17 +88,7 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     borderRadius: radius.full,
   },
-  gradient: {
-    borderRadius: radius.full,
-    overflow: 'hidden',
-  },
-  gradientInner: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    paddingVertical: spacing.md,
-    paddingHorizontal: spacing.xxl,
-  },
+  // removed gradient/gradientInner styles
   fullWidth: {
     width: '100%',
   },
@@ -169,10 +112,10 @@ const styles = StyleSheet.create({
 
   // Variants
   variant_primary: {
-    backgroundColor: colors.primary,
+    backgroundColor: colors.textPrimary,
   },
   variant_secondary: {
-    backgroundColor: colors.secondary,
+    backgroundColor: colors.textSecondary,
   },
   variant_outline: {
     backgroundColor: 'transparent',
@@ -183,7 +126,7 @@ const styles = StyleSheet.create({
     backgroundColor: 'transparent',
   },
   variant_danger: {
-    backgroundColor: colors.error,
+    backgroundColor: colors.textPrimary,
   },
 
   // Text styles
@@ -200,10 +143,10 @@ const styles = StyleSheet.create({
     fontSize: 18,
   },
   text_primary: {
-    color: colors.textPrimary,
+    color: colors.textInverse,
   },
   text_secondary: {
-    color: colors.textPrimary,
+    color: colors.textInverse,
   },
   text_outline: {
     color: colors.primary,
@@ -212,6 +155,6 @@ const styles = StyleSheet.create({
     color: colors.textSecondary,
   },
   text_danger: {
-    color: colors.textPrimary,
+    color: colors.textInverse,
   },
 });

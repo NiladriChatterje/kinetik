@@ -131,7 +131,7 @@ function MainTabNavigator() {
           paddingBottom: 20,
           paddingTop: 10,
         },
-        tabBarActiveTintColor: colors.primary,
+        tabBarActiveTintColor: colors.textPrimary,
         tabBarInactiveTintColor: colors.textMuted,
         tabBarLabelStyle: {
           ...typography.caption,

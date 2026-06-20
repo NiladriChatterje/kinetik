@@ -35,12 +35,12 @@ export const VenueSelectorScreen: React.FC<{ navigation: any; route: any }> = ({
           <TouchableOpacity key={v.id} onPress={() => setSelected(v.id)}>
             <Card style={[styles.venueCard, selected === v.id ? styles.venueCardActive : undefined] as any}>
               <View style={styles.venueRow}>
-                {renderVenueIcon(v.id, selected === v.id ? colors.primary : colors.textSecondary)}
+                {renderVenueIcon(v.id, selected === v.id ? colors.textPrimary : colors.textSecondary)}
                 <View style={{ flex: 1 }}>
                   <Text style={styles.venueName}>{v.name}</Text>
                   <Text style={styles.venueMeta}>{v.type} - {v.price} - {v.distance}</Text>
                 </View>
-                {selected === v.id && <Ionicons name="checkmark-circle" size={22} color={colors.primary} />}
+                {selected === v.id && <Ionicons name="checkmark-circle" size={22} color={colors.textPrimary} />}
               </View>
             </Card>
           </TouchableOpacity>
@@ -59,7 +59,7 @@ const styles = StyleSheet.create({
   title: { ...typography.h1, color: colors.textPrimary, marginBottom: spacing.sm },
   subtitle: { ...typography.body1, color: colors.textSecondary, marginBottom: spacing.xxl },
   venueCard: { marginBottom: spacing.md, padding: spacing.lg },
-  venueCardActive: { borderColor: colors.primary, borderWidth: 1.5 },
+  venueCardActive: { borderColor: colors.textPrimary, borderWidth: 1.5 },
   venueRow: { flexDirection: 'row', alignItems: 'center', gap: spacing.md },
   venueName: { ...typography.body1, color: colors.textPrimary },
   venueMeta: { ...typography.caption, color: colors.textMuted },

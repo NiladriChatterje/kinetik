@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { View, Text, StyleSheet, Animated, TouchableOpacity } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { LinearGradient } from 'expo-linear-gradient';
+
 import { Ionicons } from '@expo/vector-icons';
 import { colors, typography, spacing, radius } from '../../theme';
 
@@ -35,7 +35,7 @@ export const VibeCheckScreen: React.FC<Props> = ({ navigation, route }) => {
 
   return (
     <SafeAreaView style={styles.container}>
-      <LinearGradient colors={['#0A0A0F', '#1a0a1a']} style={StyleSheet.absoluteFill} />
+      <View style={StyleSheet.absoluteFill} />
 
       {/* Timer */}
       <View style={styles.timerSection}>
@@ -99,11 +99,11 @@ export const VibeCheckScreen: React.FC<Props> = ({ navigation, route }) => {
           <Text style={styles.decisionLabel}>Mutual interest?</Text>
           <View style={styles.decisionBtns}>
             <TouchableOpacity style={[styles.decisionBtn, styles.passBtn]} onPress={() => handleDecision('pass')}>
-              <Ionicons name="close-outline" size={20} color={colors.textPrimary} style={{ marginRight: spacing.sm }} />
+              <Ionicons name="close-outline" size={20} color={colors.textInverse} style={{ marginRight: spacing.sm }} />
               <Text style={styles.decisionBtnText}>Pass</Text>
             </TouchableOpacity>
             <TouchableOpacity style={[styles.decisionBtn, styles.lockBtn]} onPress={() => handleDecision('lock')}>
-              <Ionicons name="lock-closed-outline" size={20} color={colors.textPrimary} style={{ marginRight: spacing.sm }} />
+              <Ionicons name="lock-closed-outline" size={20} color={colors.textInverse} style={{ marginRight: spacing.sm }} />
               <Text style={styles.decisionBtnText}>Lock It In</Text>
             </TouchableOpacity>
           </View>
@@ -114,13 +114,13 @@ export const VibeCheckScreen: React.FC<Props> = ({ navigation, route }) => {
 };
 
 const styles = StyleSheet.create({
-  container: { flex: 1 },
+  container: { flex: 1, backgroundColor: colors.background },
   timerSection: { alignItems: 'center', paddingTop: spacing.xxl },
   timer: { ...typography.timer, color: colors.textPrimary },
-  phaseText: { ...typography.body1, color: colors.vibeActive },
+  phaseText: { ...typography.body1, color: colors.textPrimary },
   phaseDots: { flexDirection: 'row', gap: spacing.sm, marginTop: spacing.sm },
   phaseDot: { width: 8, height: 8, borderRadius: 4, backgroundColor: colors.surfaceHighlight },
-  phaseDotActive: { backgroundColor: colors.primary },
+  phaseDotActive: { backgroundColor: colors.textPrimary },
   partnerSection: { flex: 1, justifyContent: 'center', alignItems: 'center' },
   partnerImage: { width: 200, height: 200, borderRadius: 100, backgroundColor: colors.surfaceHighlight, alignItems: 'center', justifyContent: 'center' },
   silhouette: { alignItems: 'center' },
@@ -136,7 +136,7 @@ const styles = StyleSheet.create({
   decisionLabel: { ...typography.h4, color: colors.textPrimary, textAlign: 'center', marginBottom: spacing.lg },
   decisionBtns: { flexDirection: 'row', gap: spacing.lg },
   decisionBtn: { flex: 1, flexDirection: 'row', paddingVertical: spacing.lg, borderRadius: radius.full, alignItems: 'center', justifyContent: 'center' },
-  passBtn: { backgroundColor: colors.error },
-  lockBtn: { backgroundColor: colors.vibeLock },
-  decisionBtnText: { ...typography.button, color: colors.textPrimary },
+  passBtn: { backgroundColor: colors.textPrimary },
+  lockBtn: { backgroundColor: colors.textPrimary },
+  decisionBtnText: { ...typography.button, color: colors.textInverse },
 });

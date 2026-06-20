@@ -28,7 +28,7 @@ export const TokenVaultScreen: React.FC = () => {
         {TOKENS.map((t) => (
           <Card key={t.name} style={styles.tokenCard}>
             <View style={styles.tokenRow}>
-              <Ionicons name={t.icon} size={28} color={t.count > 0 ? colors.primary : colors.textMuted} />
+              <Ionicons name={t.icon} size={28} color={t.count > 0 ? colors.textPrimary : colors.textMuted} />
               <View style={{ flex: 1 }}>
                 <Text style={styles.tokenName}>{t.name}</Text>
                 <Text style={styles.tokenDesc}>{t.desc}</Text>
@@ -54,13 +54,13 @@ const styles = StyleSheet.create({
   subtitle: { ...typography.body1, color: colors.textSecondary, marginBottom: spacing.xxl },
   balanceCard: { alignItems: 'center', marginBottom: spacing.xl, padding: spacing.xxl },
   balanceLabel: { ...typography.label, color: colors.textMuted, marginBottom: spacing.sm },
-  balanceAmount: { ...typography.h1, color: colors.primary, marginBottom: spacing.xs },
+  balanceAmount: { ...typography.h1, color: colors.textPrimary, marginBottom: spacing.xs },
   balanceDate: { ...typography.caption, color: colors.textMuted },
   tokenCard: { marginBottom: spacing.md, padding: spacing.lg },
   tokenRow: { flexDirection: 'row', alignItems: 'center', gap: spacing.md },
   tokenName: { ...typography.body1, color: colors.textPrimary },
   tokenDesc: { ...typography.caption, color: colors.textMuted },
-  tokenCount: { ...typography.h3, color: colors.primary },
+  tokenCount: { ...typography.h3, color: colors.textPrimary },
   upgradeBtn: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', marginTop: spacing.lg },
-  upgradeText: { ...typography.body1, color: colors.secondary },
+  upgradeText: { ...typography.body1, color: colors.textSecondary },
 });

@@ -1,6 +1,6 @@
 import React from 'react';
 import { View, Image, StyleSheet, ViewStyle } from 'react-native';
-import { LinearGradient } from 'expo-linear-gradient';
+
 import { colors, radius } from '../../theme';
 
 interface AvatarProps {
@@ -34,14 +34,9 @@ export const Avatar: React.FC<AvatarProps> = ({
   return (
     <View style={[styles.container, style]}>
       {hasGlow ? (
-        <LinearGradient
-          colors={[colors.primary, colors.secondary]}
-          start={{ x: 0, y: 0 }}
-          end={{ x: 1, y: 1 }}
-          style={[styles.glowBorder, { width: size + 4, height: size + 4, borderRadius: (size + 4) / 2 }]}
-        >
+        <View style={[styles.glowBorder, { width: size + 4, height: size + 4, borderRadius: (size + 4) / 2, borderColor: colors.textPrimary, borderWidth: 2 }]}>
           {avatarContent}
-        </LinearGradient>
+        </View>
       ) : (
         avatarContent
       )}
