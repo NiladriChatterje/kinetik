@@ -13,6 +13,9 @@ export const SplashScreen: React.FC<{ navigation: any }> = ({ navigation }) => {
   const [mode, setMode] = useState<'login' | 'register' | 'otp'>('login');
   const [phone, setPhone] = useState('');
   const [password, setPassword] = useState('');
+  const [firstName, setFirstName] = useState('');
+  const [lastName, setLastName] = useState('');
+  const [middleName, setMiddleName] = useState('');
   const [otp, setOtp] = useState('');
   const { login, register, verifyOtp } = useAuthStore();
 
@@ -21,7 +24,9 @@ export const SplashScreen: React.FC<{ navigation: any }> = ({ navigation }) => {
       const success = await login(phone, password);
       if (success) navigation.navigate('Identity');
     } else if (mode === 'register') {
-      const success = await register({ phone, password });
+      const payload: { phone: string; password: string; displayName?: string } = { phone, password };
+      if (firstName) payload.displayName = firstName;
+      const success = await register(payload);
       if (success) navigation.navigate('Identity');
     } else if (mode === 'otp') {
       const success = await verifyOtp(phone, otp);
@@ -33,7 +38,7 @@ export const SplashScreen: React.FC<{ navigation: any }> = ({ navigation }) => {
     <View style={styles.container}>
       <ScrollView
         contentContainerStyle={styles.scrollContent}
-        keyboardShouldPersistTaps="always"
+        keyboardShouldPersistTaps="handled"
         showsVerticalScrollIndicator={false}
         bounces={false}
       >
@@ -58,14 +63,38 @@ export const SplashScreen: React.FC<{ navigation: any }> = ({ navigation }) => {
                 keyboardType="phone-pad"
               />
 
-              {mode === 'login' && (
-                <Input
-                  label="Password"
-                  value={password}
-                  onChangeText={setPassword}
-                  placeholder="Enter your password"
-                  secureTextEntry
-                />
+              <Input
+                label="Password"
+                value={password}
+                onChangeText={setPassword}
+                placeholder="Enter your password"
+                secureTextEntry
+              />
+
+              {mode === 'register' && (
+                <>
+                  <Input
+                    label="First Name"
+                    value={firstName}
+                    onChangeText={setFirstName}
+                    placeholder="John"
+                    autoCapitalize="words"
+                  />
+                  <Input
+                    label="Last Name"
+                    value={lastName}
+                    onChangeText={setLastName}
+                    placeholder="Doe"
+                    autoCapitalize="words"
+                  />
+                  <Input
+                    label="Middle Name (optional)"
+                    value={middleName}
+                    onChangeText={setMiddleName}
+                    placeholder="Middle name"
+                    autoCapitalize="words"
+                  />
+                </>
               )}
             </>
           ) : (
