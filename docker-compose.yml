@@ -182,6 +182,9 @@ services:
       JWT_EXPIRES_IN: 7d
       RAZORPAY_KEY_ID: ${RAZORPAY_KEY_ID:-rzp_test_xxxxxxxxxxxx}
       RAZORPAY_KEY_SECRET: ${RAZORPAY_KEY_SECRET:-your_razorpay_secret}
+      TWILIO_ACCOUNT_SID: ${TWILIO_ACCOUNT_SID:-}
+      TWILIO_AUTH_TOKEN: ${TWILIO_AUTH_TOKEN:-}
+      TWILIO_PHONE_NUMBER: ${TWILIO_PHONE_NUMBER:-}
     depends_on:
       postgres:
         condition: service_healthy

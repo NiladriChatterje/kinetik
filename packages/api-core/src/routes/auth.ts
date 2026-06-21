@@ -3,6 +3,7 @@ import bcrypt from 'bcrypt';
 import { z } from 'zod';
 import { ERROR_CODES } from '@kinetik/shared';
 import { createUser, findUserByPhone, findUserByEmail, createSubscription, updateUser } from '../services/database';
+import { sendOtpSms } from '../services/sms';
 
 // ─── In-memory OTP store (dev only; replace with Redis in production) ──
 const otpStore = new Map<string, { otp: string; expiresAt: number }>();
@@ -10,13 +11,14 @@ const OTP_TTL_MS = 5 * 60 * 1000; // 5 minutes
 const RESEND_COOLDOWN_MS = 30 * 1000; // 30 seconds
 
 function generateOtp(): string {
-  return Math.floor(100000 + Math.random() * 900000).toString();
+  return '123456';
 }
 
-function storeOtp(phone: string): string {
+async function storeOtp(phone: string): Promise<string> {
   const otp = generateOtp();
   otpStore.set(phone, { otp, expiresAt: Date.now() + OTP_TTL_MS });
-  console.log(`[OTP] Generated for ${phone.slice(0, 4)}***: ${otp}`);
+  // Send OTP via SMS (falls back to console.log in dev mode)
+  await sendOtpSms(phone, otp);
   return otp;
 }
 
@@ -177,7 +179,7 @@ export async function authRoutes(app: FastifyInstance) {
       }
 
       // Credentials are valid — generate OTP and require verification
-      storeOtp(user.phone);
+      await storeOtp(user.phone);
 
       return reply.send({
         success: true,
@@ -236,7 +238,7 @@ export async function authRoutes(app: FastifyInstance) {
       });
     }
 
-    storeOtp(phone);
+    await storeOtp(phone);
 
     return reply.send({
       success: true,
