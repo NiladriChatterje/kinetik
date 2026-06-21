@@ -141,9 +141,16 @@ class ApiClient {
   }
 
   async login(data: { phone?: string; email?: string; password?: string }) {
-    return this.request<{ user: any; token: string }>('/api/v1/auth/login', {
+    return this.request<{ user?: any; token?: string; requiresOtp?: boolean; phone?: string; userId?: string }>('/api/v1/auth/login', {
       method: 'POST',
       body: JSON.stringify(data),
+    });
+  }
+
+  async sendOtp(phone: string) {
+    return this.request<{ message: string }>('/api/v1/auth/send-otp', {
+      method: 'POST',
+      body: JSON.stringify({ phone }),
     });
   }
 

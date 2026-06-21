@@ -4,7 +4,7 @@ import { StatusBar } from 'expo-status-bar';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import * as NavigationBar from 'expo-navigation-bar';
-import Toast, { BaseToastProps } from 'react-native-toast-message';
+import Toast from 'react-native-toast-message';
 import { RootNavigator } from './navigation/RootNavigator';
 import { useAuthStore } from './store/authStore';
 import { colors, typography, spacing, radius, animation } from './theme';
@@ -16,113 +16,6 @@ LogBox.ignoreLogs([
   'InteractionManager has been deprecated',
   'InteractionManager.runAfterInteractions',
 ]);
-
-// ─── Animated Toast Wrapper ───────────────────────────────
-
-const AnimatedToastWrapper: React.FC<{ children: React.ReactNode }> = ({ children }) => {
-  const slideAnim = useRef(new Animated.Value(1)).current;
-
-  useEffect(() => {
-    Animated.spring(slideAnim, {
-      toValue: 0,
-      damping: 20,
-      stiffness: 200,
-      useNativeDriver: true,
-    }).start();
-  }, []);
-
-  return (
-    <Animated.View
-      style={{
-        transform: [
-          {
-            translateX: slideAnim.interpolate({
-              inputRange: [0, 1],
-              outputRange: [0, 350],
-            }),
-          },
-        ],
-        opacity: slideAnim.interpolate({
-          inputRange: [0, 1],
-          outputRange: [1, 0],
-        }),
-      }}
-    >
-      {children}
-    </Animated.View>
-  );
-};
-
-// ─── Toast Card ───────────────────────────────────────────
-
-const ICON_MAP = {
-  error: 'close-circle-outline' as const,
-  success: 'checkmark-circle-outline' as const,
-};
-
-const ACCENT_MAP = {
-  error: '#FF6B6B' as const,
-  success: '#4CAF50' as const,
-};
-
-const ToastCard: React.FC<BaseToastProps & { accentColor: string; iconName: keyof typeof ICON_MAP }> = ({ text1, text2, hide, accentColor, iconName }) => (
-  <TouchableOpacity
-    activeOpacity={0.85}
-    onPress={hide}
-    style={{
-      flexDirection: 'row',
-      alignItems: 'center',
-      backgroundColor: '#1c1c1e',
-      borderRadius: 10,
-      maxWidth: 320,
-      ...Platform.select({
-        ios: {
-          shadowColor: '#000',
-          shadowOffset: { width: 0, height: 10 } as const,
-          shadowOpacity: 0.4,
-          shadowRadius: 20,
-        },
-        android: { elevation: 16 },
-      }),
-    }}
-  >
-    {/* Accent bar on the left */}
-    <View style={{ width: 4, backgroundColor: accentColor, alignSelf: 'stretch', borderTopLeftRadius: 10, borderBottomLeftRadius: 10 }} />
-
-    {/* Icon */}
-    <View style={{ paddingLeft: 14, paddingRight: 4 }}>
-      <Ionicons name={ICON_MAP[iconName]} size={18} color={accentColor} />
-    </View>
-
-    {/* Text content */}
-    <View style={{ flexDirection: 'row', alignItems: 'center', paddingVertical: 12, paddingRight: 16, flex: 1 }}>
-      <Text style={{ color: '#ffffff', fontWeight: '600', fontSize: 12, letterSpacing: 0.2 }}>{text1}</Text>
-      {text2 ? (
-        <>
-          <View style={{ width: 4, height: 4, borderRadius: 2, backgroundColor: '#555', marginHorizontal: 6 }} />
-          <Text style={{ color: '#b0b0b0', fontSize: 11, flexShrink: 1 }} numberOfLines={1}>
-            {text2}
-          </Text>
-        </>
-      ) : null}
-    </View>
-  </TouchableOpacity>
-);
-
-// ─── Custom Toast Config ──────────────────────────────────
-
-const toastConfig = {
-  error: (props: BaseToastProps) => (
-    <AnimatedToastWrapper>
-      <ToastCard {...props} accentColor={ACCENT_MAP.error} iconName="error" />
-    </AnimatedToastWrapper>
-  ),
-  success: (props: BaseToastProps) => (
-    <AnimatedToastWrapper>
-      <ToastCard {...props} accentColor={ACCENT_MAP.success} iconName="success" />
-    </AnimatedToastWrapper>
-  ),
-};
 
 export default function App() {
   const initialize = useAuthStore((s) => s.initialize);
@@ -137,10 +30,15 @@ export default function App() {
   useEffect(() => {
     initialize();
 
-    // Hide Android system navigation bar for a more immersive experience
+    // Attempt to hide Android system navigation bar for immersive experience
+    // Gracefully handled in case the native module isn't available (Expo Go)
     if (Platform.OS === 'android') {
-      NavigationBar.setVisibilityAsync('hidden');
-      NavigationBar.setBehaviorAsync('overlay-swipe');
+      try {
+        NavigationBar.setVisibilityAsync('hidden');
+        NavigationBar.setBehaviorAsync('overlay-swipe');
+      } catch {
+        // Native module not available (Expo Go) — silent fallback
+      }
     }
   }, []);
 
@@ -188,11 +86,10 @@ export default function App() {
             </TouchableOpacity>
           </View>
         </Animated.View>
-        {/* Floating toast messages — pinned to top-right corner */}
+        {/* Toast messages using library defaults */}
         <Toast
           position="top"
-          config={toastConfig}
-          topOffset={0}
+          topOffset={80}
           visibilityTime={4000}
           contentContainerStyle={{ alignItems: 'flex-end', paddingRight: 16, paddingTop: 60 }}
         />

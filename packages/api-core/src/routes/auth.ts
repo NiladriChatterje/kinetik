@@ -4,6 +4,43 @@ import { z } from 'zod';
 import { ERROR_CODES } from '@kinetik/shared';
 import { createUser, findUserByPhone, findUserByEmail, createSubscription, updateUser } from '../services/database';
 
+// ─── In-memory OTP store (dev only; replace with Redis in production) ──
+const otpStore = new Map<string, { otp: string; expiresAt: number }>();
+const OTP_TTL_MS = 5 * 60 * 1000; // 5 minutes
+const RESEND_COOLDOWN_MS = 30 * 1000; // 30 seconds
+
+function generateOtp(): string {
+  return Math.floor(100000 + Math.random() * 900000).toString();
+}
+
+function storeOtp(phone: string): string {
+  const otp = generateOtp();
+  otpStore.set(phone, { otp, expiresAt: Date.now() + OTP_TTL_MS });
+  console.log(`[OTP] Generated for ${phone.slice(0, 4)}***: ${otp}`);
+  return otp;
+}
+
+function verifyStoredOtp(phone: string, otp: string): boolean {
+  const entry = otpStore.get(phone);
+  if (!entry) return false;
+  if (Date.now() > entry.expiresAt) {
+    otpStore.delete(phone);
+    return false;
+  }
+  return entry.otp === otp;
+}
+
+function canResendOtp(phone: string): boolean {
+  const entry = otpStore.get(phone);
+  if (!entry) return true;
+  return Date.now() - (entry.expiresAt - OTP_TTL_MS) >= RESEND_COOLDOWN_MS;
+}
+
+function maskPhone(phone: string): string {
+  if (phone.length <= 6) return phone;
+  return phone.slice(0, 4) + '***' + phone.slice(-2);
+}
+
 const RegisterSchema = z.object({
   phone: z.string().min(8).max(20).optional(),
   email: z.string().email().optional(),
@@ -139,12 +176,15 @@ export async function authRoutes(app: FastifyInstance) {
         });
       }
 
-      const token = app.jwt.sign({ sub: user.id, phone: user.phone });
+      // Credentials are valid — generate OTP and require verification
+      storeOtp(user.phone);
+
       return reply.send({
         success: true,
         data: {
-          user: { id: user.id, phone: user.phone, email: user.email, displayName: user.display_name },
-          token,
+          requiresOtp: true,
+          phone: maskPhone(user.phone),
+          userId: user.id,
         },
       });
     }
@@ -175,6 +215,35 @@ export async function authRoutes(app: FastifyInstance) {
     });
   });
 
+  // ─── Send OTP (resend) ─────────────────────────────────
+  app.post('/send-otp', async (request: FastifyRequest, reply: FastifyReply) => {
+    const schema = z.object({ phone: z.string().min(8).max(20) });
+    const validation = schema.safeParse(request.body);
+    if (!validation.success) {
+      return reply.status(400).send({
+        success: false,
+        error: { code: ERROR_CODES.VALIDATION_ERROR, message: 'Invalid phone number' },
+      });
+    }
+
+    const { phone } = validation.data;
+
+    // Rate limit: check cooldown
+    if (!canResendOtp(phone)) {
+      return reply.status(429).send({
+        success: false,
+        error: { code: ERROR_CODES.RATE_LIMITED, message: 'Please wait 30 seconds before requesting a new code.' },
+      });
+    }
+
+    storeOtp(phone);
+
+    return reply.send({
+      success: true,
+      data: { message: 'Verification code sent.' },
+    });
+  });
+
   // ─── Verify OTP ──────────────────────────────────────
   app.post('/verify-otp', async (request: FastifyRequest, reply: FastifyReply) => {
     const validation = VerifyOtpSchema.safeParse(request.body);
@@ -191,19 +260,20 @@ export async function authRoutes(app: FastifyInstance) {
 
     const { phone, otp } = validation.data;
 
-    // In production, verify OTP against SMS provider or Redis
-    // For dev, accept any 6-digit OTP
-    if (otp.length !== 6) {
+    // Verify OTP against stored value
+    if (!verifyStoredOtp(phone, otp)) {
       return reply.status(400).send({
         success: false,
-        error: { code: ERROR_CODES.INVALID_OTP, message: 'Invalid OTP' },
+        error: { code: ERROR_CODES.INVALID_OTP, message: 'Invalid or expired verification code.' },
       });
     }
+
+    // OTP is valid — clear it and issue JWT
+    otpStore.delete(phone);
 
     // Find or create user by phone
     let user = await findUserByPhone(phone);
     if (!user) {
-      // Auto-create user on OTP verification (simplified)
       user = await createUser({ phone, authProvider: 'phone' });
       await createSubscription(user.id, 'free');
     }

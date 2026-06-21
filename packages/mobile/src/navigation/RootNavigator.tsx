@@ -10,6 +10,7 @@ import { colors, typography } from '../theme';
 // ─── Screen Imports ─────────────────────────────────────
 // Onboarding
 import { SplashScreen } from '../screens/onboarding/SplashScreen';
+import { OTPVerifyScreen } from '../screens/onboarding/OTPVerifyScreen';
 import { IdentityScreen } from '../screens/onboarding/IdentityScreen';
 import { LocationPermissionScreen } from '../screens/onboarding/LocationPermissionScreen';
 import { PhotoUploadScreen } from '../screens/onboarding/PhotoUploadScreen';
@@ -61,6 +62,7 @@ export type RootStackParamList = {
 
 export type OnboardingStackParamList = {
   Splash: undefined;
+  OTPVerify: undefined;
   Identity: undefined;
   Location: undefined;
   Photos: undefined;
@@ -98,6 +100,7 @@ function AuthNavigator() {
   return (
     <OnboardingStack.Navigator screenOptions={screenOptions}>
       <OnboardingStack.Screen name="Splash" component={SplashScreen} />
+      <OnboardingStack.Screen name="OTPVerify" component={OTPVerifyScreen} />
       <OnboardingStack.Screen name="Identity" component={IdentityScreen} />
       <OnboardingStack.Screen name="Location" component={LocationPermissionScreen} />
       <OnboardingStack.Screen name="Photos" component={PhotoUploadScreen} />

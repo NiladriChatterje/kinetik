@@ -16,6 +16,7 @@ type ConnectionStatus = 'checking' | 'connected' | 'disconnected';
 interface AuthResult {
   success: boolean;
   error?: string;
+  requiresOtp?: boolean;
 }
 
 interface AuthState {
@@ -27,15 +28,39 @@ interface AuthState {
   connectionStatus: ConnectionStatus;
   connectionError: string | null;
 
+  // OTP verification flow
+  pendingPhone: string | null;
+  pendingUserId: string | null;
+
   // Actions
   initialize: () => Promise<void>;
   checkConnection: () => Promise<void>;
   login: (phone: string, password: string) => Promise<AuthResult>;
   register: (data: { phone?: string; email?: string; password?: string; displayName?: string }) => Promise<AuthResult>;
   verifyOtp: (phone: string, otp: string) => Promise<AuthResult>;
+  sendOtp: (phone: string) => Promise<AuthResult>;
+  clearPendingOtp: () => void;
   logout: () => void;
   setUser: (user: User) => void;
   setOnboardingStep: (step: string) => void;
+}
+
+// Extract a user-friendly error message from the API response
+function getErrorMessage(response: {
+  error?: { message?: string; details?: { fieldErrors?: Record<string, string[]> } };
+}): string {
+  const msg = response.error?.message;
+  if (!msg || msg === 'Invalid input') {
+    const fieldErrors = response.error?.details?.fieldErrors;
+    if (fieldErrors) {
+      const firstField = Object.keys(fieldErrors)[0];
+      if (firstField && fieldErrors[firstField]?.length) {
+        return fieldErrors[firstField][0];
+      }
+    }
+    return 'Invalid phone or password.';
+  }
+  return msg;
 }
 
 export const useAuthStore = create<AuthState>((set, get) => ({
@@ -46,10 +71,11 @@ export const useAuthStore = create<AuthState>((set, get) => ({
   onboardingStep: 'splash',
   connectionStatus: 'checking' as ConnectionStatus,
   connectionError: null,
+  pendingPhone: null,
+  pendingUserId: null,
 
   checkConnection: async () => {
     const prev = get().connectionStatus;
-    // On first run show 'checking'; on retry keep current status to avoid banner flicker
     if (prev === 'checking' || prev === 'connected') set({ connectionStatus: 'checking', connectionError: null });
     const result = await api.healthCheck();
     set({
@@ -74,50 +100,84 @@ export const useAuthStore = create<AuthState>((set, get) => ({
   },
 
   login: async (phone, password) => {
-    const response = await api.login({ phone, password });
-    if (response.success && response.data) {
-      api.setToken(response.data.token);
-      set({
-        user: response.data.user as User,
-        token: response.data.token,
-        isAuthenticated: true,
-      });
-      return { success: true };
+    try {
+      const response = await api.login({ phone, password });
+      if (response.success && response.data) {
+        if (response.data.requiresOtp) {
+          set({
+            pendingPhone: phone,
+            pendingUserId: response.data.userId || null,
+          });
+          return { success: true, requiresOtp: true };
+        }
+        api.setToken(response.data.token);
+        set({
+          user: response.data.user as User,
+          token: response.data.token,
+          isAuthenticated: true,
+        });
+        return { success: true };
+      }
+      return { success: false, error: getErrorMessage(response) };
+    } catch (e: any) {
+      return { success: false, error: e?.message || 'Unable to connect. Please try again.' };
     }
-    return { success: false, error: response.error?.message || 'Invalid phone or password.' };
   },
 
   register: async (data) => {
-    const response = await api.register({ ...data, authProvider: 'phone' });
-    if (response.success && response.data) {
-      api.setToken(response.data.token);
-      set({
-        user: response.data.user as User,
-        token: response.data.token,
-        isAuthenticated: true,
-      });
-      return { success: true };
+    try {
+      const response = await api.register({ ...data, authProvider: 'phone' });
+      if (response.success && response.data) {
+        return { success: true };
+      }
+      return { success: false, error: getErrorMessage(response) };
+    } catch (e: any) {
+      return { success: false, error: e?.message || 'Registration failed.' };
     }
-    return { success: false, error: response.error?.message || 'Registration failed.' };
+  },
+
+  sendOtp: async (phone) => {
+    try {
+      const response = await api.sendOtp(phone);
+      if (response.success) {
+        return { success: true };
+      }
+      return { success: false, error: getErrorMessage(response) };
+    } catch (e: any) {
+      return { success: false, error: e?.message || 'Failed to send verification code.' };
+    }
   },
 
   verifyOtp: async (phone, otp) => {
-    const response = await api.verifyOtp(phone, otp);
-    if (response.success && response.data) {
-      api.setToken(response.data.token);
-      set({
-        user: response.data.user as User,
-        token: response.data.token,
-        isAuthenticated: true,
-      });
-      return { success: true };
+    try {
+      const response = await api.verifyOtp(phone, otp);
+      if (response.success && response.data) {
+        api.setToken(response.data.token);
+        set({
+          user: response.data.user as User,
+          token: response.data.token,
+          isAuthenticated: true,
+          pendingPhone: null,
+          pendingUserId: null,
+        });
+        return { success: true };
+      }
+      return { success: false, error: getErrorMessage(response) };
+    } catch (e: any) {
+      return { success: false, error: e?.message || 'Invalid verification code.' };
     }
-    return { success: false, error: response.error?.message || 'Invalid verification code.' };
+  },
+
+  clearPendingOtp: () => {
+    set({ pendingPhone: null, pendingUserId: null });
   },
 
   logout: () => {
     api.setToken(null);
-    set({ user: null, token: null, isAuthenticated: false, onboardingStep: 'splash' });
+    set({
+      user: null, token: null, isAuthenticated: false,
+      onboardingStep: 'splash', pendingPhone: null, pendingUserId: null,
+    });
   },
 
   setUser: (user) => set({ user }),
