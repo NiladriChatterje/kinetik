@@ -11,3 +11,8 @@ ios/Pods/
 android/.gradle/
 android/app/build/
 *.tsbuildinfo
+__pycache__/
+*.pyc
+*.egg-info/
+.venv/
+

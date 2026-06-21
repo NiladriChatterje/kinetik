@@ -6,15 +6,13 @@
   "workspaces": [
     "packages/api-core",
     "packages/realtime",
-    "packages/match-engine",
     "packages/shared"
   ],
   "scripts": {
-    "dev": "concurrently \"npm run dev:api-core\" \"npm run dev:realtime\" \"npm run dev:match-engine\"",
+    "dev": "concurrently \"npm run dev:api-core\" \"npm run dev:realtime\"",
     "dev:api-core": "npm run dev -w packages/api-core",
     "dev:realtime": "npm run dev -w packages/realtime",
-    "dev:match-engine": "npm run dev -w packages/match-engine",
-    "build": "npm run build -w packages/shared && npm run build -w packages/api-core && npm run build -w packages/realtime && npm run build -w packages/match-engine",
+    "build": "npm run build -w packages/shared && npm run build -w packages/api-core && npm run build -w packages/realtime",
     "lint": "eslint packages/*/src --ext .ts",
     "typecheck": "tsc --noEmit",
     "kafka:admin": "npx tsx scripts/kafkaAdmin.ts",

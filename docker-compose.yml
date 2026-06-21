@@ -259,24 +259,26 @@ services:
           memory: 32M
     logging: *default-logging
 
-  # ─── Match Engine Service ────────────────────────────────
+  # ─── Match Engine (Python / NCF + CUDA) ───────────────────
   match-engine:
     build:
-      context: .
-      dockerfile: packages/match-engine/Dockerfile
+      context: packages/match-engine-py
+      dockerfile: Dockerfile
     container_name: kinetik-match-engine
     restart: unless-stopped
     ports:
       - "${MATCH_ENGINE_PORT:-3003}:3003"
     environment:
-      NODE_ENV: ${NODE_ENV:-development}
+      ENVIRONMENT: ${ENVIRONMENT:-development}
       PORT: 3003
+      HOST: "0.0.0.0"
       REDIS_HOST: redis
       REDIS_PORT: 6379
       REDIS_PASSWORD: ${REDIS_PASSWORD:-kinetik_redis_2024}
       KAFKA_BROKERS: kafka:29092
-      JWT_SECRET: ${JWT_SECRET:-super-secret-jwt-key-change-in-production-2024}
       DATABASE_URL: postgresql://${POSTGRES_USER:-kinetik}:${POSTGRES_PASSWORD:-kinetik_dev_2024}@postgres:5432/${POSTGRES_DB:-kinetik}
+      FORCE_CPU: ${FORCE_CPU:-false}        # Set to "true" to disable CUDA
+      NCF_MODEL_PATH: /data/models/ncf.pt
     depends_on:
       redis:
         condition: service_healthy
@@ -284,16 +286,62 @@ services:
         condition: service_started
       kafka-init:
         condition: service_completed_successfully
+    volumes:
+      - match-engine-models:/data/models
     deploy:
       resources:
-        limits:
-          memory: 512M
         reservations:
-          memory: 256M
+          devices:
+            - driver: nvidia
+              count: all
+              capabilities: [gpu]
+        limits:
+          memory: 1G
+        reservations:
+          memory: 512M
+    logging: *default-logging
+
+  # ─── Match Engine Celery Worker (parallel job processing) ──
+  match-engine-worker:
+    build:
+      context: packages/match-engine-py
+      dockerfile: Dockerfile
+    container_name: kinetik-match-engine-worker
+    restart: unless-stopped
+    entrypoint: ["/bin/bash", "entrypoint-celery.sh"]
+    environment:
+      ENVIRONMENT: ${ENVIRONMENT:-development}
+      REDIS_HOST: redis
+      REDIS_PORT: 6379
+      REDIS_PASSWORD: ${REDIS_PASSWORD:-kinetik_redis_2024}
+      KAFKA_BROKERS: kafka:29092
+      DATABASE_URL: postgresql://${POSTGRES_USER:-kinetik}:${POSTGRES_PASSWORD:-kinetik_dev_2024}@postgres:5432/${POSTGRES_DB:-kinetik}
+      FORCE_CPU: ${FORCE_CPU:-false}
+      CELERY_CONCURRENCY: ${CELERY_CONCURRENCY:-4}
+      CELERY_LOG_LEVEL: info
+    depends_on:
+      redis:
+        condition: service_healthy
+      match-engine:
+        condition: service_started
+    volumes:
+      - match-engine-models:/data/models
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: all
+              capabilities: [gpu]
+        limits:
+          memory: 2G
+        reservations:
+          memory: 1G
     logging: *default-logging
 
 volumes:
   postgres-data:
   redis-data:
   kafka-data:
+  match-engine-models:
 
