@@ -143,6 +143,23 @@ export const API_ROUTES = {
   DUO_PREFIX: '/api/v1/duo',
   DUO_CREATE: '/api/v1/duo/create',
   DUO_JOIN: (code: string) => `/api/v1/duo/join/${code}`,
+
+  // Notifications
+  NOTIFICATIONS_PREFIX: '/api/v1/notifications',
+  NOTIFICATIONS_REGISTER_TOKEN: '/api/v1/notifications/register-token',
+  NOTIFICATIONS_UNREGISTER_TOKEN: '/api/v1/notifications/unregister-token',
+  NOTIFICATIONS_PREFERENCES: '/api/v1/notifications/preferences',
+} as const;
+
+// ─── Notification Type Display Names ──────────────────────
+
+export const NOTIFICATION_TYPE_LABELS: Record<string, string> = {
+  'match.found': 'New Match',
+  'vibe.check': 'Vibe Check',
+  'flash.window': 'Flash Window',
+  'new.message': 'Messages',
+  'duo.invite': 'Duo Invites',
+  'marketing': 'Marketing',
 } as const;
 
 // ─── Error Codes ──────────────────────────────────────────

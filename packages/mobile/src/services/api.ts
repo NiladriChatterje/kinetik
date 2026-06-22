@@ -260,6 +260,32 @@ class ApiClient {
     return this.request(`/api/v1/duo/join/${code}`, { method: 'POST' });
   }
 
+  // ─── Notifications ──────────────────────────────────
+  async registerPushToken(token: string, platform: 'ios' | 'android' | 'web') {
+    return this.request('/api/v1/notifications/register-token', {
+      method: 'POST',
+      body: JSON.stringify({ token, platform }),
+    });
+  }
+
+  async unregisterPushToken(token: string) {
+    return this.request('/api/v1/notifications/unregister-token', {
+      method: 'POST',
+      body: JSON.stringify({ token }),
+    });
+  }
+
+  async getNotificationPreferences() {
+    return this.request<{ pushEnabled: boolean; flashWindowReminder: boolean }>('/api/v1/notifications/preferences');
+  }
+
+  async updateNotificationPreferences(data: { pushEnabled?: boolean; flashWindowReminder?: boolean }) {
+    return this.request('/api/v1/notifications/preferences', {
+      method: 'PUT',
+      body: JSON.stringify(data),
+    });
+  }
+
   // ─── Interests ──────────────────────────────────────
   async getInterests() {
     return this.request('/api/v1/users/interests');

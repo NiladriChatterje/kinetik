@@ -7,6 +7,7 @@ import * as NavigationBar from 'expo-navigation-bar';
 import Toast from 'react-native-toast-message';
 import { RootNavigator } from './navigation/RootNavigator';
 import { useAuthStore } from './store/authStore';
+import { useNotifications } from './hooks/useNotifications';
 import { colors, typography, spacing, radius, animation } from './theme';
 
 // Suppress InteractionManager deprecation warnings from third-party libraries
@@ -25,6 +26,9 @@ export default function App() {
   const bannerAnim = useRef(new Animated.Value(0)).current;
   const bannerVisible = useRef(false);
   const [isRetrying, setIsRetrying] = React.useState(false);
+
+  // Initialize push notifications
+  useNotifications();
 
   // Initialize auth state (checks for stored token), but don't pre-call any API until credentials are provided
   useEffect(() => {

@@ -328,6 +328,21 @@ CREATE TABLE kyc_documents (
 
 CREATE INDEX idx_kyc_user ON kyc_documents(user_id);
 
+-- ─── Push Notification Tokens ────────────────────────────
+CREATE TABLE push_tokens (
+    id              UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    user_id         UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    token           TEXT NOT NULL,
+    platform        VARCHAR(10),       -- 'ios', 'android', 'web'
+    is_active       BOOLEAN DEFAULT TRUE,
+    created_at      TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    updated_at      TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    UNIQUE (user_id, token)
+);
+
+CREATE INDEX idx_push_tokens_user ON push_tokens(user_id);
+CREATE INDEX idx_push_tokens_active ON push_tokens(is_active);
+
 -- ─── Audit Log ────────────────────────────────────────────
 CREATE TABLE audit_log (
     id              UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
@@ -364,6 +379,10 @@ CREATE TRIGGER trg_preferences_updated_at
 
 CREATE TRIGGER trg_subscription_updated_at
     BEFORE UPDATE ON subscription_ledger
+    FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
+
+CREATE TRIGGER trg_push_tokens_updated_at
+    BEFORE UPDATE ON push_tokens
     FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
 
 -- ─── Seed Data: Default Interests ─────────────────────────

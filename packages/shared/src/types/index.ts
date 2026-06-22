@@ -224,6 +224,41 @@ export interface UserInteraction {
   action: InteractionAction;
 }
 
+// ─── Push Notification Types ────────────────────────────────
+
+export interface PushToken {
+  id: string;
+  userId: string;
+  token: string;
+  platform: 'ios' | 'android' | 'web';
+  isActive: boolean;
+  createdAt: string;
+}
+
+export interface NotificationPreferences {
+  pushEnabled: boolean;
+  flashWindowReminder: boolean;
+}
+
+export interface PushNotificationMessage {
+  to: string;
+  title?: string;
+  body: string;
+  data?: Record<string, unknown>;
+  sound?: 'default' | null;
+  badge?: number;
+  priority?: 'default' | 'normal' | 'high';
+}
+
+export enum NotificationType {
+  MATCH_FOUND = 'match.found',
+  VIBE_CHECK = 'vibe.check',
+  FLASH_WINDOW = 'flash.window',
+  NEW_MESSAGE = 'new.message',
+  DUO_INVITE = 'duo.invite',
+  MARKETING = 'marketing',
+}
+
 // ─── WebSocket Event Types ────────────────────────────────
 
 export enum WsEvent {

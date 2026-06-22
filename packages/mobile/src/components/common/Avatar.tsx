@@ -11,7 +11,7 @@ interface AvatarProps {
   style?: ViewStyle;
 }
 
-export const Avatar: React.FC<AvatarProps> = ({
+export const Avatar: React.FC<AvatarProps> = React.memo(({
   uri,
   size = 56,
   isOnline,
@@ -57,7 +57,8 @@ export const Avatar: React.FC<AvatarProps> = ({
       )}
     </View>
   );
-};
+});
+Avatar.displayName = 'Avatar';
 
 const styles = StyleSheet.create({
   container: {

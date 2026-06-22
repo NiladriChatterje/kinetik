@@ -1,4 +1,5 @@
-import { latLngToCell, kRing, cellToLatLng, cellToBoundary, gridDistance } from 'h3-js';
+import { latLngToCell, gridRing, cellToLatLng, cellToBoundary, gridDistance } from 'h3-js';
+import { H3_HIGH_DENSITY_THRESHOLD } from '../constants';
 
 // ─── Resolution Constants ────────────────────────────────
 
@@ -20,11 +21,8 @@ export const H3_VENUE_RESOLUTION = 9;
 
 // ─── Density Thresholds ──────────────────────────────────
 
-/**
- * High-density threshold: >5,000 active users in the search area.
- * When exceeded, tighten the search radius for quality matching.
- */
-export const H3_HIGH_DENSITY_THRESHOLD = 5000;
+// Note: H3_HIGH_DENSITY_THRESHOLD is defined in constants/index.ts
+// Do not redefine here to avoid duplicate export conflicts.
 
 /**
  * Search ring radius for high-density areas.
@@ -63,7 +61,7 @@ export function geoToH3(lat: number, lng: number, resolution: number = H3_MATCH_
  * @returns Array of H3 cell indices
  */
 export function getNeighborCells(origin: string, radius: number = H3_TIGHT_RING_RADIUS): string[] {
-  return kRing(origin, radius);
+  return gridRing(origin, radius);
 }
 
 /**

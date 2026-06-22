@@ -1,5 +1,6 @@
-import React from 'react';
+import React, { useCallback } from 'react';
 import { View, Text, StyleSheet, ScrollView, TouchableOpacity } from 'react-native';
+import { useNavigation } from '@react-navigation/native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { Card } from '../../components/common/Card';
@@ -16,14 +17,25 @@ const METRICS = [
 ];
 
 const SETTINGS = [
-  { icon: 'notifications-outline' as const, label: 'Notifications' },
-  { icon: 'lock-closed-outline' as const, label: 'Privacy' },
-  { icon: 'card-outline' as const, label: 'Subscription' },
-  { icon: 'call-outline' as const, label: 'Support' },
+  { icon: 'notifications-outline' as const, label: 'Notifications', screen: 'NotificationPreferences' as const },
+  { icon: 'lock-closed-outline' as const, label: 'Privacy', screen: undefined },
+  { icon: 'card-outline' as const, label: 'Subscription', screen: undefined },
+  { icon: 'call-outline' as const, label: 'Support', screen: undefined },
 ];
 
 export const ProfileLedgerScreen: React.FC = () => {
-  const { user, logout } = useAuthStore();
+  const user = useAuthStore((s) => s.user);
+  const logout = useAuthStore((s) => s.logout);
+  const navigation = useNavigation();
+
+  const handleSettingPress = useCallback(
+    (screen: string | undefined) => {
+      if (screen) {
+        navigation.navigate(screen as never);
+      }
+    },
+    [navigation],
+  );
 
   return (
     <SafeAreaView style={styles.container}>
@@ -50,7 +62,11 @@ export const ProfileLedgerScreen: React.FC = () => {
         <Card style={styles.settingsCard}>
           {SETTINGS.map((s, i) => (
             <React.Fragment key={s.label}>
-              <TouchableOpacity style={styles.settingRow}>
+              <TouchableOpacity
+                style={styles.settingRow}
+                onPress={() => handleSettingPress(s.screen)}
+                disabled={!s.screen}
+              >
                 <Ionicons name={s.icon} size={20} color={colors.textSecondary} />
                 <Text style={styles.settingText}>{s.label}</Text>
               </TouchableOpacity>

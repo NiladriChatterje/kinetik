@@ -45,10 +45,17 @@ import { HeatMapScreen } from '../screens/viral/HeatMapScreen';
 import { TokenVaultScreen } from '../screens/wallet/TokenVaultScreen';
 import { ProfileLedgerScreen } from '../screens/wallet/ProfileLedgerScreen';
 
+// Notifications
+import { NotificationHandler } from '../hooks/useNotifications';
+
+// Settings
+import { NotificationPreferencesScreen } from '../screens/settings/NotificationPreferencesScreen';
+
 export type RootStackParamList = {
   Auth: undefined;
   Onboarding: undefined;
   Main: undefined;
+  NotificationPreferences: undefined;
   VibeCheck: { vibeId: string; partnerName: string };
   Unmasking: { vibeId: string };
   Commitment: { vibeId: string };
@@ -96,7 +103,8 @@ const screenOptions = {
   gestureEnabled: false,
 };
 
-function AuthNavigator() {
+// Memoize navigator sub-components to prevent unnecessary re-renders
+const AuthNavigator = React.memo(function AuthNavigator() {
   return (
     <OnboardingStack.Navigator screenOptions={screenOptions}>
       <OnboardingStack.Screen name="Splash" component={SplashScreen} />
@@ -108,9 +116,10 @@ function AuthNavigator() {
       <OnboardingStack.Screen name="KYC" component={KYCScreen} />
     </OnboardingStack.Navigator>
   );
-}
+});
+AuthNavigator.displayName = 'AuthNavigator';
 
-function PreferencesNavigator() {
+const PreferencesNavigator = React.memo(function PreferencesNavigator() {
   return (
     <PreferencesStack.Navigator screenOptions={screenOptions}>
       <PreferencesStack.Screen name="FilterConstraints" component={FilterConstraintsScreen} />
@@ -119,29 +128,30 @@ function PreferencesNavigator() {
       <PreferencesStack.Screen name="CommCadence" component={CommCadenceScreen} />
     </PreferencesStack.Navigator>
   );
-}
+});
+PreferencesNavigator.displayName = 'PreferencesNavigator';
 
-function MainTabNavigator() {
+const tabBarScreenOptions = {
+  headerShown: false,
+  tabBarStyle: {
+    backgroundColor: colors.tabBarBg,
+    borderTopColor: colors.tabBarBorder,
+    borderTopWidth: 1,
+    height: 80,
+    paddingBottom: 20,
+    paddingTop: 10,
+  },
+  tabBarActiveTintColor: colors.textPrimary,
+  tabBarInactiveTintColor: colors.textMuted,
+  tabBarLabelStyle: {
+    ...typography.caption,
+    fontSize: 10,
+  },
+};
+
+const MainTabNavigator = React.memo(function MainTabNavigator() {
   return (
-    <MainTab.Navigator
-      screenOptions={{
-        headerShown: false,
-        tabBarStyle: {
-          backgroundColor: colors.tabBarBg,
-          borderTopColor: colors.tabBarBorder,
-          borderTopWidth: 1,
-          height: 80,
-          paddingBottom: 20,
-          paddingTop: 10,
-        },
-        tabBarActiveTintColor: colors.textPrimary,
-        tabBarInactiveTintColor: colors.textMuted,
-        tabBarLabelStyle: {
-          ...typography.caption,
-          fontSize: 10,
-        },
-      }}
-    >
+    <MainTab.Navigator screenOptions={tabBarScreenOptions}>
       <MainTab.Screen
         name="FlashCountdown"
         component={FlashCountdownScreen}
@@ -184,7 +194,8 @@ function MainTabNavigator() {
       />
     </MainTab.Navigator>
   );
-}
+});
+MainTabNavigator.displayName = 'MainTabNavigator';
 
 export function RootNavigator() {
   const { isAuthenticated, isLoading, onboardingStep } = useAuthStore();
@@ -201,6 +212,8 @@ export function RootNavigator() {
 
   return (
     <NavigationContainer>
+      {/* Notification tap handler must be inside NavigationContainer */}
+      <NotificationHandler />
       <RootStack.Navigator
         screenOptions={screenOptions}
         initialRouteName={showOnboarding ? 'Onboarding' : 'Main'}
@@ -216,6 +229,7 @@ export function RootNavigator() {
         <RootStack.Screen name="ReservationLocker" component={ReservationLockerScreen} />
         <RootStack.Screen name="DoubleDate" component={DoubleDateScreen} />
         <RootStack.Screen name="HeatMap" component={HeatMapScreen} />
+        <RootStack.Screen name="NotificationPreferences" component={NotificationPreferencesScreen} />
       </RootStack.Navigator>
     </NavigationContainer>
   );

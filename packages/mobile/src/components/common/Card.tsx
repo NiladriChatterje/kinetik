@@ -9,13 +9,14 @@ interface CardProps {
   padded?: boolean;
 }
 
-export const Card: React.FC<CardProps> = ({ children, style, glow = false, padded = true }) => {
+export const Card: React.FC<CardProps> = React.memo(({ children, style, glow = false, padded = true }) => {
   return (
     <View style={[styles.card, glow && styles.glow, padded && styles.padded, style]}>
       {children}
     </View>
   );
-};
+});
+Card.displayName = 'Card';
 
 const styles = StyleSheet.create({
   card: {

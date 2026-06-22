@@ -14,6 +14,7 @@ import { venueRoutes } from './routes/venues';
 import { fanRoutes } from './routes/fans';
 import { duoRoutes } from './routes/duo';
 import { webhookRoutes } from './routes/webhooks';
+import { notificationRoutes } from './routes/notifications';
 import { errorHandler } from './middleware/errorHandler';
 import { kafkaProducer } from './services/kafka';
 import { initializeRedis } from './services/redis';
@@ -94,6 +95,7 @@ async function bootstrap() {
   await app.register(paymentRoutes, { prefix: API_ROUTES.PAYMENTS_PREFIX });
   await app.register(duoRoutes, { prefix: API_ROUTES.DUO_PREFIX });
   await app.register(webhookRoutes, { prefix: '/api/v1/webhooks' });
+  await app.register(notificationRoutes, { prefix: API_ROUTES.NOTIFICATIONS_PREFIX });
 
   // ─── Start ───────────────────────────────────────────
   try {

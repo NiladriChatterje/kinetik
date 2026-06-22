@@ -19,7 +19,8 @@ export const SplashScreen: React.FC<{ navigation: any }> = ({ navigation }) => {
   const [middleName, setMiddleName] = useState('');
   const [loading, setLoading] = useState(false);
   const [errorMsg, setErrorMsg] = useState('');
-  const { login, register } = useAuthStore();
+  const login = useAuthStore((s) => s.login);
+  const register = useAuthStore((s) => s.register);
   const toast = useToast();
 
   const clearError = () => setErrorMsg('');

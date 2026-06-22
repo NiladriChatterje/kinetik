@@ -1,4 +1,4 @@
-import { Pool, PoolConfig, QueryResult } from 'pg';
+import { Pool, PoolConfig, QueryResult, QueryResultRow } from 'pg';
 
 let pool: Pool | null = null;
 
@@ -19,7 +19,7 @@ export function getDatabasePool(config?: PoolConfig): Pool {
   return pool;
 }
 
-export async function query<T = any>(
+export async function query<T extends QueryResultRow = any>(
   text: string,
   params?: any[],
 ): Promise<QueryResult<T>> {
@@ -61,13 +61,13 @@ export async function query<T = any>(
 }
 
 export async function transaction<T>(
-  callback: (query: <R = any>(text: string, params?: any[]) => Promise<QueryResult<R>>) => Promise<T>,
+  callback: (query: <R extends QueryResultRow>(text: string, params?: any[]) => Promise<QueryResult<R>>) => Promise<T>,
 ): Promise<T> {
   const client = getDatabasePool();
   const conn = await client.connect();
   try {
     await conn.query('BEGIN');
-    const result = await callback(<R = any>(text: string, params?: any[]) => conn.query<R>(text, params));
+    const result = await callback(<R extends QueryResultRow = any>(text: string, params?: any[]) => conn.query<R>(text, params));
     await conn.query('COMMIT');
     return result;
   } catch (error) {
@@ -105,5 +105,6 @@ export const TABLES = {
   USER_INTERACTIONS: 'user_interactions',
   USER_VECTORS: 'user_vectors',
   KYC_DOCUMENTS: 'kyc_documents',
+  PUSH_TOKENS: 'push_tokens',
   AUDIT_LOG: 'audit_log',
 } as const;
