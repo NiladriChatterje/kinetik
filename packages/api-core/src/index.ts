@@ -3,8 +3,6 @@ import cors from '@fastify/cors';
 import jwt from '@fastify/jwt';
 import rateLimit from '@fastify/rate-limit';
 import multipart from '@fastify/multipart';
-import fastifyStatic from '@fastify/static';
-import path from 'path';
 import { API_ROUTES, ERROR_CODES } from '@kinetik/shared';
 import Redis from 'ioredis';
 import { authRoutes } from './routes/auth';
@@ -54,13 +52,9 @@ async function bootstrap() {
     },
   });
 
-  // Serve uploaded files statically
-  // Resolve relative to `packages/api-core` so it works regardless of CWD
-  await app.register(fastifyStatic, {
-    root: path.resolve(__dirname, '../uploads'),
-    prefix: '/uploads/',
-    decorateReply: true,
-  });
+  // ─── Note: Static files (photos) are served by MinIO via nginx ─
+  // Photo uploads are stored in MinIO (S3-compatible) and proxied
+  // through nginx at /uploads/. See nginx.conf for the proxy config.
 
   await app.register(rateLimit, {
     max: 100,

@@ -1,27 +1,35 @@
 /**
- * Photo storage service.
+ * Photo storage service — MinIO (S3-compatible) object storage.
  *
- * Saves uploaded profile photos to the local filesystem and generates
- * smaller thumbnail versions using sharp.
+ * Uploads profile photos to a MinIO bucket, generates thumbnails via sharp,
+ * and returns pre-signed or public URLs.
  *
- * Directory structure:
- *   uploads/photos/{userId}/{uuid}.webp       (full-res)
- *   uploads/photos/{userId}/{uuid}_thumb.webp  (thumbnail, 300px)
+ * Bucket structure:
+ *   kinetik-photos/{userId}/{photoId}.webp        (full-res)
+ *   kinetik-photos/{userId}/{photoId}_thumb.webp   (thumbnail, 300px)
+ *
+ * Environment variables:
+ *   MINIO_ENDPOINT   — MinIO server address (default: localhost:9000)
+ *   MINIO_ACCESS_KEY — Access key (default: minioadmin)
+ *   MINIO_SECRET_KEY — Secret key (default: minioadmin)
+ *   MINIO_USE_SSL   — Set to "true" for HTTPS (default: false)
+ *   MINIO_BUCKET    — Bucket name (default: kinetik-photos)
+ *   MINIO_PUBLIC_URL — Public-facing URL for photos (default: /uploads/)
  */
 
-import path from 'path';
-import fs from 'fs/promises';
-import { createWriteStream } from 'fs';
-import { pipeline } from 'stream/promises';
+import { S3Client, PutObjectCommand, DeleteObjectCommand, ListObjectsV2Command } from '@aws-sdk/client-s3';
 import sharp from 'sharp';
 import { v4 as uuidv4 } from 'uuid';
 
 // ─── Constants ───────────────────────────────────────────────────────
 
-// Use __dirname to always resolve relative to the api-core package,
-// regardless of where the process was started from.
-const UPLOAD_ROOT = process.env.UPLOAD_DIR || path.resolve(__dirname, '../../uploads');
-const PHOTOS_DIR = path.join(UPLOAD_ROOT, 'photos');
+const ENDPOINT = process.env.MINIO_ENDPOINT || 'localhost:9000';
+const ACCESS_KEY = process.env.MINIO_ACCESS_KEY || 'minioadmin';
+const SECRET_KEY = process.env.MINIO_SECRET_KEY || 'minioadmin';
+const USE_SSL = process.env.MINIO_USE_SSL === 'true';
+const BUCKET = process.env.MINIO_BUCKET || 'kinetik-photos';
+/** Public URL prefix for serving images (via nginx or MinIO console) */
+const PUBLIC_URL = process.env.MINIO_PUBLIC_URL || '/uploads/';
 
 /** Thumbnail max dimension */
 const THUMB_SIZE = 300;
@@ -38,21 +46,40 @@ const ALLOWED_MIME_TYPES = new Set([
 /** Max file size: 10 MB */
 const MAX_FILE_SIZE = 10 * 1024 * 1024;
 
+// ─── S3 Client ───────────────────────────────────────────────────────
+
+let s3Client: S3Client | null = null;
+
+function getS3Client(): S3Client {
+  if (!s3Client) {
+    s3Client = new S3Client({
+      endpoint: `http${USE_SSL ? 's' : ''}://${ENDPOINT}`,
+      region: 'us-east-1', // MinIO ignores region but S3 SDK requires it
+      credentials: {
+        accessKeyId: ACCESS_KEY,
+        secretAccessKey: SECRET_KEY,
+      },
+      forcePathStyle: true, // Required for MinIO (uses path-style instead of virtual-hosted)
+    });
+    console.log(`[photoStorage] MinIO client initialized — endpoint=${ENDPOINT}, bucket=${BUCKET}`);
+  }
+  return s3Client;
+}
+
 // ─── Public API ──────────────────────────────────────────────────────
 
 export interface SavedPhoto {
-  /** Unique filename (without extension) */
+  /** Unique photo ID (UUID) */
   id: string;
-  /** URL path for the full-resolution image */
+  /** Public URL for the full-resolution image */
   url: string;
-  /** URL path for the thumbnail */
+  /** Public URL for the thumbnail */
   thumbnailUrl: string;
 }
 
 /**
- * Save an uploaded photo buffer to disk, generate a thumbnail.
- *
- * @returns The saved photo metadata (id, url, thumbnailUrl)
+ * Upload a photo buffer to MinIO, generating both a full-res version
+ * and a thumbnail.
  */
 export async function savePhoto(
   userId: string,
@@ -68,60 +95,106 @@ export async function savePhoto(
   }
 
   const photoId = uuidv4();
-  const userDir = path.join(PHOTOS_DIR, userId);
+  const client = getS3Client();
 
-  // Ensure directory exists
-  await fs.mkdir(userDir, { recursive: true });
+  // ── Generate full-res WebP ──────────────────────────────
+  const fullKey = `${userId}/${photoId}.webp`;
+  const fullBuffer = await sharp(fileBuffer).webp({ quality: 85, effort: 6 }).toBuffer();
 
-  // Save full-resolution image as WebP
-  const fullFilename = `${photoId}.webp`;
-  const fullPath = path.join(userDir, fullFilename);
+  await client.send(
+    new PutObjectCommand({
+      Bucket: BUCKET,
+      Key: fullKey,
+      Body: fullBuffer,
+      ContentType: 'image/webp',
+      CacheControl: 'public, max-age=31536000, immutable',
+    }),
+  );
 
-  const fullImage = sharp(fileBuffer).webp({ quality: 85, effort: 6 });
-  await fullImage.toFile(fullPath);
-
-  // Generate and save thumbnail
-  const thumbFilename = `${photoId}_thumb.webp`;
-  const thumbPath = path.join(userDir, thumbFilename);
-
-  const thumbImage = sharp(fileBuffer)
+  // ── Generate thumbnail ──────────────────────────────────
+  const thumbKey = `${userId}/${photoId}_thumb.webp`;
+  const thumbBuffer = await sharp(fileBuffer)
     .resize(THUMB_SIZE, THUMB_SIZE, { fit: 'cover', position: 'centre' })
-    .webp({ quality: 75, effort: 4 });
-  await thumbImage.toFile(thumbPath);
+    .webp({ quality: 75, effort: 4 })
+    .toBuffer();
 
-  // Log file sizes
-  const fullStat = await fs.stat(fullPath);
-  const thumbStat = await fs.stat(thumbPath);
+  await client.send(
+    new PutObjectCommand({
+      Bucket: BUCKET,
+      Key: thumbKey,
+      Body: thumbBuffer,
+      ContentType: 'image/webp',
+      CacheControl: 'public, max-age=31536000, immutable',
+    }),
+  );
+
   console.log(
-    `[photoStorage] Saved ${fullFilename}: ${(fullStat.size / 1024).toFixed(1)}KB, ` +
-      `thumbnail: ${(thumbStat.size / 1024).toFixed(1)}KB`,
+    `[photoStorage] Uploaded to minio://${BUCKET}/${fullKey} ` +
+      `| full=${(fullBuffer.length / 1024).toFixed(1)}KB ` +
+      `thumb=${(thumbBuffer.length / 1024).toFixed(1)}KB`,
   );
 
   return {
     id: photoId,
-    url: `/uploads/photos/${userId}/${fullFilename}`,
-    thumbnailUrl: `/uploads/photos/${userId}/${thumbFilename}`,
+    url: `${PUBLIC_URL}${fullKey}`,
+    thumbnailUrl: `${PUBLIC_URL}${thumbKey}`,
   };
 }
 
 /**
- * Delete a photo and its thumbnail from disk.
+ * Delete a photo and its thumbnail from MinIO.
  */
 export async function deletePhoto(userId: string, photoId: string): Promise<void> {
-  const fullPath = path.join(PHOTOS_DIR, userId, `${photoId}.webp`);
-  const thumbPath = path.join(PHOTOS_DIR, userId, `${photoId}_thumb.webp`);
+  const client = getS3Client();
+  const keys = [
+    `${userId}/${photoId}.webp`,
+    `${userId}/${photoId}_thumb.webp`,
+  ];
 
-  await Promise.allSettled([
-    fs.unlink(fullPath).catch(() => {}),
-    fs.unlink(thumbPath).catch(() => {}),
-  ]);
+  await Promise.all(
+    keys.map((key) =>
+      client
+        .send(
+          new DeleteObjectCommand({
+            Bucket: BUCKET,
+            Key: key,
+          }),
+        )
+        .catch(() => {}),
+    ),
+  );
+
+  console.log(`[photoStorage] Deleted minio://${BUCKET}/${userId}/${photoId}.*`);
 }
 
 /**
- * Get the absolute filesystem path for a photo URL.
+ * Delete ALL photos for a user (e.g., when account is deleted).
  */
-export function resolvePhotoPath(photoUrl: string): string {
-  // photoUrl is like "/uploads/photos/{userId}/{filename}"
-  const relativePath = photoUrl.replace(/^\//, '');
-  return path.join(UPLOAD_ROOT, relativePath);
+export async function deleteAllUserPhotos(userId: string): Promise<void> {
+  const client = getS3Client();
+
+  // List all objects with the user's prefix
+  const listed = await client.send(
+    new ListObjectsV2Command({
+      Bucket: BUCKET,
+      Prefix: `${userId}/`,
+    }),
+  );
+
+  if (!listed.Contents?.length) return;
+
+  await Promise.all(
+    listed.Contents.map((obj) =>
+      client
+        .send(
+          new DeleteObjectCommand({
+            Bucket: BUCKET,
+            Key: obj.Key!,
+          }),
+        )
+        .catch(() => {}),
+    ),
+  );
+
+  console.log(`[photoStorage] Deleted ${listed.Contents.length} objects for user ${userId}`);
 }

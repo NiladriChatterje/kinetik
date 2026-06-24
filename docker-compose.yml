@@ -253,6 +253,63 @@ services:
           memory: 128M
     logging: *default-logging
 
+  # ─── MinIO Object Storage (S3-compatible) ──────────────
+  minio:
+    image: minio/minio:latest
+    container_name: kinetik-minio
+    restart: unless-stopped
+    command: server /data --console-address ":9001"
+    ports:
+      - "${MINIO_PORT:-9000}:9000"
+      - "${MINIO_CONSOLE_PORT:-9001}:9001"
+    environment:
+      MINIO_ROOT_USER: ${MINIO_ROOT_USER:-minioadmin}
+      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD:-minioadmin}
+    volumes:
+      - minio-data:/data
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:9000/minio/health/live"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    deploy:
+      resources:
+        limits:
+          cpus: "0.5"
+          memory: 256M
+        reservations:
+          memory: 128M
+    logging: *default-logging
+
+  # ─── MinIO Bucket Setup (runs once on startup) ──────────
+  minio-init:
+    image: minio/mc:latest
+    container_name: kinetik-minio-init
+    restart: "no"
+    entrypoint: ["/bin/sh", "-c"]
+    command:
+      - |
+        set -e
+        echo "⏳ Waiting for MinIO..."
+        until mc alias set kinetik http://minio:9000 $${MINIO_ROOT_USER:-minioadmin} $${MINIO_ROOT_PASSWORD:-minioadmin}; do
+          echo "⚠️  Retrying in 3s..."
+          sleep 3
+        done
+        echo "✅ Connected to MinIO"
+        if mc ls kinetik/${MINIO_BUCKET:-kinetik-photos} > /dev/null 2>&1; then
+          echo "✅ Bucket already exists"
+        else
+          mc mb kinetik/${MINIO_BUCKET:-kinetik-photos}
+          echo "✅ Created bucket: ${MINIO_BUCKET:-kinetik-photos}"
+        fi
+        # Make bucket publicly readable (for direct URL access via nginx)
+        mc anonymous set download kinetik/${MINIO_BUCKET:-kinetik-photos}
+        echo "✅ Bucket policy set to public-read"
+    depends_on:
+      minio:
+        condition: service_started
+    logging: *default-logging
+
   # ─── Nginx Reverse Proxy ─────────────────────────────────
   nginx:
     image: nginx:alpine
@@ -361,4 +418,5 @@ volumes:
   redis-data:
   kafka-data:
   match-engine-models:
+  minio-data:
 
