@@ -160,6 +160,64 @@ export async function getPreferences(userId: string) {
   }
 }
 
+// ─── Photo Queries ────────────────────────────────────────
+
+export async function insertPhoto(data: {
+  userId: string;
+  url: string;
+  thumbnailUrl: string;
+  orderIndex?: number;
+}) {
+  const result = await query(
+    `INSERT INTO ${TABLES.PROFILE_PHOTOS} (user_id, url, thumbnail_url, order_index)
+     VALUES ($1, $2, $3, $4)
+     RETURNING id, url, thumbnail_url, is_primary, order_index, created_at`,
+    [data.userId, data.url, data.thumbnailUrl, data.orderIndex ?? 0],
+  );
+  return result.rows[0];
+}
+
+export async function getPhotosByUserId(userId: string) {
+  const result = await query(
+    `SELECT id, url, thumbnail_url, blur_hash, is_primary, order_index, created_at
+     FROM ${TABLES.PROFILE_PHOTOS}
+     WHERE user_id = $1
+     ORDER BY order_index ASC, created_at ASC`,
+    [userId],
+  );
+  return result.rows;
+}
+
+export async function deletePhotoById(photoId: string, userId: string) {
+  const result = await query(
+    `DELETE FROM ${TABLES.PROFILE_PHOTOS} WHERE id = $1 AND user_id = $2 RETURNING id`,
+    [photoId, userId],
+  );
+  return result.rows[0] || null;
+}
+
+export async function setPrimaryPhoto(photoId: string, userId: string) {
+  // Remove current primary
+  await query(
+    `UPDATE ${TABLES.PROFILE_PHOTOS} SET is_primary = FALSE WHERE user_id = $1`,
+    [userId],
+  );
+  // Set new primary
+  const result = await query(
+    `UPDATE ${TABLES.PROFILE_PHOTOS} SET is_primary = TRUE WHERE id = $1 AND user_id = $2 RETURNING *`,
+    [photoId, userId],
+  );
+  return result.rows[0] || null;
+}
+
+export async function getPhotoCount(userId: string): Promise<number> {
+  const result = await query(
+    `SELECT COUNT(*) as count FROM ${TABLES.PROFILE_PHOTOS} WHERE user_id = $1`,
+    [userId],
+  );
+  return parseInt(result.rows[0]?.count ?? '0', 10);
+}
+
 // ─── Subscription Queries ─────────────────────────────────
 
 export async function getSubscription(userId: string) {

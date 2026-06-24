@@ -2,6 +2,9 @@ import Fastify from 'fastify';
 import cors from '@fastify/cors';
 import jwt from '@fastify/jwt';
 import rateLimit from '@fastify/rate-limit';
+import multipart from '@fastify/multipart';
+import fastifyStatic from '@fastify/static';
+import path from 'path';
 import { API_ROUTES, ERROR_CODES } from '@kinetik/shared';
 import Redis from 'ioredis';
 import { authRoutes } from './routes/auth';
@@ -15,6 +18,7 @@ import { fanRoutes } from './routes/fans';
 import { duoRoutes } from './routes/duo';
 import { webhookRoutes } from './routes/webhooks';
 import { notificationRoutes } from './routes/notifications';
+import { photoRoutes } from './routes/photos';
 import { errorHandler } from './middleware/errorHandler';
 import { kafkaProducer } from './services/kafka';
 import { initializeRedis } from './services/redis';
@@ -39,6 +43,23 @@ async function bootstrap() {
   await app.register(jwt, {
     secret: JWT_SECRET,
     sign: { expiresIn: process.env.JWT_EXPIRES_IN || '7d' },
+  });
+
+  // ─── File Upload Support ────────────────────────────
+  await app.register(multipart, {
+    limits: {
+      fieldSize: 10 * 1024 * 1024, // 10 MB max file size
+      fileSize: 10 * 1024 * 1024,
+      files: 1,
+    },
+  });
+
+  // Serve uploaded files statically
+  // Resolve relative to `packages/api-core` so it works regardless of CWD
+  await app.register(fastifyStatic, {
+    root: path.resolve(__dirname, '../uploads'),
+    prefix: '/uploads/',
+    decorateReply: true,
   });
 
   await app.register(rateLimit, {
@@ -96,6 +117,7 @@ async function bootstrap() {
   await app.register(duoRoutes, { prefix: API_ROUTES.DUO_PREFIX });
   await app.register(webhookRoutes, { prefix: '/api/v1/webhooks' });
   await app.register(notificationRoutes, { prefix: API_ROUTES.NOTIFICATIONS_PREFIX });
+  await app.register(photoRoutes, { prefix: '/api/v1/users/photos' });
 
   // ─── Start ───────────────────────────────────────────
   try {

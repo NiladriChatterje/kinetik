@@ -290,6 +290,71 @@ class ApiClient {
   async getInterests() {
     return this.request('/api/v1/users/interests');
   }
+
+  // ─── Photos ───────────────────────────────────────────
+  /**
+   * Upload a profile photo via multipart/form-data.
+   * Does NOT use the standard request() method because FormData needs
+   * a different Content-Type (multipart) and no JSON body.
+   */
+  async uploadPhoto(
+    formData: FormData,
+  ): Promise<{ id: string; url: string; thumbnailUrl: string }> {
+    const headers: Record<string, string> = {};
+    if (this.token) {
+      headers['Authorization'] = `Bearer ${this.token}`;
+    }
+
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), 60000); // 60s for uploads
+
+    try {
+      const response = await fetch(`${API_URL}/api/v1/users/photos`, {
+        method: 'POST',
+        headers,
+        body: formData,
+        signal: controller.signal,
+      });
+      clearTimeout(timeout);
+
+      const data = await response.json();
+      if (!response.ok) {
+        throw new Error(data?.error?.message || 'Upload failed');
+      }
+      return data.data;
+    } catch (error: any) {
+      clearTimeout(timeout);
+      if (error.name === 'AbortError') {
+        throw new Error('Upload timed out. Please try again.');
+      }
+      throw error;
+    }
+  }
+
+  /**
+   * Delete a profile photo.
+   */
+  async deletePhoto(photoId: string): Promise<void> {
+    await this.request(`/api/v1/users/photos/${photoId}`, {
+      method: 'DELETE',
+    });
+  }
+
+  /**
+   * Get all profile photos for the current user.
+   */
+  async getPhotos() {
+    return this.request('/api/v1/users/photos');
+  }
+
+  /**
+   * Set a photo as the primary profile photo.
+   */
+  async setPrimaryPhoto(photoId: string) {
+    return this.request(`/api/v1/users/photos/${photoId}/primary`, {
+      method: 'PUT',
+    });
+  }
 }
 
 export const api = new ApiClient();
