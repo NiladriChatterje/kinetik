@@ -290,21 +290,20 @@ services:
     command:
       - |
         set -e
-        echo "⏳ Waiting for MinIO..."
+        echo "Waiting for MinIO..."
         until mc alias set kinetik http://minio:9000 $${MINIO_ROOT_USER:-minioadmin} $${MINIO_ROOT_PASSWORD:-minioadmin}; do
-          echo "⚠️  Retrying in 3s..."
+          echo "Retrying in 3s..."
           sleep 3
         done
-        echo "✅ Connected to MinIO"
+        echo "Connected to MinIO"
         if mc ls kinetik/${MINIO_BUCKET:-kinetik-photos} > /dev/null 2>&1; then
-          echo "✅ Bucket already exists"
+          echo "Bucket already exists"
         else
           mc mb kinetik/${MINIO_BUCKET:-kinetik-photos}
-          echo "✅ Created bucket: ${MINIO_BUCKET:-kinetik-photos}"
+          echo "Created bucket: ${MINIO_BUCKET:-kinetik-photos}"
         fi
-        # Make bucket publicly readable (for direct URL access via nginx)
         mc anonymous set download kinetik/${MINIO_BUCKET:-kinetik-photos}
-        echo "✅ Bucket policy set to public-read"
+        echo "Bucket policy set to public-read"
     depends_on:
       minio:
         condition: service_started
@@ -367,11 +366,10 @@ services:
             - driver: nvidia
               count: all
               capabilities: [gpu]
+          memory: 512M
         limits:
           cpus: "1.5"
           memory: 1G
-        reservations:
-          memory: 512M
     logging: *default-logging
 
   # ─── Match Engine Celery Worker (parallel job processing) ──
@@ -406,11 +404,10 @@ services:
             - driver: nvidia
               count: all
               capabilities: [gpu]
+          memory: 512M
         limits:
           cpus: "1.0"
           memory: 1G
-        reservations:
-          memory: 512M
     logging: *default-logging
 
 volumes:

@@ -14,6 +14,11 @@ class ApiClient {
     this.token = await SecureStore.getItemAsync('auth_token');
   }
 
+  /** Returns the current auth token (used by photoService for native file uploads). */
+  getToken(): string | null {
+    return this.token;
+  }
+
   setToken(token: string | null) {
     this.token = token;
     if (token) {
@@ -284,45 +289,6 @@ class ApiClient {
   }
 
   // ─── Photos ───────────────────────────────────────────
-  /**
-   * Upload a profile photo via multipart/form-data.
-   * Does NOT use the standard request() method because FormData needs
-   * a different Content-Type (multipart) and no JSON body.
-   */
-  async uploadPhoto(
-    formData: FormData,
-  ): Promise<{ id: string; url: string; thumbnailUrl: string }> {
-    const headers: Record<string, string> = {};
-    if (this.token) {
-      headers['Authorization'] = `Bearer ${this.token}`;
-    }
-
-    const controller = new AbortController();
-    const timeout = setTimeout(() => controller.abort(), 60000); // 60s for uploads
-
-    try {
-      const response = await fetch(`${API_URL}/api/v1/users/photos`, {
-        method: 'POST',
-        headers,
-        body: formData,
-        signal: controller.signal,
-      });
-      clearTimeout(timeout);
-
-      const data = await response.json();
-      if (!response.ok) {
-        throw new Error(data?.error?.message || 'Upload failed');
-      }
-      return data.data;
-    } catch (error: any) {
-      clearTimeout(timeout);
-      if (error.name === 'AbortError') {
-        throw new Error('Upload timed out. Please try again.');
-      }
-      throw error;
-    }
-  }
-
   /**
    * Delete a profile photo.
    */

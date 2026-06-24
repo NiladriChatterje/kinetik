@@ -26,7 +26,7 @@ export const PhotoUploadScreen: React.FC<{ navigation: any }> = ({ navigation })
 
   const pickPhoto = async () => {
     const result = await ImagePicker.launchImageLibraryAsync({
-      mediaTypes: ImagePicker.MediaTypeOptions.Images,
+      mediaTypes: ['images'],
       quality: 1.0, // Max quality — we'll compress losslessly ourselves
     });
     if (!result.canceled && result.assets[0]) {

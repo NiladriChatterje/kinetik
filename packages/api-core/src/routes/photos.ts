@@ -40,7 +40,7 @@ export async function photoRoutes(app: FastifyInstance) {
       });
     }
 
-    // Process the uploaded file
+    // Process the uploaded file (multipart via @fastify/multipart)
     const file = await request.file();
     if (!file) {
       return reply.status(400).send({
@@ -58,7 +58,14 @@ export async function photoRoutes(app: FastifyInstance) {
     }
     const fileBuffer = Buffer.concat(chunks);
 
-    // Save to disk + generate thumbnail
+    if (fileBuffer.length === 0) {
+      return reply.status(400).send({
+        success: false,
+        error: { code: 'EMPTY_FILE', message: 'Photo data is empty.' },
+      });
+    }
+
+    // Save to MinIO + generate thumbnail
     let saved;
     try {
       saved = await savePhoto(userId, fileBuffer, mimeType);

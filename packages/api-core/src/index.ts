@@ -2,6 +2,7 @@ import Fastify from 'fastify';
 import cors from '@fastify/cors';
 import jwt from '@fastify/jwt';
 import rateLimit from '@fastify/rate-limit';
+
 import multipart from '@fastify/multipart';
 import { API_ROUTES, ERROR_CODES } from '@kinetik/shared';
 import Redis from 'ioredis';
@@ -43,7 +44,7 @@ async function bootstrap() {
     sign: { expiresIn: process.env.JWT_EXPIRES_IN || '7d' },
   });
 
-  // ─── File Upload Support ────────────────────────────
+  // ─── Multipart Upload Support ───────────────────────────
   await app.register(multipart, {
     limits: {
       fieldSize: 10 * 1024 * 1024, // 10 MB max file size

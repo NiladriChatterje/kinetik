@@ -15,6 +15,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 
 # Copy only requirements first for Docker layer caching
 COPY requirements.txt ./
+ENV PATH=/root/.local/bin:$PATH
 RUN pip install --no-cache-dir --user -r requirements.txt
 
 # ─── Runtime Stage ──────────────────────────────────────────────
