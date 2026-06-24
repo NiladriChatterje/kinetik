@@ -7,6 +7,7 @@ import { Button } from '../../components/common/Button';
 import { useToast } from '../../hooks/useToast';
 import { compressAndUploadPhoto } from '../../services/photoService';
 import { api } from '../../services/api';
+import { resolveUrl } from '../../config';
 import { colors, typography, spacing, radius } from '../../theme';
 
 interface UploadedPhoto {
@@ -129,7 +130,7 @@ export const PhotoUploadScreen: React.FC<{ navigation: any }> = ({ navigation })
                 {photo ? (
                   <View style={styles.photoWrapper}>
                     <Image
-                      source={{ uri: photo.uploading ? photo.localUri : photo.url || photo.localUri }}
+                      source={{ uri: photo.uploading ? photo.localUri : resolveUrl(photo.url) || photo.localUri }}
                       style={styles.photo}
                     />
                     {photo.uploading && (

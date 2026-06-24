@@ -1,13 +1,5 @@
-import Constants from 'expo-constants';
 import * as SecureStore from 'expo-secure-store';
-
-const API_URL = Constants.expoConfig?.extra?.apiUrl || 'http://localhost:3001';
-const WS_URL = Constants.expoConfig?.extra?.wsUrl || 'http://localhost:3002';
-
-if (typeof __DEV__ !== 'undefined' && __DEV__) {
-  console.log('[API] Base URL:', API_URL);
-  console.log('[API] WS URL:', WS_URL);
-}
+import { API_URL, WS_URL } from '../config';
 
 interface ApiResponse<T = any> {
   success: boolean;
