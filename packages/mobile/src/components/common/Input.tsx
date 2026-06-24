@@ -30,7 +30,7 @@ interface InputProps {
    *  Use for fields where the parent reformats the text (e.g. auto-formatted DOB). */
   syncOnChange?: boolean;
   /** iOS only: Sets the autocorrection and autocomplete type (e.g. 'oneTimeCode' for OTP auto-fill). */
-  textContentType?: string;
+  textContentType?: TextInput['props']['textContentType'];
 }
 
 /**

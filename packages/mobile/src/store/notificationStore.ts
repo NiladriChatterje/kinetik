@@ -1,6 +1,8 @@
 import { create } from 'zustand';
-import * as Notifications from 'expo-notifications';
+import Constants from 'expo-constants';
 import { Platform } from 'react-native';
+import type { Notification, NotificationResponse } from 'expo-notifications';
+import { getNotificationsModule } from '../services/notifications';
 import { api } from '../services/api';
 
 interface NotificationState {
@@ -9,8 +11,8 @@ interface NotificationState {
   flashWindowReminder: boolean;
   isLoading: boolean;
   isInitialized: boolean;
-  lastNotification: Notifications.Notification | null;
-  lastNotificationResponse: Notifications.NotificationResponse | null;
+  lastNotification: Notification | null;
+  lastNotificationResponse: NotificationResponse | null;
 
   // Actions
   initialize: () => Promise<void>;
@@ -18,8 +20,8 @@ interface NotificationState {
   refreshPreferences: () => Promise<void>;
   updatePushEnabled: (enabled: boolean) => Promise<void>;
   updateFlashWindowReminder: (enabled: boolean) => Promise<void>;
-  setLastNotification: (notification: Notifications.Notification | null) => void;
-  setLastNotificationResponse: (response: Notifications.NotificationResponse | null) => void;
+  setLastNotification: (notification: Notification | null) => void;
+  setLastNotificationResponse: (response: NotificationResponse | null) => void;
   cleanup: () => void;
 }
 
@@ -38,33 +40,50 @@ export const useNotificationStore = create<NotificationState>((set, get) => ({
     try {
       set({ isLoading: true });
 
-      // Set up notification channel for Android
-      if (Platform.OS === 'android') {
-        await Notifications.setNotificationChannelAsync('default', {
-          name: 'Default',
-          importance: Notifications.AndroidImportance.MAX,
-          vibrationPattern: [0, 250, 250, 250],
-          lightColor: '#000000',
-        });
+      const Notifications = await getNotificationsModule();
 
-        await Notifications.setNotificationChannelAsync('messages', {
-          name: 'Messages',
-          importance: Notifications.AndroidImportance.HIGH,
-          vibrationPattern: [0, 250, 250, 250],
-          lightColor: '#000000',
-        });
+      // Set up notification channels for Android (if module available)
+      if (Notifications && Platform.OS === 'android') {
+        try {
+          await Notifications.setNotificationChannelAsync('default', {
+            name: 'Default',
+            importance: Notifications.AndroidImportance.MAX,
+            vibrationPattern: [0, 250, 250, 250],
+            lightColor: '#000000',
+          });
 
-        await Notifications.setNotificationChannelAsync('vibe', {
-          name: 'Vibe Check',
-          importance: Notifications.AndroidImportance.HIGH,
-          vibrationPattern: [0, 250, 250, 250],
-          lightColor: '#000000',
-          sound: 'default',
-        });
+          await Notifications.setNotificationChannelAsync('messages', {
+            name: 'Messages',
+            importance: Notifications.AndroidImportance.HIGH,
+            vibrationPattern: [0, 250, 250, 250],
+            lightColor: '#000000',
+          });
+
+          await Notifications.setNotificationChannelAsync('vibe', {
+            name: 'Vibe Check',
+            importance: Notifications.AndroidImportance.HIGH,
+            vibrationPattern: [0, 250, 250, 250],
+            lightColor: '#000000',
+            sound: 'default',
+          });
+        } catch {
+          console.warn('[notifications] Failed to set up Android channels');
+        }
       }
 
-      // Register for push notifications
-      const token = await get().registerForPushNotifications();
+      // Detect Expo Go — remote push notifications are not supported there
+      const isExpoGo =
+        Constants.executionEnvironment === 'storeClient';
+
+      if (isExpoGo) {
+        console.log(
+          '[notifications] Running in Expo Go — push notifications require a development build. ' +
+            'Local notifications will still work.'
+        );
+      } else if (Notifications) {
+        // Register for push notifications (only in dev builds / production)
+        await get().registerForPushNotifications();
+      }
 
       // Load preferences from backend
       await get().refreshPreferences();
@@ -77,6 +96,9 @@ export const useNotificationStore = create<NotificationState>((set, get) => ({
   },
 
   registerForPushNotifications: async () => {
+    const Notifications = await getNotificationsModule();
+    if (!Notifications) return null;
+
     try {
       // Request permissions
       const { status: existingStatus } = await Notifications.getPermissionsAsync();
@@ -93,9 +115,22 @@ export const useNotificationStore = create<NotificationState>((set, get) => ({
       }
 
       // Get the Expo push token
-      // Note: In Expo SDK 56, projectId is required for getExpoPushTokenAsync
+      // In Expo SDK 56+, projectId is required for getExpoPushTokenAsync
+      // It is read from the EAS project config (app.json extra.eas.projectId)
+      const projectId =
+        Constants?.expoConfig?.extra?.eas?.projectId ??
+        Constants?.easConfig?.projectId;
+
+      if (!projectId) {
+        console.error(
+          '[notifications] Project ID not found. Ensure your project is linked to EAS.\n' +
+            '  Run `npx eas init` or add `extra.eas.projectId` to app.json'
+        );
+        return null;
+      }
+
       const tokenData = await Notifications.getExpoPushTokenAsync({
-        projectId: undefined, // Will use the one from app.json
+        projectId,
       });
       const token = tokenData.data;
 

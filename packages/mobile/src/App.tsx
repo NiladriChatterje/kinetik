@@ -39,7 +39,6 @@ export default function App() {
     if (Platform.OS === 'android') {
       try {
         NavigationBar.setVisibilityAsync('hidden');
-        NavigationBar.setBehaviorAsync('overlay-swipe');
       } catch {
         // Native module not available (Expo Go) — silent fallback
       }
@@ -95,7 +94,6 @@ export default function App() {
           position="top"
           topOffset={80}
           visibilityTime={4000}
-          contentContainerStyle={{ alignItems: 'flex-end', paddingRight: 16, paddingTop: 60 }}
         />
       </SafeAreaProvider>
     </View>

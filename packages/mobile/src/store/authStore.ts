@@ -47,11 +47,14 @@ interface AuthState {
 
 // Extract a user-friendly error message from the API response
 function getErrorMessage(response: {
-  error?: { message?: string; details?: { fieldErrors?: Record<string, string[]> } };
+  error?: { message?: string; details?: unknown };
 }): string {
   const msg = response.error?.message;
   if (!msg || msg === 'Invalid input') {
-    const fieldErrors = response.error?.details?.fieldErrors;
+    const details = response.error?.details as
+      | { fieldErrors?: Record<string, string[]> }
+      | undefined;
+    const fieldErrors = details?.fieldErrors;
     if (fieldErrors) {
       const firstField = Object.keys(fieldErrors)[0];
       if (firstField && fieldErrors[firstField]?.length) {
@@ -110,10 +113,10 @@ export const useAuthStore = create<AuthState>((set, get) => ({
           });
           return { success: true, requiresOtp: true };
         }
-        api.setToken(response.data.token);
+        api.setToken(response.data.token ?? null);
         set({
           user: response.data.user as User,
-          token: response.data.token,
+          token: response.data.token ?? null,
           isAuthenticated: true,
         });
         return { success: true };

@@ -5,11 +5,12 @@
   "scripts": {
     "start": "expo start",
     "start:tunnel": "expo start --tunnel",
-    "android": "expo start --android",
-    "ios": "expo start --ios",
+    "android": "expo run:android",
+    "ios": "expo run:ios",
     "web": "expo start --web",
     "build:android": "eas build --platform android",
-    "build:ios": "eas build --platform ios"
+    "build:ios": "eas build --platform ios",
+    "postinstall": "patch-package"
   },
   "dependencies": {
     "@expo/metro-config": "^56.0.14",
@@ -51,6 +52,7 @@
   },
   "devDependencies": {
     "@types/react": "~19.2.14",
+    "patch-package": "^8.0.1",
     "typescript": "~6.0.3"
   }
 }

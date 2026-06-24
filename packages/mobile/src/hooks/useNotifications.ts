@@ -1,43 +1,62 @@
 import React, { useEffect, useRef } from 'react';
-import * as Notifications from 'expo-notifications';
+import { getNotificationsModule } from '../services/notifications';
 import { useNotificationStore } from '../store/notificationStore';
 
-type Subscription = { remove: () => void };
-
-// Configure how notifications are shown when the app is in the foreground
-Notifications.setNotificationHandler({
-  handleNotification: async () => ({
-    shouldShowAlert: true,
-    shouldPlaySound: true,
-    shouldSetBadge: true,
-    shouldShowBanner: true,
-    shouldShowList: true,
-  }),
-});
+type SubscriptionRef = { remove: () => void } | null;
 
 /**
  * Hook that initializes push notifications.
  * Should be called once at the app root level.
  * Does NOT handle navigation — that's done by NotificationHandler.
+ *
+ * The notification store handles Expo Go detection internally —
+ * push token registration is skipped there.
+ *
+ * expo-notifications is loaded lazily via require() behind an Expo Go guard
+ * to avoid the native-module crash in Expo Go (SDK 53+).
  */
 export function useNotifications() {
-  const notificationListenerRef = useRef<Subscription | null>(null);
+  const notificationListenerRef = useRef<SubscriptionRef>(null);
 
   const initialize = useNotificationStore((s) => s.initialize);
   const setLastNotification = useNotificationStore((s) => s.setLastNotification);
 
   useEffect(() => {
-    // Initialize the notification system
-    initialize();
+    let cancelled = false;
 
-    // Listen for notifications received while app is in foreground
-    notificationListenerRef.current = Notifications.addNotificationReceivedListener((notification) => {
-      console.log('[notifications] Received in foreground:', notification.request.identifier);
-      setLastNotification(notification);
-    });
+    (async () => {
+      const Notifications = await getNotificationsModule();
+      if (!Notifications || cancelled) return;
+
+      try {
+        // Configure how the app handles incoming notifications
+        Notifications.setNotificationHandler({
+          handleNotification: async () => ({
+            shouldShowAlert: true,
+            shouldPlaySound: true,
+            shouldSetBadge: true,
+            shouldShowBanner: true,
+            shouldShowList: true,
+          }),
+        });
+
+        // Initialize the notification system
+        initialize();
+
+        // Listen for notifications received while app is in foreground
+        notificationListenerRef.current = Notifications.addNotificationReceivedListener(
+          (notification) => {
+            console.log('[notifications] Received in foreground:', notification.request.identifier);
+            setLastNotification(notification);
+          },
+        );
+      } catch (error) {
+        console.warn('[notifications] Handler/listener setup failed:', error);
+      }
+    })();
 
     return () => {
-      // Cleanup listeners using .remove() (removeNotificationSubscription is deprecated)
+      cancelled = true;
       notificationListenerRef.current?.remove();
     };
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
@@ -48,19 +67,32 @@ export function useNotifications() {
  * It listens for notification taps and navigates accordingly.
  */
 export function NotificationHandler(): React.ReactElement | null {
-  const responseListenerRef = useRef<Subscription | null>(null);
+  const responseListenerRef = useRef<SubscriptionRef>(null);
   const setLastNotificationResponse = useNotificationStore((s) => s.setLastNotificationResponse);
 
   useEffect(() => {
-    // Listen for notification taps (app opened from notification)
-    responseListenerRef.current = Notifications.addNotificationResponseReceivedListener((response) => {
-      const { notification } = response;
-      console.log('[notifications] Tapped:', notification.request.identifier);
-      setLastNotificationResponse(response);
+    let cancelled = false;
 
-      // Navigation is handled by deep linking / navigation ref
-      // We store the response data for the navigation layer to consume
-    });
+    (async () => {
+      const Notifications = await getNotificationsModule();
+      if (!Notifications || cancelled) return;
+
+      try {
+        // Listen for notification taps (app opened from notification)
+        responseListenerRef.current = Notifications.addNotificationResponseReceivedListener(
+          (response) => {
+            const { notification } = response;
+            console.log('[notifications] Tapped:', notification.request.identifier);
+            setLastNotificationResponse(response);
+
+            // Navigation is handled by deep linking / navigation ref
+            // We store the response data for the navigation layer to consume
+          },
+        );
+      } catch (error) {
+        console.warn('[notifications] Response listener setup failed:', error);
+      }
+    })();
 
     return () => {
       responseListenerRef.current?.remove();
@@ -75,6 +107,9 @@ export function NotificationHandler(): React.ReactElement | null {
  * hasn't sent a push notification yet).
  */
 export async function showLocalNotification(title: string, body: string, data?: Record<string, unknown>) {
+  const Notifications = await getNotificationsModule();
+  if (!Notifications) return;
+
   await Notifications.scheduleNotificationAsync({
     content: {
       title,
@@ -95,6 +130,9 @@ export async function scheduleLocalNotification(
   secondsFromNow: number,
   data?: Record<string, unknown>,
 ) {
+  const Notifications = await getNotificationsModule();
+  if (!Notifications) return;
+
   await Notifications.scheduleNotificationAsync({
     content: {
       title,
@@ -113,6 +151,9 @@ export async function scheduleLocalNotification(
  * Cancel all scheduled local notifications.
  */
 export async function cancelAllScheduledNotifications() {
+  const Notifications = await getNotificationsModule();
+  if (!Notifications) return;
+
   await Notifications.cancelAllScheduledNotificationsAsync();
 }
 
@@ -120,5 +161,8 @@ export async function cancelAllScheduledNotifications() {
  * Get the current notification permissions status.
  */
 export async function getNotificationPermissionsStatus() {
+  const Notifications = await getNotificationsModule();
+  if (!Notifications) return null;
+
   return await Notifications.getPermissionsAsync();
 }

@@ -28,15 +28,18 @@
         "backgroundColor": "#0A0A0F"
       },
       "package": "com.kinetik.app",
+      "googleServicesFile": "./google-services.json",
       "permissions": [
         "CAMERA",
         "ACCESS_FINE_LOCATION",
         "ACCESS_COARSE_LOCATION",
         "RECORD_AUDIO",
-        "READ_EXTERNAL_STORAGE"
+        "READ_EXTERNAL_STORAGE",
+        "POST_NOTIFICATIONS"
       ]
     },
     "plugins": [
+      "expo-dev-client",
       "expo-location",
       "expo-camera",
       "expo-image-picker",
@@ -51,6 +54,7 @@
         }
       ]
     ],
+
     "web": {
       "bundler": "metro",
       "output": "single"
