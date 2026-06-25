@@ -13,10 +13,10 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     libffi-dev \
     && rm -rf /var/lib/apt/lists/*
 
-# Copy only requirements first for Docker layer caching
-COPY requirements.txt ./
+# Copy only lockfile first for Docker layer caching
+COPY requirements-lock.txt ./
 ENV PATH=/root/.local/bin:$PATH
-RUN pip install --no-cache-dir --user -r requirements.txt
+RUN pip install --no-cache-dir --user -r requirements-lock.txt
 
 # ─── Runtime Stage ──────────────────────────────────────────────
 FROM python:3.11-slim
@@ -34,6 +34,7 @@ ENV PATH=/root/.local/bin:$PATH
 
 # Copy application source
 COPY src/ ./src/
+COPY entrypoint-celery.sh ./
 
 # Expose health / metrics port
 EXPOSE 3003
