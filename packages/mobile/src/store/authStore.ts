@@ -186,11 +186,37 @@ export const useAuthStore = create<AuthState>((set, get) => ({
         api.setToken(response.data.token);
         const userData = response.data.user as User;
         const onboardingComplete = userData?.onboardingComplete ?? false;
+
+        let step = onboardingComplete ? 'complete' : 'splash';
+
+        // If not marked complete, check actual profile data to determine real progress.
+        // This handles users who filled in identity fields but never reached 'complete' step.
+        if (!onboardingComplete) {
+          try {
+            const profileRes = await api.getProfile();
+            if (profileRes.success && profileRes.data) {
+              const d = profileRes.data as any;
+              const hasIdentity = !!(d.dateOfBirth && d.gender && d.pronouns);
+
+              if (hasIdentity) {
+                // Identity data exists — use the stored onboarding step (which may be
+                // ahead of 'splash'), or mark identity as completed so the screen
+                // navigator skips the Identity screen.
+                step = d.onboardingStep && d.onboardingStep !== 'splash'
+                  ? d.onboardingStep
+                  : 'identity';
+              }
+            }
+          } catch {
+            // Profile fetch failed — fall back to the response flag
+          }
+        }
+
         set({
           user: userData,
           token: response.data.token,
           isAuthenticated: true,
-          onboardingStep: onboardingComplete ? 'complete' : 'splash',
+          onboardingStep: step,
           pendingPhone: null,
           pendingUserId: null,
         });

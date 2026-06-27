@@ -85,10 +85,24 @@ export const OTPVerifyScreen: React.FC<{ navigation: any }> = ({ navigation }) =
       if (result.success) {
         toast.showSuccess('Verified!', 'You have been verified successfully.');
         // Read the latest onboardingStep directly from store (avoid stale closure)
-        if (useAuthStore.getState().onboardingStep === 'complete') {
+        const currentStep = useAuthStore.getState().onboardingStep;
+        if (currentStep === 'complete') {
           // Profile is fully set up — go straight to Main
           navigation.getParent()?.reset({ index: 0, routes: [{ name: 'Main' }] });
+        } else if (currentStep === 'identity') {
+          // Identity data already exists — skip to Location
+          navigation.navigate('Location');
+        } else if (currentStep === 'location' || currentStep === 'photos' || currentStep === 'pose' || currentStep === 'kyc') {
+          // User is further along — determine next screen based on step
+          const screenMap: Record<string, string> = {
+            location: 'Photos',
+            photos: 'PoseVerification',
+            pose: 'KYC',
+            kyc: 'KYC',
+          };
+          navigation.navigate(screenMap[currentStep] || 'Identity');
         } else {
+          // No progress — start from Identity
           navigation.navigate('Identity');
         }
       } else {
