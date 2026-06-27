@@ -74,7 +74,10 @@ export const OTPVerifyScreen: React.FC<{ navigation: any }> = ({ navigation }) =
 
   const handleVerify = async () => {
     const code = digits.join('');
-    if (code.length !== 6 || !pendingPhone) return;
+    if (code.length !== 6 || !pendingPhone) {
+      toast.showGlass('Must fill all the fields!', 'Please enter the complete 6-digit code.');
+      return;
+    }
 
     setLoading(true);
     try {
@@ -99,7 +102,6 @@ export const OTPVerifyScreen: React.FC<{ navigation: any }> = ({ navigation }) =
     navigation.goBack();
   };
 
-  const isComplete = digits.every((d) => d !== '');
   const maskPhone = (phone: string) => {
     if (phone.length <= 6) return phone;
     return phone.slice(0, 4) + '•••••' + phone.slice(-2);
@@ -182,7 +184,6 @@ export const OTPVerifyScreen: React.FC<{ navigation: any }> = ({ navigation }) =
             title="Verify"
             onPress={handleVerify}
             loading={loading}
-            disabled={!isComplete || loading}
             fullWidth
             size="lg"
           />

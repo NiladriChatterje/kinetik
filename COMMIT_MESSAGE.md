@@ -1,35 +1,16 @@
-fix: Kafka InconsistentClusterIdException + optimize kafka-init with pre-built image
+feat: glassmorphic error toast + graceful PHONE_EXISTS handling + identity screen validation
 
-Issues fixed:
-- Kafka crash loop: Zookeeper had no persistent volume, so on restart it
-  generated a new cluster ID, causing InconsistentClusterIdException.
-  Fixed by adding named volumes for Zookeeper (data + datalog) and
-  setting KAFKA_CLUSTER_ID explicitly so Kafka always uses a consistent
-  cluster ID regardless of Zookeeper state.
-- Nginx, api-core, realtime stuck in "Created" state because they
-  depended on kafka-init, which depended on a crashing Kafka.
-
-Infrastructure:
-- docker-compose.yml: Added zookeeper-data + zookeeper-datalog volumes
-- docker-compose.yml: Added ZOOKEEPER_DATA_LOG_DIR env var
-- docker-compose.yml: Set KAFKA_CLUSTER_ID with default cluster ID
-- docker-compose.yml: Increased resource limits for kafka and api-core
-- Added MinIO S3-compatible storage env vars to api-core service
-
-Photo pipeline:
-- Added blurhash dependency for progressive image loading
-- photoStorage.ts: Generate BlurHash during photo upload (4x3 components)
-- photos.ts: Store blur_hash in DB, delete from MinIO directly
-- users.ts: Removed duplicate /photos GET route
-- api.ts: deletePhoto now throws on failure for proper error handling
-
-Match engine (Python):
-- Renamed RedisClient.set() to set_value() to avoid shadowing built-in
-- Updated all callers (spatial.py, redis_client.py)
-- Fixed entrypoint-celery.sh working directory path
-
-Kafka-init optimization:
-- Created scripts/Dockerfile.kafka-init with pre-installed deps
-- Created scripts/entrypoint-kafka-init.sh with retry logic (10 attempts)
-- Created scripts/package.json with kafkajs + tsx dependencies
-- Eliminated runtime npm install (~15s saved per startup)
+Mobile:
+- Added GlassToast component: black glassmorphic toast with translucent
+  background, subtle border, shadow, and bottom slide-in animation
+- Updated App.tsx to register custom glass toast type with bottom positioning
+- Updated useToast hook with showGlass method (3s visibility)
+- SplashScreen: PHONE_EXISTS (409) now shows a graceful glass toast
+  "Phone already exists! / Try signing in instead." instead of a generic
+  error toast at the top
+- Refactored authStore.getErrorMessage() → getErrorResponse() to surface
+  errorCode (PHONE_EXISTS, EMAIL_EXISTS, etc.) through AuthResult
+- IdentityScreen: All three fields (DOB, gender, pronouns) are now validated
+  on submit with a glass toast "Must fill all the fields!" if any are
+  missing. Removed silent disabled-button pattern — button is always
+  pressable and shows clear validation feedback via toast.

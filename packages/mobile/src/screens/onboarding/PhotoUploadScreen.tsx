@@ -96,12 +96,12 @@ export const PhotoUploadScreen: React.FC<{ navigation: any }> = ({ navigation })
     // All photos that are still uploading — wait for them
     const pendingUploads = photos.filter((p) => p.uploading);
     if (pendingUploads.length > 0) {
-      toast.showInfo('Please wait', 'Photos are still uploading...');
+      toast.showGlass('Please wait', 'Photos are still uploading...');
       return;
     }
 
     if (photos.length < 2) {
-      toast.showError('Minimum 2 Photos', 'You need at least 2 photos to continue.');
+      toast.showGlass('Must fill all the fields!', 'You need at least 2 photos to continue.');
       return;
     }
 
@@ -167,7 +167,6 @@ export const PhotoUploadScreen: React.FC<{ navigation: any }> = ({ navigation })
         <Button
           title="Continue"
           onPress={handleContinue}
-          disabled={photos.length < 2 || uploading}
           loading={uploading}
           fullWidth
         />

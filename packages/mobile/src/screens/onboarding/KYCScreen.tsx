@@ -20,6 +20,11 @@ export const KYCScreen: React.FC<{ navigation: any }> = ({ navigation }) => {
   const toast = useToast();
 
   const handleFinish = async () => {
+    if (!docType || !uploaded) {
+      toast.showGlass('Must fill all the fields!', 'Please select a document type and upload your ID.');
+      return;
+    }
+
     await api.updateOnboardingStep('complete', { kycCompleted: true });
     toast.showSuccess('Welcome to Kinetik!', 'Your profile is ready. Start matching!');
     // Update local store so RootStack registers Main screen
@@ -65,7 +70,7 @@ export const KYCScreen: React.FC<{ navigation: any }> = ({ navigation }) => {
       </View>
 
       <View style={styles.footer}>
-        <Button title="Complete Setup" onPress={handleFinish} disabled={!uploaded} fullWidth size="lg" />
+        <Button title="Complete Setup" onPress={handleFinish} fullWidth size="lg" />
         <Text style={styles.skipText}>or skip for now</Text>
       </View>
     </SafeAreaView>

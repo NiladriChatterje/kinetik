@@ -75,7 +75,7 @@ export const IdentityScreen: React.FC<{ navigation: any }> = ({ navigation }) =>
   const [genderTouched, setGenderTouched] = useState(false);
   const [pronouns, setPronouns] = useState('');
   const [loading, setLoading] = useState(false);
-  const { user, setUser } = useAuthStore();
+  const { user } = useAuthStore();
   const toast = useToast();
 
   const handleDobChange = useCallback((text: string) => {
