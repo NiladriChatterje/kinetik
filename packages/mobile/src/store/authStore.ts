@@ -99,6 +99,21 @@ export const useAuthStore = create<AuthState>((set, get) => ({
         const profileRes = await api.getProfile();
         if (profileRes.success && profileRes.data) {
           const d = profileRes.data as any;
+          let onboardingStep = d.onboardingComplete ? 'complete' : (d.onboardingStep || 'splash');
+
+          // If step would send user to the Photos screen, check if they already
+          // have at least 2 photos and skip ahead to pose verification.
+          if (!d.onboardingComplete && onboardingStep === 'location') {
+            try {
+              const photosRes = await api.getPhotos();
+              if (photosRes.success && Array.isArray(photosRes.data) && photosRes.data.length >= 2) {
+                onboardingStep = 'photos';
+              }
+            } catch {
+              // Photos fetch failed — user will see the Photos screen
+            }
+          }
+
           set({
             token,
             user: {
@@ -110,7 +125,7 @@ export const useAuthStore = create<AuthState>((set, get) => ({
               onboardingStep: d.onboardingStep,
             },
             isAuthenticated: true,
-            onboardingStep: d.onboardingComplete ? 'complete' : (d.onboardingStep || 'splash'),
+            onboardingStep,
             isLoading: false,
           });
         } else {
@@ -205,6 +220,19 @@ export const useAuthStore = create<AuthState>((set, get) => ({
                 step = d.onboardingStep && d.onboardingStep !== 'splash'
                   ? d.onboardingStep
                   : 'identity';
+              }
+
+              // If step would send user to the Photos screen, check if they already
+              // have at least 2 photos and skip ahead to pose verification.
+              if (step === 'location') {
+                try {
+                  const photosRes = await api.getPhotos();
+                  if (photosRes.success && Array.isArray(photosRes.data) && photosRes.data.length >= 2) {
+                    step = 'photos';
+                  }
+                } catch {
+                  // Photos fetch failed — user will see the Photos screen
+                }
               }
             }
           } catch {
