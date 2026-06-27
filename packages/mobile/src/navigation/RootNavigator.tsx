@@ -129,6 +129,7 @@ export type MainTabParamList = {
   FlashCountdown: undefined;
   ActiveRadar: undefined;
   Match: undefined;
+  Chat: undefined;
   Profile: undefined;
 };
 
@@ -214,6 +215,14 @@ const MainTabNavigator = React.memo(function MainTabNavigator() {
         options={{
           tabBarLabel: 'Match',
           tabBarIcon: ({ color }) => <MatchTabIcon color={color} />,
+        }}
+      />
+      <MainTab.Screen
+        name="Chat"
+        component={ChatListScreen}
+        options={{
+          tabBarLabel: 'Chat',
+          tabBarIcon: ({ color }) => <Ionicons name="chatbubbles-outline" size={22} color={color} />,
         }}
       />
       <MainTab.Screen

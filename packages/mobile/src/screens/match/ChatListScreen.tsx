@@ -157,15 +157,20 @@ export const ChatListScreen: React.FC<{ navigation: any }> = ({ navigation }) =>
     </TouchableOpacity>
   );
 
+  // Hide back button when rendered as a tab (no route to go back to)
+  const canGoBack = navigation.canGoBack?.() ?? false;
+
   if (loading && conversations.length === 0) {
     return (
       <SafeAreaView style={styles.container}>
         <View style={styles.header}>
-          <TouchableOpacity onPress={() => navigation.goBack()}>
-            <Ionicons name="chevron-back" size={24} color={colors.textPrimary} />
-          </TouchableOpacity>
-          <Text style={styles.headerTitle}>Messages</Text>
-          <View style={{ width: 24 }} />
+          {canGoBack && (
+            <TouchableOpacity onPress={() => navigation.goBack()}>
+              <Ionicons name="chevron-back" size={24} color={colors.textPrimary} />
+            </TouchableOpacity>
+          )}
+          <Text style={styles.headerTitle}>Chat</Text>
+          {!canGoBack && <View style={{ width: 24 }} />}
         </View>
         <View style={styles.centered}>
           <ActivityIndicator size="large" color={colors.primary} />
@@ -177,10 +182,12 @@ export const ChatListScreen: React.FC<{ navigation: any }> = ({ navigation }) =>
   return (
     <SafeAreaView style={styles.container}>
       <View style={styles.header}>
-        <TouchableOpacity onPress={() => navigation.goBack()}>
-          <Ionicons name="chevron-back" size={24} color={colors.textPrimary} />
-        </TouchableOpacity>
-        <Text style={styles.headerTitle}>Messages</Text>
+        {canGoBack && (
+          <TouchableOpacity onPress={() => navigation.goBack()}>
+            <Ionicons name="chevron-back" size={24} color={colors.textPrimary} />
+          </TouchableOpacity>
+        )}
+        <Text style={styles.headerTitle}>Chat</Text>
         <TouchableOpacity onPress={fetchConversations}>
           <Ionicons name="refresh" size={22} color={colors.textSecondary} />
         </TouchableOpacity>
@@ -193,7 +200,7 @@ export const ChatListScreen: React.FC<{ navigation: any }> = ({ navigation }) =>
           <Text style={styles.emptySubtitle}>Match with someone to start chatting</Text>
           <TouchableOpacity
             style={styles.discoverBtn}
-            onPress={() => navigation.goBack()}
+            onPress={() => canGoBack ? navigation.goBack() : navigation.navigate('Match')}
           >
             <Text style={styles.discoverBtnText}>Discover People</Text>
           </TouchableOpacity>

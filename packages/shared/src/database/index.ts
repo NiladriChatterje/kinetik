@@ -106,6 +106,7 @@ export const TABLES = {
   USER_VECTORS: 'user_vectors',
   KYC_DOCUMENTS: 'kyc_documents',
   MESSAGES: 'messages',
+  CHAT_MEDIA: 'chat_media',
   PUSH_TOKENS: 'push_tokens',
   AUDIT_LOG: 'audit_log',
 } as const;
