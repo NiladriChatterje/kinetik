@@ -5,10 +5,12 @@ Entry point that:
   - Starts a FastAPI health-check HTTP server
   - Connects to Redis, PostgreSQL, and Kafka
   - Runs the Kafka event consumer as a background asyncio task
+  - Subscribes to Redis `location:updates` channel for real-time location data
   - Detects CUDA availability and logs the device being used
 """
 
 import asyncio
+import json
 import logging
 import os
 from contextlib import asynccontextmanager
@@ -34,6 +36,9 @@ kafka_client = KafkaClient()
 spatial_matcher: SpatialMatcher | None = None
 vector_matcher: VectorMatcher | None = None
 window_manager: WindowManager | None = None
+
+# Channel name for location updates (must match the constant in shared constants)
+LOCATION_UPDATES_CHANNEL = "location:updates"
 
 
 # ─── Lifespan ───────────────────────────────────────────────────
@@ -66,7 +71,15 @@ async def lifespan(app: FastAPI):
     vector_matcher = VectorMatcher()
     window_manager = WindowManager(redis_client, pg_pool)
 
-    # 4. Kafka — run consumer as background task in the same event loop
+    # 4. Subscribe to location updates from api-core via Redis pub/sub
+    location_task: asyncio.Task | None = None
+    try:
+        location_task = asyncio.create_task(_listen_location_updates())
+        logger.info("Redis location:updates subscriber started")
+    except Exception as exc:
+        logger.warning("Failed to start location subscriber: %s", exc)
+
+    # 5. Kafka — run consumer as background task in the same event loop
     kafka_consumer_task: asyncio.Task | None = None
     try:
         await kafka_client.connect()
@@ -104,6 +117,12 @@ async def lifespan(app: FastAPI):
 
     # ── Shutdown ────────────────────────────────────────────────
     logger.info("Shutting down match engine...")
+    if location_task is not None:
+        location_task.cancel()
+        try:
+            await location_task
+        except asyncio.CancelledError:
+            pass
     if kafka_consumer_task is not None:
         kafka_client._running = False
         kafka_consumer_task.cancel()
@@ -115,6 +134,74 @@ async def lifespan(app: FastAPI):
     if pg_pool:
         await pg_pool.close()
     await redis_client.disconnect()
+
+
+async def _listen_location_updates():
+    """Subscribe to Redis `location:updates` channel and cache location data.
+
+    The api-core publishes location updates every 3 minutes via Geoapify.
+    This subscriber caches the latest location data in Redis under
+    `user:{userId}:match_data` so the spatial matcher can access it instantly.
+    """
+    """
+    Subscribe to location updates with automatic reconnection.
+
+    If the Redis connection drops, this loop will retry every 5s
+    until cancelled.
+    """
+    while True:
+        try:
+            pubsub = redis_client.conn.pubsub()
+            await pubsub.subscribe(LOCATION_UPDATES_CHANNEL)
+            logger.info("Subscribed to %s", LOCATION_UPDATES_CHANNEL)
+
+            try:
+                async for message in pubsub.listen():
+                    if message["type"] != "message":
+                        continue
+
+                    try:
+                        data = json.loads(message["data"])
+                        user_id = data.get("userId")
+                        if not user_id:
+                            continue
+
+                        # Cache location data as part of the user's match_data
+                        # This is the same key that spatial_matcher uses for lookups
+                        match_data = await redis_client.get_user_match_data(user_id) or {}
+                        match_data.update({
+                            "latitude": data.get("latitude"),
+                            "longitude": data.get("longitude"),
+                            "h3Index": data.get("h3Index"),
+                            "city": data.get("city"),
+                            "county": data.get("county"),
+                            "region": data.get("region"),
+                            "country": data.get("country"),
+                            "location_updated_at": data.get("timestamp"),
+                        })
+                        await redis_client.cache_user_match_data(user_id, match_data, ttl=900)
+
+                        logger.debug(
+                            "Cached location for user %s: %s, %s",
+                            user_id,
+                            data.get("city", "?"),
+                            data.get("region", "?"),
+                        )
+                    except (json.JSONDecodeError, KeyError, TypeError) as exc:
+                        logger.warning("Invalid location update message: %s", exc)
+            except asyncio.CancelledError:
+                logger.info("Location subscriber cancelled")
+                raise
+            except Exception as exc:
+                logger.warning("Location subscriber disconnected: %s — retrying in 5s", exc)
+                await asyncio.sleep(5)
+            finally:
+                try:
+                    await pubsub.unsubscribe(LOCATION_UPDATES_CHANNEL)
+                except Exception:
+                    pass
+        except asyncio.CancelledError:
+            break
 
 
 # ─── FastAPI app ────────────────────────────────────────────────
@@ -152,9 +239,6 @@ async def health():
         "kafka_connected": kafka_client._producer is not None if kafka_client else False,
         "timestamp": datetime.now(timezone.utc).isoformat().replace("+00:00", "Z"),
     }
-
-
-# (Kafka consumer now runs as an asyncio.Task inside lifespan)
 
 
 # ─── Entry point ────────────────────────────────────────────────

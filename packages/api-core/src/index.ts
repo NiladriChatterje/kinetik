@@ -24,6 +24,7 @@ import { errorHandler } from './middleware/errorHandler';
 import { kafkaProducer } from './services/kafka';
 import { initializeRedis } from './services/redis';
 import { initializeDatabase } from './services/database';
+import { startLocationPoller } from './services/locationPoller';
 
 const PORT = parseInt(process.env.PORT || '3001', 10);
 const JWT_SECRET = process.env.JWT_SECRET || 'super-secret-jwt-key-change-in-production-2024';
@@ -117,6 +118,9 @@ async function bootstrap() {
   await app.register(photoRoutes, { prefix: '/api/v1/users/photos' });
   await app.register(poseVerificationRoutes, { prefix: '/api/v1/users/pose-verification' });
   await app.register(kycRoutes, { prefix: '/api/v1/kyc' });
+
+  // ─── Start Location Poller (Geoapify every 3 min → Redis pub/sub) ─
+  startLocationPoller();
 
   // ─── Start ───────────────────────────────────────────
   try {

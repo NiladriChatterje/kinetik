@@ -243,6 +243,32 @@ export async function userRoutes(app: FastifyInstance) {
     });
   });
 
+  // ─── Get Area Details ─────────────────────────────────
+  app.get('/location/area', async (request: FastifyRequest, reply: FastifyReply) => {
+    const { sub: userId } = request.user as any;
+    const user = await findUserById(userId);
+    if (!user) {
+      return reply.status(404).send({
+        success: false,
+        error: { code: ERROR_CODES.NOT_FOUND, message: 'User not found' },
+      });
+    }
+
+    return reply.send({
+      success: true,
+      data: {
+        latitude: user.latitude,
+        longitude: user.longitude,
+        h3Index: user.h3_index,
+        city: user.city || null,
+        county: user.county || null,
+        region: user.region || null,
+        country: user.country || null,
+        locationUpdatedAt: user.location_updated_at || null,
+      },
+    });
+  });
+
   // ─── Get Interests ───────────────────────────────────
   app.get('/interests', async (request: FastifyRequest, reply: FastifyReply) => {
     const result = await query(

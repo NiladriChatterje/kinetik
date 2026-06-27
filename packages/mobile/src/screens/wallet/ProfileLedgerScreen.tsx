@@ -6,6 +6,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { Card } from '../../components/common/Card';
 import { Avatar } from '../../components/common/Avatar';
 import { Button } from '../../components/common/Button';
+import { PhotoOptionsModal } from '../../components/profile/PhotoOptionsModal';
 import { useToast } from '../../hooks/useToast';
 import { useAuthStore } from '../../store/authStore';
 import { api } from '../../services/api';
@@ -59,6 +60,7 @@ export const ProfileLedgerScreen: React.FC = () => {
   const [photos, setPhotos] = useState<ProfilePhoto[]>([]);
   const [loading, setLoading] = useState(true);
   const [mutatingPhotoId, setMutatingPhotoId] = useState<string | null>(null);
+  const [modalPhoto, setModalPhoto] = useState<ProfilePhoto | null>(null);
 
   const fetchProfileAndPhotos = useCallback(async () => {
     try {
@@ -150,29 +152,7 @@ export const ProfileLedgerScreen: React.FC = () => {
 
   const handlePhotoPress = (photo: ProfilePhoto) => {
     if (mutatingPhotoId) return; // Already performing an action
-
-    if (photo.is_primary) {
-      // Primary photo — only offer delete
-      handleDeletePhoto(photo.id);
-    } else {
-      // Non-primary photo — offer set as primary or delete
-      Alert.alert(
-        'Photo Options',
-        undefined,
-        [
-          { text: 'Cancel', style: 'cancel' },
-          {
-            text: 'Set as Primary',
-            onPress: () => handleSetPrimary(photo.id),
-          },
-          {
-            text: 'Delete Photo',
-            style: 'destructive',
-            onPress: () => handleDeletePhoto(photo.id),
-          },
-        ],
-      );
-    }
+    setModalPhoto(photo);
   };
 
   // Compute display name
@@ -306,6 +286,20 @@ export const ProfileLedgerScreen: React.FC = () => {
 
         <Button title="Sign Out" onPress={logout} variant="outline" fullWidth />
       </ScrollView>
+
+      {/* Photo Options Modal */}
+      <PhotoOptionsModal
+        visible={modalPhoto !== null}
+        photoUrl={modalPhoto?.thumbnail_url || modalPhoto?.url || ''}
+        isPrimary={modalPhoto?.is_primary ?? false}
+        onSetPrimary={() => {
+          if (modalPhoto) handleSetPrimary(modalPhoto.id);
+        }}
+        onDelete={() => {
+          if (modalPhoto) handleDeletePhoto(modalPhoto.id);
+        }}
+        onClose={() => setModalPhoto(null)}
+      />
     </SafeAreaView>
   );
 };

@@ -77,6 +77,9 @@ export const REDIS_KEYS = {
 
   // Rate limiting
   RATE_LIMIT: (key: string) => `ratelimit:${key}`,
+
+  // Location / area (pub/sub channel for match-engine)
+  LOCATION_UPDATES_CHANNEL: 'location:updates',
 } as const;
 
 // ─── Kafka Topics ─────────────────────────────────────────

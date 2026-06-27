@@ -391,6 +391,27 @@ class ApiClient {
     return response.data!;
   }
 
+  // ─── Area / Location Details ─────────────────────────────
+  /**
+   * Get the user's current area details (city, county, region, country, H3).
+   */
+  async getAreaDetails(): Promise<{
+    latitude: number | null;
+    longitude: number | null;
+    h3Index: string | null;
+    city: string | null;
+    county: string | null;
+    region: string | null;
+    country: string | null;
+    locationUpdatedAt: string | null;
+  }> {
+    const response = await this.request('/api/v1/users/location/area');
+    if (!response.success) {
+      throw new Error(response.error?.message || 'Failed to get area details');
+    }
+    return response.data!;
+  }
+
   // ─── Pose Verification ──────────────────────────────────
   /**
    * Submit a pose verification selfie photo for face matching
