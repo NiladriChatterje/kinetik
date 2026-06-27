@@ -84,7 +84,13 @@ export const OTPVerifyScreen: React.FC<{ navigation: any }> = ({ navigation }) =
       const result = await verifyOtp(pendingPhone, code);
       if (result.success) {
         toast.showSuccess('Verified!', 'You have been verified successfully.');
-        navigation.navigate('Identity');
+        // Read the latest onboardingStep directly from store (avoid stale closure)
+        if (useAuthStore.getState().onboardingStep === 'complete') {
+          // Profile is fully set up — go straight to Main
+          navigation.getParent()?.reset({ index: 0, routes: [{ name: 'Main' }] });
+        } else {
+          navigation.navigate('Identity');
+        }
       } else {
         toast.showError('Verification Failed', result.error || 'Invalid code. Please try again.');
         setDigits(['', '', '', '', '', '']);

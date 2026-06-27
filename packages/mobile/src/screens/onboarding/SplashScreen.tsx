@@ -47,7 +47,12 @@ export const SplashScreen: React.FC<{ navigation: any }> = ({ navigation }) => {
           } else {
             // OAuth login without OTP (handled by backend)
             toast.showSuccess('Welcome back!', 'You have signed in successfully.');
-            navigation.navigate('Identity');
+            // Read live onboarding status from store (avoid stale closure)
+            if (useAuthStore.getState().onboardingStep === 'complete') {
+              navigation.getParent()?.reset({ index: 0, routes: [{ name: 'Main' }] });
+            } else {
+              navigation.navigate('Identity');
+            }
           }
         } else {
           console.log('[LOGIN] failed:', result.error || 'unknown');
