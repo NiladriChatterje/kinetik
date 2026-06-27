@@ -90,6 +90,7 @@ export type RootStackParamList = {
   Onboarding: undefined;
   Main: undefined;
   NotificationPreferences: undefined;
+  TokenVault: undefined;
   VibeCheck: { vibeId: string; partnerName: string };
   Unmasking: { vibeId: string };
   Commitment: { vibeId: string };
@@ -103,7 +104,7 @@ export type RootStackParamList = {
   Likes: undefined;
   ChatList: undefined;
   Chat: { matchId: string; partnerName: string; partnerId?: string; partnerPhotoUrl?: string };
-  // Duo kept for profile access
+  // Kept for profile access
   DuoWingman: undefined;
 };
 
@@ -128,7 +129,6 @@ export type MainTabParamList = {
   FlashCountdown: undefined;
   ActiveRadar: undefined;
   Match: undefined;
-  TokenVault: undefined;
   Profile: undefined;
 };
 
@@ -217,14 +217,6 @@ const MainTabNavigator = React.memo(function MainTabNavigator() {
         }}
       />
       <MainTab.Screen
-        name="TokenVault"
-        component={TokenVaultScreen}
-        options={{
-          tabBarLabel: 'Wallet',
-          tabBarIcon: ({ color }) => <Ionicons name="wallet-outline" size={22} color={color} />,
-        }}
-      />
-      <MainTab.Screen
         name="Profile"
         component={ProfileLedgerScreen}
         options={{
@@ -264,7 +256,8 @@ export function RootNavigator() {
         <RootStack.Screen name="Likes" component={LikeListScreen} />
         <RootStack.Screen name="ChatList" component={ChatListScreen} />
         <RootStack.Screen name="Chat" component={ChatScreen} />
-        {/* Duo (kept for profile access) */}
+        {/* Screens navigated from Profile */}
+        <RootStack.Screen name="TokenVault" component={TokenVaultScreen} />
         <RootStack.Screen name="DuoWingman" component={DuoWingmanScreen} />
         {/* Existing root overlay screens */}
         <RootStack.Screen name="VibeCheck" component={VibeCheckScreen} />
