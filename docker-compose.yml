@@ -311,7 +311,7 @@ services:
         echo "Bucket policy set to public-read"
     depends_on:
       minio:
-        condition: service_started
+        condition: service_healthy
     logging: *default-logging
 
   # ─── Nginx Reverse Proxy ─────────────────────────────────

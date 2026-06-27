@@ -328,10 +328,18 @@ class ApiClient {
 
   // ─── Pose Verification ──────────────────────────────────
   /**
-   * Submit a pose verification selfie photo.
+   * Submit a pose verification selfie photo for face matching
+   * against the user's existing profile photos.
+   * The selfie is NOT saved to MinIO — only used for verification.
    * Uses native multipart upload (same as photoService).
    */
-  async submitPoseVerification(uri: string): Promise<{ photoUrl: string; thumbnailUrl: string; status: string }> {
+  async submitPoseVerification(uri: string): Promise<{
+    status: string;
+    match: boolean;
+    confidence: number;
+    faceMatchScores: number[];
+    message: string;
+  }> {
     const token = this.getToken();
     const url = `${API_URL}/api/v1/users/pose-verification`;
 
