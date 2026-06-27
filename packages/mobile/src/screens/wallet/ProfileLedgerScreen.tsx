@@ -1,11 +1,12 @@
 import React, { useEffect, useState, useCallback } from 'react';
-import { View, Text, StyleSheet, ScrollView, TouchableOpacity, Image } from 'react-native';
+import { View, Text, StyleSheet, ScrollView, TouchableOpacity, Image, Alert, ActivityIndicator } from 'react-native';
 import { useNavigation } from '@react-navigation/native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { Card } from '../../components/common/Card';
 import { Avatar } from '../../components/common/Avatar';
 import { Button } from '../../components/common/Button';
+import { useToast } from '../../hooks/useToast';
 import { useAuthStore } from '../../store/authStore';
 import { api } from '../../services/api';
 import { resolveUrl } from '../../config';
@@ -52,31 +53,35 @@ export const ProfileLedgerScreen: React.FC = () => {
   const authUser = useAuthStore((s) => s.user);
   const logout = useAuthStore((s) => s.logout);
   const navigation = useNavigation();
+  const toast = useToast();
 
   const [profile, setProfile] = useState<ProfileData | null>(null);
   const [photos, setPhotos] = useState<ProfilePhoto[]>([]);
   const [loading, setLoading] = useState(true);
+  const [mutatingPhotoId, setMutatingPhotoId] = useState<string | null>(null);
+
+  const fetchProfileAndPhotos = useCallback(async () => {
+    try {
+      const [profileRes, photosRes] = await Promise.all([
+        api.getProfile(),
+        api.getPhotos(),
+      ]);
+      if (profileRes.success && profileRes.data) {
+        setProfile(profileRes.data as ProfileData);
+      }
+      if (photosRes.success && Array.isArray(photosRes.data)) {
+        setPhotos(photosRes.data as ProfilePhoto[]);
+      }
+    } catch {
+      // Silently fail — fall back to auth store data
+    } finally {
+      setLoading(false);
+    }
+  }, []);
 
   useEffect(() => {
-    (async () => {
-      try {
-        const [profileRes, photosRes] = await Promise.all([
-          api.getProfile(),
-          api.getPhotos(),
-        ]);
-        if (profileRes.success && profileRes.data) {
-          setProfile(profileRes.data as ProfileData);
-        }
-        if (photosRes.success && Array.isArray(photosRes.data)) {
-          setPhotos(photosRes.data as ProfilePhoto[]);
-        }
-      } catch {
-        // Silently fail — fall back to auth store data
-      } finally {
-        setLoading(false);
-      }
-    })();
-  }, []);
+    fetchProfileAndPhotos();
+  }, [fetchProfileAndPhotos]);
 
   const handleSettingPress = useCallback(
     (screen: string | undefined) => {
@@ -99,8 +104,90 @@ export const ProfileLedgerScreen: React.FC = () => {
   const locationParts = [profile?.city, profile?.county].filter(Boolean);
   const locationStr = locationParts.length > 0 ? locationParts.join(', ') : null;
 
+  // ─── Photo Handlers ──────────────────────────────────────
+
+  const handleSetPrimary = async (photoId: string) => {
+    setMutatingPhotoId(photoId);
+    try {
+      const res = await api.setPrimaryPhoto(photoId);
+      if (!res.success) {
+        throw new Error(res.error?.message || 'Could not update primary photo.');
+      }
+      toast.showSuccess('Primary Photo Updated', 'This photo is now your profile picture.');
+      await fetchProfileAndPhotos();
+    } catch (e: any) {
+      toast.showError('Failed', e?.message || 'Could not update primary photo.');
+    } finally {
+      setMutatingPhotoId(null);
+    }
+  };
+
+  const handleDeletePhoto = (photoId: string) => {
+    Alert.alert(
+      'Remove Photo',
+      'Are you sure you want to delete this photo? This cannot be undone.',
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Delete',
+          style: 'destructive',
+          onPress: async () => {
+            setMutatingPhotoId(photoId);
+            try {
+              await api.deletePhoto(photoId);
+              toast.showSuccess('Photo Removed', 'The photo has been deleted.');
+              await fetchProfileAndPhotos();
+            } catch (e: any) {
+              toast.showError('Failed', e?.message || 'Could not delete photo.');
+            } finally {
+              setMutatingPhotoId(null);
+            }
+          },
+        },
+      ],
+    );
+  };
+
+  const handlePhotoPress = (photo: ProfilePhoto) => {
+    if (mutatingPhotoId) return; // Already performing an action
+
+    if (photo.is_primary) {
+      // Primary photo — only offer delete
+      handleDeletePhoto(photo.id);
+    } else {
+      // Non-primary photo — offer set as primary or delete
+      Alert.alert(
+        'Photo Options',
+        undefined,
+        [
+          { text: 'Cancel', style: 'cancel' },
+          {
+            text: 'Set as Primary',
+            onPress: () => handleSetPrimary(photo.id),
+          },
+          {
+            text: 'Delete Photo',
+            style: 'destructive',
+            onPress: () => handleDeletePhoto(photo.id),
+          },
+        ],
+      );
+    }
+  };
+
   // Compute display name
   const displayName = profile?.displayName || authUser?.displayName || 'Your Profile';
+
+  if (loading) {
+    return (
+      <SafeAreaView style={styles.container}>
+        <View style={styles.loadingContainer}>
+          <ActivityIndicator size="large" color={colors.textPrimary} />
+          <Text style={styles.loadingText}>Loading profile...</Text>
+        </View>
+      </SafeAreaView>
+    );
+  }
 
   return (
     <SafeAreaView style={styles.container}>
@@ -127,28 +214,48 @@ export const ProfileLedgerScreen: React.FC = () => {
         </View>
 
         {/* Photos Grid */}
-        {photos.length > 0 && (
+        {photos.length > 0 ? (
           <View style={styles.photosSection}>
-            <Text style={styles.sectionTitle}>Photos</Text>
+            <View style={styles.photosHeader}>
+              <Text style={styles.sectionTitle}>Photos</Text>
+              <Text style={styles.photoCount}>{photos.length} / 6</Text>
+            </View>
             <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.photosRow}>
               {photos
                 .sort((a, b) => a.order_index - b.order_index)
-                .map((photo) => (
-                  <View key={photo.id} style={styles.photoThumb}>
-                    <Image
-                      source={{ uri: resolveUrl(photo.thumbnail_url || photo.url) }}
-                      style={styles.photoImage}
-                    />
-                    {photo.is_primary && (
-                      <View style={styles.primaryBadge}>
-                        <Ionicons name="star" size={10} color={colors.textInverse} />
-                      </View>
-                    )}
-                  </View>
-                ))}
+                .map((photo) => {
+                  const isMutating = mutatingPhotoId === photo.id;
+                  return (
+                    <TouchableOpacity
+                      key={photo.id}
+                      activeOpacity={0.7}
+                      onPress={() => handlePhotoPress(photo)}
+                      style={styles.photoThumb}
+                    >
+                      <Image
+                        source={{ uri: resolveUrl(photo.thumbnail_url || photo.url) }}
+                        style={[styles.photoImage, isMutating && styles.photoMutating]}
+                      />
+                      {isMutating && (
+                        <View style={styles.photoOverlay}>
+                          <ActivityIndicator size="small" color={colors.textInverse} />
+                        </View>
+                      )}
+                      {photo.is_primary ? (
+                        <View style={styles.primaryBadge}>
+                          <Ionicons name="star" size={10} color={colors.textInverse} />
+                        </View>
+                      ) : (
+                        <View style={styles.setPrimaryHint}>
+                          <Ionicons name="ellipse-outline" size={10} color={colors.textInverse} />
+                        </View>
+                      )}
+                    </TouchableOpacity>
+                  );
+                })}
             </ScrollView>
           </View>
-        )}
+        ) : null}
 
         {/* Profile Info */}
         {((profile?.bio) || (profile?.occupation) || (profile?.education)) && (
@@ -217,9 +324,31 @@ const styles = StyleSheet.create({
   photosRow: { gap: spacing.sm },
   photoThumb: { position: 'relative' },
   photoImage: { width: 80, height: 80, borderRadius: radius.md, backgroundColor: colors.surfaceHighlight },
+  photoMutating: { opacity: 0.5 },
+  photoOverlay: {
+    ...StyleSheet.absoluteFill,
+    backgroundColor: 'rgba(0,0,0,0.4)',
+    borderRadius: radius.md,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  photosHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: spacing.sm,
+  },
+  photoCount: { ...typography.caption, color: colors.textMuted },
+  loadingContainer: { flex: 1, alignItems: 'center', justifyContent: 'center' },
+  loadingText: { ...typography.body2, color: colors.textMuted, marginTop: spacing.md },
   primaryBadge: {
     position: 'absolute', top: 4, right: 4,
     backgroundColor: colors.primary, borderRadius: radius.full,
+    width: 18, height: 18, alignItems: 'center', justifyContent: 'center',
+  },
+  setPrimaryHint: {
+    position: 'absolute', top: 4, right: 4,
+    backgroundColor: 'rgba(0,0,0,0.4)', borderRadius: radius.full,
     width: 18, height: 18, alignItems: 'center', justifyContent: 'center',
   },
   infoCard: { padding: spacing.lg, marginBottom: spacing.lg, gap: spacing.sm },
