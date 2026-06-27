@@ -54,7 +54,7 @@ class RedisClient:
     async def get(self, key: str) -> Optional[str]:
         return await self.conn.get(key)
 
-    async def set(self, key: str, value: str, ex: int = 0) -> None:
+    async def set_value(self, key: str, value: str, ex: int = 0) -> None:
         if ex > 0:
             await self.conn.set(key, value, ex=ex)
         else:
@@ -90,7 +90,7 @@ class RedisClient:
 
     async def cache_user_match_data(self, user_id: str, data: dict, ttl: int = 900) -> None:
         """Cache a user's match-profile data (vector, location, etc.) for fast lookup."""
-        await self.set(f"user:{user_id}:match_data", json.dumps(data), ex=ttl)
+        await self.set_value(f"user:{user_id}:match_data", json.dumps(data), ex=ttl)
 
     async def get_user_match_data(self, user_id: str) -> Optional[dict]:
         raw = await self.get(f"user:{user_id}:match_data")
@@ -98,14 +98,14 @@ class RedisClient:
 
     async def set_vibe_check(self, user_id: str, vibe_id: str, ttl: int = 300) -> None:
         """Mark a user as currently in a vibe-check session."""
-        await self.set(f"vibe:check:{user_id}", vibe_id, ex=ttl)
+        await self.set_value(f"vibe:check:{user_id}", vibe_id, ex=ttl)
 
     async def get_vibe_check(self, user_id: str) -> Optional[str]:
         return await self.get(f"vibe:check:{user_id}")
 
     async def set_match_in_progress(self, user_id: str, ttl: int = 30) -> None:
         """Prevent duplicate match processing for the same user."""
-        await self.set(f"match:in_progress:{user_id}", "1", ex=ttl)
+        await self.set_value(f"match:in_progress:{user_id}", "1", ex=ttl)
 
     async def is_match_in_progress(self, user_id: str) -> bool:
         return await self.exists(f"match:in_progress:{user_id}")

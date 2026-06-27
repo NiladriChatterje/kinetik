@@ -290,12 +290,15 @@ class ApiClient {
 
   // ─── Photos ───────────────────────────────────────────
   /**
-   * Delete a profile photo.
+   * Delete a profile photo. Throws on failure so callers can handle errors.
    */
   async deletePhoto(photoId: string): Promise<void> {
-    await this.request(`/api/v1/users/photos/${photoId}`, {
+    const response = await this.request(`/api/v1/users/photos/${photoId}`, {
       method: 'DELETE',
     });
+    if (!response.success) {
+      throw new Error(response.error?.message || 'Failed to delete photo');
+    }
   }
 
   /**

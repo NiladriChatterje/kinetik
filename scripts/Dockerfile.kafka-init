@@ -1,0 +1,14 @@
+FROM node:20-alpine
+
+WORKDIR /app
+
+# Copy dependency manifest and install (done before copying source for layer caching)
+COPY package*.json ./
+RUN npm install
+
+# Copy the admin script
+COPY kafkaAdmin.ts .
+COPY entrypoint-kafka-init.sh /entrypoint.sh
+RUN chmod +x /entrypoint.sh
+
+ENTRYPOINT ["/entrypoint.sh"]

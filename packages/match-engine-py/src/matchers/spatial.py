@@ -195,7 +195,7 @@ class SpatialMatcher:
                                 "vector": row["vector"] or [0.5] * 64,
                             }
                             # Warm the cache
-                            await self._redis.set(
+                            await self._redis.set_value(
                                 f"user:{uid}:match_data",
                                 json.dumps(data),
                                 ex=900,

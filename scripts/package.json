@@ -1,16 +1,10 @@
 {
-  "name": "scripts",
-  "version": "1.0.0",
-  "main": "generate_assets.js",
-  "scripts": {
-    "test": "echo \"Error: no test specified\" && exit 1"
-  },
-  "keywords": [],
-  "author": "",
-  "license": "ISC",
+  "name": "kinetik-kafka-init",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Kafka topic initialization script for Kinetik",
   "dependencies": {
     "kafkajs": "^2.2.4",
-    "tsx": "^4.22.4"
-  },
-  "description": ""
+    "tsx": "^4.7.0"
+  }
 }

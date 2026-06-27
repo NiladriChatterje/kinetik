@@ -220,17 +220,6 @@ export async function userRoutes(app: FastifyInstance) {
     return reply.send({ success: true, data: { latitude, longitude, h3Index } });
   });
 
-  // ─── Get Photos ──────────────────────────────────────
-  app.get('/photos', async (request: FastifyRequest, reply: FastifyReply) => {
-    const { sub: userId } = request.user as any;
-    const result = await query(
-      `SELECT id, url, thumbnail_url, blur_hash, is_primary, order_index
-       FROM ${TABLES.PROFILE_PHOTOS} WHERE user_id = $1 ORDER BY order_index ASC`,
-      [userId],
-    );
-    return reply.send({ success: true, data: result.rows });
-  });
-
   // ─── Get Interests ───────────────────────────────────
   app.get('/interests', async (request: FastifyRequest, reply: FastifyReply) => {
     const result = await query(

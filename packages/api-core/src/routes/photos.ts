@@ -79,10 +79,10 @@ export async function photoRoutes(app: FastifyInstance) {
     // Insert DB record
     const orderIndex = currentCount; // 0-indexed
     const dbResult = await query(
-      `INSERT INTO ${TABLES.PROFILE_PHOTOS} (user_id, url, thumbnail_url, order_index)
-       VALUES ($1, $2, $3, $4)
-       RETURNING id, url, thumbnail_url, is_primary, order_index, created_at`,
-      [userId, saved.url, saved.thumbnailUrl, orderIndex],
+      `INSERT INTO ${TABLES.PROFILE_PHOTOS} (user_id, url, thumbnail_url, blur_hash, order_index)
+       VALUES ($1, $2, $3, $4, $5)
+       RETURNING id, url, thumbnail_url, blur_hash, is_primary, order_index, created_at`,
+      [userId, saved.url, saved.thumbnailUrl, saved.blurHash, orderIndex],
     );
 
     // If this is the user's first photo, make it primary automatically
@@ -118,12 +118,9 @@ export async function photoRoutes(app: FastifyInstance) {
     // Delete from DB
     await deletePhotoById(id, userId);
 
-    // Delete from disk (fire-and-forget)
-    const urlPath = photo.url as string;
-    const urlParts = urlPath.split('/');
-    const filename = urlParts[urlParts.length - 1]; // e.g. "uuid.webp"
-    const photoId = filename.replace('.webp', '');
-    deletePhoto(userId, photoId).catch(() => {});
+    // Delete from MinIO (fire-and-forget)
+    // The route param `id` is already the photo's UUID — use it directly as the S3 key.
+    deletePhoto(userId, id).catch(() => {});
 
     return reply.send({ success: true });
   });

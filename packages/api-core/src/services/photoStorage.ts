@@ -20,6 +20,7 @@
 import { S3Client, PutObjectCommand, DeleteObjectCommand, ListObjectsV2Command } from '@aws-sdk/client-s3';
 import sharp from 'sharp';
 import { v4 as uuidv4 } from 'uuid';
+import { encode } from 'blurhash';
 
 // ─── Constants ───────────────────────────────────────────────────────
 
@@ -33,6 +34,13 @@ const PUBLIC_URL = process.env.MINIO_PUBLIC_URL || '/uploads/';
 
 /** Thumbnail max dimension */
 const THUMB_SIZE = 300;
+
+/** BlurHash generation — resize to this tiny size before encoding for performance.
+ *  BlurHash only captures broad color distributions, so 32px is plenty. */
+const BLUR_HASH_SIZE = 32;
+
+/** BlurHash component count (X × Y). 4×3 gives a good balance of quality vs. hash length. */
+const BLUR_HASH_COMPONENTS = { x: 4, y: 3 } as const;
 
 /** Allowed MIME types for upload */
 const ALLOWED_MIME_TYPES = new Set([
@@ -75,6 +83,8 @@ export interface SavedPhoto {
   url: string;
   /** Public URL for the thumbnail */
   thumbnailUrl: string;
+  /** BlurHash string for progressive image loading on the client */
+  blurHash: string;
 }
 
 /**
@@ -128,16 +138,33 @@ export async function savePhoto(
     }),
   );
 
+  // ── Generate BlurHash ───────────────────────────────────
+  // Resize to a tiny square to keep encoding fast — BlurHash only needs broad color info.
+  const { data: blurRaw, info: blurInfo } = await sharp(fileBuffer)
+    .resize(BLUR_HASH_SIZE, BLUR_HASH_SIZE, { fit: 'cover', position: 'centre' })
+    .ensureAlpha()
+    .raw()
+    .toBuffer({ resolveWithObject: true });
+  const blurHash = encode(
+    new Uint8ClampedArray(blurRaw),
+    blurInfo.width,
+    blurInfo.height,
+    BLUR_HASH_COMPONENTS.x,
+    BLUR_HASH_COMPONENTS.y,
+  );
+
   console.log(
     `[photoStorage] Uploaded to minio://${BUCKET}/${fullKey} ` +
       `| full=${(fullBuffer.length / 1024).toFixed(1)}KB ` +
-      `thumb=${(thumbBuffer.length / 1024).toFixed(1)}KB`,
+      `thumb=${(thumbBuffer.length / 1024).toFixed(1)}KB ` +
+      `blur=${blurHash.length}ch`,
   );
 
   return {
     id: photoId,
     url: `${PUBLIC_URL}${fullKey}`,
     thumbnailUrl: `${PUBLIC_URL}${thumbKey}`,
+    blurHash,
   };
 }
 

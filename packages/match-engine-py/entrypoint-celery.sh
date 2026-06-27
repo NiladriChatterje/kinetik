@@ -15,9 +15,9 @@ LOG_LEVEL="${CELERY_LOG_LEVEL:-info}"
 
 echo "Starting Celery worker (concurrency=$CONCURRENCY, queues=$QUEUES)..."
 
-cd "$(dirname "$0")/src"
+cd "$(dirname "$0")"
 
-exec celery -A workers.match_worker.celery_app worker \
+exec celery -A src.workers.match_worker.celery_app worker \
     --loglevel="$LOG_LEVEL" \
     --concurrency="$CONCURRENCY" \
     --queues="$QUEUES" \
