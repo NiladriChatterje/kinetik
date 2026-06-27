@@ -95,7 +95,30 @@ export const useAuthStore = create<AuthState>((set, get) => ({
       const token = await SecureStore.getItemAsync('auth_token');
       if (token) {
         api.setToken(token);
-        set({ token, isLoading: false });
+        // Fetch the user's profile to determine onboarding status on app restart
+        const profileRes = await api.getProfile();
+        if (profileRes.success && profileRes.data) {
+          const d = profileRes.data as any;
+          set({
+            token,
+            user: {
+              id: d.id,
+              phone: d.phone,
+              email: d.email,
+              displayName: d.displayName,
+              onboardingComplete: d.onboardingComplete,
+              onboardingStep: d.onboardingStep,
+            },
+            isAuthenticated: true,
+            onboardingStep: d.onboardingComplete ? 'complete' : (d.onboardingStep || 'splash'),
+            isLoading: false,
+          });
+        } else {
+          // Profile fetch failed — token may be stale
+          await SecureStore.deleteItemAsync('auth_token');
+          api.setToken(null);
+          set({ isLoading: false });
+        }
       } else {
         set({ isLoading: false });
       }
@@ -161,10 +184,13 @@ export const useAuthStore = create<AuthState>((set, get) => ({
       const response = await api.verifyOtp(phone, otp);
       if (response.success && response.data) {
         api.setToken(response.data.token);
+        const userData = response.data.user as User;
+        const onboardingComplete = userData?.onboardingComplete ?? false;
         set({
-          user: response.data.user as User,
+          user: userData,
           token: response.data.token,
           isAuthenticated: true,
+          onboardingStep: onboardingComplete ? 'complete' : 'splash',
           pendingPhone: null,
           pendingUserId: null,
         });
