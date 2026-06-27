@@ -3,6 +3,7 @@ import { View, Text, StyleSheet, ScrollView, TouchableOpacity, Image, Alert, Act
 import { useNavigation } from '@react-navigation/native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
+import * as ImagePicker from 'expo-image-picker';
 import { Card } from '../../components/common/Card';
 import { Avatar } from '../../components/common/Avatar';
 import { Button } from '../../components/common/Button';
@@ -10,6 +11,7 @@ import { PhotoOptionsModal } from '../../components/profile/PhotoOptionsModal';
 import { useToast } from '../../hooks/useToast';
 import { useAuthStore } from '../../store/authStore';
 import { api } from '../../services/api';
+import { compressAndUploadPhoto } from '../../services/photoService';
 import { resolveUrl } from '../../config';
 import { colors, typography, spacing, radius } from '../../theme';
 
@@ -106,7 +108,30 @@ export const ProfileLedgerScreen: React.FC = () => {
   const locationParts = [profile?.city, profile?.county].filter(Boolean);
   const locationStr = locationParts.length > 0 ? locationParts.join(', ') : null;
 
+  const MAX_PHOTOS = 6;
+
   // ─── Photo Handlers ──────────────────────────────────────
+
+  const handleAddPhoto = useCallback(async () => {
+    const result = await ImagePicker.launchImageLibraryAsync({
+      mediaTypes: ['images'],
+      quality: 1.0,
+    });
+    if (result.canceled || !result.assets[0]) return;
+
+    const uri = result.assets[0].uri;
+    setMutatingPhotoId(`upload-${Date.now()}`);
+
+    try {
+      const saved = await compressAndUploadPhoto(uri);
+      toast.showSuccess('Photo Added', 'Your photo has been uploaded.');
+      await fetchProfileAndPhotos();
+    } catch (err: any) {
+      toast.showError('Upload Failed', err?.message || 'Could not upload photo.');
+    } finally {
+      setMutatingPhotoId(null);
+    }
+  }, [toast, fetchProfileAndPhotos]);
 
   const handleSetPrimary = async (photoId: string) => {
     setMutatingPhotoId(photoId);
@@ -193,49 +218,67 @@ export const ProfileLedgerScreen: React.FC = () => {
           </View>
         </View>
 
-        {/* Photos Grid */}
-        {photos.length > 0 ? (
-          <View style={styles.photosSection}>
-            <View style={styles.photosHeader}>
-              <Text style={styles.sectionTitle}>Photos</Text>
-              <Text style={styles.photoCount}>{photos.length} / 6</Text>
-            </View>
-            <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.photosRow}>
-              {photos
-                .sort((a, b) => a.order_index - b.order_index)
-                .map((photo) => {
-                  const isMutating = mutatingPhotoId === photo.id;
-                  return (
-                    <TouchableOpacity
-                      key={photo.id}
-                      activeOpacity={0.7}
-                      onPress={() => handlePhotoPress(photo)}
-                      style={styles.photoThumb}
-                    >
-                      <Image
-                        source={{ uri: resolveUrl(photo.thumbnail_url || photo.url) }}
-                        style={[styles.photoImage, isMutating && styles.photoMutating]}
-                      />
-                      {isMutating && (
-                        <View style={styles.photoOverlay}>
-                          <ActivityIndicator size="small" color={colors.textInverse} />
-                        </View>
-                      )}
-                      {photo.is_primary ? (
-                        <View style={styles.primaryBadge}>
-                          <Ionicons name="star" size={10} color={colors.textInverse} />
-                        </View>
-                      ) : (
-                        <View style={styles.setPrimaryHint}>
-                          <Ionicons name="ellipse-outline" size={10} color={colors.textInverse} />
-                        </View>
-                      )}
-                    </TouchableOpacity>
-                  );
-                })}
-            </ScrollView>
+        {/* Photos Grid — always visible with empty slots up to MAX_PHOTOS */}
+        <View style={styles.photosSection}>
+          <View style={styles.photosHeader}>
+            <Text style={styles.sectionTitle}>Photos</Text>
+            <Text style={styles.photoCount}>{photos.length} / {MAX_PHOTOS}</Text>
           </View>
-        ) : null}
+          <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.photosRow}>
+            {/* Existing photos */}
+            {photos
+              .sort((a, b) => a.order_index - b.order_index)
+              .map((photo) => {
+                const isMutating = mutatingPhotoId === photo.id;
+                return (
+                  <TouchableOpacity
+                    key={photo.id}
+                    activeOpacity={0.7}
+                    onPress={() => handlePhotoPress(photo)}
+                    style={styles.photoThumb}
+                  >
+                    <Image
+                      source={{ uri: resolveUrl(photo.thumbnail_url || photo.url) }}
+                      style={[styles.photoImage, isMutating && styles.photoMutating]}
+                    />
+                    {isMutating && (
+                      <View style={styles.photoOverlay}>
+                        <ActivityIndicator size="small" color={colors.textInverse} />
+                      </View>
+                    )}
+                    {photo.is_primary ? (
+                      <View style={styles.primaryBadge}>
+                        <Ionicons name="star" size={10} color={colors.textInverse} />
+                      </View>
+                    ) : (
+                      <View style={styles.setPrimaryHint}>
+                        <Ionicons name="ellipse-outline" size={10} color={colors.textInverse} />
+                      </View>
+                    )}
+                  </TouchableOpacity>
+                );
+              })}
+            {/* Empty slots for remaining capacity */}
+            {Array.from({ length: MAX_PHOTOS - photos.length }).map((_, i) => {
+              const isUploading = mutatingPhotoId?.startsWith('upload-');
+              return (
+                <TouchableOpacity
+                  key={`empty-${i}`}
+                  style={[styles.emptySlot, isUploading && styles.emptySlotUploading]}
+                  activeOpacity={0.6}
+                  onPress={handleAddPhoto}
+                  disabled={!!mutatingPhotoId}
+                >
+                  {isUploading ? (
+                    <ActivityIndicator size="small" color={colors.textMuted} />
+                  ) : (
+                    <Ionicons name="add" size={28} color={colors.textMuted} />
+                  )}
+                </TouchableOpacity>
+              );
+            })}
+          </ScrollView>
+        </View>
 
         {/* Profile Info */}
         {((profile?.bio) || (profile?.occupation) || (profile?.education)) && (
@@ -344,6 +387,18 @@ const styles = StyleSheet.create({
     position: 'absolute', top: 4, right: 4,
     backgroundColor: 'rgba(0,0,0,0.4)', borderRadius: radius.full,
     width: 18, height: 18, alignItems: 'center', justifyContent: 'center',
+  },
+  emptySlot: {
+    width: 80, height: 80,
+    borderRadius: radius.md,
+    backgroundColor: colors.surfaceHighlight,
+    alignItems: 'center', justifyContent: 'center',
+    borderWidth: 1.5,
+    borderColor: colors.cardBorder,
+    borderStyle: 'dashed',
+  },
+  emptySlotUploading: {
+    opacity: 0.5,
   },
   infoCard: { padding: spacing.lg, marginBottom: spacing.lg, gap: spacing.sm },
   bioText: { ...typography.body2, color: colors.textPrimary, lineHeight: 20 },
