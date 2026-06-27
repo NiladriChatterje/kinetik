@@ -19,6 +19,7 @@ import { webhookRoutes } from './routes/webhooks';
 import { notificationRoutes } from './routes/notifications';
 import { photoRoutes } from './routes/photos';
 import { poseVerificationRoutes } from './routes/poseVerification';
+import { kycRoutes } from './routes/kyc';
 import { errorHandler } from './middleware/errorHandler';
 import { kafkaProducer } from './services/kafka';
 import { initializeRedis } from './services/redis';
@@ -115,6 +116,7 @@ async function bootstrap() {
   await app.register(notificationRoutes, { prefix: API_ROUTES.NOTIFICATIONS_PREFIX });
   await app.register(photoRoutes, { prefix: '/api/v1/users/photos' });
   await app.register(poseVerificationRoutes, { prefix: '/api/v1/users/pose-verification' });
+  await app.register(kycRoutes, { prefix: '/api/v1/kyc' });
 
   // ─── Start ───────────────────────────────────────────
   try {

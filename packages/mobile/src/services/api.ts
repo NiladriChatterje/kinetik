@@ -326,6 +326,71 @@ class ApiClient {
     });
   }
 
+  // ─── KYC Documents ────────────────────────────────────────
+  /**
+   * Upload a KYC identity document (PDF, JPG, PNG).
+   * Uses native multipart upload with document_type field.
+   */
+  async submitKycDocument(uri: string, documentType: string, mimeType: string): Promise<{
+    id: string;
+    documentType: string;
+    status: string;
+    fileName: string;
+    url: string;
+  }> {
+    const token = this.getToken();
+    const url = `${API_URL}/api/v1/kyc/documents`;
+
+    const result = await Promise.race([
+      FileSystem.uploadAsync(url, uri, {
+        httpMethod: 'POST',
+        uploadType: FileSystem.FileSystemUploadType.MULTIPART,
+        fieldName: 'file',
+        mimeType: mimeType,
+        parameters: {
+          document_type: documentType,
+        },
+        headers: {
+          ...(token ? { Authorization: `Bearer ${token}` } : {}),
+        },
+      }),
+      new Promise<never>((_, reject) =>
+        setTimeout(() => reject(new Error('Upload timed out. Please try again.')), 60000),
+      ),
+    ]);
+
+    if (result.status >= 200 && result.status < 300) {
+      const body = JSON.parse(result.body);
+      return body.data;
+    }
+
+    let errorMessage = `Upload failed (HTTP ${result.status})`;
+    try {
+      const body = JSON.parse(result.body);
+      errorMessage = body?.error?.message || errorMessage;
+    } catch { /* non-JSON */ }
+    throw new Error(errorMessage);
+  }
+
+  /**
+   * Get the user's KYC status and latest document info.
+   */
+  async getKycStatus(): Promise<{
+    kycStatus: string;
+    latestDocument: {
+      id: string;
+      document_type: string;
+      status: string;
+      created_at: string;
+    } | null;
+  }> {
+    const response = await this.request('/api/v1/kyc/status');
+    if (!response.success) {
+      throw new Error(response.error?.message || 'Failed to get KYC status');
+    }
+    return response.data!;
+  }
+
   // ─── Pose Verification ──────────────────────────────────
   /**
    * Submit a pose verification selfie photo for face matching

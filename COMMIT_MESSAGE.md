@@ -1,14 +1,11 @@
-fix: skip Identity screen when profile data already exists in database
+feat: implement KYC document upload with device file picker
 
-Issue: Users who filled in profile details (dob, gender, pronouns) but
-didn't complete the full onboarding flow (onboarding_complete flag is
-false) were forced to re-fill the Identity screen on every login.
-
-Fix:
-- authStore.verifyOtp now fetches the user's profile after OTP verification
-  and checks if identity data actually exists in the database. If dob,
-  gender, and pronouns are present, the onboardingStep is computed
-  accurately (e.g. 'identity') instead of defaulting to 'splash'.
-- OTPVerifyScreen navigation is now step-aware: 'identity' skips to
-  Location, 'location'/'photos'/'pose'/'kyc' map to their respective
-  next screens, 'complete' goes to Main, and 'splash' starts fresh.
+- Added expo-document-picker for PDF/JPG/PNG selection from device storage
+- Rewrote KYCScreen with actual document picking, file info display, upload
+  progress, success/error feedback, and skip option
+- Created backend /api/v1/kyc/documents route with multipart upload, MinIO
+  storage under kyc/{userId}/ prefix, kyc_documents DB insert, and user
+  kyc_status update to 'pending'
+- Added /api/v1/kyc/status endpoint to retrieve KYC status
+- Added submitKycDocument() and getKycStatus() methods to mobile API client
+- Registered kycRoutes in api-core index.ts
