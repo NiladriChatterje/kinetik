@@ -47,6 +47,7 @@ const METRICS = [
 
 const SETTINGS = [
   { icon: 'notifications-outline' as const, label: 'Notifications', screen: 'NotificationPreferences' as const },
+  { icon: 'people-outline' as const, label: 'Duo Wingman', screen: 'DuoWingman' as const },
   { icon: 'lock-closed-outline' as const, label: 'Privacy', screen: undefined },
   { icon: 'card-outline' as const, label: 'Subscription', screen: undefined },
   { icon: 'call-outline' as const, label: 'Support', screen: undefined },

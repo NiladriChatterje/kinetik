@@ -36,10 +36,16 @@ import { CalendarSyncScreen } from '../screens/scheduling/CalendarSyncScreen';
 import { VenueSelectorScreen } from '../screens/scheduling/VenueSelectorScreen';
 import { ReservationLockerScreen } from '../screens/scheduling/ReservationLockerScreen';
 
-// Viral
+// Viral (Duo screens kept for profile access)
 import { DuoWingmanScreen } from '../screens/viral/DuoWingmanScreen';
 import { DoubleDateScreen } from '../screens/viral/DoubleDateScreen';
 import { HeatMapScreen } from '../screens/viral/HeatMapScreen';
+
+// Match
+import { MatchScreen } from '../screens/match/MatchScreen';
+import { LikeListScreen } from '../screens/match/LikeListScreen';
+import { ChatListScreen } from '../screens/match/ChatListScreen';
+import { ChatScreen } from '../screens/match/ChatScreen';
 
 // Wallet
 import { TokenVaultScreen } from '../screens/wallet/TokenVaultScreen';
@@ -65,6 +71,12 @@ export type RootStackParamList = {
   ReservationLocker: { matchId: string; venueId: string };
   DoubleDate: { roomId: string };
   HeatMap: undefined;
+  // Match screens shown as modal overlays
+  Likes: undefined;
+  ChatList: undefined;
+  Chat: { matchId: string; partnerName: string; partnerId?: string; partnerPhotoUrl?: string };
+  // Duo kept for profile access
+  DuoWingman: undefined;
 };
 
 export type OnboardingStackParamList = {
@@ -87,7 +99,7 @@ export type PreferencesStackParamList = {
 export type MainTabParamList = {
   FlashCountdown: undefined;
   ActiveRadar: undefined;
-  DuoWingman: undefined;
+  Match: undefined;
   TokenVault: undefined;
   Profile: undefined;
 };
@@ -169,11 +181,11 @@ const MainTabNavigator = React.memo(function MainTabNavigator() {
         }}
       />
       <MainTab.Screen
-        name="DuoWingman"
-        component={DuoWingmanScreen}
+        name="Match"
+        component={MatchScreen}
         options={{
-          tabBarLabel: 'Duo',
-          tabBarIcon: ({ color }) => <Ionicons name="people-outline" size={22} color={color} />,
+          tabBarLabel: 'Match',
+          tabBarIcon: ({ color }) => <Ionicons name="heart-outline" size={22} color={color} />,
         }}
       />
       <MainTab.Screen
@@ -220,6 +232,13 @@ export function RootNavigator() {
       >
         <RootStack.Screen name="Onboarding" component={AuthNavigator} />
         <RootStack.Screen name="Main" component={MainTabNavigator} />
+        {/* Match screens (pushed above tab bar) */}
+        <RootStack.Screen name="Likes" component={LikeListScreen} />
+        <RootStack.Screen name="ChatList" component={ChatListScreen} />
+        <RootStack.Screen name="Chat" component={ChatScreen} />
+        {/* Duo (kept for profile access) */}
+        <RootStack.Screen name="DuoWingman" component={DuoWingmanScreen} />
+        {/* Existing root overlay screens */}
         <RootStack.Screen name="VibeCheck" component={VibeCheckScreen} />
         <RootStack.Screen name="Unmasking" component={UnmaskingScreen} />
         <RootStack.Screen name="Commitment" component={CommitmentGateScreen} />

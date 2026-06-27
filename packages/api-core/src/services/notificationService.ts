@@ -219,6 +219,14 @@ export const notificationEvents = {
     });
   },
 
+  async newLike(userId: string, likerName: string): Promise<void> {
+    await sendPushNotification(userId, 'new.like', {
+      title: 'New Like 💘',
+      body: `${likerName} liked your profile! See who likes you.`,
+      data: { type: 'new.like', screen: 'Likes' },
+    });
+  },
+
   async duoInvite(userId: string, inviterName: string): Promise<void> {
     await sendPushNotification(userId, 'duo.invite', {
       title: 'Duo Crew Invite 🎯',

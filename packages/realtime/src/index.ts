@@ -11,6 +11,7 @@ import {
 import { FlashWindowHandler } from './handlers/flashWindow';
 import { VibeCheckHandler } from './handlers/vibeCheck';
 import { PresenceHandler } from './handlers/presence';
+import { ChatHandler } from './handlers/chat';
 
 const PORT = parseInt(process.env.PORT || '3002', 10);
 const JWT_SECRET = process.env.JWT_SECRET || 'super-secret-jwt-key-change-in-production-2024';
@@ -68,11 +69,13 @@ io.use(async (socket, next) => {
 const flashWindowNsp = io.of(WS_NAMESPACES.FLASH_WINDOW);
 const vibeCheckNsp = io.of(WS_NAMESPACES.VIBE_CHECK);
 const presenceNsp = io.of(WS_NAMESPACES.PRESENCE);
+const chatNsp = io.of(WS_NAMESPACES.CHAT);
 
 // ─── Initialize Handlers ─────────────────────────────────
 const flashWindowHandler = new FlashWindowHandler(flashWindowNsp, pubClient, subClient);
 const vibeCheckHandler = new VibeCheckHandler(vibeCheckNsp, pubClient);
 const presenceHandler = new PresenceHandler(presenceNsp, pubClient, subClient);
+const chatHandler = new ChatHandler(chatNsp, pubClient);
 
 // ─── Default Namespace (Connection Status) ───────────────
 io.on('connection', (socket) => {

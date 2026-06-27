@@ -105,6 +105,7 @@ export const TABLES = {
   USER_INTERACTIONS: 'user_interactions',
   USER_VECTORS: 'user_vectors',
   KYC_DOCUMENTS: 'kyc_documents',
+  MESSAGES: 'messages',
   PUSH_TOKENS: 'push_tokens',
   AUDIT_LOG: 'audit_log',
 } as const;

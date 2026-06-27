@@ -419,6 +419,45 @@ class ApiClient {
    * The selfie is NOT saved to MinIO — only used for verification.
    * Uses native multipart upload (same as photoService).
    */
+  // ─── Match / Swipe ────────────────────────────────────
+  async getSwipeProfiles() {
+    return this.request<{ profiles: any[] }>('/api/v1/matches/profiles');
+  }
+
+  async swipe(targetUserId: string, action: 'like' | 'pass') {
+    return this.request<{ matched: boolean; matchId?: string; partnerName?: string; partnerId?: string }>('/api/v1/matches/swipe', {
+      method: 'POST',
+      body: JSON.stringify({ targetUserId, action }),
+    });
+  }
+
+  async getIncomingLikes() {
+    return this.request<{ likes: any[]; totalCount: number }>('/api/v1/matches/likes');
+  }
+
+  async respondToLike(targetUserId: string, action: 'like' | 'discard') {
+    return this.request<{ matched: boolean; matchId?: string; partnerName?: string; partnerId?: string }>('/api/v1/matches/respond', {
+      method: 'POST',
+      body: JSON.stringify({ targetUserId, action }),
+    });
+  }
+
+  async getConversations() {
+    return this.request<{ conversations: any[] }>('/api/v1/matches/conversations');
+  }
+
+  async getMessages(matchId: string) {
+    return this.request<{ messages: any[] }>(`/api/v1/matches/conversations/${matchId}/messages`);
+  }
+
+  async sendMessage(matchId: string, content: string) {
+    return this.request<{ id: string; matchId: string; senderId: string; content: string; createdAt: string; readAt: string | null }>(`/api/v1/matches/conversations/${matchId}/messages`, {
+      method: 'POST',
+      body: JSON.stringify({ content }),
+    });
+  }
+
+  // ─── Pose Verification ──────────────────────────────────
   async submitPoseVerification(uri: string): Promise<{
     status: string;
     match: boolean;

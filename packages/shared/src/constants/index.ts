@@ -124,6 +124,12 @@ export const API_ROUTES = {
   MATCHES_PREFIX: '/api/v1/matches',
   MATCHES_LIST: '/api/v1/matches',
   MATCHES_DETAIL: (id: string) => `/api/v1/matches/${id}`,
+  MATCH_PROFILES: '/api/v1/matches/profiles',
+  MATCH_SWIPE: '/api/v1/matches/swipe',
+  MATCH_LIKES: '/api/v1/matches/likes',
+  MATCH_RESPOND: '/api/v1/matches/respond',
+  MATCH_CONVERSATIONS: '/api/v1/matches/conversations',
+  MATCH_CONVERSATION_MESSAGES: (id: string) => `/api/v1/matches/conversations/${id}/messages`,
 
   // Fans / Likes
   FANS_LIST: '/api/v1/fans',
@@ -161,6 +167,7 @@ export const NOTIFICATION_TYPE_LABELS: Record<string, string> = {
   'vibe.check': 'Vibe Check',
   'flash.window': 'Flash Window',
   'new.message': 'Messages',
+  'new.like': 'New Like',
   'duo.invite': 'Duo Invites',
   'marketing': 'Marketing',
 } as const;
@@ -229,4 +236,5 @@ export const WS_NAMESPACES = {
   FLASH_WINDOW: '/flash-window',
   VIBE_CHECK: '/vibe-check',
   PRESENCE: '/presence',
+  CHAT: '/chat',
 } as const;

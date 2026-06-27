@@ -9,6 +9,9 @@ export type OnboardingStep = 'splash' | 'identity' | 'location' | 'photos' | 'po
 export type InteractionAction = 'like' | 'pass' | 'super_like';
 export type AuthProvider = 'phone' | 'google' | 'apple';
 
+// ─── Re-export match types ────────────────────────────────
+export * from './match';
+
 // ─── User Types ───────────────────────────────────────────
 
 export interface User {
@@ -259,6 +262,7 @@ export enum NotificationType {
   VIBE_CHECK = 'vibe.check',
   FLASH_WINDOW = 'flash.window',
   NEW_MESSAGE = 'new.message',
+  NEW_LIKE = 'new.like',
   DUO_INVITE = 'duo.invite',
   MARKETING = 'marketing',
 }
@@ -298,6 +302,13 @@ export enum WsEvent {
   // Presence
   PRESENCE_UPDATE = 'presence:update',
   HEARTBEAT = 'heartbeat',
+
+  // Chat
+  CHAT_JOIN = 'chat:join',
+  CHAT_LEAVE = 'chat:leave',
+  CHAT_MESSAGE = 'chat:message',
+  CHAT_TYPING = 'chat:typing',
+  CHAT_READ = 'chat:read',
 }
 
 // ─── API Response Types ───────────────────────────────────
