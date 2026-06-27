@@ -1,4 +1,5 @@
 import * as SecureStore from 'expo-secure-store';
+import * as FileSystem from 'expo-file-system/legacy';
 import { API_URL, WS_URL } from '../config';
 
 interface ApiResponse<T = any> {
@@ -323,6 +324,43 @@ class ApiClient {
     return this.request(`/api/v1/users/photos/${photoId}/primary`, {
       method: 'PUT',
     });
+  }
+
+  // ─── Pose Verification ──────────────────────────────────
+  /**
+   * Submit a pose verification selfie photo.
+   * Uses native multipart upload (same as photoService).
+   */
+  async submitPoseVerification(uri: string): Promise<{ photoUrl: string; thumbnailUrl: string; status: string }> {
+    const token = this.getToken();
+    const url = `${API_URL}/api/v1/users/pose-verification`;
+
+    const result = await Promise.race([
+      FileSystem.uploadAsync(url, uri, {
+        httpMethod: 'POST',
+        uploadType: FileSystem.FileSystemUploadType.MULTIPART,
+        fieldName: 'photo',
+        mimeType: 'image/jpeg',
+        headers: {
+          ...(token ? { Authorization: `Bearer ${token}` } : {}),
+        },
+      }),
+      new Promise<never>((_, reject) =>
+        setTimeout(() => reject(new Error('Upload timed out. Please try again.')), 60000),
+      ),
+    ]);
+
+    if (result.status >= 200 && result.status < 300) {
+      const body = JSON.parse(result.body);
+      return body.data;
+    }
+
+    let errorMessage = `Upload failed (HTTP ${result.status})`;
+    try {
+      const body = JSON.parse(result.body);
+      errorMessage = body?.error?.message || errorMessage;
+    } catch { /* non-JSON */ }
+    throw new Error(errorMessage);
   }
 }
 

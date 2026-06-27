@@ -1,0 +1,22 @@
+[project]
+name = "kinetik-pose-service"
+version = "0.1.0"
+description = "Kinetik pose verification service — MediaPipe face detection + liveness check"
+requires-python = ">=3.11"
+dependencies = [
+    "fastapi>=0.115.0",
+    "uvicorn[standard]>=0.32.0",
+    "pydantic>=2.9.0",
+    "pydantic-settings>=2.6.0",
+    "asyncpg>=0.30.0",
+    "mediapipe>=0.10.18",
+    "opencv-python-headless>=4.10.0",
+    "numpy>=1.26.0",
+]
+
+[build-system]
+requires = ["setuptools>=74.0.0"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools.packages.find]
+where = ["src"]

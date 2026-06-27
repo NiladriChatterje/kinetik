@@ -196,6 +196,7 @@ services:
       MINIO_SECRET_KEY: ${MINIO_ROOT_PASSWORD:-minioadmin}
       MINIO_BUCKET: ${MINIO_BUCKET:-kinetik-photos}
       MINIO_PUBLIC_URL: /uploads/
+      POSE_SERVICE_URL: http://pose-service:3004
     depends_on:
       postgres:
         condition: service_healthy
@@ -205,6 +206,8 @@ services:
         condition: service_started
       kafka-init:
         condition: service_completed_successfully
+      pose-service:
+        condition: service_started
     deploy:
       resources:
         limits:
@@ -330,6 +333,37 @@ services:
           memory: 64M
         reservations:
           memory: 32M
+    logging: *default-logging
+
+  # ─── Pose Verification Service (Python / MediaPipe) ────────
+  pose-service:
+    build:
+      context: packages/pose-service
+      dockerfile: Dockerfile
+    container_name: kinetik-pose-service
+    restart: unless-stopped
+    ports:
+      - "${POSE_SERVICE_PORT:-3004}:3004"
+    environment:
+      ENVIRONMENT: ${ENVIRONMENT:-development}
+      PORT: 3004
+      HOST: "0.0.0.0"
+      DATABASE_URL: postgresql://${POSTGRES_USER:-kinetik}:${POSTGRES_PASSWORD:-kinetik_dev_2024}@postgres:5432/${POSTGRES_DB:-kinetik}
+      MINIO_ENDPOINT: minio:9000
+      MINIO_ACCESS_KEY: ${MINIO_ROOT_USER:-minioadmin}
+      MINIO_SECRET_KEY: ${MINIO_ROOT_PASSWORD:-minioadmin}
+      MINIO_BUCKET: ${MINIO_BUCKET:-kinetik-photos}
+      MINIO_PUBLIC_URL: /uploads/
+    depends_on:
+      postgres:
+        condition: service_healthy
+    deploy:
+      resources:
+        limits:
+          cpus: "1.0"
+          memory: 512M
+        reservations:
+          memory: 256M
     logging: *default-logging
 
   # ─── Match Engine (Python / NCF + CUDA) ───────────────────
