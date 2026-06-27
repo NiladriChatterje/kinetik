@@ -54,6 +54,7 @@ export const REDIS_KEYS = {
   USER_SESSION: (userId: string) => `user:${userId}:session`,
   USER_PRESENCE: (userId: string) => `user:${userId}:presence`,
   USER_SWIPE_COUNT: (userId: string) => `user:${userId}:swipes:daily`,
+  USER_SUPERLIKE_COUNT: (userId: string) => `user:${userId}:superlikes:daily`,
 
   // H3 Queue
   H3_QUEUE: (h3Index: string) => `queue:${h3Index}`,

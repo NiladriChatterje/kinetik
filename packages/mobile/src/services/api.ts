@@ -424,8 +424,8 @@ class ApiClient {
     return this.request<{ profiles: any[] }>('/api/v1/matches/profiles');
   }
 
-  async swipe(targetUserId: string, action: 'like' | 'pass') {
-    return this.request<{ matched: boolean; matchId?: string; partnerName?: string; partnerId?: string }>('/api/v1/matches/swipe', {
+  async swipe(targetUserId: string, action: 'like' | 'pass' | 'super_like') {
+    return this.request<{ matched: boolean; isSuperLike?: boolean; superLikesRemaining?: number; matchId?: string; partnerName?: string; partnerId?: string }>('/api/v1/matches/swipe', {
       method: 'POST',
       body: JSON.stringify({ targetUserId, action }),
     });

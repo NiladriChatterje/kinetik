@@ -1,52 +1,57 @@
-feat: replace Duo tab with Match tab — Tinder-style swiping, incoming likes, real-time chat
+feat: add read receipts, Super Like, and 'Liked You' tab badge
 
-Replaces the Duo Wingman tab in the bottom navigation with a full match/swipe/chat
-system. Duo remains accessible from Profile > Settings.
+Three features added to the match/chat system:
 
-─── What was introduced ─────────────────────────────────────
+─── Read Receipts ──────────────────────────────────────────
 
-1. Match tab (bottom nav, heart icon)
-   - Discover screen with Tinder-style swipeable profile cards
-     (PanResponder drag gestures, LIKE/PASS stickers, card stack)
-   - Shows full public profile: photos, name, age, bio, occupation,
-     education, interests, verification badge
-   - Swipe right = Like, swipe left = Pass
-   - Mutual Like detection → auto-create match
+Why: Users needed to know when their messages have been seen
+by the recipient, a standard expectation in dating apps.
 
-2. Likes screen (incoming likes)
-   - Users who liked you appear with profile preview (photo, name,
-     age, bio, verification)
-   - Like Back (heart) or Discard (X) buttons
-   - Like Back creates an instant match → Alert with "Say Hello" nav
+What:
+- ChatScreen now shows a single checkmark (✓) for sent-but-unread
+  messages and a double checkmark (✓✓, green) when the partner
+  has read the message
+- Messages being sent (pending) show a timer icon
+- Opening the chat automatically emits a `chat:read` event via
+  Socket.IO, so the sender immediately sees their messages
+  acknowledged
+- Receiving a new message from the partner triggers an automatic
+  `chat:read` emit back, providing instant delivery confirmation
+- The `chat:read` event updates all unread own messages in
+  real-time with the partner's read timestamp
 
-3. Conversations / Messages
-   - ChatListScreen: matched conversations with last message preview,
-     unread count badges, real-time updates via Socket.IO
-   - ChatScreen: real-time messaging over Socket.IO /chat namespace
-     with typing indicators, optimistic sends, read receipts
+─── Super Like ──────────────────────────────────────────────
 
-4. Backend API (api-core matches.ts)
-   - GET /profiles — random profiles filtered by preferences, excluding
-     already-interacted users
-   - POST /swipe — record Like/Pass with mutual-match detection
-   - GET /likes — incoming likes with full profile data
-   - POST /respond — Like Back or Discard an incoming like
-   - GET /conversations — match conversations with last message + unread count
-   - GET|POST /conversations/:id/messages — fetch history / send message
+Why: A Super Like lets users express heightened interest in a
+profile. The recipient sees a special star indicator, making
+the gesture stand out from a regular like.
 
-5. Real-time chat (realtime chat.ts)
-   - Socket.IO /chat namespace with chat:join/leave/message/typing/read
-   - Messages broadcast to match:${matchId} rooms for instant delivery
-   - ChatListScreen joins all match rooms to update previews in real-time
+What:
+- MatchScreen: New Super Like button (star icon, blue border)
+  between Pass and Like on the swipe card. Blue badge on card
+  shows remaining daily super likes.
+- Backend: POST /swipe accepts `'super_like'` action. Daily
+  limit enforced via Redis INCR with 24h TTL (5 for free, 25
+  for premium). Returns `isSuperLike` and `superLikesRemaining`.
+- Mutual match detection handles all combinations: like↔like,
+  like↔super_like, super_like↔super_like.
+- GET /likes returns `isSuperLike` field so the recipient sees
+  the special indicator.
+- LikeListScreen: Super liked profiles show a blue star badge
+  with "Super Like" text.
 
-6. Push notifications
-   - new.like — "X liked your profile!" when someone swipes right
-   - match.found — "You matched with Y!" on mutual like
-   - new.message — push when partner sends a message
+─── 'Liked You' Tab Badge ──────────────────────────────────
 
-7. Database migration (004_add_messages_table.sql)
-   - messages table (match_id, sender_id, content, read_at)
-   - user_interactions: added is_mutual, responded_at columns
+Why: Users should know at a glance when someone has liked them
+without needing to open the Match tab.
 
-8. Duo moved to Profile (kept as "Duo Wingman" in settings list,
-   navigates to existing DuoWingmanScreen for invite code sharing)
+What:
+- authStore: Added `unreadLikeCount` state and
+  `fetchUnreadLikeCount` action that calls GET /likes and stores
+  the total count.
+- RootNavigator: New MatchTabIcon component renders a red
+  circular badge on the heart tab icon showing the number of
+  incoming likes (caps at "9+").
+- MatchScreen: Fetches the count on mount and on every screen
+  focus event, so the badge updates after viewing the Likes
+  screen or switching tabs.

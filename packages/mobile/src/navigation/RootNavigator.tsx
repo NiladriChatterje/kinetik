@@ -1,11 +1,39 @@
 import React from 'react';
-import { ActivityIndicator, View, StyleSheet } from 'react-native';
+import { ActivityIndicator, View, StyleSheet, Text } from 'react-native';
 import { NavigationContainer } from '@react-navigation/native';
 import { createStackNavigator } from '@react-navigation/stack';
 import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
 import { Ionicons } from '@expo/vector-icons';
 import { useAuthStore } from '../store/authStore';
 import { colors, typography } from '../theme';
+
+/** Tab icon with badge for the Match tab — shows incoming like count */
+function MatchTabIcon({ color }: { color: string }) {
+  const unreadLikeCount = useAuthStore((s) => s.unreadLikeCount);
+  return (
+    <View style={{ position: 'relative' }}>
+      <Ionicons name="heart-outline" size={22} color={color} />
+      {unreadLikeCount > 0 && (
+        <View style={{
+          position: 'absolute',
+          top: -6,
+          right: -8,
+          backgroundColor: '#FF6B6B',
+          minWidth: 18,
+          height: 18,
+          borderRadius: 9,
+          justifyContent: 'center',
+          alignItems: 'center',
+          paddingHorizontal: 3,
+        }}>
+          <Text style={{ color: '#fff', fontSize: 10, fontWeight: '800' }}>
+            {unreadLikeCount > 9 ? '9+' : unreadLikeCount}
+          </Text>
+        </View>
+      )}
+    </View>
+  );
+}
 
 // ─── Screen Imports ─────────────────────────────────────
 // Onboarding
@@ -185,7 +213,7 @@ const MainTabNavigator = React.memo(function MainTabNavigator() {
         component={MatchScreen}
         options={{
           tabBarLabel: 'Match',
-          tabBarIcon: ({ color }) => <Ionicons name="heart-outline" size={22} color={color} />,
+          tabBarIcon: ({ color }) => <MatchTabIcon color={color} />,
         }}
       />
       <MainTab.Screen

@@ -35,7 +35,7 @@ export const ChatScreen: React.FC<{ navigation: any; route: any }> = ({ navigati
   const partnerName = pName || 'Stranger';
   const partnerIdStr = pId || '';
 
-  // Connect to Socket.IO chat namespace
+  // ─── Socket Connection ──────────────────────────────
   useEffect(() => {
     const token = api.getToken();
     const socket = io(`${WS_URL}/chat`, {
@@ -46,11 +46,14 @@ export const ChatScreen: React.FC<{ navigation: any; route: any }> = ({ navigati
     socket.on('connect', () => {
       setSocketConnected(true);
       socket.emit('chat:join', { matchId });
+
+      // Emit read receipt when joining — marks all partner messages as read
+      socket.emit('chat:read', { matchId });
     });
 
+    // Incoming message from partner
     socket.on('chat:message', (data: any) => {
       setMessages((prev) => {
-        // Avoid duplicates
         if (prev.some((m) => m.id === data.id)) return prev;
         return [...prev, {
           id: data.id || `temp-${Date.now()}`,
@@ -61,6 +64,24 @@ export const ChatScreen: React.FC<{ navigation: any; route: any }> = ({ navigati
           readAt: null,
         }];
       });
+
+      // Auto-mark partner's message as read and notify them
+      if (data.senderId !== authUser?.id && socket.connected) {
+        socket.emit('chat:read', { matchId });
+      }
+    });
+
+    // Partner read our messages — update local state
+    socket.on('chat:read', (data: any) => {
+      if (data.userId !== authUser?.id) {
+        setMessages((prev) =>
+          prev.map((m) =>
+            m.senderId === authUser?.id && !m.readAt
+              ? { ...m, readAt: data.readAt }
+              : m,
+          ),
+        );
+      }
     });
 
     socket.on('chat:typing', (data: any) => {
@@ -82,7 +103,7 @@ export const ChatScreen: React.FC<{ navigation: any; route: any }> = ({ navigati
     };
   }, [matchId]);
 
-  // Fetch message history
+  // ─── Fetch message history ─────────────────────────
   useEffect(() => {
     (async () => {
       try {
@@ -99,13 +120,14 @@ export const ChatScreen: React.FC<{ navigation: any; route: any }> = ({ navigati
     })();
   }, [matchId]);
 
-  // Scroll to bottom on new messages
+  // ─── Scroll to bottom on new messages ──────────────
   useEffect(() => {
     if (messages.length > 0) {
       setTimeout(() => flatListRef.current?.scrollToEnd({ animated: true }), 100);
     }
   }, [messages.length]);
 
+  // ─── Send a message ────────────────────────────────
   const handleSend = async () => {
     const text = inputText.trim();
     if (!text || sending) return;
@@ -133,9 +155,8 @@ export const ChatScreen: React.FC<{ navigation: any; route: any }> = ({ navigati
     try {
       const res = await api.sendMessage(matchId, text);
       if (res.success && res.data) {
-        // Replace temp message with real one
         setMessages((prev) => prev.map((m) =>
-          m.id === tempId ? { ...m, id: res.data!.id } : m
+          m.id === tempId ? { ...m, id: res.data!.id } : m,
         ));
       }
     } catch {
@@ -145,14 +166,13 @@ export const ChatScreen: React.FC<{ navigation: any; route: any }> = ({ navigati
     }
   };
 
+  // ─── Typing indicator ──────────────────────────────
   const handleInputChange = (text: string) => {
     setInputText(text);
 
-    // Emit typing indicator
     if (socketRef.current?.connected) {
       socketRef.current.emit('chat:typing', { matchId, isTyping: text.length > 0 });
 
-      // Clear typing after 2s of inactivity
       if (typingTimeoutRef.current) clearTimeout(typingTimeoutRef.current);
       typingTimeoutRef.current = setTimeout(() => {
         socketRef.current?.emit('chat:typing', { matchId, isTyping: false });
@@ -160,10 +180,12 @@ export const ChatScreen: React.FC<{ navigation: any; route: any }> = ({ navigati
     }
   };
 
+  // ─── Render message ────────────────────────────────
   const renderMessage = ({ item }: { item: Message }) => {
     const isMine = item.senderId === authUser?.id;
     const showAvatar = !isMine;
     const isTemp = item.id.startsWith('temp-');
+    const isRead = !!item.readAt;
 
     return (
       <View style={[styles.messageRow, isMine && styles.messageRowMine]}>
@@ -179,14 +201,18 @@ export const ChatScreen: React.FC<{ navigation: any; route: any }> = ({ navigati
           <Text style={[styles.messageText, isMine && styles.myMessageText]}>
             {item.content}
           </Text>
-          <View style={styles.messageMeta}>
-            {isTemp && (
-              <Ionicons name="time-outline" size={12} color={colors.textMuted} />
-            )}
-            {item.readAt && (
-              <Ionicons name="checkmark-done" size={12} color={colors.success} />
-            )}
-          </View>
+          {/* Read receipt — only shown on the sender's side */}
+          {isMine && (
+            <View style={styles.messageMeta}>
+              {isTemp ? (
+                <Ionicons name="time-outline" size={12} color={colors.textMuted} />
+              ) : isRead ? (
+                <Ionicons name="checkmark-done" size={14} color={colors.success} />
+              ) : (
+                <Ionicons name="checkmark" size={14} color={colors.textMuted} />
+              )}
+            </View>
+          )}
         </View>
       </View>
     );
@@ -324,6 +350,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     marginTop: 2,
     gap: 2,
+    minHeight: 16,
   },
   emptyChat: {
     flex: 1,

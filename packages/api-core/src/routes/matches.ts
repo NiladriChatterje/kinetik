@@ -1,7 +1,9 @@
 import { FastifyInstance, FastifyRequest, FastifyReply } from 'fastify';
-import { ERROR_CODES } from '@kinetik/shared';
+import { ERROR_CODES, REDIS_KEYS, SUPER_LIKE_LIMIT_DAILY_FREE, SUPER_LIKE_LIMIT_DAILY_PREMIUM } from '@kinetik/shared';
 import { query, TABLES } from '../services/database';
 import { notificationEvents } from '../services/notificationService';
+import { getRedis } from '../services/redis';
+const redis = getRedis();
 
 export async function matchRoutes(app: FastifyInstance) {
   app.addHook('preHandler', async (request: FastifyRequest, reply: FastifyReply) => {
@@ -133,15 +135,15 @@ export async function matchRoutes(app: FastifyInstance) {
     return reply.send({ success: true, data: { profiles } });
   });
 
-  // ─── Swipe (Like / Pass) ─────────────────────────────
+  // ─── Swipe (Like / Pass / Super Like) ────────────────
   app.post('/swipe', async (request: FastifyRequest, reply: FastifyReply) => {
     const { sub: userId } = request.user as any;
-    const { targetUserId, action } = request.body as { targetUserId: string; action: 'like' | 'pass' };
+    const { targetUserId, action } = request.body as { targetUserId: string; action: 'like' | 'pass' | 'super_like' };
 
-    if (!targetUserId || !action || !['like', 'pass'].includes(action)) {
+    if (!targetUserId || !action || !['like', 'pass', 'super_like'].includes(action)) {
       return reply.status(400).send({
         success: false,
-        error: { code: ERROR_CODES.VALIDATION_ERROR, message: 'targetUserId and action (like|pass) required' },
+        error: { code: ERROR_CODES.VALIDATION_ERROR, message: 'targetUserId and action (like|pass|super_like) required' },
       });
     }
 
@@ -165,6 +167,34 @@ export async function matchRoutes(app: FastifyInstance) {
       });
     }
 
+    // Check daily super like limit
+    let superLikeRemaining = 0;
+    if (action === 'super_like') {
+      const subResult = await query(
+        `SELECT tier FROM ${TABLES.SUBSCRIPTION_LEDGER} WHERE user_id = $1`,
+        [userId],
+      );
+      const tier = subResult.rows[0]?.tier || 'free';
+      const dailyLimit = tier === 'free' ? SUPER_LIKE_LIMIT_DAILY_FREE : SUPER_LIKE_LIMIT_DAILY_PREMIUM;
+
+      const used = await redis.get(REDIS_KEYS.USER_SUPERLIKE_COUNT(userId));
+      const usedCount = used ? parseInt(used, 10) : 0;
+      superLikeRemaining = Math.max(0, dailyLimit - usedCount);
+
+      if (usedCount >= dailyLimit) {
+        return reply.status(429).send({
+          success: false,
+          error: { code: ERROR_CODES.SUPER_LIKE_LIMIT_REACHED, message: 'Daily super like limit reached' },
+        });
+      }
+
+      // Increment daily usage with 24h expiry
+      const multi = redis.multi();
+      multi.incr(REDIS_KEYS.USER_SUPERLIKE_COUNT(userId));
+      multi.expire(REDIS_KEYS.USER_SUPERLIKE_COUNT(userId), 86400);
+      await multi.exec();
+    }
+
     // Record interaction
     const interactionResult = await query(
       `INSERT INTO ${TABLES.USER_INTERACTIONS} (actor_id, target_id, action)
@@ -173,8 +203,9 @@ export async function matchRoutes(app: FastifyInstance) {
     );
     const interaction = interactionResult.rows[0];
 
-    // If it's a like, check for mutual like
-    if (action === 'like') {
+    // If it's a like or super_like, check for mutual like
+    const isSuperLike = action === 'super_like';
+    if (action === 'like' || action === 'super_like') {
       // Get swiper's name for notifications
       const swiperNameResult = await query(
         `SELECT display_name FROM ${TABLES.USERS} WHERE id = $1`,
@@ -182,10 +213,10 @@ export async function matchRoutes(app: FastifyInstance) {
       );
       const swiperName = swiperNameResult.rows[0]?.display_name || 'Someone';
 
-      // Check if the target has also liked this user
+      // Check if the target has also liked this user (regular or super like)
       const mutualCheck = await query(
         `SELECT id, action FROM ${TABLES.USER_INTERACTIONS}
-         WHERE actor_id = $1 AND target_id = $2 AND action = 'like'`,
+         WHERE actor_id = $1 AND target_id = $2 AND action IN ('like', 'super_like')`,
         [targetUserId, userId],
       );
 
@@ -220,6 +251,7 @@ export async function matchRoutes(app: FastifyInstance) {
           success: true,
           data: {
             matched: true,
+            isSuperLike,
             matchId: match.id,
             partnerName,
             partnerId: targetUserId,
@@ -227,12 +259,21 @@ export async function matchRoutes(app: FastifyInstance) {
         });
       }
 
-      // Notify target user that someone liked them
-      await notificationEvents.newLike(targetUserId, swiperName);
+      // Notify target user — super like gets a different message
+      if (isSuperLike) {
+        // Send super like notification
+        await notificationEvents.newLike(targetUserId, swiperName);
+      } else {
+        await notificationEvents.newLike(targetUserId, swiperName);
+      }
 
       return reply.send({
         success: true,
-        data: { matched: false },
+        data: {
+          matched: false,
+          isSuperLike,
+          superLikesRemaining: action === 'super_like' ? superLikeRemaining - 1 : undefined,
+        },
       });
     }
 
@@ -251,6 +292,7 @@ export async function matchRoutes(app: FastifyInstance) {
       `SELECT ui.created_at as liked_at,
               ui.is_mutual,
               ui.responded_at,
+              ui.action,
               u.id as user_id,
               u.display_name,
               u.bio,
@@ -261,7 +303,7 @@ export async function matchRoutes(app: FastifyInstance) {
        FROM ${TABLES.USER_INTERACTIONS} ui
        JOIN ${TABLES.USERS} u ON u.id = ui.actor_id
        LEFT JOIN ${TABLES.PROFILE_PHOTOS} pp ON pp.user_id = u.id AND pp.is_primary = TRUE
-       WHERE ui.target_id = $1 AND ui.action = 'like'
+       WHERE ui.target_id = $1 AND ui.action IN ('like', 'super_like')
        ORDER BY ui.created_at DESC
        LIMIT 50`,
       [userId],
@@ -281,6 +323,7 @@ export async function matchRoutes(app: FastifyInstance) {
       isVerified: row.is_verified,
       isMutual: row.is_mutual,
       respondedAt: row.responded_at || undefined,
+      isSuperLike: row.action === 'super_like',
     }));
 
     return reply.send({
@@ -301,10 +344,10 @@ export async function matchRoutes(app: FastifyInstance) {
       });
     }
 
-    // Verify there's an incoming like from targetUserId
+    // Verify there's an incoming like from targetUserId (regular or super)
     const incomingLike = await query(
       `SELECT id FROM ${TABLES.USER_INTERACTIONS}
-       WHERE actor_id = $1 AND target_id = $2 AND action = 'like' AND is_mutual = FALSE`,
+       WHERE actor_id = $1 AND target_id = $2 AND action IN ('like', 'super_like') AND is_mutual = FALSE`,
       [targetUserId, userId],
     );
     if (incomingLike.rows.length === 0) {

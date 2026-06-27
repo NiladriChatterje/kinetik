@@ -33,12 +33,16 @@ function SwipeCard({
   onSwipe,
   onLike,
   onPass,
+  onSuperLike,
+  superLikesRemaining,
 }: {
   profile: SwipeProfile;
   isTop: boolean;
   onSwipe: (direction: 'left' | 'right') => void;
   onLike: () => void;
   onPass: () => void;
+  onSuperLike: () => void;
+  superLikesRemaining: number;
 }) {
   const position = useRef(new Animated.ValueXY()).current;
   const likeOpacity = useRef(new Animated.Value(0)).current;
@@ -161,6 +165,14 @@ function SwipeCard({
         )}
       </View>
 
+      {/* Super Like badge on card when remaining */}
+      {isTop && superLikesRemaining > 0 && (
+        <View style={styles.superLikeHint}>
+          <Ionicons name="star" size={12} color={colors.textInverse} />
+          <Text style={styles.superLikeHintText}>{superLikesRemaining}</Text>
+        </View>
+      )}
+
       {/* Action buttons */}
       {isTop && (
         <View style={styles.actionButtons}>
@@ -169,6 +181,12 @@ function SwipeCard({
             onPress={onPass}
           >
             <Ionicons name="close" size={28} color="#FF6B6B" />
+          </TouchableOpacity>
+          <TouchableOpacity
+            style={[styles.actionBtn, styles.superLikeBtn]}
+            onPress={onSuperLike}
+          >
+            <Ionicons name="star" size={24} color="#1E90FF" />
           </TouchableOpacity>
           <TouchableOpacity
             style={[styles.actionBtn, styles.likeBtn]}
@@ -187,7 +205,9 @@ export const MatchScreen: React.FC<{ navigation: any }> = ({ navigation }) => {
   const [currentIndex, setCurrentIndex] = useState(0);
   const [loading, setLoading] = useState(true);
   const [swiping, setSwiping] = useState(false);
+  const [superLikesRemaining, setSuperLikesRemaining] = useState(5); // default: free tier daily limit
   const authUser = useAuthStore((s) => s.user);
+  const fetchUnreadLikeCount = useAuthStore((s) => s.fetchUnreadLikeCount);
   const toast = useToast();
 
   const fetchProfiles = useCallback(async () => {
@@ -209,7 +229,62 @@ export const MatchScreen: React.FC<{ navigation: any }> = ({ navigation }) => {
 
   useEffect(() => {
     fetchProfiles();
+    fetchUnreadLikeCount();
   }, []);
+
+  // Refresh like count when returning from Likes screen
+  useEffect(() => {
+    const unsubscribe = navigation.addListener('focus', () => {
+      fetchUnreadLikeCount();
+    });
+    return unsubscribe;
+  }, [navigation]);
+
+  const handleSuperLike = async () => {
+    if (swiping || superLikesRemaining <= 0) return;
+    const profile = profiles[currentIndex];
+    if (!profile) return;
+
+    setSwiping(true);
+
+    try {
+      const res = await api.swipe(profile.userId, 'super_like');
+      if (res.success && res.data) {
+        const data = res.data;
+        if (data.superLikesRemaining !== undefined) {
+          setSuperLikesRemaining(data.superLikesRemaining);
+        }
+        if (data.matched) {
+          Alert.alert(
+            'It\'s a Match! 🎉',
+            `You super liked ${data.partnerName} and they liked you back!`,
+            [
+              { text: 'Keep Swiping', style: 'cancel' },
+              {
+                text: 'Say Hello',
+                onPress: () => navigation.navigate('Chat', { matchId: data.matchId, partnerName: data.partnerName }),
+              },
+            ],
+          );
+        } else {
+          toast.showSuccess('Super Like Sent!', 'They\'ll know you\'re interested.');
+        }
+      }
+    } catch (err: any) {
+      toast.showError(err.message || 'Super Like failed');
+    }
+
+    const nextIndex = currentIndex + 1;
+    setCurrentIndex(nextIndex);
+    setSwiping(false);
+
+    if (nextIndex >= profiles.length - 3) {
+      const res = await api.getSwipeProfiles().catch(() => null);
+      if (res?.success && res.data?.profiles) {
+        setProfiles((prev) => [...prev, ...res.data!.profiles]);
+      }
+    }
+  };
 
   const handleSwipe = async (direction: 'left' | 'right') => {
     if (swiping) return;
@@ -328,6 +403,8 @@ export const MatchScreen: React.FC<{ navigation: any }> = ({ navigation }) => {
           onSwipe={handleSwipe}
           onLike={() => handleSwipe('right')}
           onPass={() => handleSwipe('left')}
+          onSuperLike={handleSuperLike}
+          superLikesRemaining={superLikesRemaining}
         />
       </View>
 
@@ -489,7 +566,35 @@ const styles = StyleSheet.create({
     shadowRadius: 4,
   },
   passBtn: { backgroundColor: '#fff' },
+  superLikeBtn: {
+    width: 48,
+    height: 48,
+    borderRadius: 24,
+    backgroundColor: '#fff',
+    justifyContent: 'center',
+    alignItems: 'center',
+    elevation: 4,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.2,
+    shadowRadius: 4,
+    borderWidth: 2,
+    borderColor: '#1E90FF',
+  },
   likeBtn: { backgroundColor: '#fff' },
+  superLikeHint: {
+    position: 'absolute',
+    top: spacing.sm,
+    left: spacing.sm,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    backgroundColor: 'rgba(30, 144, 255, 0.85)',
+    paddingHorizontal: spacing.sm,
+    paddingVertical: 3,
+    borderRadius: radius.full,
+  },
+  superLikeHintText: { ...typography.caption, fontSize: 10, color: colors.textInverse, fontWeight: '700' },
   chatBtn: {
     flexDirection: 'row',
     alignItems: 'center',

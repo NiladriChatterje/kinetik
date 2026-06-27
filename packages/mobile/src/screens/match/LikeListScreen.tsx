@@ -17,6 +17,7 @@ interface IncomingLike {
   photoUrl?: string;
   isVerified: boolean;
   isMutual: boolean;
+  isSuperLike?: boolean;
 }
 
 export const LikeListScreen: React.FC<{ navigation: any }> = ({ navigation }) => {
@@ -90,6 +91,12 @@ export const LikeListScreen: React.FC<{ navigation: any }> = ({ navigation }) =>
             <Text style={styles.name}>{item.displayName}, {item.age}</Text>
             {item.isVerified && (
               <Ionicons name="checkmark-circle" size={16} color={colors.success} style={{ marginLeft: 4 }} />
+            )}
+            {item.isSuperLike && (
+              <View style={styles.superLikeBadge}>
+                <Ionicons name="star" size={11} color={colors.textInverse} />
+                <Text style={styles.superLikeBadgeText}>Super Like</Text>
+              </View>
             )}
           </View>
           {item.bio ? <Text style={styles.bio} numberOfLines={2}>{item.bio}</Text> : null}
@@ -238,4 +245,15 @@ const styles = StyleSheet.create({
   },
   discardBtn: {},
   likeBackBtn: {},
+  superLikeBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 3,
+    marginLeft: 6,
+    backgroundColor: '#1E90FF',
+    paddingHorizontal: 6,
+    paddingVertical: 2,
+    borderRadius: radius.full,
+  },
+  superLikeBadgeText: { ...typography.caption, fontSize: 9, color: colors.textInverse, fontWeight: '700' },
 });

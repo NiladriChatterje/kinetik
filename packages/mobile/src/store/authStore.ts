@@ -33,6 +33,10 @@ interface AuthState {
   pendingPhone: string | null;
   pendingUserId: string | null;
 
+  // Like badge
+  unreadLikeCount: number;
+  fetchUnreadLikeCount: () => Promise<void>;
+
   // Actions
   initialize: () => Promise<void>;
   checkConnection: () => Promise<void>;
@@ -78,6 +82,7 @@ export const useAuthStore = create<AuthState>((set, get) => ({
   connectionError: null,
   pendingPhone: null,
   pendingUserId: null,
+  unreadLikeCount: 0,
 
   checkConnection: async () => {
     const prev = get().connectionStatus;
@@ -267,6 +272,17 @@ export const useAuthStore = create<AuthState>((set, get) => ({
       user: null, token: null, isAuthenticated: false,
       onboardingStep: 'splash', pendingPhone: null, pendingUserId: null,
     });
+  },
+
+  fetchUnreadLikeCount: async () => {
+    try {
+      const res = await api.getIncomingLikes();
+      if (res.success && res.data) {
+        set({ unreadLikeCount: res.data.totalCount || 0 });
+      }
+    } catch {
+      // Silently fail
+    }
   },
 
   setUser: (user) => set({ user }),
