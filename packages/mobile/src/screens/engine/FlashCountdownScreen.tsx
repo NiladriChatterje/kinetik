@@ -6,9 +6,11 @@ import { Ionicons } from '@expo/vector-icons';
 import { Button } from '../../components/common/Button';
 import { Card } from '../../components/common/Card';
 import { colors, typography, spacing, radius } from '../../theme';
+import { api } from '../../services/api';
 
 export const FlashCountdownScreen: React.FC<{ navigation: any }> = ({ navigation }) => {
   const [timeLeft, setTimeLeft] = useState(47 * 60 + 32); // 47:32 until next window
+  const [locationName, setLocationName] = useState<string | null>(null);
   const pulseAnim = useRef(new Animated.Value(1)).current;
 
   useEffect(() => {
@@ -20,12 +22,21 @@ export const FlashCountdownScreen: React.FC<{ navigation: any }> = ({ navigation
       ]),
     );
     pulse.start();
+
+    // Fetch user profile to get the reverse-geocoded location (county)
+    api.getProfile().then((res) => {
+      if (res.success && res.data) {
+        const d = res.data as any;
+        setLocationName(d.county || d.city || null);
+      }
+    }).catch(() => {});
+
     return () => { clearInterval(interval); pulse.stop(); };
   }, []);
 
   const mins = Math.floor(timeLeft / 60);
   const secs = timeLeft % 60;
-  const city = 'San Francisco';
+  const displayLocation = locationName || 'Your Area';
   const participants = 1284;
 
   const handleJoin = () => navigation.navigate('ActiveRadar');
@@ -38,7 +49,7 @@ export const FlashCountdownScreen: React.FC<{ navigation: any }> = ({ navigation
         <Text style={styles.greeting}>Tonight's Window</Text>
         <View style={styles.locationBadge}>
           <Ionicons name="location-outline" size={16} color={colors.textSecondary} style={{ marginRight: 4 }} />
-          <Text style={styles.locationText}>{city}</Text>
+          <Text style={styles.locationText}>{displayLocation}</Text>
         </View>
       </View>
 

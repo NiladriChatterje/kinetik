@@ -28,6 +28,10 @@ export interface User {
   latitude?: number;
   longitude?: number;
   h3Index?: string;
+  city?: string;
+  county?: string;
+  region?: string;
+  country?: string;
   isActive: boolean;
   onboardingComplete: boolean;
   onboardingStep: OnboardingStep;

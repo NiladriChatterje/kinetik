@@ -12,6 +12,7 @@ import { colors, typography, spacing, radius } from '../../theme';
 export const LocationPermissionScreen: React.FC<{ navigation: any }> = ({ navigation }) => {
   const [loading, setLoading] = useState(false);
   const [permissionStatus, setPermissionStatus] = useState<'pending' | 'granted' | 'denied'>('pending');
+  const [resolvedLocation, setResolvedLocation] = useState<string | null>(null);
   const toast = useToast();
 
   const requestLocation = async () => {
@@ -19,11 +20,17 @@ export const LocationPermissionScreen: React.FC<{ navigation: any }> = ({ naviga
     const { status } = await Location.requestForegroundPermissionsAsync();
     if (status === 'granted') {
       setPermissionStatus('granted');
-      toast.showSuccess('Location Enabled', 'Your location has been set up for matching.');
       const loc = await Location.getCurrentPositionAsync({});
-      await api.updateLocation(loc.coords.latitude, loc.coords.longitude);
+      const res = await api.updateLocation(loc.coords.latitude, loc.coords.longitude);
+      const locationName = res?.data?.county || res?.data?.city || [res?.data?.city, res?.data?.region].filter(Boolean).join(', ');
+      if (locationName) {
+        setResolvedLocation(locationName);
+        toast.showSuccess('Location Set', `You're in ${locationName}`);
+      } else {
+        toast.showSuccess('Location Enabled', 'Your location has been set up for matching.');
+      }
       await api.updateOnboardingStep('location');
-      setTimeout(() => navigation.navigate('Photos'), 800);
+      setTimeout(() => navigation.navigate('Photos'), 1200);
     } else {
       setPermissionStatus('denied');
       toast.showError('Location Required', 'Kinetik needs location access to find matches near you.');
@@ -44,7 +51,14 @@ export const LocationPermissionScreen: React.FC<{ navigation: any }> = ({ naviga
               <View key={i} style={[styles.hexCell, i === 9 && styles.hexActive]} />
             ))}
           </View>
-          <Text style={styles.mapLabel}>Your location creates a unique hexagonal zone</Text>
+          {resolvedLocation ? (
+            <View style={styles.resolvedRow}>
+              <Ionicons name="navigate" size={16} color={colors.textPrimary} />
+              <Text style={styles.resolvedText}>{resolvedLocation}</Text>
+            </View>
+          ) : (
+            <Text style={styles.mapLabel}>Your location creates a unique hexagonal zone</Text>
+          )}
         </Card>
 
         <View style={styles.permissions}>
@@ -90,6 +104,8 @@ const styles = StyleSheet.create({
   hexCell: { width: 32, height: 28, backgroundColor: colors.surfaceHighlight, borderRadius: 4, transform: [{ rotate: '30deg' }] },
   hexActive: { backgroundColor: colors.textPrimary },
   mapLabel: { ...typography.caption, color: colors.textMuted, textAlign: 'center', marginTop: spacing.lg },
+  resolvedRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: spacing.xs, marginTop: spacing.lg },
+  resolvedText: { ...typography.body1, color: colors.textPrimary, fontWeight: '600' },
   permissions: { gap: spacing.lg },
   permissionRow: { flexDirection: 'row', gap: spacing.md, alignItems: 'center' },
   permissionTitle: { ...typography.body1, color: colors.textPrimary },

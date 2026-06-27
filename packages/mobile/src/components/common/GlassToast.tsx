@@ -8,7 +8,10 @@ import {
 import { Ionicons } from '@expo/vector-icons';
 import { colors, typography, radius, spacing } from '../../theme';
 
+type ToastType = 'error' | 'success' | 'glass';
+
 interface GlassToastProps {
+  type?: string;
   text1?: string;
   text2?: string;
   hide: () => void;
@@ -17,14 +20,44 @@ interface GlassToastProps {
 }
 
 /**
- * Glassmorphic black toast — slides in at the bottom.
- * Used for transient feedback messages (e.g. "Phone already exists!").
+ * Get the glassmorphic background color and icon config for each toast type.
  */
-export const GlassToast: React.FC<GlassToastProps> = React.memo(({ text1, text2, hide, onPress }) => {
+function getToastConfig(type: ToastType) {
+  switch (type) {
+    case 'error':
+      return {
+        background: 'rgba(140, 40, 30, 0.92)',
+        border: 'rgba(255, 120, 90, 0.20)',
+        icon: 'close-circle' as const,
+      };
+    case 'success':
+      return {
+        background: 'rgba(25, 95, 50, 0.92)',
+        border: 'rgba(80, 200, 120, 0.20)',
+        icon: 'checkmark-circle' as const,
+      };
+    case 'glass':
+    default:
+      return {
+        background: 'rgba(18, 18, 18, 0.92)',
+        border: 'rgba(255, 255, 255, 0.08)',
+        icon: 'alert-circle' as const,
+      };
+  }
+}
+
+/**
+ * Glassmorphic toast — slides in at the bottom.
+ * Supports error (reddish-brown), success (darkish green), and glass (black) variants.
+ */
+export const GlassToast: React.FC<GlassToastProps> = React.memo(({ type = 'glass', text1, text2, hide, onPress }) => {
   const handlePress = () => {
     if (onPress) onPress();
     hide();
   };
+
+  const toastType = type as ToastType;
+  const config = getToastConfig(toastType);
 
   return (
     <TouchableOpacity
@@ -32,11 +65,11 @@ export const GlassToast: React.FC<GlassToastProps> = React.memo(({ text1, text2,
       onPress={handlePress}
       style={styles.wrapper}
     >
-      <View style={styles.container}>
+      <View style={[styles.container, { backgroundColor: config.background, borderColor: config.border }]}>
         <View style={styles.inner}>
-          {/* Left icon */}
+          {/* Icon */}
           <View style={styles.iconContainer}>
-            <Ionicons name="alert-circle" size={20} color="rgba(255,255,255,0.85)" />
+            <Ionicons name={config.icon} size={20} color="rgba(255,255,255,0.90)" />
           </View>
 
           {/* Content */}
@@ -64,17 +97,14 @@ const styles = StyleSheet.create({
     paddingBottom: spacing.md,
   },
   container: {
-    backgroundColor: 'rgba(18, 18, 18, 0.92)',
     borderRadius: radius.lg,
     borderWidth: 1,
-    borderColor: 'rgba(255, 255, 255, 0.08)',
     // Shadow
     shadowColor: '#000',
     shadowOffset: { width: 0, height: 8 },
     shadowOpacity: 0.4,
     shadowRadius: 24,
     elevation: 16,
-    // Backdrop blur hint (iOS renders via backdropFilter if supported)
     overflow: 'hidden',
   },
   inner: {

@@ -187,6 +187,9 @@ services:
       TWILIO_AUTH_TOKEN: ${TWILIO_AUTH_TOKEN:-}
       TWILIO_PHONE_NUMBER: ${TWILIO_PHONE_NUMBER:-}
 
+      # Geoapify reverse geocoding
+      GEOAPIFY_API: ${GEOAPIFY_API:-}
+
       # MinIO S3-compatible object storage
       MINIO_ENDPOINT: minio:9000
       MINIO_ACCESS_KEY: ${MINIO_ROOT_USER:-minioadmin}

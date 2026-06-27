@@ -90,13 +90,15 @@ export default function App() {
             </TouchableOpacity>
           </View>
         </Animated.View>
-        {/* Toast messages — bottom glassmorphic for errors, top for success/info */}
+        {/* Toast messages — glassmorphic design, bottom-aligned */}
         <Toast
           position="bottom"
           bottomOffset={40}
           visibilityTime={4000}
           config={{
-            glass: (props) => <GlassToast {...props} />,
+            error: (props) => <GlassToast {...props} type="error" />,
+            success: (props) => <GlassToast {...props} type="success" />,
+            glass: (props) => <GlassToast {...props} type="glass" />,
           }}
         />
       </SafeAreaProvider>

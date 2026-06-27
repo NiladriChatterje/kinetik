@@ -171,7 +171,15 @@ class ApiClient {
   }
 
   async updateLocation(latitude: number, longitude: number) {
-    return this.request('/api/v1/users/location', {
+    return this.request<{
+      latitude: number;
+      longitude: number;
+      h3Index: string;
+      city: string | null;
+      county: string | null;
+      region: string | null;
+      country: string | null;
+    }>('/api/v1/users/location', {
       method: 'PUT',
       body: JSON.stringify({ latitude, longitude }),
     });

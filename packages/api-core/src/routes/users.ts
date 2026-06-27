@@ -4,6 +4,7 @@ import { ERROR_CODES, geoToH3 } from '@kinetik/shared';
 import { query, TABLES, findUserById, updateUser, getPreferences, upsertPreferences } from '../services/database';
 import { kafkaProducer } from '../services/kafka';
 import { syncVectorForUser } from '../services/vectorService';
+import { reverseGeocode } from '../services/geocoding';
 
 const UpdateProfileSchema = z.object({
   displayName: z.string().min(1).max(100).optional(),
@@ -84,6 +85,10 @@ export async function userRoutes(app: FastifyInstance) {
         latitude: user.latitude,
         longitude: user.longitude,
         h3Index: user.h3_index,
+        city: user.city || null,
+        county: user.county || null,
+        region: user.region || null,
+        country: user.country || null,
         onboardingComplete: user.onboarding_complete,
         onboardingStep: user.onboarding_step,
         primaryPhoto: user.primary_photo_url ? {
@@ -210,14 +215,32 @@ export async function userRoutes(app: FastifyInstance) {
     // Compute real H3 index using h3-js at resolution 7
     const h3Index = geoToH3(latitude, longitude, 7);
 
+    // Reverse geocode coordinates to human-readable location name
+    const geocodeResult = await reverseGeocode(latitude, longitude);
+
     await updateUser(userId, {
       latitude,
       longitude,
       h3_index: h3Index,
       location_updated_at: new Date().toISOString(),
+      city: geocodeResult?.city || null,
+      county: geocodeResult?.county || null,
+      region: geocodeResult?.region || null,
+      country: geocodeResult?.country || null,
     });
 
-    return reply.send({ success: true, data: { latitude, longitude, h3Index } });
+    return reply.send({
+      success: true,
+      data: {
+        latitude,
+        longitude,
+        h3Index,
+        city: geocodeResult?.city || null,
+        county: geocodeResult?.county || null,
+        region: geocodeResult?.region || null,
+        country: geocodeResult?.country || null,
+      },
+    });
   });
 
   // ─── Get Interests ───────────────────────────────────
