@@ -93,7 +93,15 @@ export const IdentityScreen: React.FC<{ navigation: any }> = ({ navigation }) =>
     // Mark all fields as touched so inline errors show
     setGenderTouched(true);
 
-    if (!dob || !gender) return;
+    // Check all required fields are filled
+    const dobFilled = dob.length >= 10;
+    const genderFilled = gender !== null && gender.length > 0;
+    const pronounsFilled = pronouns.trim().length > 0;
+
+    if (!dobFilled || !genderFilled || !pronounsFilled) {
+      toast.showGlass('Must fill all the fields!', 'Please complete your profile information.');
+      return;
+    }
 
     // Validate DOB (age >= 18)
     const validation = validateDob(dob);
@@ -112,8 +120,6 @@ export const IdentityScreen: React.FC<{ navigation: any }> = ({ navigation }) =>
     }
     setLoading(false);
   };
-
-  const canProceed = dob.length >= 10 && gender !== null && validateDob(dob).valid;
 
   return (
     <SafeAreaView style={styles.container}>
@@ -146,7 +152,7 @@ export const IdentityScreen: React.FC<{ navigation: any }> = ({ navigation }) =>
       </ScrollView>
 
       <View style={[styles.footer, { bottom: insets.bottom + 40 }]}>
-        <Button title="Continue" onPress={handleSubmit} disabled={!canProceed} loading={loading} fullWidth />
+        <Button title="Continue" onPress={handleSubmit} loading={loading} fullWidth />
       </View>
     </SafeAreaView>
   );

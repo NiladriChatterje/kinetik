@@ -14,5 +14,13 @@ export function useToast() {
     Toast.show({ type: 'info', text1: title, text2: message });
   }, []);
 
-  return { showError, showSuccess, showInfo };
+  /**
+   * Show a glassmorphic black toast that slides in from the bottom.
+   * Used for transient feedback like conflict errors (e.g. "Phone already exists!").
+   */
+  const showGlass = useCallback((title: string, message?: string) => {
+    Toast.show({ type: 'glass', text1: title, text2: message, visibilityTime: 3000 });
+  }, []);
+
+  return { showError, showSuccess, showInfo, showGlass };
 }

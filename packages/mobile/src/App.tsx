@@ -5,6 +5,7 @@ import { SafeAreaProvider } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import * as NavigationBar from 'expo-navigation-bar';
 import Toast from 'react-native-toast-message';
+import { GlassToast } from './components/common/GlassToast';
 import { RootNavigator } from './navigation/RootNavigator';
 import { useAuthStore } from './store/authStore';
 import { useNotifications } from './hooks/useNotifications';
@@ -89,11 +90,14 @@ export default function App() {
             </TouchableOpacity>
           </View>
         </Animated.View>
-        {/* Toast messages using library defaults */}
+        {/* Toast messages — bottom glassmorphic for errors, top for success/info */}
         <Toast
-          position="top"
-          topOffset={80}
+          position="bottom"
+          bottomOffset={40}
           visibilityTime={4000}
+          config={{
+            glass: (props) => <GlassToast {...props} />,
+          }}
         />
       </SafeAreaProvider>
     </View>

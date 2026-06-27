@@ -1,15 +1,35 @@
-feat: toast redesign + Android OTP auto-read via react-native-otp-verify
+fix: Kafka InconsistentClusterIdException + optimize kafka-init with pre-built image
 
-Toast redesign (cooler look + top-right positioning):
-- Redesigned ToastCard with accent-colored left bar, icon indicator (checkmark/close), and dot separator between title and message
-- Softer card background (#1c1c1e) with deeper shadow (elevation 16, shadow radius 20)
-- Pinned toasts to top-right corner via contentContainerStyle (alignItems: 'flex-end')
-- Removed left border/overflow hidden that clipped iOS shadow
+Issues fixed:
+- Kafka crash loop: Zookeeper had no persistent volume, so on restart it
+  generated a new cluster ID, causing InconsistentClusterIdException.
+  Fixed by adding named volumes for Zookeeper (data + datalog) and
+  setting KAFKA_CLUSTER_ID explicitly so Kafka always uses a consistent
+  cluster ID regardless of Zookeeper state.
+- Nginx, api-core, realtime stuck in "Created" state because they
+  depended on kafka-init, which depended on a crashing Kafka.
 
-Android OTP auto-read integration:
-- Installed react-native-otp-verify package
-- Input.tsx: Added textContentType prop for iOS oneTimeCode support
-- SplashScreen.tsx: Integrated useOtpVerify hook to auto-detect 6-digit SMS OTP
-  - Auto-fills OTP field with detected code and shows success toast
-  - Logs app hash on mount for backend SMS template configuration
-  - Passes textContentType='oneTimeCode' to OTP Input on iOS for native keyboard suggestion
+Infrastructure:
+- docker-compose.yml: Added zookeeper-data + zookeeper-datalog volumes
+- docker-compose.yml: Added ZOOKEEPER_DATA_LOG_DIR env var
+- docker-compose.yml: Set KAFKA_CLUSTER_ID with default cluster ID
+- docker-compose.yml: Increased resource limits for kafka and api-core
+- Added MinIO S3-compatible storage env vars to api-core service
+
+Photo pipeline:
+- Added blurhash dependency for progressive image loading
+- photoStorage.ts: Generate BlurHash during photo upload (4x3 components)
+- photos.ts: Store blur_hash in DB, delete from MinIO directly
+- users.ts: Removed duplicate /photos GET route
+- api.ts: deletePhoto now throws on failure for proper error handling
+
+Match engine (Python):
+- Renamed RedisClient.set() to set_value() to avoid shadowing built-in
+- Updated all callers (spatial.py, redis_client.py)
+- Fixed entrypoint-celery.sh working directory path
+
+Kafka-init optimization:
+- Created scripts/Dockerfile.kafka-init with pre-installed deps
+- Created scripts/entrypoint-kafka-init.sh with retry logic (10 attempts)
+- Created scripts/package.json with kafkajs + tsx dependencies
+- Eliminated runtime npm install (~15s saved per startup)

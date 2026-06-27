@@ -16,6 +16,7 @@ type ConnectionStatus = 'checking' | 'connected' | 'disconnected';
 interface AuthResult {
   success: boolean;
   error?: string;
+  errorCode?: string;
   requiresOtp?: boolean;
 }
 
@@ -46,9 +47,10 @@ interface AuthState {
 }
 
 // Extract a user-friendly error message from the API response
-function getErrorMessage(response: {
-  error?: { message?: string; details?: unknown };
-}): string {
+function getErrorResponse(response: {
+  error?: { code?: string; message?: string; details?: unknown };
+}): { message: string; code?: string } {
+  const code = response.error?.code;
   const msg = response.error?.message;
   if (!msg || msg === 'Invalid input') {
     const details = response.error?.details as
@@ -58,12 +60,12 @@ function getErrorMessage(response: {
     if (fieldErrors) {
       const firstField = Object.keys(fieldErrors)[0];
       if (firstField && fieldErrors[firstField]?.length) {
-        return fieldErrors[firstField][0];
+        return { message: fieldErrors[firstField][0], code };
       }
     }
-    return 'Invalid phone or password.';
+    return { message: 'Invalid phone or password.', code };
   }
-  return msg;
+  return { message: msg, code };
 }
 
 export const useAuthStore = create<AuthState>((set, get) => ({
@@ -121,7 +123,8 @@ export const useAuthStore = create<AuthState>((set, get) => ({
         });
         return { success: true };
       }
-      return { success: false, error: getErrorMessage(response) };
+      const { message } = getErrorResponse(response);
+      return { success: false, error: message };
     } catch (e: any) {
       return { success: false, error: e?.message || 'Unable to connect. Please try again.' };
     }
@@ -133,7 +136,8 @@ export const useAuthStore = create<AuthState>((set, get) => ({
       if (response.success && response.data) {
         return { success: true };
       }
-      return { success: false, error: getErrorMessage(response) };
+      const { message, code } = getErrorResponse(response);
+      return { success: false, error: message, errorCode: code };
     } catch (e: any) {
       return { success: false, error: e?.message || 'Registration failed.' };
     }
@@ -145,7 +149,8 @@ export const useAuthStore = create<AuthState>((set, get) => ({
       if (response.success) {
         return { success: true };
       }
-      return { success: false, error: getErrorMessage(response) };
+      const { message } = getErrorResponse(response);
+      return { success: false, error: message };
     } catch (e: any) {
       return { success: false, error: e?.message || 'Failed to send verification code.' };
     }
@@ -165,7 +170,8 @@ export const useAuthStore = create<AuthState>((set, get) => ({
         });
         return { success: true };
       }
-      return { success: false, error: getErrorMessage(response) };
+      const { message } = getErrorResponse(response);
+      return { success: false, error: message };
     } catch (e: any) {
       return { success: false, error: e?.message || 'Invalid verification code.' };
     }

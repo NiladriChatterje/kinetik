@@ -65,6 +65,9 @@ export const SplashScreen: React.FC<{ navigation: any }> = ({ navigation }) => {
           setFirstName('');
           setLastName('');
           setMiddleName('');
+        } else if (result.errorCode === 'PHONE_EXISTS') {
+          // Graceful glassmorphic toast for duplicate phone
+          toast.showGlass('Phone already exists!', 'Try signing in instead.');
         } else {
           toast.showError('Registration Failed', result.error || 'Could not create your account. Please try again.');
         }
