@@ -10,6 +10,7 @@ import { useToast } from '../../hooks/useToast';
 import { colors, typography, spacing, radius } from '../../theme';
 import { io } from 'socket.io-client';
 import { WS_URL } from '../../config';
+import { MatchPopup } from '../../components/common/MatchPopup';
 
 const SCREEN_WIDTH = Dimensions.get('window').width;
 const SCREEN_HEIGHT = Dimensions.get('window').height;
@@ -213,6 +214,15 @@ export const MatchScreen: React.FC<{ navigation: any }> = ({ navigation }) => {
   const fetchUnreadLikeCount = useAuthStore((s) => s.fetchUnreadLikeCount);
   const toast = useToast();
 
+  // Match popup state
+  const [matchPopup, setMatchPopup] = useState<{
+    visible: boolean;
+    matchId: string;
+    partnerId: string;
+    partnerName: string;
+    partnerPhotoUrl?: string;
+  }>({ visible: false, matchId: '', partnerId: '', partnerName: '' });
+
   const fetchProfiles = useCallback(async () => {
     try {
       setLoading(true);
@@ -234,14 +244,22 @@ export const MatchScreen: React.FC<{ navigation: any }> = ({ navigation }) => {
     fetchProfiles();
     fetchUnreadLikeCount();
 
-    // Listen for match:new events to show match notification
+    // Listen for match:new events to show match popup
     const socket = io(`${WS_URL}/presence`, {
       auth: { token: api.getToken() },
       transports: ['websocket'],
     });
 
     socket.on('match:new', (data: any) => {
-      console.log('[MatchScreen] New match:', data.matchId);
+      console.log('[MatchScreen] New match:', data.matchId, 'with', data.partnerName);
+      // Show the match popup
+      setMatchPopup({
+        visible: true,
+        matchId: data.matchId,
+        partnerId: data.partnerId || '',
+        partnerName: data.partnerName || 'Someone',
+        partnerPhotoUrl: data.partnerPhotoUrl || undefined,
+      });
       // Fetch profiles again to refresh
       fetchProfiles();
       fetchUnreadLikeCount();
@@ -251,6 +269,23 @@ export const MatchScreen: React.FC<{ navigation: any }> = ({ navigation }) => {
       socket.disconnect();
     };
   }, []);
+
+  // Dismiss the match popup
+  const handleKeepSwiping = () => {
+    setMatchPopup((prev) => ({ ...prev, visible: false }));
+  };
+
+  // Navigate to chat on match
+  const handleSayHello = () => {
+    const { matchId, partnerId, partnerName, partnerPhotoUrl } = matchPopup;
+    setMatchPopup((prev) => ({ ...prev, visible: false }));
+    navigation.navigate('Chat', {
+      matchId,
+      partnerName,
+      partnerId,
+      partnerPhotoUrl,
+    });
+  };
 
   // Refresh like count when returning from Likes screen
   useEffect(() => {
@@ -359,6 +394,15 @@ export const MatchScreen: React.FC<{ navigation: any }> = ({ navigation }) => {
           <ActivityIndicator size="large" color={colors.primary} />
           <Text style={styles.loadingText}>Finding profiles near you...</Text>
         </View>
+
+        {/* Match Popup overlay */}
+        <MatchPopup
+          visible={matchPopup.visible}
+          partnerName={matchPopup.partnerName}
+          partnerPhotoUrl={matchPopup.partnerPhotoUrl}
+          onKeepSwiping={handleKeepSwiping}
+          onSayHello={handleSayHello}
+        />
       </SafeAreaView>
     );
   }
@@ -391,6 +435,15 @@ export const MatchScreen: React.FC<{ navigation: any }> = ({ navigation }) => {
             <Text style={styles.refreshBtnText}>Refresh</Text>
           </TouchableOpacity>
         </View>
+
+        {/* Match Popup overlay */}
+        <MatchPopup
+          visible={matchPopup.visible}
+          partnerName={matchPopup.partnerName}
+          partnerPhotoUrl={matchPopup.partnerPhotoUrl}
+          onKeepSwiping={handleKeepSwiping}
+          onSayHello={handleSayHello}
+        />
       </SafeAreaView>
     );
   }
@@ -446,6 +499,15 @@ export const MatchScreen: React.FC<{ navigation: any }> = ({ navigation }) => {
         <Ionicons name="chatbubbles-outline" size={22} color={colors.textPrimary} />
         <Text style={styles.chatBtnText}>Messages</Text>
       </TouchableOpacity>
+
+      {/* Match Popup overlay */}
+      <MatchPopup
+        visible={matchPopup.visible}
+        partnerName={matchPopup.partnerName}
+        partnerPhotoUrl={matchPopup.partnerPhotoUrl}
+        onKeepSwiping={handleKeepSwiping}
+        onSayHello={handleSayHello}
+      />
     </SafeAreaView>
   );
 };

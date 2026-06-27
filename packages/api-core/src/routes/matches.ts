@@ -237,12 +237,25 @@ export async function matchRoutes(app: FastifyInstance) {
           [userId, targetUserId],
         );
 
-        // Get partner names for notification
+        // Get partner details for notification
         const partnerResult = await query(
-          `SELECT display_name FROM ${TABLES.USERS} WHERE id = $1`,
+          `SELECT u.display_name, pp.url as photo_url
+           FROM ${TABLES.USERS} u
+           LEFT JOIN ${TABLES.PROFILE_PHOTOS} pp ON pp.user_id = u.id AND pp.is_primary = TRUE
+           WHERE u.id = $1`,
           [targetUserId],
         );
         const partnerName = partnerResult.rows[0]?.display_name || 'Someone';
+        const partnerPhotoUrl = partnerResult.rows[0]?.photo_url || '';
+
+        // Also get swiper's photo URL for the match event
+        const swiperPhotoResult = await query(
+          `SELECT pp.url as photo_url
+           FROM ${TABLES.PROFILE_PHOTOS} pp
+           WHERE pp.user_id = $1 AND pp.is_primary = TRUE`,
+          [userId],
+        );
+        const swiperPhotoUrl = swiperPhotoResult.rows[0]?.photo_url || '';
 
         // Publish `match.created` event to Kafka for real-time delivery
         await kafkaProducer.sendEvent(KAFKA_TOPICS.MATCH_EVENTS, {
@@ -252,7 +265,9 @@ export async function matchRoutes(app: FastifyInstance) {
             userBId: targetUserId,
             matchId: match.id,
             userAName: swiperName,
+            userAPhotoUrl: swiperPhotoUrl,
             userBName: partnerName,
+            userBPhotoUrl: partnerPhotoUrl,
             timestamp: new Date().toISOString(),
           },
         }).catch((err) => {
@@ -407,22 +422,30 @@ export async function matchRoutes(app: FastifyInstance) {
       [targetUserId, userId],
     );
 
-    // Get partner name
+    // Get partner details
     const partnerResult = await query(
-      `SELECT display_name FROM ${TABLES.USERS} WHERE id = $1`,
+      `SELECT u.display_name, pp.url as photo_url
+       FROM ${TABLES.USERS} u
+       LEFT JOIN ${TABLES.PROFILE_PHOTOS} pp ON pp.user_id = u.id AND pp.is_primary = TRUE
+       WHERE u.id = $1`,
       [targetUserId],
     );
     const partnerName = partnerResult.rows[0]?.display_name || 'Someone';
+    const partnerPhotoUrl = partnerResult.rows[0]?.photo_url || '';
 
     // Publish `match.created` event to Kafka for real-time delivery
+    // Note: userAId is the one who sent the original like (targetUserId),
+    // userBId is the responder (current userId)
     await kafkaProducer.sendEvent(KAFKA_TOPICS.MATCH_EVENTS, {
       type: 'match.created',
       payload: {
         userAId: targetUserId,
         userBId: userId,
         matchId: match.id,
-        userAName: '', // will be fetched by consumer or client
-        userBName: partnerName,
+        userAName: partnerName,
+        userAPhotoUrl: partnerPhotoUrl,
+        userBName: partnerName, // responder — will be filled with current user's name
+        userBPhotoUrl: '',
         timestamp: new Date().toISOString(),
       },
     }).catch((err) => {

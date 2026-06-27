@@ -137,29 +137,34 @@ async function startKafkaConsumer() {
           }
 
           if (event.type === 'match.created' && event.payload) {
-            const { userAId, userBId, matchId } = event.payload;
-            const matchPayload = {
+            const {
+              userAId, userBId, matchId,
+              userAName, userBName,
+              userAPhotoUrl, userBPhotoUrl,
+            } = event.payload;
+            const timestamp = event.payload.timestamp || new Date().toISOString();
+
+            // Emit to User A — their partner is User B
+            const payloadForA = {
               matchId,
-              partnerId: '',
-              timestamp: event.payload.timestamp || new Date().toISOString(),
+              partnerId: userBId,
+              partnerName: userBName || 'Someone',
+              partnerPhotoUrl: userBPhotoUrl || '',
+              timestamp,
             };
-            // Emit to both users — they'll fetch partner details from their match list
-            presenceNsp.to(`user:${userAId}`).emit(WsEvent.MATCH_NEW, {
-              ...matchPayload,
-              partnerId: userBId,
-            });
-            presenceNsp.to(`user:${userBId}`).emit(WsEvent.MATCH_NEW, {
-              ...matchPayload,
+            // Emit to User B — their partner is User A
+            const payloadForB = {
+              matchId,
               partnerId: userAId,
-            });
-            chatNsp.to(`user:${userAId}`).emit(WsEvent.MATCH_NEW, {
-              ...matchPayload,
-              partnerId: userBId,
-            });
-            chatNsp.to(`user:${userBId}`).emit(WsEvent.MATCH_NEW, {
-              ...matchPayload,
-              partnerId: userAId,
-            });
+              partnerName: userAName || 'Someone',
+              partnerPhotoUrl: userAPhotoUrl || '',
+              timestamp,
+            };
+
+            presenceNsp.to(`user:${userAId}`).emit(WsEvent.MATCH_NEW, payloadForA);
+            presenceNsp.to(`user:${userBId}`).emit(WsEvent.MATCH_NEW, payloadForB);
+            chatNsp.to(`user:${userAId}`).emit(WsEvent.MATCH_NEW, payloadForA);
+            chatNsp.to(`user:${userBId}`).emit(WsEvent.MATCH_NEW, payloadForB);
           }
           break;
         case KAFKA_TOPICS.VIBE_EVENTS:
