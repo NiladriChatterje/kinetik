@@ -42,7 +42,12 @@ class KafkaClient:
     # ── Lifecycle ───────────────────────────────────────────────
 
     async def connect(self) -> None:
-        """Initialise both producer and consumer."""
+        """Initialise producer only.
+
+        Consumer is created lazily inside run_consumer() so it lives in the
+        same event loop that runs the consumer task, avoiding
+        "Future attached to a different loop" errors.
+        """
         if not KAFKA_AVAILABLE:
             logger.warning("Kafka not available — skipping connect")
             return
@@ -58,6 +63,14 @@ class KafkaClient:
         await self._producer.start()
         logger.info("Kafka producer connected to %s", brokers)
 
+    async def _ensure_consumer(self) -> None:
+        """Lazily create and start the consumer in the current event loop."""
+        if self._consumer is not None:
+            return
+        if not KAFKA_AVAILABLE:
+            return
+
+        brokers = settings.kafka_brokers.split(",")
         self._consumer = AIOKafkaConsumer(
             *self._subscriptions(),
             bootstrap_servers=brokers,
@@ -95,9 +108,14 @@ class KafkaClient:
     async def run_consumer(self, handler: EventHandler) -> None:
         """Run the event consumer loop, dispatching messages to the given handler.
 
+        Creates the consumer lazily in the current event loop so that all
+        internal Futures belong to the same loop that awaits them.
+
         The handler receives (topic, parsed_payload) and should process
         the event accordingly.
         """
+        await self._ensure_consumer()
+
         if self._consumer is None:
             logger.warning("Kafka consumer not started — event loop disabled")
             return

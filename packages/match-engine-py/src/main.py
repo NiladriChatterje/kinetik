@@ -4,14 +4,13 @@ Kinetik Match Engine — Python backend with NCF neural matching.
 Entry point that:
   - Starts a FastAPI health-check HTTP server
   - Connects to Redis, PostgreSQL, and Kafka
-  - Runs the Kafka event consumer in a background thread
+  - Runs the Kafka event consumer as a background asyncio task
   - Detects CUDA availability and logs the device being used
 """
 
 import asyncio
 import logging
 import os
-import threading
 from contextlib import asynccontextmanager
 from datetime import datetime, timezone
 
@@ -67,10 +66,37 @@ async def lifespan(app: FastAPI):
     vector_matcher = VectorMatcher()
     window_manager = WindowManager(redis_client, pg_pool)
 
-    # 4. Kafka (non-blocking — runs in a background thread)
+    # 4. Kafka — run consumer as background task in the same event loop
+    kafka_consumer_task: asyncio.Task | None = None
     try:
         await kafka_client.connect()
-        _start_kafka_consumer()
+
+        async def _handler(topic: str, payload: dict):
+            """Dispatch Kafka events to the appropriate service."""
+            event_type = payload.get("type", "")
+
+            if topic == KafkaTopics.WINDOW_EVENTS:
+                if event_type == "window.activated" and window_manager:
+                    await window_manager.activate_window(payload["payload"]["windowId"])
+                elif event_type == "window.closed" and window_manager:
+                    await window_manager.close_window(payload["payload"]["windowId"])
+
+            elif topic == KafkaTopics.MATCH_EVENTS:
+                if event_type == "window.joined" and spatial_matcher:
+                    uid = payload["payload"]["userId"]
+                    wid = payload["payload"]["windowId"]
+                    from .workers.match_worker import find_match
+                    find_match.apply_async(args=[uid, wid])
+
+            elif topic == KafkaTopics.USER_EVENTS:
+                if event_type in ("preferences.updated", "location.updated"):
+                    uid = payload["payload"]["userId"]
+                    await redis_client.delete(f"user:{uid}:match_data")
+
+        kafka_consumer_task = asyncio.create_task(
+            kafka_client.run_consumer(_handler)
+        )
+        logger.info("Kafka consumer background task created")
     except Exception as exc:
         logger.warning("Kafka connection failed — event-driven matching disabled: %s", exc)
 
@@ -78,6 +104,13 @@ async def lifespan(app: FastAPI):
 
     # ── Shutdown ────────────────────────────────────────────────
     logger.info("Shutting down match engine...")
+    if kafka_consumer_task is not None:
+        kafka_client._running = False
+        kafka_consumer_task.cancel()
+        try:
+            await kafka_consumer_task
+        except asyncio.CancelledError:
+            pass
     await kafka_client.disconnect()
     if pg_pool:
         await pg_pool.close()
@@ -121,40 +154,7 @@ async def health():
     }
 
 
-# ─── Kafka consumer thread ──────────────────────────────────────
-
-def _start_kafka_consumer():
-    """Launch the Kafka consumer in a daemon thread so it doesn't block startup."""
-
-    async def _handler(topic: str, payload: dict):
-        """Dispatch Kafka events to the appropriate service."""
-        event_type = payload.get("type", "")
-
-        if topic == KafkaTopics.WINDOW_EVENTS:
-            if event_type == "window.activated" and window_manager:
-                await window_manager.activate_window(payload["payload"]["windowId"])
-            elif event_type == "window.closed" and window_manager:
-                await window_manager.close_window(payload["payload"]["windowId"])
-
-        elif topic == KafkaTopics.MATCH_EVENTS:
-            if event_type == "window.joined" and spatial_matcher:
-                uid = payload["payload"]["userId"]
-                wid = payload["payload"]["windowId"]
-                # Queue a match-find job via Celery
-                from .workers.match_worker import find_match
-                find_match.apply_async(args=[uid, wid])
-
-        elif topic == KafkaTopics.USER_EVENTS:
-            if event_type in ("preferences.updated", "location.updated"):
-                uid = payload["payload"]["userId"]
-                await redis_client.delete(f"user:{uid}:match_data")
-
-    async def _run():
-        await kafka_client.run_consumer(_handler)
-
-    thread = threading.Thread(target=lambda: asyncio.run(_run()), daemon=True)
-    thread.start()
-    logger.info("Kafka consumer thread started")
+# (Kafka consumer now runs as an asyncio.Task inside lifespan)
 
 
 # ─── Entry point ────────────────────────────────────────────────
