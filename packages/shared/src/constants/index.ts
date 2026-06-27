@@ -69,6 +69,9 @@ export const REDIS_KEYS = {
   MATCH_POOL: (windowId: string) => `match:${windowId}:pool`,
   MATCH_IN_PROGRESS: (userId: string) => `match:${userId}:in_progress`,
 
+  // New likes counter (for unread badge)
+  USER_UNREAD_LIKES: (userId: string) => `user:${userId}:likes:unread`,
+
   // Vibe check
   VIBE_CHECK: (vibeId: string) => `vibe:${vibeId}`,
   VIBE_CHECK_USER: (userId: string) => `vibe:${userId}:active`,
@@ -81,6 +84,9 @@ export const REDIS_KEYS = {
 
   // Location / area (pub/sub channel for match-engine)
   LOCATION_UPDATES_CHANNEL: 'location:updates',
+
+  // Likes (pub/sub channel for cross-instance real-time like delivery)
+  LIKES_EVENTS_CHANNEL: 'likes:events',
 } as const;
 
 // ─── Kafka Topics ─────────────────────────────────────────

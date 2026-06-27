@@ -1,6 +1,8 @@
 import { create } from 'zustand';
 import * as SecureStore from 'expo-secure-store';
+import { io, Socket } from 'socket.io-client';
 import { api } from '../services/api';
+import { WS_URL } from '../config';
 
 interface User {
   id: string;
@@ -36,6 +38,12 @@ interface AuthState {
   // Like badge
   unreadLikeCount: number;
   fetchUnreadLikeCount: () => Promise<void>;
+  resetUnreadLikeCount: () => void;
+
+  // Socket for real-time like/match updates
+  likesSocket: Socket | null;
+  connectLikesSocket: () => void;
+  disconnectLikesSocket: () => void;
 
   // Actions
   initialize: () => Promise<void>;
@@ -83,6 +91,7 @@ export const useAuthStore = create<AuthState>((set, get) => ({
   pendingPhone: null,
   pendingUserId: null,
   unreadLikeCount: 0,
+  likesSocket: null,
 
   checkConnection: async () => {
     const prev = get().connectionStatus;
@@ -133,6 +142,9 @@ export const useAuthStore = create<AuthState>((set, get) => ({
             onboardingStep,
             isLoading: false,
           });
+
+          // Connect real-time socket for like/match updates
+          get().connectLikesSocket();
         } else {
           // Profile fetch failed — token may be stale
           await SecureStore.deleteItemAsync('auth_token');
@@ -164,6 +176,9 @@ export const useAuthStore = create<AuthState>((set, get) => ({
           token: response.data.token ?? null,
           isAuthenticated: true,
         });
+
+        // Connect real-time socket for like/match updates
+        get().connectLikesSocket();
         return { success: true };
       }
       const { message } = getErrorResponse(response);
@@ -253,6 +268,9 @@ export const useAuthStore = create<AuthState>((set, get) => ({
           pendingPhone: null,
           pendingUserId: null,
         });
+
+        // Connect real-time socket for like/match updates
+        get().connectLikesSocket();
         return { success: true };
       }
       const { message } = getErrorResponse(response);
@@ -266,11 +284,62 @@ export const useAuthStore = create<AuthState>((set, get) => ({
     set({ pendingPhone: null, pendingUserId: null });
   },
 
+  connectLikesSocket: () => {
+    const { user, likesSocket } = get();
+    if (!user || likesSocket?.connected) return;
+
+    const token = api.getToken();
+    if (!token) return;
+
+    const socket = io(`${WS_URL}/presence`, {
+      auth: { token },
+      transports: ['websocket'],
+      forceNew: true,
+    });
+
+    socket.on('connect', () => {
+      console.log('[LikesSocket] Connected');
+    });
+
+    // Real-time new like notification
+    socket.on('likes:new', (data: any) => {
+      console.log('[LikesSocket] New like received:', data.likedByName);
+      // Increment the unread count
+      const current = get().unreadLikeCount;
+      set({ unreadLikeCount: current + 1 });
+    });
+
+    // Real-time new match notification
+    socket.on('match:new', (data: any) => {
+      console.log('[LikesSocket] New match:', data.matchId);
+    });
+
+    socket.on('disconnect', () => {
+      console.log('[LikesSocket] Disconnected');
+    });
+
+    socket.on('connect_error', (err) => {
+      console.error('[LikesSocket] Connection error:', err.message);
+    });
+
+    set({ likesSocket: socket });
+  },
+
+  disconnectLikesSocket: () => {
+    const { likesSocket } = get();
+    if (likesSocket) {
+      likesSocket.disconnect();
+      set({ likesSocket: null });
+    }
+  },
+
   logout: () => {
+    get().disconnectLikesSocket();
     api.setToken(null);
     set({
       user: null, token: null, isAuthenticated: false,
       onboardingStep: 'splash', pendingPhone: null, pendingUserId: null,
+      unreadLikeCount: 0,
     });
   },
 
@@ -284,6 +353,8 @@ export const useAuthStore = create<AuthState>((set, get) => ({
       // Silently fail
     }
   },
+
+  resetUnreadLikeCount: () => set({ unreadLikeCount: 0 }),
 
   setUser: (user) => set({ user }),
   setOnboardingStep: (step) => set({ onboardingStep: step }),

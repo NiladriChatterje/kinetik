@@ -116,6 +116,51 @@ async function startKafkaConsumer() {
             vibeCheckNsp.to(`user:${event.payload.userAId}`).emit(WsEvent.MATCH_FOUND, event.payload);
             vibeCheckNsp.to(`user:${event.payload.userBId}`).emit(WsEvent.MATCH_FOUND, event.payload);
           }
+
+          // Real-time like delivery via presence namespace
+          if (event.type === 'like.created' && event.payload) {
+            const { targetId, actorId, actorName, action } = event.payload;
+            // Emit to the target user's personal room on presence namespace
+            presenceNsp.to(`user:${targetId}`).emit(WsEvent.LIKES_NEW, {
+              likedByUserId: actorId,
+              likedByName: actorName,
+              action: action || 'like',
+              timestamp: event.payload.timestamp || new Date().toISOString(),
+            });
+            // Also emit to chat namespace for convenience
+            chatNsp.to(`user:${targetId}`).emit(WsEvent.LIKES_NEW, {
+              likedByUserId: actorId,
+              likedByName: actorName,
+              action: action || 'like',
+              timestamp: event.payload.timestamp || new Date().toISOString(),
+            });
+          }
+
+          if (event.type === 'match.created' && event.payload) {
+            const { userAId, userBId, matchId } = event.payload;
+            const matchPayload = {
+              matchId,
+              partnerId: '',
+              timestamp: event.payload.timestamp || new Date().toISOString(),
+            };
+            // Emit to both users — they'll fetch partner details from their match list
+            presenceNsp.to(`user:${userAId}`).emit(WsEvent.MATCH_NEW, {
+              ...matchPayload,
+              partnerId: userBId,
+            });
+            presenceNsp.to(`user:${userBId}`).emit(WsEvent.MATCH_NEW, {
+              ...matchPayload,
+              partnerId: userAId,
+            });
+            chatNsp.to(`user:${userAId}`).emit(WsEvent.MATCH_NEW, {
+              ...matchPayload,
+              partnerId: userBId,
+            });
+            chatNsp.to(`user:${userBId}`).emit(WsEvent.MATCH_NEW, {
+              ...matchPayload,
+              partnerId: userAId,
+            });
+          }
           break;
         case KAFKA_TOPICS.VIBE_EVENTS:
           vibeCheckNsp.emit('vibe:event', event);

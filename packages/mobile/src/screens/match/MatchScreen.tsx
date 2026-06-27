@@ -8,6 +8,8 @@ import { useAuthStore } from '../../store/authStore';
 import { api } from '../../services/api';
 import { useToast } from '../../hooks/useToast';
 import { colors, typography, spacing, radius } from '../../theme';
+import { io } from 'socket.io-client';
+import { WS_URL } from '../../config';
 
 const SCREEN_WIDTH = Dimensions.get('window').width;
 const SCREEN_HEIGHT = Dimensions.get('window').height;
@@ -207,6 +209,7 @@ export const MatchScreen: React.FC<{ navigation: any }> = ({ navigation }) => {
   const [swiping, setSwiping] = useState(false);
   const [superLikesRemaining, setSuperLikesRemaining] = useState(5); // default: free tier daily limit
   const authUser = useAuthStore((s) => s.user);
+  const unreadLikeCount = useAuthStore((s) => s.unreadLikeCount);
   const fetchUnreadLikeCount = useAuthStore((s) => s.fetchUnreadLikeCount);
   const toast = useToast();
 
@@ -230,6 +233,23 @@ export const MatchScreen: React.FC<{ navigation: any }> = ({ navigation }) => {
   useEffect(() => {
     fetchProfiles();
     fetchUnreadLikeCount();
+
+    // Listen for match:new events to show match notification
+    const socket = io(`${WS_URL}/presence`, {
+      auth: { token: api.getToken() },
+      transports: ['websocket'],
+    });
+
+    socket.on('match:new', (data: any) => {
+      console.log('[MatchScreen] New match:', data.matchId);
+      // Fetch profiles again to refresh
+      fetchProfiles();
+      fetchUnreadLikeCount();
+    });
+
+    return () => {
+      socket.disconnect();
+    };
   }, []);
 
   // Refresh like count when returning from Likes screen
@@ -353,6 +373,13 @@ export const MatchScreen: React.FC<{ navigation: any }> = ({ navigation }) => {
           <TouchableOpacity onPress={() => navigation.navigate('Likes')}>
             <View style={styles.likesBadge}>
               <Ionicons name="heart-outline" size={22} color={colors.textPrimary} />
+              {unreadLikeCount > 0 && (
+                <View style={styles.likesBadgeCount}>
+                  <Text style={styles.likesBadgeCountText}>
+                    {unreadLikeCount > 9 ? '9+' : unreadLikeCount}
+                  </Text>
+                </View>
+              )}
             </View>
           </TouchableOpacity>
         </View>
@@ -371,13 +398,19 @@ export const MatchScreen: React.FC<{ navigation: any }> = ({ navigation }) => {
   return (
     <SafeAreaView style={styles.container}>
       <View style={styles.header}>
-        <Text style={styles.headerTitle}>Discover</Text>
-        <TouchableOpacity onPress={() => navigation.navigate('Likes')}>
-          <View style={styles.likesBadge}>
-            <Ionicons name="heart-outline" size={22} color={colors.textPrimary} />
-          </View>
-        </TouchableOpacity>
-      </View>
+        <Text style={styles.headerTitle}>Discover</Text>          <TouchableOpacity onPress={() => navigation.navigate('Likes')}>
+            <View style={styles.likesBadge}>
+              <Ionicons name="heart-outline" size={22} color={colors.textPrimary} />
+              {unreadLikeCount > 0 && (
+                <View style={styles.likesBadgeCount}>
+                  <Text style={styles.likesBadgeCountText}>
+                    {unreadLikeCount > 9 ? '9+' : unreadLikeCount}
+                  </Text>
+                </View>
+              )}
+            </View>
+          </TouchableOpacity>
+        </View>
 
       {/* Render cards stack */}
       <View style={styles.cardsContainer}>
@@ -434,6 +467,23 @@ const styles = StyleSheet.create({
     backgroundColor: colors.surfaceHighlight,
     justifyContent: 'center',
     alignItems: 'center',
+  },
+  likesBadgeCount: {
+    position: 'absolute',
+    top: -4,
+    right: -4,
+    backgroundColor: '#FF6B6B',
+    minWidth: 18,
+    height: 18,
+    borderRadius: 9,
+    justifyContent: 'center',
+    alignItems: 'center',
+    paddingHorizontal: 4,
+  },
+  likesBadgeCountText: {
+    color: '#fff',
+    fontSize: 10,
+    fontWeight: '700',
   },
   centered: { flex: 1, justifyContent: 'center', alignItems: 'center', padding: spacing.xxl },
   loadingText: { ...typography.body1, color: colors.textMuted, marginTop: spacing.lg },

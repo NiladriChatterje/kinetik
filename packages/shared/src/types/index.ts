@@ -285,6 +285,7 @@ export enum WsEvent {
   // Matching
   MATCH_FOUND = 'match:found',
   MATCH_CANCELLED = 'match:cancelled',
+  MATCH_NEW = 'match:new',
 
   // Vibe Check
   VIBE_START = 'vibe:start',
@@ -298,6 +299,10 @@ export enum WsEvent {
   // Post-Match
   MATCH_SUCCESS = 'match:success',
   MATCH_EXPIRED = 'match:expired',
+
+  // Likes (real-time)
+  LIKES_NEW = 'likes:new',
+  LIKES_READ = 'likes:read',
 
   // Presence
   PRESENCE_UPDATE = 'presence:update',

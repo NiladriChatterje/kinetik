@@ -1,11 +1,14 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
 import {
   View, Text, StyleSheet, FlatList, Image, TouchableOpacity,
   ActivityIndicator, SafeAreaView, Alert,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
+import { io, Socket } from 'socket.io-client';
 import { api } from '../../services/api';
 import { useToast } from '../../hooks/useToast';
+import { useAuthStore } from '../../store/authStore';
+import { WS_URL } from '../../config';
 import { colors, typography, spacing, radius } from '../../theme';
 
 interface IncomingLike {
@@ -25,6 +28,8 @@ export const LikeListScreen: React.FC<{ navigation: any }> = ({ navigation }) =>
   const [loading, setLoading] = useState(true);
   const [responding, setResponding] = useState<string | null>(null);
   const toast = useToast();
+  const likesSocketRef = useRef<Socket | null>(null);
+  const resetUnreadLikeCount = useAuthStore((s) => s.resetUnreadLikeCount);
 
   const fetchLikes = useCallback(async () => {
     try {
@@ -32,6 +37,8 @@ export const LikeListScreen: React.FC<{ navigation: any }> = ({ navigation }) =>
       const res = await api.getIncomingLikes();
       if (res.success && res.data) {
         setLikes(res.data.likes || []);
+        // Reset unread badge count — user has now seen all likes
+        useAuthStore.getState().resetUnreadLikeCount();
       }
     } catch (err: any) {
       toast.showError('Failed to load likes');
@@ -42,7 +49,39 @@ export const LikeListScreen: React.FC<{ navigation: any }> = ({ navigation }) =>
 
   useEffect(() => {
     fetchLikes();
+
+    // Connect to socket for real-time like updates
+    const token = api.getToken();
+    if (token) {
+      const socket = io(`${WS_URL}/presence`, {
+        auth: { token },
+        transports: ['websocket'],
+      });
+
+      socket.on('likes:new', (data: any) => {
+        console.log('[LikeList] New like received:', data.likedByName);
+        // Re-fetch the likes list to get full details
+        fetchLikes();
+      });
+
+      likesSocketRef.current = socket;
+    }
+
+    return () => {
+      if (likesSocketRef.current) {
+        likesSocketRef.current.disconnect();
+        likesSocketRef.current = null;
+      }
+    };
   }, []);
+
+  // Reset unread count every time this screen comes into focus
+  useEffect(() => {
+    const unsubscribe = navigation.addListener('focus', () => {
+      useAuthStore.getState().resetUnreadLikeCount();
+    });
+    return unsubscribe;
+  }, [navigation]);
 
   const handleRespond = async (targetUserId: string, action: 'like' | 'discard') => {
     setResponding(targetUserId);

@@ -1,7 +1,8 @@
 import { FastifyInstance, FastifyRequest, FastifyReply } from 'fastify';
-import { ERROR_CODES, REDIS_KEYS, SUPER_LIKE_LIMIT_DAILY_FREE, SUPER_LIKE_LIMIT_DAILY_PREMIUM } from '@kinetik/shared';
+import { ERROR_CODES, REDIS_KEYS, SUPER_LIKE_LIMIT_DAILY_FREE, SUPER_LIKE_LIMIT_DAILY_PREMIUM, KAFKA_TOPICS } from '@kinetik/shared';
 import { query, TABLES } from '../services/database';
 import { notificationEvents } from '../services/notificationService';
+import { kafkaProducer } from '../services/kafka';
 import { getRedis } from '../services/redis';
 const redis = getRedis();
 
@@ -243,6 +244,21 @@ export async function matchRoutes(app: FastifyInstance) {
         );
         const partnerName = partnerResult.rows[0]?.display_name || 'Someone';
 
+        // Publish `match.created` event to Kafka for real-time delivery
+        await kafkaProducer.sendEvent(KAFKA_TOPICS.MATCH_EVENTS, {
+          type: 'match.created',
+          payload: {
+            userAId: userId,
+            userBId: targetUserId,
+            matchId: match.id,
+            userAName: swiperName,
+            userBName: partnerName,
+            timestamp: new Date().toISOString(),
+          },
+        }).catch((err) => {
+          console.error('[Kafka] Failed to publish match.created:', err);
+        });
+
         // Send push notifications to both users with correct names
         await notificationEvents.matchFound(userId, partnerName);
         await notificationEvents.matchFound(targetUserId, swiperName);
@@ -259,13 +275,22 @@ export async function matchRoutes(app: FastifyInstance) {
         });
       }
 
-      // Notify target user — super like gets a different message
-      if (isSuperLike) {
-        // Send super like notification
-        await notificationEvents.newLike(targetUserId, swiperName);
-      } else {
-        await notificationEvents.newLike(targetUserId, swiperName);
-      }
+      // Publish `like.created` event to Kafka for real-time delivery
+      await kafkaProducer.sendEvent(KAFKA_TOPICS.MATCH_EVENTS, {
+        type: 'like.created',
+        payload: {
+          actorId: userId,
+          targetId: targetUserId,
+          action,
+          actorName: swiperName,
+          timestamp: new Date().toISOString(),
+        },
+      }).catch((err) => {
+        console.error('[Kafka] Failed to publish like.created:', err);
+      });
+
+      // Send push notification
+      await notificationEvents.newLike(targetUserId, swiperName);
 
       return reply.send({
         success: true,
@@ -388,6 +413,21 @@ export async function matchRoutes(app: FastifyInstance) {
       [targetUserId],
     );
     const partnerName = partnerResult.rows[0]?.display_name || 'Someone';
+
+    // Publish `match.created` event to Kafka for real-time delivery
+    await kafkaProducer.sendEvent(KAFKA_TOPICS.MATCH_EVENTS, {
+      type: 'match.created',
+      payload: {
+        userAId: targetUserId,
+        userBId: userId,
+        matchId: match.id,
+        userAName: '', // will be fetched by consumer or client
+        userBName: partnerName,
+        timestamp: new Date().toISOString(),
+      },
+    }).catch((err) => {
+      console.error('[Kafka] Failed to publish match.created:', err);
+    });
 
     // Notify both
     await notificationEvents.matchFound(userId, partnerName);
