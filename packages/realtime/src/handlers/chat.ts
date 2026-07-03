@@ -2,7 +2,7 @@ import { Namespace, Socket } from 'socket.io';
 import { Redis } from 'ioredis';
 import {
   WsEvent,
-  WS_NAMESPACES,
+  REDIS_KEYS,
 } from '@kinetik/shared';
 
 interface ChatMessagePayload {
@@ -21,8 +21,36 @@ export class ChatHandler {
   constructor(
     private nsp: Namespace,
     private pubClient: Redis,
+    private subClient: Redis,
   ) {
     this.setupListeners();
+    this.setupCrossInstanceSubscriber();
+  }
+
+  /**
+   * Subscribe to the Redis pub/sub channel for cross-instance chat message delivery.
+   * When a message is published by another server instance (e.g. via api-core),
+   * this handler broadcasts it to the appropriate match room.
+   */
+  private setupCrossInstanceSubscriber() {
+    this.subClient.subscribe(REDIS_KEYS.CHAT_MESSAGES_CHANNEL, (err) => {
+      if (err) {
+        console.error('[Chat] Failed to subscribe to cross-instance channel:', err.message);
+      } else {
+        console.log(`[Chat] Subscribed to ${REDIS_KEYS.CHAT_MESSAGES_CHANNEL} for cross-instance messages`);
+      }
+    });
+
+    this.subClient.on('message', (channel, message) => {
+      if (channel === REDIS_KEYS.CHAT_MESSAGES_CHANNEL) {
+        try {
+          const payload = JSON.parse(message);
+          this.broadcastMessage(payload.matchId, payload);
+        } catch (err) {
+          console.error('[Chat] Failed to parse cross-instance message:', err);
+        }
+      }
+    });
   }
 
   private setupListeners() {

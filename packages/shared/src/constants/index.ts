@@ -87,6 +87,9 @@ export const REDIS_KEYS = {
 
   // Likes (pub/sub channel for cross-instance real-time like delivery)
   LIKES_EVENTS_CHANNEL: 'likes:events',
+
+  // Chat messages (pub/sub channel for cross-instance chat message delivery)
+  CHAT_MESSAGES_CHANNEL: 'chat:messages',
 } as const;
 
 // ─── Kafka Topics ─────────────────────────────────────────

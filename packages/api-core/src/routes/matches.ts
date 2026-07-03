@@ -605,6 +605,18 @@ export async function matchRoutes(app: FastifyInstance) {
     );
     const message = result.rows[0];
 
+    // Publish to Redis pub/sub for cross-instance real-time delivery
+    const messagePayload = {
+      id: message.id,
+      matchId: message.match_id,
+      senderId: message.sender_id,
+      content: message.content,
+      createdAt: message.created_at,
+    };
+    redis.publish(REDIS_KEYS.CHAT_MESSAGES_CHANNEL, JSON.stringify(messagePayload)).catch((err: Error) => {
+      console.error('[Redis] Failed to publish chat message:', err.message);
+    });
+
     // Notify the partner via push
     const matchRow = matchCheck.rows[0];
     const partnerId = matchRow.user_a_id === userId ? matchRow.user_b_id : matchRow.user_a_id;

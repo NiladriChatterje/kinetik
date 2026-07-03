@@ -1,5 +1,6 @@
 import http from 'http';
 import { Server } from 'socket.io';
+import { createAdapter } from '@socket.io/redis-adapter';
 import { Redis } from 'ioredis';
 import { Kafka } from 'kafkajs';
 import jwt from 'jsonwebtoken';
@@ -25,6 +26,12 @@ const pubClient = new Redis({
 });
 
 const subClient = pubClient.duplicate();
+
+// ─── Socket.IO Redis Adapter (cross-instance communication) ─
+// Without this adapter, Socket.IO rooms/events are in-memory only.
+// With it, events emitted on one server instance are routed to
+// the correct clients regardless of which instance they're connected to.
+io.adapter(createAdapter(pubClient, subClient));
 
 // ─── Kafka ────────────────────────────────────────────────
 const kafka = new Kafka({
@@ -75,7 +82,7 @@ const chatNsp = io.of(WS_NAMESPACES.CHAT);
 const flashWindowHandler = new FlashWindowHandler(flashWindowNsp, pubClient, subClient);
 const vibeCheckHandler = new VibeCheckHandler(vibeCheckNsp, pubClient);
 const presenceHandler = new PresenceHandler(presenceNsp, pubClient, subClient);
-const chatHandler = new ChatHandler(chatNsp, pubClient);
+const chatHandler = new ChatHandler(chatNsp, pubClient, subClient);
 
 // ─── Default Namespace (Connection Status) ───────────────
 io.on('connection', (socket) => {
