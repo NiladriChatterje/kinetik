@@ -110,8 +110,12 @@ export const IdentityScreen: React.FC<{ navigation: any }> = ({ navigation }) =>
       return;
     }
 
+    // Convert DD/MM/YYYY to YYYY-MM-DD for the API / PostgreSQL
+    const parts = dob.split('/');
+    const dobIso = `${parts[2]}-${parts[1]}-${parts[0]}`;
+
     setLoading(true);
-    const res = await api.updateProfile({ displayName: user?.displayName, dateOfBirth: dob, gender: gender.toLowerCase(), pronouns });
+    const res = await api.updateProfile({ displayName: user?.displayName, dateOfBirth: dobIso, gender: gender.toLowerCase(), pronouns });
     if (res.success) {
       await api.updateOnboardingStep('identity');
       navigation.navigate('Location');

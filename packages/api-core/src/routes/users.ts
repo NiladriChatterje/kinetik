@@ -8,7 +8,10 @@ import { reverseGeocode } from '../services/geocoding';
 
 const UpdateProfileSchema = z.object({
   displayName: z.string().min(1).max(100).optional(),
-  dateOfBirth: z.string().optional(),
+  dateOfBirth: z.string().optional().refine(
+    (val) => val === undefined || /^\d{4}-\d{2}-\d{2}$/.test(val),
+    { message: 'dateOfBirth must be in YYYY-MM-DD format' },
+  ),
   gender: z.enum(['male', 'female', 'non_binary', 'other', 'prefer_not_to_say']).optional(),
   pronouns: z.string().max(50).optional(),
   bio: z.string().max(500).optional(),
@@ -115,6 +118,7 @@ export async function userRoutes(app: FastifyInstance) {
     }
 
     const data = validation.data;
+
     const updateData: Record<string, any> = {};
     const fieldMap: Record<string, string> = {
       displayName: 'display_name',
