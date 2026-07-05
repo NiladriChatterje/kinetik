@@ -27,12 +27,6 @@ const pubClient = new Redis({
 
 const subClient = pubClient.duplicate();
 
-// ─── Socket.IO Redis Adapter (cross-instance communication) ─
-// Without this adapter, Socket.IO rooms/events are in-memory only.
-// With it, events emitted on one server instance are routed to
-// the correct clients regardless of which instance they're connected to.
-io.adapter(createAdapter(pubClient, subClient));
-
 // ─── Kafka ────────────────────────────────────────────────
 const kafka = new Kafka({
   clientId: 'kinetik-realtime',
@@ -53,6 +47,12 @@ const io = new Server(server, {
   pingInterval: 25000,
   pingTimeout: 20000,
 });
+
+// ─── Socket.IO Redis Adapter (cross-instance communication) ─
+// Without this adapter, Socket.IO rooms/events are in-memory only.
+// With it, events emitted on one server instance are routed to
+// the correct clients regardless of which instance they're connected to.
+io.adapter(createAdapter(pubClient, subClient));
 
 // ─── Authentication Middleware ────────────────────────────
 io.use(async (socket, next) => {
