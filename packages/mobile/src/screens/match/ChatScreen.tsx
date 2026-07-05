@@ -7,7 +7,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { io, Socket } from 'socket.io-client';
 import { api } from '../../services/api';
 import { useAuthStore } from '../../store/authStore';
-import { WS_URL } from '../../config';
+import { WS_URL, resolveUrl } from '../../config';
 import { colors, typography, spacing, radius } from '../../theme';
 
 interface Message {
@@ -190,7 +190,7 @@ export const ChatScreen: React.FC<{ navigation: any; route: any }> = ({ navigati
     return (
       <View style={[styles.messageRow, isMine && styles.messageRowMine]}>
         {showAvatar && pPhoto ? (
-          <Image source={{ uri: pPhoto }} style={styles.messageAvatar} />
+          <Image source={{ uri: resolveUrl(pPhoto) }} style={styles.messageAvatar} />
         ) : showAvatar ? (
           <View style={[styles.messageAvatar, styles.noMsgAvatar]}>
             <Ionicons name="person-outline" size={16} color={colors.textMuted} />
@@ -227,7 +227,7 @@ export const ChatScreen: React.FC<{ navigation: any; route: any }> = ({ navigati
         </TouchableOpacity>
 
         {pPhoto ? (
-          <Image source={{ uri: pPhoto }} style={styles.headerAvatar} />
+          <Image source={{ uri: resolveUrl(pPhoto) }} style={styles.headerAvatar} />
         ) : (
           <View style={[styles.headerAvatar, styles.noHeaderAvatar]}>
             <Ionicons name="person-outline" size={20} color={colors.textMuted} />

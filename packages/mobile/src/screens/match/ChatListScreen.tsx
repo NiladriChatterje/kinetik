@@ -8,7 +8,7 @@ import { io, Socket } from 'socket.io-client';
 import { api } from '../../services/api';
 import { useToast } from '../../hooks/useToast';
 import { useAuthStore } from '../../store/authStore';
-import { WS_URL } from '../../config';
+import { WS_URL, resolveUrl } from '../../config';
 import { colors, typography, spacing, radius } from '../../theme';
 
 interface Conversation {
@@ -123,7 +123,7 @@ export const ChatListScreen: React.FC<{ navigation: any }> = ({ navigation }) =>
     >
       <View style={styles.avatarContainer}>
         {item.partnerPhotoUrl ? (
-          <Image source={{ uri: item.partnerPhotoUrl }} style={styles.avatar} />
+          <Image source={{ uri: resolveUrl(item.partnerPhotoUrl) }} style={styles.avatar} />
         ) : (
           <View style={[styles.avatar, styles.noAvatar]}>
             <Ionicons name="person-outline" size={24} color={colors.textMuted} />

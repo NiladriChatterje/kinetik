@@ -8,7 +8,7 @@ import { io, Socket } from 'socket.io-client';
 import { api } from '../../services/api';
 import { useToast } from '../../hooks/useToast';
 import { useAuthStore } from '../../store/authStore';
-import { WS_URL } from '../../config';
+import { WS_URL, resolveUrl } from '../../config';
 import { colors, typography, spacing, radius } from '../../theme';
 
 interface IncomingLike {
@@ -119,7 +119,7 @@ export const LikeListScreen: React.FC<{ navigation: any }> = ({ navigation }) =>
     <View style={styles.likeCard}>
       <View style={styles.likeHeader}>
         {item.photoUrl ? (
-          <Image source={{ uri: item.photoUrl }} style={styles.avatar} />
+          <Image source={{ uri: resolveUrl(item.photoUrl) }} style={styles.avatar} />
         ) : (
           <View style={[styles.avatar, styles.noAvatar]}>
             <Ionicons name="person-outline" size={24} color={colors.textMuted} />

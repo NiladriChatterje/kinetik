@@ -9,7 +9,7 @@ import { api } from '../../services/api';
 import { useToast } from '../../hooks/useToast';
 import { colors, typography, spacing, radius } from '../../theme';
 import { io } from 'socket.io-client';
-import { WS_URL } from '../../config';
+import { WS_URL, resolveUrl } from '../../config';
 import { MatchPopup } from '../../components/common/MatchPopup';
 
 const SCREEN_WIDTH = Dimensions.get('window').width;
@@ -108,7 +108,7 @@ function SwipeCard({
       {/* Photo */}
       <View style={styles.cardImageContainer}>
         {mainPhoto ? (
-          <Image source={{ uri: mainPhoto.url }} style={styles.cardImage} />
+          <Image source={{ uri: resolveUrl(mainPhoto.url) }} style={styles.cardImage} />
         ) : (
           <View style={[styles.cardImage, styles.noPhoto]}>
             <Ionicons name="person-outline" size={48} color={colors.textMuted} />
@@ -473,7 +473,7 @@ export const MatchScreen: React.FC<{ navigation: any }> = ({ navigation }) => {
             <View style={[styles.cardImageContainer, { opacity: 0.6 }]}>
               {(profiles[currentIndex + 1].photos.find(p => p.isPrimary) || profiles[currentIndex + 1].photos[0]) ? (
                 <Image
-                  source={{ uri: (profiles[currentIndex + 1].photos.find(p => p.isPrimary) || profiles[currentIndex + 1].photos[0])!.url }}
+                  source={{ uri: resolveUrl((profiles[currentIndex + 1].photos.find(p => p.isPrimary) || profiles[currentIndex + 1].photos[0])!.url) }}
                   style={styles.cardImage}
                 />
               ) : null}
