@@ -1,12 +1,11 @@
 import React, { useState, useCallback } from 'react';
 import {
   View, Text, StyleSheet, TouchableOpacity,
-  ActivityIndicator, ScrollView, Alert,
+  ActivityIndicator, ScrollView, Platform,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import * as DocumentPicker from 'expo-document-picker';
-import * as FileSystem from 'expo-file-system/legacy';
 import { Button } from '../../components/common/Button';
 import { useAuthStore } from '../../store/authStore';
 import { useToast } from '../../hooks/useToast';
@@ -37,6 +36,11 @@ export const KYCScreen: React.FC<{ navigation: any }> = ({ navigation }) => {
 
   /**
    * Open the device document picker for PDF, JPG, PNG files.
+   *
+   * Handles both the modern Expo SDK 50+ API ({ canceled, assets[] })
+   * and the legacy API ({ type: 'cancel' | 'success' }) for compatibility.
+   * Also handles the edge case where assets is null/empty (common on some
+   * Android devices where the file picker returns empty results).
    */
   const handlePickDocument = useCallback(async () => {
     try {
@@ -49,27 +53,62 @@ export const KYCScreen: React.FC<{ navigation: any }> = ({ navigation }) => {
         copyToCacheDirectory: true,
       });
 
-      if (result.canceled) return;
+      // Handle cancellation — supports both old API ({ type: 'cancel' })
+      // and new API ({ canceled: true })
+      if (result.canceled === true || (result as any).type === 'cancel') {
+        return;
+      }
+
+      // Guard: assets may be null, undefined, or empty array on some devices
+      // (e.g. Android when the file provider fails to copy the file)
+      if (!result.assets || result.assets.length === 0) {
+        toast.showError(
+          'No File Selected',
+          Platform.OS === 'android'
+            ? 'Could not access the selected file. Try selecting a different file or restarting the app.'
+            : 'Could not access the selected file. Please try again.',
+        );
+        return;
+      }
 
       const asset = result.assets[0];
-      if (!asset) return;
 
-      // Validate file size (20MB max — matches backend limit)
-      if (asset.size && asset.size > 20 * 1024 * 1024) {
+      // Derive a proper MIME type fallback from the file extension
+      // when the picker doesn't provide one (common on some Android devices).
+      const extension = asset.name?.split('.').pop()?.toLowerCase() || '';
+      const extToMime: Record<string, string> = {
+        pdf: 'application/pdf',
+        jpg: 'image/jpeg',
+        jpeg: 'image/jpeg',
+        png: 'image/png',
+      };
+      const resolvedMimeType =
+        asset.mimeType && asset.mimeType !== 'application/octet-stream'
+          ? asset.mimeType
+          : extToMime[extension] || 'application/octet-stream';
+
+      // Validate file size (20MB max — matches backend limit).
+      // asset.size can be null on some Android devices.
+      const fileSize = asset.size ?? 0;
+      if (fileSize > 20 * 1024 * 1024) {
         toast.showError('File Too Large', 'Please select a file under 20MB.');
         return;
       }
 
       setSelectedFile({
         uri: asset.uri,
-        name: asset.name,
-        size: asset.size ?? 0,
-        mimeType: asset.mimeType ?? 'application/octet-stream',
+        name: asset.name || `document.${extension || 'pdf'}`,
+        size: fileSize,
+        mimeType: resolvedMimeType,
       });
       setUploadPhase('idle');
       setUploadError(null);
     } catch (err: any) {
-      toast.showError('Selection Failed', err?.message || 'Could not open file picker.');
+      console.error('[KYC] Document picker error:', err);
+      toast.showError(
+        'Selection Failed',
+        err?.message || 'Could not open file picker. Please try again.',
+      );
     }
   }, [toast]);
 

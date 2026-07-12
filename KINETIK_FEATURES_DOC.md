@@ -1,0 +1,234 @@
+# Kinetik App — Features & Status Document
+
+> **Last updated:** July 12, 2026
+> **Project:** Kinetik — real-time matchmaking platform (skip the chat, meet already)
+
+---
+
+## 1. Authentication & Onboarding
+
+| Feature | Status | Details |
+|---------|--------|---------|
+| Phone-based Auth | ✅ Implemented | Phone + password login/register flow |
+| OTP Verification | ✅ Implemented | 6-digit SMS-based OTP with auto-advance input, 30s resend cooldown |
+| JWT Token Persistence | ✅ Implemented | `expo-secure-store` for token storage, auto-restore on app launch |
+| Identity Setup (Step 1/5) | ✅ Implemented | DOB (DD/MM/YYYY format, 18+ validation), gender selector, pronouns |
+| Location Permission (Step 2/5) | ✅ Implemented | GPS permission request, H3 hex grid visualization, background updates |
+| Photo Upload (Step 3/5) | ✅ Implemented | Camera/gallery pick, compress & upload pipeline, 2-photo minimum, 6 slots |
+| Pose Verification (Step 4/5) | ✅ Implemented | Front-facing camera selfie, preview/retake, face guide overlay |
+| KYC Document Upload (Step 5/5) | ✅ Implemented | Passport/license/national ID picker, PDF/JPG/PNG, 20MB limit, upload & skip |
+| Onboarding Progress Tracking | ✅ Implemented | Step persisted in DB, resume on re-login, smart skip for already-completed steps |
+
+---
+
+## 2. Match/Swipe System
+
+| Feature | Status | Details |
+|---------|--------|---------|
+| Swipe Card UI | ✅ Implemented | Tinder-style swipeable cards with `PanResponder`, LIKE/PASS stickers, rotation animation |
+| Like Action | ✅ Implemented | Swipe right or tap heart button → records interaction in `user_interactions` |
+| Pass Action | ✅ Implemented | Swipe left or tap X button |
+| Super Like | ✅ Implemented | Star button, blue badge, sends highlighted notification, daily limits (5 free / 25 premium) |
+| Mutual Match Detection | ✅ Implemented | On like, checks if target already liked the actor → creates match instantly |
+| Profile Discovery | ✅ Implemented | Filters by age, gender, distance; excludes already-interacted users; random ordering |
+| Daily Swipe Limits | ✅ Implemented | 50/day free, 99999/day premium, tracked via Redis with 24h expiry |
+| Super Like Limits | ✅ Implemented | 5/day free, 25/day premium, tracked via Redis with 24h expiry |
+| Incoming Likes List | ✅ Implemented | `GET /matches/likes` returns who liked you with photos, bio, super-like indicator |
+| Like-Back / Discard | ✅ Implemented | `POST /matches/respond` lets you like back (creates match) or discard |
+| Unread Like Badge | ✅ Implemented | Red badge on heart icon in Match tab, increments on real-time `likes:new` events |
+| Match Popup Animation | ✅ Implemented | "It's a Match!" animated card with hearts, partner photo, glow effect, "Say Hello" / "Keep Swiping" |
+
+---
+
+## 3. Push Notifications
+
+| Feature | Status | Details |
+|---------|--------|---------|
+| Expo Push Token Registration | ✅ Implemented | Token stored in `push_tokens` table, upserted per user+token combination |
+| Token Unregistration | ✅ Implemented | Soft-delete on logout (sets `is_active = FALSE`) |
+| Notification Preferences | ✅ Implemented | Per-user `push_enabled` flag checked before sending |
+| **New Like Notification** | ✅ **Working** | **When user A swipes right on user B → push sent to user B with title "New Like 💘" and body "{name} liked your profile!"** |
+| New Match Notification | ✅ Implemented | Both users notified: `"You matched with {partnerName}! Say hello and plan your date."` |
+| New Message Notification | ✅ Implemented | Partner notified with sender's name and message preview |
+| Vibe Check Notification | ✅ Implemented | Alert when partner is ready for vibe call |
+| Flash Window Reminder | ✅ Implemented | Configurable reminders via user preference check |
+| Duo Crew Invite | ✅ Implemented | Wingman invite notification |
+
+> **⚠️ Delivery Notes:** Actual push delivery depends on:
+> - User having registered an Expo push token
+> - Push notifications being enabled in preferences
+> - Expo push service operationality
+
+---
+
+## 4. Real-Time Infrastructure
+
+| Feature | Status | Details |
+|---------|--------|---------|
+| Socket.IO Server | ✅ Implemented | Namespace-based WebSocket server on port 3002 |
+| Redis Pub/Sub Adapter | ✅ Implemented | Cross-instance Socket.IO room/event routing via `@socket.io/redis-adapter` |
+| Kafka Event Bus | ✅ Implemented | Topics: `kinetik.user.events`, `kinetik.match.events`, `kinetik.vibe.events`, `kinetik.window.events`, `kinetik.payment.events` |
+| JWT Socket Auth | ✅ Implemented | Token verified on handshake for all namespaces |
+| Connection Namespace (/) | ✅ Implemented | Basic connection/disconnect events |
+| Presence Namespace (/presence) | ✅ Implemented | Online status, heartbeat, presence updates |
+| Chat Namespace (/chat) | ✅ Implemented | Join/leave rooms, message relay, typing, read receipts |
+| Flash Window Namespace | ✅ Implemented | Queue management, countdown, join/leave |
+| Vibe Check Namespace | ✅ Implemented | Audio toggle, phase changes, decisions |
+| Graceful Shutdown | ✅ Implemented | SIGTERM/SIGINT handlers for Kafka, Redis, Socket.IO |
+
+---
+
+## 5. Chat / Messaging
+
+| Feature | Status | Details |
+|---------|--------|---------|
+| **Real-Time Chat** | ✅ **Working** | **Socket.IO `chat:message` event — instant delivery across all connected clients** |
+| Message History | ✅ Implemented | `GET /conversations/:id/messages` — returns last 200 messages ASC |
+| Send Message API | ✅ Implemented | `POST /conversations/:id/messages` — persists via PostgreSQL |
+| **Cross-Instance Delivery** | ✅ **Working** | **Redis pub/sub `chat:messages` channel — api-core publishes, realtime service broadcasts** |
+| Chat List / Conversations | ✅ Implemented | `GET /matches/conversations` — shows partner info, last message, unread count, timestamps |
+| Unread Message Count | ✅ Implemented | SQL count of unread messages per conversation |
+| Read Receipts | ✅ Implemented | `chat:read` event via Socket.IO with `read_at` timestamp; checkmark-done icon |
+| Typing Indicators | ✅ Implemented | `chat:typing` event — "Typing..." status in header, auto-clear after 2s |
+| Push Notification for New Message | ✅ Implemented | Partner gets push notification with sender name + message preview |
+| Optimistic Message Send | ✅ Implemented | Messages appear instantly in UI, ID replaced after server confirmation |
+| Empty Chat State | ✅ Implemented | "Say hello to {partnerName}!" placeholder |
+| Friendly Timestamps | ✅ Implemented | "Just now", "5m", "3h", "2d" format in conversation list |
+
+---
+
+## 6. Flash Window (Live Matching)
+
+| Feature | Status | Details |
+|---------|--------|---------|
+| Countdown Timer | ✅ Implemented | Animated countdown to next 8:30 PM window |
+| Location-based Queue Stats | ✅ Implemented | Live users, in queue, matches count |
+| Area Details Modal | ✅ Implemented | Bottom sheet with city, county, region, country, H3 hex cell, coordinates, last polled time |
+| Animated Radar Screen | ✅ Implemented | Pulsing radar ring, sweeping animation, blip dots, queue enter/leave |
+| Queue Size Display | ✅ Implemented | Shows total in queue |
+| Average Match Time | ✅ Implemented | "Avg. match time: 23 seconds" |
+| H3 Spatial Indexing | ✅ Implemented | Users placed in hexagonal grid cells for proximity matching |
+| Kafka for Window Events | ✅ Implemented | `kinetik.window.events` topic for real-time window state |
+
+---
+
+## 7. Vibe Check (3-Minute Call)
+
+| Feature | Status | Details |
+|---------|--------|---------|
+| Phase Timer | ✅ Implemented | 180-second countdown divided into 3 phases |
+| Phase 1 — Silhouette (0-1min) | ✅ Implemented | Audio-only, partner shown as outline/silhouette |
+| Phase 2 — Blurred (1-2min) | ✅ Implemented | Partner image begins revealing |
+| Phase 3 — Revealed (2-3min) | ✅ Implemented | Full profile revealed |
+| Decision Phase | ✅ Implemented | "Lock It In" vs "Pass" buttons after call ends |
+| Audio Controls | ✅ Implemented | Mute/unmute mic, end call, speaker toggle |
+| Phase Dots Indicator | ✅ Implemented | 3 dots showing current phase |
+| Navigation to Commitment | ✅ Implemented | "Lock" → Commitment screen, "Pass" → go back |
+
+---
+
+## 8. Commitment & Scheduling
+
+| Feature | Status | Details |
+|---------|--------|---------|
+| Decision Gate | ✅ Implemented | 15-second countdown decision screen with Pass / Lock It In |
+| Lock Status Screen | ✅ Implemented | Shows match lock status, partner info |
+| Calendar Sync | ✅ Implemented | Screen for syncing availability |
+| Venue Selector | ✅ Implemented | Category-based venue browsing (cafe, bar, lounge, restaurant) |
+| Reservation Locker | ✅ Implemented | Venue booking/reservation management |
+
+---
+
+## 9. Preferences
+
+| Feature | Status | Details |
+|---------|--------|---------|
+| Filter Constraints | ✅ Implemented | Age range, max distance, preferred genders |
+| Value Matrix | ✅ Implemented | 6 dimensions: ambition, social, adventure, tradition, intellect, emotional (0-1) |
+| Priority Weighting | ✅ Implemented | Age, distance, values, interests weight sliders |
+| Communication Cadence | ✅ Implemented | Direct vs playful vs deep communication style preferences |
+
+---
+
+## 10. Wallet / Premium
+
+| Feature | Status | Details |
+|---------|--------|---------|
+| Token Vault | ✅ Implemented | Token balance display |
+| Profile Ledger | ✅ Implemented | Transaction history |
+| Premium Subscriptions | ✅ Implemented | Razorpay integration, ₹499 Premium / ₹999 Infinite monthly |
+| Swipe Allowance Upgrades | ✅ Implemented | Premium = 99999 swipes/day, Infinite = unlimited |
+| Fast Passes & Rain Checks | ✅ Implemented | Token-based boosts for matching priority |
+
+---
+
+## 11. Viral / Social
+
+| Feature | Status | Details |
+|---------|--------|---------|
+| Duo Crew (Wingman) | ✅ Implemented | Invite codes, wingman system for double dates |
+| Double Date | ✅ Implemented | 4-person date room |
+| Heat Map | ✅ Implemented | Location-based activity visualization |
+
+---
+
+## 12. User Profiles
+
+| Feature | Status | Details |
+|---------|--------|--------|
+| Profile Photos | ✅ Implemented | Primary photo, order, thumbnails |
+| Interest Tags | ✅ Implemented | Emoji + name + category |
+| Bio, Occupation, Education | ✅ Implemented | Displayed on swipe cards |
+| Verification Badge | ✅ Implemented | Checkmark on verified profiles |
+
+---
+
+## 13. Backend Services & Infrastructure
+
+| Feature | Status | Details |
+|---------|--------|---------|
+| PostgreSQL Database | ✅ Implemented | Tables: users, matches, messages, user_interactions, profile_photos, interests, push_tokens, etc. |
+| Redis Caching | ✅ Implemented | Session, presence, rate limits, swipe counts, H3 queues |
+| Kafka Streaming | ✅ Implemented | Event-driven architecture across services |
+| Python Match Engine | ✅ Implemented | Spatial + vector-based matching with Celery workers |
+| Pose Verification Service | ✅ Implemented | Face matching between selfie and profile photos |
+| H3 Geospatial Indexing | ✅ Implemented | Uber H3 hexagonal grid for location-based matching |
+| Docker Compose Setup | ✅ Implemented | All services containerized with nginx ingress |
+| Graceful Shutdown | ✅ Implemented | SIGTERM/SIGINT handlers for all services |
+
+---
+
+## 14. Specific Answers to Your Questions
+
+### ✅ "Is the chat inbox after a mutual match working?"
+
+**Yes — the full chat pipeline is implemented end-to-end:**
+
+1. **Mutual match detected** when User A likes User B and User B has already liked User A (or vice versa)
+2. A `match` record is created in PostgreSQL (`matches` table)
+3. Both interactions are marked `is_mutual = TRUE` with `responded_at = NOW()`
+4. A Kafka `match.created` event is published to `kinetik.match.events`
+5. The real-time service consumes this and emits `match:new` to both users' rooms on both `/presence` and `/chat` namespaces
+6. Conversations appear immediately in the **ChatListScreen** (fetched from `GET /matches/conversations`)
+7. Users can tap a conversation → **ChatScreen** with real-time messaging
+8. Messages are delivered via Socket.IO with Redis pub/sub for cross-instance support
+9. New messages trigger push notifications to the partner
+
+> The `ChatListScreen` has a nice empty state: "No Conversations — Match with someone to start chatting" with a "Discover People" button.
+
+### ✅ "Does swiping right push a notification to the user who was swiped?"
+
+**Yes — a full push notification pipeline is implemented:**
+
+When User A swipes right on User B, the backend in `POST /matches/swipe` does the following:
+
+1. Records the interaction in `user_interactions` table
+2. **Sends an Expo push notification** via `notificationEvents.newLike(targetUserId, swiperName)`:
+   - Title: `"New Like 💘"`
+   - Body: `"{swiperName} liked your profile! See who likes you."`
+   - Data payload includes: `{ type: 'new.like', screen: 'Likes' }`
+3. **Publishes a Kafka event** `like.created` to `kinetik.match.events`
+4. The real-time service consumes the event and emits `likes:new` to the target user's personal room on both `/presence` and `/chat` namespaces
+5. The target user's app receives this via Socket.IO and **increments the unread like badge count**
+
+> The push notification respects user preferences — if push is disabled, the notification is skipped but the real-time badge still updates.
