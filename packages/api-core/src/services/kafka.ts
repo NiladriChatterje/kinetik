@@ -1,67 +1,48 @@
-import { Kafka, Producer } from 'kafkajs';
-import { KAFKA_TOPICS } from '@kinetik/shared';
+/**
+ * @deprecated Kafka has been replaced by Redis event bus.
+ * Import from './eventBus' instead.
+ *
+ * This file remains as a compatibility shim for any remaining references.
+ * It delegates all calls to the new eventBus service.
+ */
 
-let producer: Producer | null = null;
-
-const kafka = new Kafka({
-  clientId: 'kinetik-api-core',
-  brokers: (process.env.KAFKA_BROKERS || 'localhost:9092').split(','),
-  retry: {
-    initialRetryTime: 300,
-    retries: 8,
-  },
-});
+import { eventBus } from './eventBus';
+import { EVENT_BUS_CHANNELS } from '@kinetik/shared';
 
 export const kafkaProducer = {
   async connect(): Promise<void> {
-    if (!producer) {
-      producer = kafka.producer({
-        allowAutoTopicCreation: true,
-        transactionTimeout: 30000,
-      });
-      await producer.connect();
-      console.log('📨 Kafka producer connected');
-    }
+    console.warn('[Deprecated] kafkaProducer is deprecated — use eventBus instead');
+    await eventBus.connect();
   },
 
   async disconnect(): Promise<void> {
-    if (producer) {
-      await producer.disconnect();
-      producer = null;
-      console.log('📨 Kafka producer disconnected');
-    }
+    await eventBus.disconnect();
   },
 
   async sendEvent(topic: string, event: { type: string; payload: Record<string, unknown> }): Promise<void> {
-    if (!producer) {
-      await this.connect();
-    }
-    await producer!.send({
-      topic,
-      messages: [
-        {
-          key: event.type,
-          value: JSON.stringify({
-            ...event,
-            timestamp: new Date().toISOString(),
-          }),
-        },
-      ],
-    });
+    // Map old Kafka topic names to new event bus channels
+    const channelMap: Record<string, string> = {
+      'kinetik.user.events': EVENT_BUS_CHANNELS.USER_EVENTS,
+      'kinetik.match.events': EVENT_BUS_CHANNELS.MATCH_EVENTS,
+      'kinetik.vibe.events': EVENT_BUS_CHANNELS.VIBE_EVENTS,
+      'kinetik.window.events': EVENT_BUS_CHANNELS.WINDOW_EVENTS,
+      'kinetik.payment.events': EVENT_BUS_CHANNELS.PAYMENT_EVENTS,
+    };
+    const channel = channelMap[topic] || topic;
+    await eventBus.publish(channel, event);
   },
 
   async sendUserEvent(event: { type: string; payload: Record<string, unknown> }): Promise<void> {
-    await this.sendEvent(KAFKA_TOPICS.USER_EVENTS, event);
+    await eventBus.sendUserEvent(event);
   },
 
   async sendMatchEvent(event: { type: string; payload: Record<string, unknown> }): Promise<void> {
-    await this.sendEvent(KAFKA_TOPICS.MATCH_EVENTS, event);
+    await eventBus.sendMatchEvent(event);
   },
 
   async sendPaymentEvent(event: { type: string; payload: Record<string, unknown> }): Promise<void> {
-    await this.sendEvent(KAFKA_TOPICS.PAYMENT_EVENTS, event);
+    await eventBus.sendPaymentEvent(event);
   },
 };
 
-// Auto-connect on module load
-kafkaProducer.connect().catch(console.error);
+// Auto-connect on module load (handled by eventBus now)

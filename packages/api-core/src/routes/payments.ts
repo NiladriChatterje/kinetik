@@ -2,7 +2,7 @@ import { FastifyInstance, FastifyRequest, FastifyReply } from 'fastify';
 import { z } from 'zod';
 import { ERROR_CODES, PREMIUM_SWIPE_LIMIT_DAILY, PREMIUM_MONTHLY_COST_INR, INFINITE_MONTHLY_COST_INR } from '@kinetik/shared';
 import { query, TABLES } from '../services/database';
-import { kafkaProducer } from '../services/kafka';
+import { eventBus } from '../services/eventBus';
 import { getRedis } from '../services/redis';
 
 const CreateOrderSchema = z.object({
@@ -116,7 +116,7 @@ export async function paymentRoutes(app: FastifyInstance) {
       [razorpayPaymentId, razorpayOrderId, razorpayOrderId],
     );
 
-    await kafkaProducer.sendPaymentEvent({
+    await eventBus.sendPaymentEvent({
       type: 'payment.completed',
       payload: { userId, razorpayPaymentId, razorpayOrderId },
     });
@@ -172,7 +172,7 @@ export async function paymentRoutes(app: FastifyInstance) {
     const redis = getRedis();
     await redis.del(`user:${userId}:swipes:daily`);
 
-    await kafkaProducer.sendPaymentEvent({
+    await eventBus.sendPaymentEvent({
       type: 'subscription.updated',
       payload: { userId, tier, expiresAt },
     });

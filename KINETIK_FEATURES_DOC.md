@@ -70,14 +70,14 @@
 |---------|--------|---------|
 | Socket.IO Server | ✅ Implemented | Namespace-based WebSocket server on port 3002 |
 | Redis Pub/Sub Adapter | ✅ Implemented | Cross-instance Socket.IO room/event routing via `@socket.io/redis-adapter` |
-| Kafka Event Bus | ✅ Implemented | Topics: `kinetik.user.events`, `kinetik.match.events`, `kinetik.vibe.events`, `kinetik.window.events`, `kinetik.payment.events` |
+| Redis Event Bus (separate instance) | ✅ Implemented | Channels: `event:match`, `event:user`, `event:window`, `event:vibe`, `event:payment` on a dedicated Redis instance (`redis-events:6380`) — replaces Kafka |
 | JWT Socket Auth | ✅ Implemented | Token verified on handshake for all namespaces |
 | Connection Namespace (/) | ✅ Implemented | Basic connection/disconnect events |
 | Presence Namespace (/presence) | ✅ Implemented | Online status, heartbeat, presence updates |
 | Chat Namespace (/chat) | ✅ Implemented | Join/leave rooms, message relay, typing, read receipts |
 | Flash Window Namespace | ✅ Implemented | Queue management, countdown, join/leave |
 | Vibe Check Namespace | ✅ Implemented | Audio toggle, phase changes, decisions |
-| Graceful Shutdown | ✅ Implemented | SIGTERM/SIGINT handlers for Kafka, Redis, Socket.IO |
+| Graceful Shutdown | ✅ Implemented | SIGTERM/SIGINT handlers for Redis, event bus, Socket.IO |
 
 ---
 
@@ -111,7 +111,7 @@
 | Queue Size Display | ✅ Implemented | Shows total in queue |
 | Average Match Time | ✅ Implemented | "Avg. match time: 23 seconds" |
 | H3 Spatial Indexing | ✅ Implemented | Users placed in hexagonal grid cells for proximity matching |
-| Kafka for Window Events | ✅ Implemented | `kinetik.window.events` topic for real-time window state |
+| Event Bus for Window Events | ✅ Implemented | `event:window` channel on Redis event bus for real-time window state |
 
 ---
 
@@ -238,7 +238,7 @@ Mobile (KYCScreen)                  API Core                        Pose Service
 4. **Scoring**: Best-of-N blend (`best_score * 0.7 + avg_score * 0.3`) — takes the highest match while smoothing with average for robustness
 5. **Optional Step**: KYC can be skipped during onboarding and completed later from Profile → Settings → KYC Verification
 6. **Double Delivery Fix**: Chat messages now delivered exclusively via Redis pub/sub (api-core → Redis → ChatHandler → match room) instead of both socket broadcast AND Redis pub/sub
-7. **/respond Name Fix**: The `match.created` Kafka event now correctly includes the responder's name/photo as `userBName`/`userBPhotoUrl` instead of duplicating the original liker's
+7. **/respond Name Fix**: The `match:created` event bus message now correctly includes the responder's name/photo as `userBName`/`userBPhotoUrl` instead of duplicating the original liker's
 
 ---
 
@@ -248,7 +248,7 @@ Mobile (KYCScreen)                  API Core                        Pose Service
 |---------|--------|---------|
 | PostgreSQL Database | ✅ Implemented | Tables: users, matches, messages, user_interactions, profile_photos, interests, push_tokens, etc. |
 | Redis Caching | ✅ Implemented | Session, presence, rate limits, swipe counts, H3 queues |
-| Kafka Streaming | ✅ Implemented | Event-driven architecture across services |
+| Redis Event Bus | ✅ Implemented | Event-driven architecture via dedicated Redis pub/sub instance (`redis-events:6380`) — replaces Kafka |
 | Python Match Engine | ✅ Implemented | Spatial + vector-based matching with Celery workers |
 | Pose Verification Service | ✅ Implemented | Face matching between selfie and profile photos |
 | H3 Geospatial Indexing | ✅ Implemented | Uber H3 hexagonal grid for location-based matching |
@@ -266,7 +266,7 @@ Mobile (KYCScreen)                  API Core                        Pose Service
 1. **Mutual match detected** when User A likes User B and User B has already liked User A (or vice versa)
 2. A `match` record is created in PostgreSQL (`matches` table)
 3. Both interactions are marked `is_mutual = TRUE` with `responded_at = NOW()`
-4. A Kafka `match.created` event is published to `kinetik.match.events`
+4. A `match:created` event is published to the `event:match` channel on the Redis event bus
 5. The real-time service consumes this and emits `match:new` to both users' rooms on both `/presence` and `/chat` namespaces
 6. Conversations appear immediately in the **ChatListScreen** (fetched from `GET /matches/conversations`)
 7. Users can tap a conversation → **ChatScreen** with real-time messaging
@@ -286,7 +286,7 @@ When User A swipes right on User B, the backend in `POST /matches/swipe` does th
    - Title: `"New Like 💘"`
    - Body: `"{swiperName} liked your profile! See who likes you."`
    - Data payload includes: `{ type: 'new.like', screen: 'Likes' }`
-3. **Publishes a Kafka event** `like.created` to `kinetik.match.events`
+3. **Publishes an event bus message** on the `event:match` channel
 4. The real-time service consumes the event and emits `likes:new` to the target user's personal room on both `/presence` and `/chat` namespaces
 5. The target user's app receives this via Socket.IO and **increments the unread like badge count**
 

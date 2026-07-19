@@ -2,7 +2,7 @@ import { FastifyInstance, FastifyRequest, FastifyReply } from 'fastify';
 import { ERROR_CODES, REDIS_KEYS } from '@kinetik/shared';
 import { query, TABLES } from '../services/database';
 import { getRedis } from '../services/redis';
-import { kafkaProducer } from '../services/kafka';
+import { eventBus } from '../services/eventBus';
 
 export async function windowRoutes(app: FastifyInstance) {
   app.addHook('preHandler', async (request: FastifyRequest, reply: FastifyReply) => {
@@ -136,7 +136,7 @@ export async function windowRoutes(app: FastifyInstance) {
     }
 
     // Emit event
-    await kafkaProducer.sendMatchEvent({
+    await eventBus.sendWindowEvent({
       type: 'window.joined',
       payload: { windowId: id, userId, timestamp: new Date().toISOString() },
     });
@@ -166,7 +166,7 @@ export async function windowRoutes(app: FastifyInstance) {
       await redis.srem(REDIS_KEYS.H3_QUEUE(userResult.rows[0].h3_index), userId);
     }
 
-    await kafkaProducer.sendMatchEvent({
+    await eventBus.sendWindowEvent({
       type: 'window.left',
       payload: { windowId: id, userId },
     });

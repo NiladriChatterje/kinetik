@@ -1,8 +1,8 @@
 import { FastifyInstance, FastifyRequest, FastifyReply } from 'fastify';
-import { ERROR_CODES, REDIS_KEYS, SUPER_LIKE_LIMIT_DAILY_FREE, SUPER_LIKE_LIMIT_DAILY_PREMIUM, KAFKA_TOPICS } from '@kinetik/shared';
+import { ERROR_CODES, REDIS_KEYS, SUPER_LIKE_LIMIT_DAILY_FREE, SUPER_LIKE_LIMIT_DAILY_PREMIUM, EVENT_BUS_CHANNELS } from '@kinetik/shared';
 import { query, TABLES } from '../services/database';
 import { notificationEvents } from '../services/notificationService';
-import { kafkaProducer } from '../services/kafka';
+import { eventBus } from '../services/eventBus';
 import { getRedis } from '../services/redis';
 const redis = getRedis();
 
@@ -257,8 +257,8 @@ export async function matchRoutes(app: FastifyInstance) {
         );
         const swiperPhotoUrl = swiperPhotoResult.rows[0]?.photo_url || '';
 
-        // Publish `match.created` event to Kafka for real-time delivery
-        await kafkaProducer.sendEvent(KAFKA_TOPICS.MATCH_EVENTS, {
+        // Publish `match.created` event via Redis event bus
+        await eventBus.publish(EVENT_BUS_CHANNELS.MATCH_EVENTS, {
           type: 'match.created',
           payload: {
             userAId: userId,
@@ -271,7 +271,7 @@ export async function matchRoutes(app: FastifyInstance) {
             timestamp: new Date().toISOString(),
           },
         }).catch((err) => {
-          console.error('[Kafka] Failed to publish match.created:', err);
+          console.error('[EventBus] Failed to publish match.created:', err);
         });
 
         // Send push notifications to both users with correct names
@@ -290,8 +290,8 @@ export async function matchRoutes(app: FastifyInstance) {
         });
       }
 
-      // Publish `like.created` event to Kafka for real-time delivery
-      await kafkaProducer.sendEvent(KAFKA_TOPICS.MATCH_EVENTS, {
+      // Publish `like.created` event via Redis event bus
+      await eventBus.publish(EVENT_BUS_CHANNELS.MATCH_EVENTS, {
         type: 'like.created',
         payload: {
           actorId: userId,
@@ -301,7 +301,7 @@ export async function matchRoutes(app: FastifyInstance) {
           timestamp: new Date().toISOString(),
         },
       }).catch((err) => {
-        console.error('[Kafka] Failed to publish like.created:', err);
+        console.error('[EventBus] Failed to publish like.created:', err);
       });
 
       // Send push notification
@@ -444,11 +444,11 @@ export async function matchRoutes(app: FastifyInstance) {
     const responderName = responderResult.rows[0]?.display_name || 'Someone';
     const responderPhotoUrl = responderResult.rows[0]?.photo_url || '';
 
-    // Publish `match.created` event to Kafka for real-time delivery
+    // Publish `match.created` event via Redis event bus
     // The realtime service uses:
     //   - userAId (original liker) → sees userBName as their partner's name
     //   - userBId (responder)       → sees userAName as their partner's name
-    await kafkaProducer.sendEvent(KAFKA_TOPICS.MATCH_EVENTS, {
+    await eventBus.publish(EVENT_BUS_CHANNELS.MATCH_EVENTS, {
       type: 'match.created',
       payload: {
         userAId: targetUserId,
@@ -461,7 +461,7 @@ export async function matchRoutes(app: FastifyInstance) {
         timestamp: new Date().toISOString(),
       },
     }).catch((err) => {
-      console.error('[Kafka] Failed to publish match.created:', err);
+      console.error('[EventBus] Failed to publish match.created:', err);
     });
 
     // Notify both

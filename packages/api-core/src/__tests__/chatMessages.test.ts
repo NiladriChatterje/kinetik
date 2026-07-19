@@ -32,14 +32,16 @@ vi.mock('../services/database', () => ({
   },
 }));
 
-vi.mock('../services/kafka', () => ({
-  kafkaProducer: {
+vi.mock('../services/eventBus', () => ({
+  eventBus: {
     connect: vi.fn(),
     disconnect: vi.fn(),
-    sendEvent: vi.fn().mockResolvedValue(undefined),
+    publish: vi.fn().mockResolvedValue(undefined),
     sendUserEvent: vi.fn().mockResolvedValue(undefined),
     sendMatchEvent: vi.fn().mockResolvedValue(undefined),
     sendPaymentEvent: vi.fn().mockResolvedValue(undefined),
+    sendWindowEvent: vi.fn().mockResolvedValue(undefined),
+    sendVibeEvent: vi.fn().mockResolvedValue(undefined),
   },
 }));
 

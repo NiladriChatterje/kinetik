@@ -2,11 +2,10 @@ import http from 'http';
 import { Server } from 'socket.io';
 import { createAdapter } from '@socket.io/redis-adapter';
 import { Redis } from 'ioredis';
-import { Kafka } from 'kafkajs';
 import jwt from 'jsonwebtoken';
 import {
   WsEvent,
-  KAFKA_TOPICS,
+  EVENT_BUS_CHANNELS,
   WS_NAMESPACES,
 } from '@kinetik/shared';
 import { FlashWindowHandler } from './handlers/flashWindow';
@@ -17,7 +16,7 @@ import { ChatHandler } from './handlers/chat';
 const PORT = parseInt(process.env.PORT || '3002', 10);
 const JWT_SECRET = process.env.JWT_SECRET || 'super-secret-jwt-key-change-in-production-2024';
 
-// ─── Redis Clients ────────────────────────────────────────
+// ─── Redis Clients (main — for Socket.IO adapter + presence + caching) ─
 const pubClient = new Redis({
   host: process.env.REDIS_HOST || 'localhost',
   port: parseInt(process.env.REDIS_PORT || '6379', 10),
@@ -27,13 +26,13 @@ const pubClient = new Redis({
 
 const subClient = pubClient.duplicate();
 
-// ─── Kafka ────────────────────────────────────────────────
-const kafka = new Kafka({
-  clientId: 'kinetik-realtime',
-  brokers: (process.env.KAFKA_BROKERS || 'localhost:9092').split(','),
+// ─── Event Bus Redis (separate instance — replaces Kafka consumer) ─
+const eventBusClient = new Redis({
+  host: process.env.REDIS_EVENTS_HOST || 'localhost',
+  port: parseInt(process.env.REDIS_EVENTS_PORT || '6380', 10),
+  password: process.env.REDIS_EVENTS_PASSWORD,
+  retryStrategy: (times) => Math.min(times * 50, 2000),
 });
-
-const kafkaConsumer = kafka.consumer({ groupId: 'realtime-service' });
 
 // ─── HTTP Server ──────────────────────────────────────────
 const server = http.createServer();
@@ -49,9 +48,6 @@ const io = new Server(server, {
 });
 
 // ─── Socket.IO Redis Adapter (cross-instance communication) ─
-// Without this adapter, Socket.IO rooms/events are in-memory only.
-// With it, events emitted on one server instance are routed to
-// the correct clients regardless of which instance they're connected to.
 io.adapter(createAdapter(pubClient, subClient));
 
 // ─── Authentication Middleware ────────────────────────────
@@ -96,29 +92,28 @@ io.on('connection', (socket) => {
   });
 });
 
-// ─── Start Kafka Consumer ────────────────────────────────
-async function startKafkaConsumer() {
-  await kafkaConsumer.connect();
-  await kafkaConsumer.subscribe({
-    topics: [
-      KAFKA_TOPICS.WINDOW_EVENTS,
-      KAFKA_TOPICS.MATCH_EVENTS,
-      KAFKA_TOPICS.VIBE_EVENTS,
-    ],
-    fromBeginning: false,
-  });
+// ─── Start Event Bus Subscriber (replaces Kafka consumer) ─
+async function startEventBusSubscriber() {
+  // Subscribe to event bus channels
+  await eventBusClient.subscribe(
+    EVENT_BUS_CHANNELS.WINDOW_EVENTS,
+    EVENT_BUS_CHANNELS.MATCH_EVENTS,
+    EVENT_BUS_CHANNELS.VIBE_EVENTS,
+  );
 
-  await kafkaConsumer.run({
-    eachMessage: async ({ topic, partition, message }) => {
-      const event = JSON.parse(message.value!.toString());
-      console.log(`[Kafka] Received ${topic}: ${event.type}`);
+  eventBusClient.on('message', (channel: string, message: string) => {
+    try {
+      const event = JSON.parse(message);
+      console.log(`[EventBus] Received ${channel}: ${event.type}`);
 
-      switch (topic) {
-        case KAFKA_TOPICS.WINDOW_EVENTS:
+      switch (channel) {
+        case EVENT_BUS_CHANNELS.WINDOW_EVENTS:
           flashWindowNsp.emit('window:event', event);
           break;
-        case KAFKA_TOPICS.MATCH_EVENTS:
+
+        case EVENT_BUS_CHANNELS.MATCH_EVENTS:
           flashWindowNsp.emit('match:event', event);
+
           if (event.type === 'match.found') {
             vibeCheckNsp.to(`user:${event.payload.userAId}`).emit(WsEvent.MATCH_FOUND, event.payload);
             vibeCheckNsp.to(`user:${event.payload.userBId}`).emit(WsEvent.MATCH_FOUND, event.payload);
@@ -127,14 +122,12 @@ async function startKafkaConsumer() {
           // Real-time like delivery via presence namespace
           if (event.type === 'like.created' && event.payload) {
             const { targetId, actorId, actorName, action } = event.payload;
-            // Emit to the target user's personal room on presence namespace
             presenceNsp.to(`user:${targetId}`).emit(WsEvent.LIKES_NEW, {
               likedByUserId: actorId,
               likedByName: actorName,
               action: action || 'like',
               timestamp: event.payload.timestamp || new Date().toISOString(),
             });
-            // Also emit to chat namespace for convenience
             chatNsp.to(`user:${targetId}`).emit(WsEvent.LIKES_NEW, {
               likedByUserId: actorId,
               likedByName: actorName,
@@ -151,7 +144,6 @@ async function startKafkaConsumer() {
             } = event.payload;
             const timestamp = event.payload.timestamp || new Date().toISOString();
 
-            // Emit to User A — their partner is User B
             const payloadForA = {
               matchId,
               partnerId: userBId,
@@ -159,7 +151,6 @@ async function startKafkaConsumer() {
               partnerPhotoUrl: userBPhotoUrl || '',
               timestamp,
             };
-            // Emit to User B — their partner is User A
             const payloadForB = {
               matchId,
               partnerId: userAId,
@@ -174,18 +165,23 @@ async function startKafkaConsumer() {
             chatNsp.to(`user:${userBId}`).emit(WsEvent.MATCH_NEW, payloadForB);
           }
           break;
-        case KAFKA_TOPICS.VIBE_EVENTS:
+
+        case EVENT_BUS_CHANNELS.VIBE_EVENTS:
           vibeCheckNsp.emit('vibe:event', event);
           break;
       }
-    },
+    } catch (err) {
+      console.error('[EventBus] Failed to parse message:', err);
+    }
   });
+
+  console.log(`📡 Subscribed to event bus channels: ${EVENT_BUS_CHANNELS.WINDOW_EVENTS}, ${EVENT_BUS_CHANNELS.MATCH_EVENTS}, ${EVENT_BUS_CHANNELS.VIBE_EVENTS}`);
 }
 
 // ─── Start Server ─────────────────────────────────────────
 async function bootstrap() {
   try {
-    await startKafkaConsumer();
+    await startEventBusSubscriber();
 
     server.listen(PORT, '0.0.0.0', () => {
       console.log(`🔌 Kinetik Real-Time WS running on port ${PORT}`);
@@ -200,7 +196,7 @@ async function bootstrap() {
 // Graceful shutdown
 process.on('SIGTERM', async () => {
   console.log('SIGTERM received. Shutting down...');
-  await kafkaConsumer.disconnect();
+  await eventBusClient.quit();
   io.close();
   pubClient.quit();
   subClient.quit();
@@ -209,7 +205,7 @@ process.on('SIGTERM', async () => {
 
 process.on('SIGINT', async () => {
   console.log('SIGINT received. Shutting down...');
-  await kafkaConsumer.disconnect();
+  await eventBusClient.quit();
   io.close();
   pubClient.quit();
   subClient.quit();
@@ -218,4 +214,4 @@ process.on('SIGINT', async () => {
 
 bootstrap();
 
-export { io, pubClient, subClient };
+export { io, pubClient, subClient, eventBusClient };

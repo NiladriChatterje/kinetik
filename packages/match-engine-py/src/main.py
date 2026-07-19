@@ -3,8 +3,8 @@ Kinetik Match Engine — Python backend with NCF neural matching.
 
 Entry point that:
   - Starts a FastAPI health-check HTTP server
-  - Connects to Redis, PostgreSQL, and Kafka
-  - Runs the Kafka event consumer as a background asyncio task
+  - Connects to Redis (main) and Redis (event bus)
+  - Subscribes to event bus channels for real-time event processing
   - Subscribes to Redis `location:updates` channel for real-time location data
   - Detects CUDA availability and logs the device being used
 """
@@ -24,7 +24,7 @@ from .config import settings, get_device
 from .matchers.spatial import SpatialMatcher
 from .matchers.vector import VectorMatcher
 from .services.redis_client import RedisClient
-from .services.kafka_client import KafkaClient, KafkaTopics
+from .services.event_bus import EventBusClient, EventBusChannels
 from .services.window_manager import WindowManager
 
 logger = logging.getLogger("kinetik.match_engine")
@@ -32,7 +32,7 @@ logger = logging.getLogger("kinetik.match_engine")
 # ─── Global service references (initialised in lifespan) ────────
 redis_client = RedisClient()
 pg_pool: asyncpg.Pool | None = None
-kafka_client = KafkaClient()
+event_bus_client = EventBusClient()
 spatial_matcher: SpatialMatcher | None = None
 vector_matcher: VectorMatcher | None = None
 window_manager: WindowManager | None = None
@@ -54,7 +54,7 @@ async def lifespan(app: FastAPI):
     logger.info("  Device: %s", device.upper())
     logger.info("=" * 50)
 
-    # 1. Redis
+    # 1. Redis (main)
     await redis_client.connect()
 
     # 2. PostgreSQL
@@ -79,39 +79,39 @@ async def lifespan(app: FastAPI):
     except Exception as exc:
         logger.warning("Failed to start location subscriber: %s", exc)
 
-    # 5. Kafka — run consumer as background task in the same event loop
-    kafka_consumer_task: asyncio.Task | None = None
+    # 5. Event bus — run consumer as background task
+    event_bus_task: asyncio.Task | None = None
     try:
-        await kafka_client.connect()
+        await event_bus_client.connect()
 
-        async def _handler(topic: str, payload: dict):
-            """Dispatch Kafka events to the appropriate service."""
+        async def _handler(channel: str, payload: dict):
+            """Dispatch event bus events to the appropriate service."""
             event_type = payload.get("type", "")
 
-            if topic == KafkaTopics.WINDOW_EVENTS:
+            if channel == EventBusChannels.WINDOW_EVENTS:
                 if event_type == "window.activated" and window_manager:
                     await window_manager.activate_window(payload["payload"]["windowId"])
                 elif event_type == "window.closed" and window_manager:
                     await window_manager.close_window(payload["payload"]["windowId"])
 
-            elif topic == KafkaTopics.MATCH_EVENTS:
+            elif channel == EventBusChannels.MATCH_EVENTS:
                 if event_type == "window.joined" and spatial_matcher:
                     uid = payload["payload"]["userId"]
                     wid = payload["payload"]["windowId"]
                     from .workers.match_worker import find_match
                     find_match.apply_async(args=[uid, wid])
 
-            elif topic == KafkaTopics.USER_EVENTS:
+            elif channel == EventBusChannels.USER_EVENTS:
                 if event_type in ("preferences.updated", "location.updated"):
                     uid = payload["payload"]["userId"]
                     await redis_client.delete(f"user:{uid}:match_data")
 
-        kafka_consumer_task = asyncio.create_task(
-            kafka_client.run_consumer(_handler)
+        event_bus_task = asyncio.create_task(
+            event_bus_client.run_consumer(_handler)
         )
-        logger.info("Kafka consumer background task created")
+        logger.info("Event bus consumer background task created")
     except Exception as exc:
-        logger.warning("Kafka connection failed — event-driven matching disabled: %s", exc)
+        logger.warning("Event bus connection failed — event-driven matching disabled: %s", exc)
 
     yield
 
@@ -123,14 +123,14 @@ async def lifespan(app: FastAPI):
             await location_task
         except asyncio.CancelledError:
             pass
-    if kafka_consumer_task is not None:
-        kafka_client._running = False
-        kafka_consumer_task.cancel()
+    if event_bus_task is not None:
+        event_bus_client._running = False
+        event_bus_task.cancel()
         try:
-            await kafka_consumer_task
+            await event_bus_task
         except asyncio.CancelledError:
             pass
-    await kafka_client.disconnect()
+    await event_bus_client.disconnect()
     if pg_pool:
         await pg_pool.close()
     await redis_client.disconnect()
@@ -236,7 +236,7 @@ async def health():
         "ncf_loaded": vector_matcher.ncf._is_loaded if vector_matcher else False,
         "active_windows": window_manager.get_active_window_count() if window_manager else 0,
         "redis_connected": redis_client._conn is not None,
-        "kafka_connected": kafka_client._producer is not None if kafka_client else False,
+        "event_bus_connected": event_bus_client._redis is not None,
         "timestamp": datetime.now(timezone.utc).isoformat().replace("+00:00", "Z"),
     }
 

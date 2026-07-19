@@ -21,7 +21,7 @@ import { photoRoutes } from './routes/photos';
 import { poseVerificationRoutes } from './routes/poseVerification';
 import { kycRoutes } from './routes/kyc';
 import { errorHandler } from './middleware/errorHandler';
-import { kafkaProducer } from './services/kafka';
+import { eventBus } from './services/eventBus';
 import { initializeRedis } from './services/redis';
 import { initializeDatabase } from './services/database';
 import { startLocationPoller } from './services/locationPoller';
@@ -74,12 +74,12 @@ async function bootstrap() {
     },
   });
 
-  // ─── Decorate with Redis & Kafka ──────────────────────
+  // ─── Decorate with Redis & Event Bus ─────────────────
   const redis = initializeRedis();
-  const kafka = kafkaProducer;
+  const eb = eventBus;
 
   app.decorate('redis', redis);
-  app.decorate('kafka', kafka);
+  app.decorate('eventBus', eb);
 
   // ─── Auth Decorator ───────────────────────────────────
   app.decorate('authenticate', async (request: any, reply: any) => {
@@ -128,10 +128,10 @@ async function bootstrap() {
     console.log(`🚀 Kinetik Core API running on port ${PORT}`);
     console.log(`📝 Environment: ${process.env.NODE_ENV || 'development'}`);
 
-    // Graceful shutdown — must be inside bootstrap() so kafka/redis are in scope
+    // Graceful shutdown — must be inside bootstrap() so eventBus/redis are in scope
     const shutdown = async (signal: string) => {
       console.log(`${signal} received. Shutting down gracefully...`);
-      await kafka.disconnect();
+      await eb.disconnect();
       await redis.quit();
       process.exit(0);
     };

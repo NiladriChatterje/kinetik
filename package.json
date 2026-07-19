@@ -15,7 +15,6 @@
     "build": "npm run build -w packages/shared && npm run build -w packages/api-core && npm run build -w packages/realtime",
     "lint": "eslint packages/*/src --ext .ts",
     "typecheck": "tsc --noEmit",
-    "kafka:admin": "npx tsx scripts/kafkaAdmin.ts",
     "docker:up": "docker compose up -d",
     "docker:down": "docker compose down",
     "docker:build": "docker compose build",

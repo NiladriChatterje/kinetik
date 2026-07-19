@@ -1,7 +1,7 @@
 import { FastifyInstance, FastifyRequest, FastifyReply } from 'fastify';
 import { ERROR_CODES, generateInviteCode } from '@kinetik/shared';
 import { query, TABLES } from '../services/database';
-import { kafkaProducer } from '../services/kafka';
+import { eventBus } from '../services/eventBus';
 
 export async function duoRoutes(app: FastifyInstance) {
   app.addHook('preHandler', async (request: FastifyRequest, reply: FastifyReply) => {
@@ -39,7 +39,7 @@ export async function duoRoutes(app: FastifyInstance) {
       [userId, inviteCode],
     );
 
-    await kafkaProducer.sendUserEvent({
+    await eventBus.sendUserEvent({
       type: 'duo.crew_created',
       payload: { userId, inviteCode },
     });
@@ -82,7 +82,7 @@ export async function duoRoutes(app: FastifyInstance) {
       [userId, crew.id],
     );
 
-    await kafkaProducer.sendUserEvent({
+    await eventBus.sendUserEvent({
       type: 'duo.crew_joined',
       payload: { crewId: crew.id, creatorId: crew.creator_id, inviteeId: userId },
     });

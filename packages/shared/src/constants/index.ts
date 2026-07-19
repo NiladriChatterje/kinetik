@@ -92,15 +92,27 @@ export const REDIS_KEYS = {
   CHAT_MESSAGES_CHANNEL: 'chat:messages',
 } as const;
 
-// ─── Kafka Topics ─────────────────────────────────────────
+// ─── Event Bus Channels (Redis Pub/Sub — replaces Kafka) ──────
+// These channels are published/subscribed on the dedicated event-bus Redis instance.
 
+export const EVENT_BUS_CHANNELS = {
+  USER_EVENTS: 'event:user',
+  MATCH_EVENTS: 'event:match',
+  VIBE_EVENTS: 'event:vibe',
+  WINDOW_EVENTS: 'event:window',
+  PAYMENT_EVENTS: 'event:payment',
+} as const;
+
+// Deprecated: Kafka has been replaced by Redis event bus.
+// Keep as alias for backward compatibility during migration.
+/** @deprecated Use EVENT_BUS_CHANNELS instead */
 export const KAFKA_TOPICS = {
-  USER_EVENTS: 'kinetik.user.events',
-  MATCH_EVENTS: 'kinetik.match.events',
-  VIBE_EVENTS: 'kinetik.vibe.events',
-  WINDOW_EVENTS: 'kinetik.window.events',
-  PAYMENT_EVENTS: 'kinetik.payment.events',
-  NOTIFICATION_EVENTS: 'kinetik.notification.events',
+  USER_EVENTS: 'event:user',
+  MATCH_EVENTS: 'event:match',
+  VIBE_EVENTS: 'event:vibe',
+  WINDOW_EVENTS: 'event:window',
+  PAYMENT_EVENTS: 'event:payment',
+  NOTIFICATION_EVENTS: 'event:notification',
 } as const;
 
 // ─── API Routes ───────────────────────────────────────────

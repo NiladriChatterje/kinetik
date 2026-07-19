@@ -12,8 +12,10 @@ class Settings(BaseSettings):
     redis_port: int = 6379
     redis_password: str | None = None
 
-    # Kafka
-    kafka_brokers: str = "localhost:9092"
+    # Event Bus (dedicated Redis for pub/sub — replaces Kafka)
+    redis_events_host: str = "localhost"
+    redis_events_port: int = 6380
+    redis_events_password: str | None = None
 
     # PostgreSQL
     database_url: str = "postgresql://kinetik:kinetik_dev_2024@localhost:5432/kinetik"

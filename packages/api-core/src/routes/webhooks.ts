@@ -1,6 +1,6 @@
 import { FastifyInstance, FastifyRequest, FastifyReply } from 'fastify';
 import { query, TABLES } from '../services/database';
-import { kafkaProducer } from '../services/kafka';
+import { eventBus } from '../services/eventBus';
 import { getRedis } from '../services/redis';
 
 export async function webhookRoutes(app: FastifyInstance) {
@@ -31,7 +31,7 @@ export async function webhookRoutes(app: FastifyInstance) {
              payment.amount / 100, payment.currency],
           );
 
-          await kafkaProducer.sendPaymentEvent({
+          await eventBus.sendPaymentEvent({
             type: 'payment.captured',
             payload: payment,
           });
@@ -57,7 +57,7 @@ export async function webhookRoutes(app: FastifyInstance) {
             await redis.del(`user:${userId}:swipes:daily`);
           }
 
-          await kafkaProducer.sendPaymentEvent({
+          await eventBus.sendPaymentEvent({
             type: 'subscription.activated',
             payload: subscription,
           });

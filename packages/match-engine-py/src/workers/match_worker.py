@@ -24,7 +24,7 @@ from ..matchers.spatial import SpatialMatcher
 from ..matchers.vector import VectorMatcher, UserProfileVector
 from ..services.redis_client import RedisClient
 from ..services.window_manager import WindowManager
-from ..services.kafka_client import KafkaTopics
+from ..services.event_bus import EventBusChannels
 
 logger = logging.getLogger(__name__)
 
@@ -77,16 +77,16 @@ def get_services():
     if not hasattr(get_services, "_window"):
         setattr(get_services, "_window", WindowManager(get_services._redis, get_services._pg_pool))
 
-    # Kafka producer is optional — we import inside to handle missing deps
-    if not hasattr(get_services, "_kafka"):
-        from ..services.kafka_client import KafkaClient
-        kafka = KafkaClient()
+    # Event bus producer is optional — we import inside to handle missing deps
+    if not hasattr(get_services, "_event_bus"):
+        from ..services.event_bus import EventBusClient
+        eb = EventBusClient()
         import asyncio
         try:
-            asyncio.run(kafka.connect())
+            asyncio.run(eb.connect())
         except Exception as exc:
-            logger.warning("Kafka init failed (events will be logged only): %s", exc)
-        setattr(get_services, "_kafka", kafka)
+            logger.warning("Event bus init failed (events will be logged only): %s", exc)
+        setattr(get_services, "_event_bus", eb)
 
     return (
         get_services._redis,
@@ -94,7 +94,7 @@ def get_services():
         get_services._spatial,
         get_services._vector,
         get_services._window,
-        get_services._kafka,
+        get_services._event_bus,
     )
 
 
@@ -105,13 +105,13 @@ def find_match(self, user_id: str, window_id: str):
     """Find a single match for a user within the active window."""
     import asyncio
 
-    redis, pool, spatial, vector, window, kafka = get_services()
+    redis, pool, spatial, vector, window, event_bus = get_services()
     loop = asyncio.new_event_loop()
     asyncio.set_event_loop(loop)
 
     try:
         loop.run_until_complete(
-            _find_single_match(redis, pool, spatial, vector, window, kafka, user_id, window_id)
+            _find_single_match(redis, pool, spatial, vector, window, event_bus, user_id, window_id)
         )
     except Exception as exc:
         logger.error("find_match failed for user %s: %s", user_id, exc)
@@ -125,13 +125,13 @@ def batch_process(self, h3_index: str, window_id: str):
     """Process all users in a given H3 cell."""
     import asyncio
 
-    redis, pool, spatial, vector, window, kafka = get_services()
+    redis, pool, spatial, vector, window, event_bus = get_services()
     loop = asyncio.new_event_loop()
     asyncio.set_event_loop(loop)
 
     try:
         loop.run_until_complete(
-            _batch_find_matches(redis, pool, spatial, vector, window, kafka, h3_index, window_id)
+            _batch_find_matches(redis, pool, spatial, vector, window, event_bus, h3_index, window_id)
         )
     except Exception as exc:
         logger.error("batch_process failed for %s: %s", h3_index, exc)
@@ -148,7 +148,7 @@ async def _find_single_match(
     spatial: SpatialMatcher,
     vector: VectorMatcher,
     window: WindowManager,
-    kafka,
+    event_bus,
     user_id: str,
     window_id: str,
 ):
@@ -226,7 +226,7 @@ async def _find_single_match(
                 vibe_id, window_id, user_id, best.user_id,
             )
 
-        # 9. Emit match.found event via Kafka
+        # 9. Emit match.found event via event bus
         match_payload = {
             "type": "match.found",
             "payload": {
@@ -240,9 +240,9 @@ async def _find_single_match(
             },
         }
         try:
-            await kafka.send_event(KafkaTopics.MATCH_EVENTS, "match.found", match_payload)
+            await event_bus.send_event(EventBusChannels.MATCH_EVENTS, "match.found", match_payload)
         except Exception as exc:
-            logger.error("Failed to send match event to Kafka: %s", exc)
+            logger.error("Failed to send match event to event bus: %s", exc)
 
         # 10. Clean up — remove matched users from pool and set vibe check
         await redis.srem(f"match:pool:{window_id}", user_id, best.user_id)
@@ -261,7 +261,7 @@ async def _batch_find_matches(
     spatial: SpatialMatcher,
     vector: VectorMatcher,
     window: WindowManager,
-    kafka,
+    event_bus,
     h3_index: str,
     window_id: str,
 ):

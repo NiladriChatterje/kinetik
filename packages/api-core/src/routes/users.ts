@@ -2,7 +2,7 @@ import { FastifyInstance, FastifyRequest, FastifyReply } from 'fastify';
 import { z } from 'zod';
 import { ERROR_CODES, geoToH3 } from '@kinetik/shared';
 import { query, TABLES, findUserById, updateUser, getPreferences, upsertPreferences } from '../services/database';
-import { kafkaProducer } from '../services/kafka';
+import { eventBus } from '../services/eventBus';
 import { syncVectorForUser } from '../services/vectorService';
 import { reverseGeocode } from '../services/geocoding';
 
@@ -140,7 +140,7 @@ export async function userRoutes(app: FastifyInstance) {
 
     const updated = await updateUser(userId, updateData);
 
-    await kafkaProducer.sendUserEvent({
+    await eventBus.sendUserEvent({
       type: 'profile.updated',
       payload: { userId, ...updateData },
     });
@@ -192,7 +192,7 @@ export async function userRoutes(app: FastifyInstance) {
       console.error('[vector] syncVectorForUser failed for user', userId, err)
     );
 
-    await kafkaProducer.sendUserEvent({
+    await eventBus.sendUserEvent({
       type: 'preferences.updated',
       payload: { userId, preferences: validation.data },
     });
