@@ -90,25 +90,18 @@ export class ChatHandler {
       });
 
       // Send a message
+      // Delivery is handled by the Redis pub/sub subscriber below — when api-core
+      // persists the message (via the client's HTTP POST), it publishes to Redis
+      // and setupCrossInstanceSubscriber() broadcasts it to the match room.
+      // This avoids double delivery (socket broadcast has no DB id, Redis message has one).
       socket.on(WsEvent.CHAT_MESSAGE, async (data: ChatMessagePayload) => {
         const { matchId, content } = data;
 
         if (!content || content.trim().length === 0) return;
         if (content.length > 2000) return;
 
-        // Save message to database via HTTP to api-core
-        // We emit the message to the room so both users see it instantly
-        // The HTTP POST to /api/v1/matches/conversations/:id/messages
-        // is made by the client separately for persistence.
-        // This handler just relays the real-time delivery.
-
-        // Emit to everyone in the match room (including sender for confirmation)
-        this.nsp.to(`match:${matchId}`).emit(WsEvent.CHAT_MESSAGE, {
-          matchId,
-          senderId: userId,
-          content: content.trim(),
-          createdAt: new Date().toISOString(),
-        });
+        // No-op: real-time delivery happens via Redis pub/sub after api-core persists.
+        // The client optimistically renders the message locally via the HTTP response.
       });
 
       // Typing indicator

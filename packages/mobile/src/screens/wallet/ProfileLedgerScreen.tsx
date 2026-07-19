@@ -49,6 +49,7 @@ const SETTINGS = [
   { icon: 'notifications-outline' as const, label: 'Notifications', screen: 'NotificationPreferences' as const },
   { icon: 'people-outline' as const, label: 'Duo Wingman', screen: 'DuoWingman' as const },
   { icon: 'wallet-outline' as const, label: 'Wallet', screen: 'TokenVault' as const },
+  { icon: 'shield-checkmark-outline' as const, label: 'KYC Verification', screen: 'KYCVerify' as const },
   { icon: 'lock-closed-outline' as const, label: 'Privacy', screen: undefined },
   { icon: 'card-outline' as const, label: 'Subscription', screen: undefined },
   { icon: 'call-outline' as const, label: 'Support', screen: undefined },
@@ -65,18 +66,23 @@ export const ProfileLedgerScreen: React.FC = () => {
   const [loading, setLoading] = useState(true);
   const [mutatingPhotoId, setMutatingPhotoId] = useState<string | null>(null);
   const [modalPhoto, setModalPhoto] = useState<ProfilePhoto | null>(null);
+  const [kycStatus, setKycStatus] = useState<string | null>(null);
 
   const fetchProfileAndPhotos = useCallback(async () => {
     try {
-      const [profileRes, photosRes] = await Promise.all([
+      const [profileRes, photosRes, kycRes] = await Promise.all([
         api.getProfile(),
         api.getPhotos(),
+        api.getKycStatus().catch(() => null),
       ]);
       if (profileRes.success && profileRes.data) {
         setProfile(profileRes.data as ProfileData);
       }
       if (photosRes.success && Array.isArray(photosRes.data)) {
         setPhotos(photosRes.data as ProfilePhoto[]);
+      }
+      if (kycRes && kycRes.kycStatus) {
+        setKycStatus(kycRes.kycStatus);
       }
     } catch {
       // Silently fail — fall back to auth store data
@@ -88,6 +94,14 @@ export const ProfileLedgerScreen: React.FC = () => {
   useEffect(() => {
     fetchProfileAndPhotos();
   }, [fetchProfileAndPhotos]);
+
+  // Refresh KYC status when returning from KYC Verification screen
+  useEffect(() => {
+    const unsubscribe = navigation.addListener('focus', () => {
+      fetchProfileAndPhotos();
+    });
+    return unsubscribe;
+  }, [navigation, fetchProfileAndPhotos]);
 
   const handleSettingPress = useCallback(
     (screen: string | undefined) => {
@@ -314,19 +328,54 @@ export const ProfileLedgerScreen: React.FC = () => {
 
         {/* Settings */}
         <Card style={styles.settingsCard}>
-          {SETTINGS.map((s, i) => (
-            <React.Fragment key={s.label}>
-              <TouchableOpacity
-                style={styles.settingRow}
-                onPress={() => handleSettingPress(s.screen)}
-                disabled={!s.screen}
-              >
-                <Ionicons name={s.icon} size={20} color={colors.textSecondary} />
-                <Text style={styles.settingText}>{s.label}</Text>
-              </TouchableOpacity>
-              {i < SETTINGS.length - 1 && <View style={styles.settingDivider} />}
-            </React.Fragment>
-          ))}
+          {SETTINGS.map((s, i) => {
+            const isKycRow = s.screen === 'KYCVerify';
+            return (
+              <React.Fragment key={s.label}>
+                <TouchableOpacity
+                  style={styles.settingRow}
+                  onPress={() => handleSettingPress(s.screen)}
+                  disabled={!s.screen}
+                >
+                  <Ionicons name={s.icon} size={20} color={colors.textSecondary} />
+                  <Text style={styles.settingText}>{s.label}</Text>
+                  {isKycRow && kycStatus && (
+                    <View style={[
+                      styles.kycStatusBadge,
+                      kycStatus === 'verified' && styles.kycBadgeVerified,
+                      kycStatus === 'pending' && styles.kycBadgePending,
+                      kycStatus === 'unverified' && styles.kycBadgeUnverified,
+                    ]}>
+                      <Ionicons
+                        name={
+                          kycStatus === 'verified' ? 'checkmark-circle' :
+                          kycStatus === 'pending' ? 'time-outline' :
+                          'close-circle-outline'
+                        }
+                        size={12}
+                        color={
+                          kycStatus === 'verified' ? colors.textInverse :
+                          kycStatus === 'pending' ? '#FFA500' :
+                          colors.textMuted
+                        }
+                      />
+                      <Text style={[
+                        styles.kycStatusText,
+                        kycStatus === 'verified' && styles.kycStatusTextVerified,
+                        kycStatus === 'pending' && styles.kycStatusTextPending,
+                        kycStatus === 'unverified' && styles.kycStatusTextUnverified,
+                      ]}>
+                        {kycStatus === 'verified' ? 'Verified' :
+                         kycStatus === 'pending' ? 'Pending' :
+                         'Not Verified'}
+                      </Text>
+                    </View>
+                  )}
+                </TouchableOpacity>
+                {i < SETTINGS.length - 1 && <View style={styles.settingDivider} />}
+              </React.Fragment>
+            );
+          })}
         </Card>
 
         <Button title="Sign Out" onPress={logout} variant="outline" fullWidth />
@@ -412,6 +461,39 @@ const styles = StyleSheet.create({
   metricLabel: { ...typography.caption, color: colors.textMuted, marginTop: spacing.xs },
   settingsCard: { padding: 0, marginBottom: spacing.xxl },
   settingRow: { flexDirection: 'row', alignItems: 'center', padding: spacing.lg, gap: spacing.md },
-  settingText: { ...typography.body1, color: colors.textPrimary },
+  settingText: { ...typography.body1, color: colors.textPrimary, flex: 1 },
   settingDivider: { height: 1, backgroundColor: colors.cardBorder, marginHorizontal: spacing.lg },
+
+  // KYC status badge
+  kycStatusBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    paddingHorizontal: spacing.sm,
+    paddingVertical: 3,
+    borderRadius: radius.full,
+  },
+  kycBadgeVerified: {
+    backgroundColor: colors.success,
+  },
+  kycBadgePending: {
+    backgroundColor: 'rgba(255, 165, 0, 0.12)',
+  },
+  kycBadgeUnverified: {
+    backgroundColor: colors.surfaceHighlight,
+  },
+  kycStatusText: {
+    ...typography.caption,
+    fontSize: 11,
+    fontWeight: '600',
+  },
+  kycStatusTextVerified: {
+    color: colors.textInverse,
+  },
+  kycStatusTextPending: {
+    color: '#FFA500',
+  },
+  kycStatusTextUnverified: {
+    color: colors.textMuted,
+  },
 });

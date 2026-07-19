@@ -5,7 +5,7 @@ import { query, TABLES } from '../services/database';
 
 // ─── MinIO constants (reuse same S3 client pattern as photoStorage) ─
 
-import { S3Client, PutObjectCommand } from '@aws-sdk/client-s3';
+import { S3Client, GetObjectCommand, PutObjectCommand } from '@aws-sdk/client-s3';
 
 const ENDPOINT = process.env.MINIO_ENDPOINT || 'localhost:9000';
 const ACCESS_KEY = process.env.MINIO_ACCESS_KEY || 'minioadmin';
@@ -221,5 +221,141 @@ export async function kycRoutes(app: FastifyInstance) {
         latestDocument: docResult.rows[0] || null,
       },
     });
+  });
+
+  // ─── Verify Face on KYC Document ─────────────────────────
+  // Compares the face extracted from the uploaded KYC document
+  // against the user's profile photos to confirm identity.
+  app.post('/verify-face', async (request: FastifyRequest, reply: FastifyReply) => {
+    const { sub: userId } = request.user as any;
+
+    // ─── 1. Get the latest uploaded KYC document ────────────
+    const docResult = await query(
+      `SELECT id, document_url, document_type, status
+       FROM ${TABLES.KYC_DOCUMENTS}
+       WHERE user_id = $1
+       ORDER BY created_at DESC
+       LIMIT 1`,
+      [userId],
+    );
+    const doc = docResult.rows[0];
+    if (!doc) {
+      return reply.status(400).send({
+        success: false,
+        error: { code: 'NO_DOCUMENT', message: 'No KYC document uploaded. Please upload a document first.' },
+      });
+    }
+
+    // ─── 2. Fetch the document from MinIO ──────────────────
+    const poseServiceUrl = process.env.POSE_SERVICE_URL || 'http://localhost:3004';
+    const client = getS3Client();
+
+    // Extract object key from document URL (e.g. /uploads/kyc/{userId}/{docId}.jpg)
+    const objectKey = doc.document_url.replace(PUBLIC_URL, '');
+
+    let documentBuffer: Buffer;
+    try {
+      const response = await client.send(
+        new GetObjectCommand({
+          Bucket: BUCKET,
+          Key: objectKey,
+        }),
+      );
+      const chunks: Uint8Array[] = [];
+      for await (const chunk of response.Body as any) {
+        chunks.push(chunk);
+      }
+      documentBuffer = Buffer.concat(chunks);
+    } catch (err: any) {
+      console.error(`[kyc] Failed to fetch document from MinIO: ${err.message}`);
+      return reply.status(500).send({
+        success: false,
+        error: { code: 'DOCUMENT_FETCH_FAILED', message: 'Could not retrieve uploaded document.' },
+      });
+    }
+
+    // ─── 3. Get user's profile photo URLs ───────────────────
+    const photosResult = await query(
+      `SELECT url FROM ${TABLES.PROFILE_PHOTOS} WHERE user_id = $1 ORDER BY created_at ASC`,
+      [userId],
+    );
+    const profilePhotoUrls: string[] = photosResult.rows.map((r: any) => r.url);
+
+    if (profilePhotoUrls.length < 2) {
+      return reply.status(400).send({
+        success: false,
+        error: {
+          code: 'NOT_ENOUGH_PHOTOS',
+          message: 'You need at least 2 profile photos for face verification. Please upload more photos first.',
+        },
+      });
+    }
+
+    // ─── 4. Send to pose-service for face matching ──────────
+    const documentBase64 = documentBuffer.toString('base64');
+
+    try {
+      const response = await fetch(`${poseServiceUrl}/verify-document-face`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          user_id: userId,
+          document_image: documentBase64,
+          profile_photo_urls: profilePhotoUrls,
+          min_match_threshold: 0.55,
+        }),
+        signal: AbortSignal.timeout(30000),
+      });
+
+      if (!response.ok) {
+        console.error(`[kyc] Pose-service returned ${response.status}`);
+        return reply.status(502).send({
+          success: false,
+          error: { code: 'VERIFICATION_SERVICE_ERROR', message: 'Verification service temporarily unavailable.' },
+        });
+      }
+
+      const result = await response.json() as {
+        match: boolean;
+        confidence: number;
+        face_detected_in_document: boolean;
+        profile_faces_detected: number;
+        rejection_reasons: string[];
+      };
+
+      console.log(
+        `[kyc] Document face verification for user ${userId}: match=${result.match}, confidence=${result.confidence}`,
+      );
+
+      // If face on the document matches profile photos, update KYC status
+      if (result.match) {
+        await query(
+          `UPDATE ${TABLES.USERS} SET kyc_status = 'verified', is_verified = TRUE WHERE id = $1`,
+          [userId],
+        );
+        await query(
+          `UPDATE ${TABLES.KYC_DOCUMENTS} SET status = 'verified', verified_at = NOW() WHERE user_id = $1`,
+          [userId],
+        );
+      }
+
+      return reply.send({
+        success: true,
+        data: {
+          match: result.match,
+          confidence: result.confidence,
+          faceDetectedInDocument: result.face_detected_in_document,
+          profileFacesDetected: result.profile_faces_detected,
+          rejectionReasons: result.rejection_reasons,
+          kycStatus: result.match ? 'verified' : 'pending',
+        },
+      });
+    } catch (err: any) {
+      console.error(`[kyc] Failed to call pose-service for face verification: ${err.message}`);
+      return reply.status(502).send({
+        success: false,
+        error: { code: 'VERIFICATION_FAILED', message: 'Face verification failed. Please try again.' },
+      });
+    }
   });
 }

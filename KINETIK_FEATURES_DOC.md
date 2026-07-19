@@ -1,6 +1,6 @@
 # Kinetik App — Features & Status Document
 
-> **Last updated:** July 12, 2026
+> **Last updated:** July 19, 2026
 > **Project:** Kinetik — real-time matchmaking platform (skip the chat, meet already)
 
 ---
@@ -17,6 +17,9 @@
 | Photo Upload (Step 3/5) | ✅ Implemented | Camera/gallery pick, compress & upload pipeline, 2-photo minimum, 6 slots |
 | Pose Verification (Step 4/5) | ✅ Implemented | Front-facing camera selfie, preview/retake, face guide overlay |
 | KYC Document Upload (Step 5/5) | ✅ Implemented | Passport/license/national ID picker, PDF/JPG/PNG, 20MB limit, upload & skip |
+| **KYC Face Verification (Document vs Profile)** | ✅ **New** | **Free MediaPipe-based pipeline: extracts face from uploaded ID (JPEG/PNG/PDF), compares against profile photos via landmark-based cosine similarity, updates kyc_status to 'verified' on match** |
+| **KYC Verification in Settings** | ✅ **New** | **"KYC Verification" option in ProfileLedgerScreen with status badge (Verified/Pending/Not Verified), navigates to KYCScreen from settings** |
+| **KYC Settings Navigation Fix** | ✅ **New** | **KYCScreen handles both onboarding stack and root stack navigation — works correctly when accessed from profile settings** |
 | Onboarding Progress Tracking | ✅ Implemented | Step persisted in DB, resume on re-login, smart skip for already-completed steps |
 
 ---
@@ -183,7 +186,63 @@
 
 ---
 
-## 13. Backend Services & Infrastructure
+## 14. Free KYC Face Verification Pipeline
+
+| Feature | Status | Details |
+|---------|--------|--------|
+| Document Face Match Endpoint | ✅ Implemented | `POST /verify-document-face` on pose-service — extracts face from ID image, compares against profile photos via MediaPipe landmark descriptors + cosine similarity |
+| PDF-to-Image Conversion | ✅ Implemented | PyMuPDF renders first page at 200 DPI → OpenCV frame → face extraction; non-PDF images decoded directly |
+| Trigger Endpoint (api-core) | ✅ Implemented | `POST /kyc/verify-face` — fetches latest KYC doc from MinIO (S3 GetObject), gets profile photo URLs, sends to pose-service, updates kyc_status='verified' on match |
+| Mobile API Method | ✅ Implemented | `verifyKycFace()` in api.ts → POST /api/v1/kyc/verify-face with proper TypeScript typing |
+| Face Verify Button in KYC Screen | ✅ Implemented | Appears after successful document upload; shows verifying/matched/no_match/error states with retry |
+| KYC Verification in Profile Settings | ✅ Implemented | "KYC Verification" row in ProfileLedgerScreen settings card with color-coded status badge |
+| Settings vs Onboarding Navigation | ✅ Implemented | KYCScreen checks `route.name === 'KYCVerify'` to branch between onboarding reset vs settings goBack |
+| Status Badge Refresh on Focus | ✅ Implemented | Focus listener refetches KYC status when returning from KYC screen |
+
+### Architecture
+
+```
+Mobile (KYCScreen)                  API Core                        Pose Service
+      │                                │                               │
+      │  POST /kyc/verify-face          │                               │
+      ├────────────────────────────────►│                               │
+      │                                 │                               │
+      │                          1. Fetch doc from MinIO               │
+      │                             (GetObjectCommand)                 │
+      │                          2. Get profile photo URLs             │
+      │                          3. POST /verify-document-face         │
+      │                                 ├──────────────────────────────►│
+      │                                 │                               │
+      │                                 │                    1. Decode image (JPEG/PNG)
+      │                                 │                       or render PDF page
+      │                                 │                    2. Extract face descriptor
+      │                                 │                       via MediaPipe FaceMesh
+      │                                 │                    3. Compare vs profile photo
+      │                                 │                       descriptors (cosine sim)
+      │                                 │                    4. Return match + confidence
+      │                                 │◄──────────────────────────────────┤
+      │                                 │                               │
+      │                          4. If match=true:                     │
+      │                             - UPDATE users SET kyc_status='verified'
+      │                             - UPDATE kyc_documents SET status='verified'
+      │                                 │                               │
+      │◄────────────────────────────────┤                               │
+      │                                 │                               │
+```
+
+### Key Design Decisions
+
+1. **Free / No Paid SDK**: Uses existing in-house MediaPipe pipeline — no Persona/FaceTec/Signzy costs
+2. **PDF Support**: PyMuPDF renders the first page of government IDs as images at 200 DPI; OpenCV then runs face detection on the rendered image
+3. **Matching Threshold**: 0.55 (lower than the 0.65 for selfie-vs-photo matching) — document photos vary in quality (lighting, angle, age of ID)
+4. **Scoring**: Best-of-N blend (`best_score * 0.7 + avg_score * 0.3`) — takes the highest match while smoothing with average for robustness
+5. **Optional Step**: KYC can be skipped during onboarding and completed later from Profile → Settings → KYC Verification
+6. **Double Delivery Fix**: Chat messages now delivered exclusively via Redis pub/sub (api-core → Redis → ChatHandler → match room) instead of both socket broadcast AND Redis pub/sub
+7. **/respond Name Fix**: The `match.created` Kafka event now correctly includes the responder's name/photo as `userBName`/`userBPhotoUrl` instead of duplicating the original liker's
+
+---
+
+## 15. Backend Services & Infrastructure
 
 | Feature | Status | Details |
 |---------|--------|---------|

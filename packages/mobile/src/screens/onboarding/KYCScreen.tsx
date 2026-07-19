@@ -26,12 +26,18 @@ interface SelectedFile {
 }
 
 type UploadPhase = 'idle' | 'uploading' | 'success' | 'error';
+type VerifyPhase = 'idle' | 'verifying' | 'matched' | 'no_match' | 'error';
 
-export const KYCScreen: React.FC<{ navigation: any }> = ({ navigation }) => {
+export const KYCScreen: React.FC<{ navigation: any; route?: any }> = ({ navigation, route }) => {
+  // Check if accessed from settings (KYCVerify route) vs onboarding (KYC route)
+  const isFromSettings = route?.name === 'KYCVerify';
+
   const [docType, setDocType] = useState<string | null>(null);
   const [selectedFile, setSelectedFile] = useState<SelectedFile | null>(null);
   const [uploadPhase, setUploadPhase] = useState<UploadPhase>('idle');
   const [uploadError, setUploadError] = useState<string | null>(null);
+  const [verifyPhase, setVerifyPhase] = useState<VerifyPhase>('idle');
+  const [verifyMatchConfidence, setVerifyMatchConfidence] = useState<number>(0);
   const toast = useToast();
 
   /**
@@ -143,17 +149,57 @@ export const KYCScreen: React.FC<{ navigation: any }> = ({ navigation }) => {
   }, [docType, selectedFile, toast]);
 
   /**
+   * Verify the face on the uploaded KYC document against profile photos.
+   */
+  const handleVerifyFace = useCallback(async () => {
+    if (verifyPhase === 'verifying') return;
+
+    setVerifyPhase('verifying');
+    setVerifyMatchConfidence(0);
+
+    try {
+      const result = await api.verifyKycFace();
+      if (result.match) {
+        setVerifyPhase('matched');
+        setVerifyMatchConfidence(result.confidence);
+        toast.showSuccess(
+          'Identity Verified!',
+          `Your face on the document matches your profile photos (${(result.confidence * 100).toFixed(0)}% confidence).`,
+        );
+      } else {
+        setVerifyPhase('no_match');
+        setVerifyMatchConfidence(result.confidence);
+        const reason = result.rejectionReasons?.[0] || 'Face could not be matched';
+        toast.showGlass(
+          'Face Match Failed',
+          `${reason}. You can try again or complete setup and try later from settings.`,
+        );
+      }
+    } catch (err: any) {
+      setVerifyPhase('error');
+      toast.showError('Verification Failed', err?.message || 'Could not verify face. Please try again.');
+    }
+  }, [verifyPhase, toast]);
+
+  /**
    * Complete onboarding (skip or after successful upload).
    */
   const handleFinish = useCallback(async () => {
-    await api.updateOnboardingStep('complete', {
-      kycCompleted: uploadPhase === 'success',
-      kycDocumentType: docType,
-    });
-    toast.showSuccess('Welcome to Kinetik!', 'Your profile is ready. Start matching!');
-    useAuthStore.getState().setOnboardingStep('complete');
-    navigation.getParent()?.reset({ index: 0, routes: [{ name: 'Main' }] });
-  }, [uploadPhase, docType, navigation, toast]);
+    if (!isFromSettings) {
+      // Onboarding flow — update step and navigate to main
+      await api.updateOnboardingStep('complete', {
+        kycCompleted: uploadPhase === 'success' || verifyPhase === 'matched',
+        kycDocumentType: docType,
+      });
+      toast.showSuccess('Welcome to Kinetik!', 'Your profile is ready. Start matching!');
+      useAuthStore.getState().setOnboardingStep('complete');
+      navigation.getParent()?.reset({ index: 0, routes: [{ name: 'Main' }] });
+    } else {
+      // Settings flow — just go back
+      navigation.goBack();
+      toast.showSuccess('Settings Saved', 'Your KYC verification settings have been updated.');
+    }
+  }, [isFromSettings, uploadPhase, verifyPhase, docType, navigation, toast]);
 
   // ─── Format file size ───────────────────────────────────
   const formatSize = (bytes: number): string => {
@@ -245,12 +291,85 @@ export const KYCScreen: React.FC<{ navigation: any }> = ({ navigation }) => {
             )}
 
             {uploadPhase === 'success' && (
-              <View style={styles.successContainer}>
-                <Ionicons name="shield-checkmark-outline" size={24} color={colors.success} />
-                <Text style={styles.successText}>
-                  Document submitted for verification. We'll notify you once reviewed.
-                </Text>
-              </View>
+              <>
+                <View style={styles.successContainer}>
+                  <Ionicons name="shield-checkmark-outline" size={24} color={colors.success} />
+                  <Text style={styles.successText}>
+                    Document submitted successfully! Now verify your face matches the one on your ID.
+                  </Text>
+                </View>
+
+                {/* Face Verification Section */}
+                <View style={styles.verifySection}>
+                  {verifyPhase === 'idle' && (
+                    <Button
+                      title="Verify Face on Document"
+                      onPress={handleVerifyFace}
+                      fullWidth
+                      size="lg"
+                    />
+                  )}
+
+                  {verifyPhase === 'verifying' && (
+                    <View style={styles.verifyingContainer}>
+                      <ActivityIndicator size="large" color={colors.textPrimary} />
+                      <Text style={styles.verifyingText}>
+                        Comparing face on document with your profile photos...
+                      </Text>
+                    </View>
+                  )}
+
+                  {verifyPhase === 'matched' && (
+                    <View style={styles.matchResult}>
+                      <Ionicons name="checkmark-circle" size={32} color={colors.success} />
+                      <Text style={styles.matchTitle}>Face Verified!</Text>
+                      <Text style={styles.matchDetail}>
+                        Your face on the document matches your profile photos.
+                      </Text>
+                      <Text style={styles.matchConfidence}>
+                        Confidence: {(verifyMatchConfidence * 100).toFixed(0)}%
+                      </Text>
+                    </View>
+                  )}
+
+                  {verifyPhase === 'no_match' && (
+                    <View style={styles.noMatchResult}>
+                      <Ionicons name="alert-circle-outline" size={32} color="#FFA500" />
+                      <Text style={styles.noMatchTitle}>Could Not Verify</Text>
+                      <Text style={styles.noMatchDetail}>
+                        The face on your document could not be confidently matched.
+                        You can try again or skip for now and try later from settings.
+                      </Text>
+                      <View style={styles.verifyRetryRow}>
+                        <Button
+                          title="Try Again"
+                          onPress={handleVerifyFace}
+                          size="md"
+                          style={{ flex: 1 }}
+                        />
+                      </View>
+                    </View>
+                  )}
+
+                  {verifyPhase === 'error' && (
+                    <View style={styles.noMatchResult}>
+                      <Ionicons name="alert-circle-outline" size={32} color={colors.error} />
+                      <Text style={styles.noMatchTitle}>Verification Failed</Text>
+                      <Text style={styles.noMatchDetail}>
+                        Could not complete verification. Please try again.
+                      </Text>
+                      <View style={styles.verifyRetryRow}>
+                        <Button
+                          title="Try Again"
+                          onPress={handleVerifyFace}
+                          size="md"
+                          style={{ flex: 1 }}
+                        />
+                      </View>
+                    </View>
+                  )}
+                </View>
+              </>
             )}
           </>
         )}
@@ -402,4 +521,33 @@ const styles = StyleSheet.create({
   footer: { padding: spacing.xxl, paddingBottom: spacing.huge },
   skipButton: { marginTop: spacing.md, alignItems: 'center' },
   skipText: { ...typography.body2, color: colors.textMuted, textDecorationLine: 'underline' },
+
+  // Face verification section
+  verifySection: { marginTop: spacing.md, marginBottom: spacing.lg },
+  verifyingContainer: {
+    alignItems: 'center',
+    padding: spacing.xl,
+    gap: spacing.md,
+  },
+  verifyingText: { ...typography.body2, color: colors.textSecondary, textAlign: 'center' },
+  matchResult: {
+    alignItems: 'center',
+    padding: spacing.lg,
+    backgroundColor: 'rgba(78, 205, 196, 0.1)',
+    borderRadius: radius.lg,
+    gap: spacing.sm,
+  },
+  matchTitle: { ...typography.h3, color: colors.success },
+  matchDetail: { ...typography.body2, color: colors.textSecondary, textAlign: 'center' },
+  matchConfidence: { ...typography.caption, color: colors.textMuted },
+  noMatchResult: {
+    alignItems: 'center',
+    padding: spacing.lg,
+    backgroundColor: 'rgba(255, 165, 0, 0.08)',
+    borderRadius: radius.lg,
+    gap: spacing.sm,
+  },
+  noMatchTitle: { ...typography.h3, color: '#FFA500' },
+  noMatchDetail: { ...typography.body2, color: colors.textSecondary, textAlign: 'center' },
+  verifyRetryRow: { flexDirection: 'row', gap: spacing.md, marginTop: spacing.sm },
 });

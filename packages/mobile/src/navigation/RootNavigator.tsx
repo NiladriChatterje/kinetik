@@ -106,6 +106,7 @@ export type RootStackParamList = {
   Chat: { matchId: string; partnerName: string; partnerId?: string; partnerPhotoUrl?: string };
   // Kept for profile access
   DuoWingman: undefined;
+  KYCVerify: undefined;
 };
 
 export type OnboardingStackParamList = {
@@ -279,6 +280,7 @@ export function RootNavigator() {
         <RootStack.Screen name="DoubleDate" component={DoubleDateScreen} />
         <RootStack.Screen name="HeatMap" component={HeatMapScreen} />
         <RootStack.Screen name="NotificationPreferences" component={NotificationPreferencesScreen} />
+        <RootStack.Screen name="KYCVerify" component={KYCScreen} />
       </RootStack.Navigator>
     </NavigationContainer>
   );

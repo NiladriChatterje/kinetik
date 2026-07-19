@@ -422,7 +422,7 @@ export async function matchRoutes(app: FastifyInstance) {
       [targetUserId, userId],
     );
 
-    // Get partner details
+    // Get partner details (the original liker)
     const partnerResult = await query(
       `SELECT u.display_name, pp.url as photo_url
        FROM ${TABLES.USERS} u
@@ -433,19 +433,31 @@ export async function matchRoutes(app: FastifyInstance) {
     const partnerName = partnerResult.rows[0]?.display_name || 'Someone';
     const partnerPhotoUrl = partnerResult.rows[0]?.photo_url || '';
 
+    // Get the responder's (current user's) name and photo for the match event
+    const responderResult = await query(
+      `SELECT u.display_name, pp.url as photo_url
+       FROM ${TABLES.USERS} u
+       LEFT JOIN ${TABLES.PROFILE_PHOTOS} pp ON pp.user_id = u.id AND pp.is_primary = TRUE
+       WHERE u.id = $1`,
+      [userId],
+    );
+    const responderName = responderResult.rows[0]?.display_name || 'Someone';
+    const responderPhotoUrl = responderResult.rows[0]?.photo_url || '';
+
     // Publish `match.created` event to Kafka for real-time delivery
-    // Note: userAId is the one who sent the original like (targetUserId),
-    // userBId is the responder (current userId)
+    // The realtime service uses:
+    //   - userAId (original liker) → sees userBName as their partner's name
+    //   - userBId (responder)       → sees userAName as their partner's name
     await kafkaProducer.sendEvent(KAFKA_TOPICS.MATCH_EVENTS, {
       type: 'match.created',
       payload: {
         userAId: targetUserId,
         userBId: userId,
         matchId: match.id,
-        userAName: partnerName,
-        userAPhotoUrl: partnerPhotoUrl,
-        userBName: partnerName, // responder — will be filled with current user's name
-        userBPhotoUrl: '',
+        userAName: partnerName,          // original liker's name — shown to responder
+        userAPhotoUrl: partnerPhotoUrl,  // original liker's photo — shown to responder
+        userBName: responderName,        // responder's name — shown to original liker
+        userBPhotoUrl: responderPhotoUrl,// responder's photo — shown to original liker
         timestamp: new Date().toISOString(),
       },
     }).catch((err) => {

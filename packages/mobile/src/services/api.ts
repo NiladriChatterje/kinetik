@@ -326,6 +326,35 @@ class ApiClient {
     });
   }
 
+  // ─── KYC Documents & Face Verification ────────────────────
+
+  /**
+   * Trigger face matching between the uploaded KYC document and profile photos.
+   */
+  async verifyKycFace(): Promise<{
+    match: boolean;
+    confidence: number;
+    faceDetectedInDocument: boolean;
+    profileFacesDetected: number;
+    rejectionReasons: string[];
+    kycStatus: string;
+  }> {
+    const response = await this.request<{
+      match: boolean;
+      confidence: number;
+      faceDetectedInDocument: boolean;
+      profileFacesDetected: number;
+      rejectionReasons: string[];
+      kycStatus: string;
+    }>('/api/v1/kyc/verify-face', {
+      method: 'POST',
+    });
+    if (!response.success) {
+      throw new Error(response.error?.message || 'Face verification failed');
+    }
+    return response.data!;
+  }
+
   // ─── KYC Documents ────────────────────────────────────────
   /**
    * Upload a KYC identity document (PDF, JPG, PNG).
