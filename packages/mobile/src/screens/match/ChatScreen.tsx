@@ -5,7 +5,7 @@ import {
   Modal, Alert,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { useAudioRecorder, createAudioPlayer, setAudioModeAsync, requestRecordingPermissionsAsync, RecordingPresets } from 'expo-audio';
+import { useAudioRecorder, createAudioPlayer, AudioPlayer, setAudioModeAsync, requestRecordingPermissionsAsync, RecordingPresets } from 'expo-audio';
 import * as FileSystem from 'expo-file-system/legacy';
 import { Ionicons } from '@expo/vector-icons';
 import * as ImagePicker from 'expo-image-picker';
@@ -63,7 +63,7 @@ export const ChatScreen: React.FC<{ navigation: any; route: any }> = ({ navigati
   audioRecorderRef.current = audioRecorder;
   const recordingTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const lastCacheUriRef = useRef<string | null>(null);
-  const playerRef = useRef<ReturnType<typeof createAudioPlayer> | null>(null);
+  const playerRef = useRef<AudioPlayer | null>(null);
 
   const partnerName = pName || 'Stranger';
   const partnerIdStr = pId || '';
@@ -421,7 +421,17 @@ export const ChatScreen: React.FC<{ navigation: any; route: any }> = ({ navigati
     }
 
     try {
-      const player = createAudioPlayer(resolveUrl(url));
+      // Append auth token as query param — native media players (AVPlayer,
+      // ExoPlayer) cannot send custom HTTP headers, so we pass the JWT
+      // token directly in the URL. The server extracts and verifies it.
+      const baseUrl = resolveUrl(url);
+      const token = api.getToken();
+      const separator = baseUrl.includes('?') ? '&' : '?';
+      const audioUrl = token
+        ? `${baseUrl}${separator}token=${encodeURIComponent(token)}`
+        : baseUrl;
+
+      const player = createAudioPlayer(audioUrl);
       player.addListener('playbackStatusUpdate', (status: any) => {
         if (status.didJustFinish) {
           setPlayingAudioId(null);

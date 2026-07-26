@@ -16,6 +16,13 @@ const redis = getRedis();
 
 export async function matchRoutes(app: FastifyInstance) {
   app.addHook('preHandler', async (request: FastifyRequest, reply: FastifyReply) => {
+    // Skip JWT auth for the media proxy endpoint — it accepts a token query
+    // parameter that the native audio/video player can pass (no way to set
+    // custom headers on native media players). The proxy has its own access
+    // control via the key structure and match-membership DB check.
+    // Skip auth for media proxy — native players can't set auth headers.
+    // The route accepts token as query param and has its own access control.
+    if (request.url.startsWith('/api/v1/matches/media/')) return;
     try {
       await request.jwtVerify();
     } catch {
@@ -566,10 +573,21 @@ export async function matchRoutes(app: FastifyInstance) {
     }
 
     const messages = await query(
-      `SELECT id, match_id, sender_id, content, created_at, read_at
-       FROM ${TABLES.MESSAGES}
-       WHERE match_id = $1
-       ORDER BY created_at ASC
+      `SELECT
+         m.id, m.match_id, m.sender_id, m.content, m.created_at, m.read_at,
+         cm.id as media_id,
+         cm.media_type,
+         cm.url as media_url,
+         cm.thumbnail_url as media_thumbnail_url,
+         cm.mime_type as media_mime_type,
+         cm.file_size as media_file_size,
+         cm.duration_secs as media_duration_secs,
+         cm.width as media_width,
+         cm.height as media_height
+       FROM ${TABLES.MESSAGES} m
+       LEFT JOIN ${TABLES.CHAT_MEDIA} cm ON cm.message_id = m.id
+       WHERE m.match_id = $1
+       ORDER BY m.created_at ASC
        LIMIT 200`,
       [matchId],
     );
@@ -584,14 +602,35 @@ export async function matchRoutes(app: FastifyInstance) {
     return reply.send({
       success: true,
       data: {
-        messages: messages.rows.map((m: any) => ({
-          id: m.id,
-          matchId: m.match_id,
-          senderId: m.sender_id,
-          content: decryptMessage(m.content, MESSAGE_ENCRYPTION_KEY),
-          createdAt: m.created_at,
-          readAt: m.read_at,
-        })),
+        messages: messages.rows.map((m: any) => {
+          // Build media object if this message has a media attachment
+          let media: any = undefined;
+          if (m.media_id) {
+            media = {
+              id: m.media_id,
+              messageId: m.id,
+              senderId: m.sender_id,
+              mediaType: m.media_type,
+              url: m.media_url,
+              thumbnailUrl: m.media_thumbnail_url || undefined,
+              mimeType: m.media_mime_type,
+              fileSize: m.media_file_size,
+              width: m.media_width || undefined,
+              height: m.media_height || undefined,
+              durationSecs: m.media_duration_secs != null ? m.media_duration_secs : undefined,
+            };
+          }
+
+          return {
+            id: m.id,
+            matchId: m.match_id,
+            senderId: m.sender_id,
+            content: decryptMessage(m.content, MESSAGE_ENCRYPTION_KEY),
+            createdAt: m.created_at,
+            readAt: m.read_at,
+            media,
+          };
+        }),
       },
     });
   });
@@ -849,10 +888,50 @@ export async function matchRoutes(app: FastifyInstance) {
 
   // ─── Serve Decrypted Media File ─────────────────────────
   // Proxy endpoint that reads an encrypted file from MinIO, decrypts it
-  // on-the-fly, and streams the plaintext to the authenticated user.
-  // URL format: /api/v1/matches/media/chat/{userId}/{fileId}.enc?ext=mp4
+  // on-the-fly, and streams the plaintext.
+  //
+  // URL format: /api/v1/matches/media/chat/{userId}/{fileId}.enc?ext=m4a
+  //
+  // Auth: this endpoint is excluded from the JWT preHandler because native
+  // media players (AVPlayer, ExoPlayer, MediaPlayer) cannot send custom HTTP
+  // headers. Instead, the client passes the JWT token as a query parameter:
+  //   ?ext=m4a&token=<jwt_token>
+  //
+  // Security: the token is verified manually; the key contains a random UUID
+  // making it cryptographically unguessable; the file is encrypted at rest.
   app.get('/media/*', async (request: FastifyRequest, reply: FastifyReply) => {
-    const { sub: userId } = request.user as any;
+    // Resolve user identity: try JWT from query param first, then fall back
+    // to request.user (set by the preHandler for any requests that DO have
+    // the Authorization header, e.g. fetch() calls from JS).
+    let userId: string | undefined;
+
+    const urlObj = new URL(request.url, 'http://localhost');
+    const tokenFromQuery = urlObj.searchParams.get('token');
+
+    if (tokenFromQuery) {
+      try {
+        // request.jwtVerify() only reads from Authorization header — it does NOT
+        // accept a raw token string. Use request.server.jwt.verify() instead.
+        const decoded = request.server.jwt.verify(tokenFromQuery);
+        userId = (decoded as any).sub;
+      } catch {
+        return reply.status(401).send({
+          success: false,
+          error: { code: ERROR_CODES.UNAUTHORIZED, message: 'Invalid or expired token.' },
+        });
+      }
+    } else {
+      // Fallback: request.user is set by the preHandler JWT hook
+      const user = request.user as any;
+      userId = user?.sub;
+    }
+
+    if (!userId) {
+      return reply.status(401).send({
+        success: false,
+        error: { code: ERROR_CODES.UNAUTHORIZED, message: 'Authentication required.' },
+      });
+    }
 
     // Extract the MinIO key from the wildcard path (everything after /media/)
     // e.g., /api/v1/matches/media/chat/user123/abc.enc?ext=m4a
@@ -867,7 +946,6 @@ export async function matchRoutes(app: FastifyInstance) {
     }
 
     // Extract the extension query param for Content-Type
-    const urlObj = new URL(fullPath, 'http://localhost');
     const ext = urlObj.searchParams.get('ext') || 'bin';
 
     // The key is the path up to ?ext=...

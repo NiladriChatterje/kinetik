@@ -9,7 +9,7 @@ dependencies = [
     "pydantic>=2.9.0",
     "pydantic-settings>=2.6.0",
     "asyncpg>=0.30.0",
-    "mediapipe>=0.10.18",
+    "mediapipe==0.10.9",
     "opencv-python-headless>=4.10.0",
     "numpy>=1.26.0",
     "PyMuPDF>=1.24.0",    # PDF to image extraction for KYC document face matching

@@ -239,7 +239,12 @@ export async function saveEncryptedChatFile(
   mimeType: string,
   fileId: string,
 ): Promise<{ url: string }> {
-  const ext = mimeType.split('/')[1] || 'bin';
+  // Derive file extension from MIME type
+  let ext = mimeType.split('/')[1] || 'bin';
+  // 'audio/mp4' should map to 'm4a' not 'mp4' — the audio player needs the
+  // correct Content-Type to play, and the proxy maps 'm4a' → 'audio/mp4'.
+  if (ext === 'mp4' && mimeType.startsWith('audio/')) ext = 'm4a';
+  if (ext === 'x-m4a') ext = 'm4a';
   const key = `chat/${userId}/${fileId}.enc`; // always .enc extension for encrypted files
   const client = getS3Client();
 

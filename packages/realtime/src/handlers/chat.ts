@@ -142,6 +142,19 @@ export class ChatHandler {
     senderId: string;
     content: string;
     createdAt: string;
+    media?: {
+      id: string;
+      messageId: string;
+      senderId: string;
+      mediaType: string;
+      url: string;
+      thumbnailUrl?: string;
+      mimeType?: string;
+      fileSize?: number;
+      width?: number;
+      height?: number;
+      durationSecs?: number;
+    };
   }) {
     this.nsp.to(`match:${matchId}`).emit(WsEvent.CHAT_MESSAGE, message);
   }
