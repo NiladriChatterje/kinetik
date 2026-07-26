@@ -1,7 +1,7 @@
-import React, { useState, useEffect, useRef, useCallback } from 'react';
-import {
+import React, { useState, useEffect, useRef, useCallback } from 'react';  import {
   View, Text, StyleSheet, Image, Dimensions, TouchableOpacity,
   Animated, PanResponder, ActivityIndicator, SafeAreaView, Alert,
+  ScrollView,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useAuthStore } from '../../store/authStore';
@@ -25,6 +25,7 @@ interface SwipeProfile {
   bio: string;
   occupation?: string;
   education?: string;
+  pronouns?: string;
   photos: { id: string; url: string; thumbnailUrl?: string; isPrimary: boolean }[];
   interests: { id: string; name: string; emoji: string; category: string }[];
   isVerified: boolean;
@@ -47,6 +48,7 @@ function SwipeCard({
   onSuperLike: () => void;
   superLikesRemaining: number;
 }) {
+  const [photoIndex, setPhotoIndex] = useState(0);
   const position = useRef(new Animated.ValueXY()).current;
   const likeOpacity = useRef(new Animated.Value(0)).current;
   const passOpacity = useRef(new Animated.Value(0)).current;
@@ -93,7 +95,18 @@ function SwipeCard({
     outputRange: ['-15deg', '0deg', '15deg'],
   });
 
-  const mainPhoto = profile.photos.find(p => p.isPrimary) || profile.photos[0];
+  const photoCount = profile.photos.length;
+  const currentPhoto = profile.photos[photoIndex] || profile.photos[0];
+
+  const goToNextPhoto = () => {
+    if (photoCount <= 1) return;
+    setPhotoIndex((prev) => (prev + 1) % photoCount);
+  };
+
+  const goToPrevPhoto = () => {
+    if (photoCount <= 1) return;
+    setPhotoIndex((prev) => (prev - 1 + photoCount) % photoCount);
+  };
 
   return (
     <Animated.View
@@ -105,13 +118,61 @@ function SwipeCard({
       ]}
       {...panResponder.panHandlers}
     >
-      {/* Photo */}
+      {/* Photo Gallery */}
       <View style={styles.cardImageContainer}>
-        {mainPhoto ? (
-          <Image source={{ uri: resolveUrl(mainPhoto.url) }} style={styles.cardImage} />
+        {currentPhoto ? (            <TouchableOpacity
+            activeOpacity={1}
+            onPressIn={(e) => {
+              // Tap left half = prev, right half = next
+              const { locationX } = e.nativeEvent;
+              if (locationX < CARD_WIDTH / 2) {
+                goToPrevPhoto();
+              } else {
+                goToNextPhoto();
+              }
+            }}
+            style={styles.photoWrapper}
+          >
+            <Image source={{ uri: resolveUrl(currentPhoto.url) }} style={styles.cardImage} />
+
+            {/* Left/Right tap hints */}
+            {photoCount > 1 && (
+              <>
+                <View style={styles.photoTapLeft}>
+                  <Ionicons name="chevron-back" size={20} color="rgba(255,255,255,0.5)" />
+                </View>
+                <View style={styles.photoTapRight}>
+                  <Ionicons name="chevron-forward" size={20} color="rgba(255,255,255,0.5)" />
+                </View>
+              </>
+            )}
+
+            {/* Photo dots indicator */}
+            {photoCount > 1 && (
+              <View style={styles.photoDots}>
+                {profile.photos.map((_, idx) => (
+                  <View
+                    key={idx}
+                    style={[
+                      styles.photoDot,
+                      idx === photoIndex && styles.photoDotActive,
+                    ]}
+                  />
+                ))}
+              </View>
+            )}
+          </TouchableOpacity>
         ) : (
           <View style={[styles.cardImage, styles.noPhoto]}>
             <Ionicons name="person-outline" size={48} color={colors.textMuted} />
+          </View>
+        )}
+
+        {/* Photo count badge */}
+        {photoCount > 1 && (
+          <View style={styles.photoCountBadge}>
+            <Ionicons name="images-outline" size={12} color={colors.textInverse} />
+            <Text style={styles.photoCountText}>{photoIndex + 1}/{photoCount}</Text>
           </View>
         )}
 
@@ -125,7 +186,7 @@ function SwipeCard({
       </View>
 
       {/* Info */}
-      <View style={styles.cardInfo}>
+      <ScrollView style={styles.cardInfo} showsVerticalScrollIndicator={false}>
         <View style={styles.nameRow}>
           <Text style={styles.name}>
             {profile.displayName}, {profile.age}
@@ -135,7 +196,11 @@ function SwipeCard({
           )}
         </View>
 
-        {profile.bio ? <Text style={styles.bio} numberOfLines={2}>{profile.bio}</Text> : null}
+        {profile.pronouns ? (
+          <Text style={styles.pronounsText}>{profile.pronouns}</Text>
+        ) : null}
+
+        {profile.bio ? <Text style={styles.bio}>{profile.bio}</Text> : null}
 
         <View style={styles.detailsRow}>
           {profile.occupation ? (
@@ -154,19 +219,16 @@ function SwipeCard({
 
         {profile.interests.length > 0 && (
           <View style={styles.interestsRow}>
-            {profile.interests.slice(0, 4).map((interest) => (
+            {profile.interests.map((interest) => (
               <View key={interest.id} style={styles.interestChip}>
                 <Text style={styles.interestText}>
-                  {interest.emoji} {interest.name}
+                  {interest.name}
                 </Text>
               </View>
             ))}
-            {profile.interests.length > 4 && (
-              <Text style={styles.moreInterests}>+{profile.interests.length - 4}</Text>
-            )}
           </View>
         )}
-      </View>
+      </ScrollView>
 
       {/* Super Like badge on card when remaining */}
       {isTop && superLikesRemaining > 0 && (
@@ -598,6 +660,11 @@ const styles = StyleSheet.create({
     width: '100%',
     height: CARD_HEIGHT * 0.6,
     overflow: 'hidden',
+    position: 'relative',
+  },
+  photoWrapper: {
+    width: '100%',
+    height: '100%',
   },
   cardImage: {
     width: '100%',
@@ -609,6 +676,59 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     backgroundColor: colors.surfaceHighlight,
   },
+  photoTapLeft: {
+    position: 'absolute',
+    left: 0,
+    top: 0,
+    bottom: 0,
+    width: '30%',
+    justifyContent: 'center',
+    alignItems: 'flex-start',
+    paddingLeft: 8,
+  },
+  photoTapRight: {
+    position: 'absolute',
+    right: 0,
+    top: 0,
+    bottom: 0,
+    width: '30%',
+    justifyContent: 'center',
+    alignItems: 'flex-end',
+    paddingRight: 8,
+  },
+  photoDots: {
+    position: 'absolute',
+    bottom: 8,
+    left: 0,
+    right: 0,
+    flexDirection: 'row',
+    justifyContent: 'center',
+    gap: 5,
+  },
+  photoDot: {
+    width: 6,
+    height: 6,
+    borderRadius: 3,
+    backgroundColor: 'rgba(255,255,255,0.4)',
+  },
+  photoDotActive: {
+    width: 18,
+    borderRadius: 3,
+    backgroundColor: colors.textInverse,
+  },
+  photoCountBadge: {
+    position: 'absolute',
+    top: 8,
+    right: 8,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    backgroundColor: 'rgba(0,0,0,0.5)',
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+    borderRadius: radius.full,
+  },
+  photoCountText: { ...typography.caption, fontSize: 10, color: colors.textInverse, fontWeight: '600' },
   sticker: {
     position: 'absolute',
     top: 30,
@@ -646,7 +766,8 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     marginBottom: spacing.xs,
   },
-  name: { ...typography.h2, color: colors.textPrimary },
+  name: { ...typography.h3, color: colors.textPrimary },
+  pronounsText: { ...typography.caption, color: colors.textMuted, marginBottom: spacing.xs, fontSize: 11 },
   bio: { ...typography.body2, color: colors.textSecondary, marginBottom: spacing.sm },
   detailsRow: { flexDirection: 'row', flexWrap: 'wrap', gap: spacing.xs, marginBottom: spacing.sm },
   detailChip: {

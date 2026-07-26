@@ -73,6 +73,7 @@ export async function matchRoutes(app: FastifyInstance) {
         u.bio,
         u.occupation,
         u.education,
+        u.pronouns,
         u.is_verified,
         u.h3_index,
         u.latitude,
@@ -122,6 +123,7 @@ export async function matchRoutes(app: FastifyInstance) {
           bio: row.bio || '',
           occupation: row.occupation || undefined,
           education: row.education || undefined,
+          pronouns: row.pronouns || undefined,
           photos: photosResult.rows.map((p: any) => ({
             id: p.id,
             url: p.url,
