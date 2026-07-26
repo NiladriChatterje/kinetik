@@ -1,17 +1,10 @@
 # ─── Two-stage build ─────────────────────────────────────────────
-# Stage 1: install system deps + Python packages
+# Stage 1: install Python packages
 # Stage 2: slim runtime image
 
 FROM python:3.11-slim AS builder
 
 WORKDIR /app
-
-# Install system build deps (needed for opencv, mediapipe, etc.)
-RUN apt-get update && apt-get install -y --no-install-recommends \
-    gcc \
-    g++ \
-    libffi-dev \
-    && rm -rf /var/lib/apt/lists/*
 
 # Copy only lockfile first for Docker layer caching
 COPY requirements-lock.txt ./
@@ -22,13 +15,6 @@ RUN pip install --no-cache-dir --user -r requirements-lock.txt
 FROM python:3.11-slim
 
 WORKDIR /app
-
-# Runtime system deps (libGL for OpenCV headless, libpq for asyncpg)
-RUN apt-get update && apt-get install -y --no-install-recommends \
-    libpq-dev \
-    libgl1 \
-    libglib2.0-0 \
-    && rm -rf /var/lib/apt/lists/*
 
 # Copy installed packages from builder
 COPY --from=builder /root/.local /root/.local
