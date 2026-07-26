@@ -224,6 +224,26 @@ export interface Transaction {
   metadata?: Record<string, unknown>;
 }
 
+// ─── Chat Media Types ────────────────────────────────────
+
+export type ChatMediaType = 'image' | 'video' | 'audio' | 'file';
+
+export interface ChatMedia {
+  id: string;
+  messageId: string;
+  senderId: string;
+  mediaType: ChatMediaType;
+  url: string;
+  thumbnailUrl?: string;
+  fileName?: string;
+  fileSize?: number;
+  mimeType?: string;
+  width?: number;
+  height?: number;
+  durationSecs?: number;
+  createdAt: string;
+}
+
 // ─── User Interaction Types ───────────────────────────────
 
 export interface UserInteraction {

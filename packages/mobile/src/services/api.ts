@@ -486,6 +486,40 @@ class ApiClient {
     });
   }
 
+  async sendMediaMessage(matchId: string, uri: string, mediaType: string, caption?: string, durationSecs?: string) {
+    const token = this.getToken();
+    let url = `${API_URL}/api/v1/matches/conversations/${matchId}/media?media_type=${mediaType}`;
+    if (caption) url += `&caption=${encodeURIComponent(caption)}`;
+    if (durationSecs) url += `&duration_secs=${durationSecs}`;
+
+    const result = await Promise.race([
+      FileSystem.uploadAsync(url, uri, {
+        httpMethod: 'POST',
+        uploadType: FileSystem.FileSystemUploadType.MULTIPART,
+        fieldName: 'file',
+        mimeType: mediaType === 'image' ? 'image/jpeg' : 'application/octet-stream',
+        headers: {
+          ...(token ? { Authorization: `Bearer ${token}` } : {}),
+        },
+      }),
+      new Promise<never>((_, reject) =>
+        setTimeout(() => reject(new Error('Upload timed out. Please try again.')), 120000),
+      ),
+    ]);
+
+    if (result.status >= 200 && result.status < 300) {
+      const body = JSON.parse(result.body);
+      return body;
+    }
+
+    let errorMessage = `Upload failed (HTTP ${result.status})`;
+    try {
+      const body = JSON.parse(result.body);
+      errorMessage = body?.error?.message || errorMessage;
+    } catch { /* non-JSON */ }
+    throw new Error(errorMessage);
+  }
+
   // ─── Pose Verification ──────────────────────────────────
   async submitPoseVerification(uri: string): Promise<{
     status: string;

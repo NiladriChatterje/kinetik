@@ -2,12 +2,14 @@ import { FastifyInstance, FastifyRequest, FastifyReply } from 'fastify';
 import {
   ERROR_CODES, REDIS_KEYS, SUPER_LIKE_LIMIT_DAILY_FREE,
   SUPER_LIKE_LIMIT_DAILY_PREMIUM, EVENT_BUS_CHANNELS,
-  encryptMessage, decryptMessage, getOpeningLine,
+  encryptMessage, decryptMessage, getOpeningLine, ChatMediaType,
 } from '@kinetik/shared';
+import { v4 as uuidv4 } from 'uuid';
 import { query, TABLES } from '../services/database';
 import { notificationEvents } from '../services/notificationService';
 import { eventBus } from '../services/eventBus';
 import { getRedis } from '../services/redis';
+import { savePhoto, saveChatFile } from '../services/photoStorage';
 
 const MESSAGE_ENCRYPTION_KEY = process.env.MESSAGE_ENCRYPTION_KEY || '';
 const redis = getRedis();
@@ -693,6 +695,155 @@ export async function matchRoutes(app: FastifyInstance) {
     );
 
     return reply.send({ success: true, data: result.rows });
+  });
+
+  // ─── Send Media Message ────────────────────────────────
+  // Upload a media file (image/video/audio/file) and attach it to a chat message.
+  // Query params: ?media_type=image|video|audio|file&caption=optional
+  app.post('/conversations/:id/media', async (request: FastifyRequest<{ Params: { id: string } }>, reply: FastifyReply) => {
+    const { id: matchId } = request.params;
+    const { sub: userId } = request.user as any;
+
+    // Verify user is part of this match
+    const matchCheck = await query(
+      `SELECT id, user_a_id, user_b_id FROM ${TABLES.MATCHES}
+       WHERE id = $1 AND (user_a_id = $2 OR user_b_id = $2) AND is_active = TRUE`,
+      [matchId, userId],
+    );
+    if (!matchCheck.rows[0]) {
+      return reply.status(404).send({
+        success: false,
+        error: { code: ERROR_CODES.NOT_FOUND, message: 'Match not found or inactive' },
+      });
+    }
+
+    const mediaType = (request.query as any).media_type || 'image';
+    const caption = (request.query as any).caption || '';
+    const durationSecs = parseInt((request.query as any).duration_secs, 10) || null;
+
+    if (!['image', 'video', 'audio', 'file'].includes(mediaType)) {
+      return reply.status(400).send({
+        success: false,
+        error: { code: 'INVALID_MEDIA_TYPE', message: 'media_type must be image, video, audio, or file' },
+      });
+    }
+
+    // Parse multipart file
+    const file = await request.file();
+    if (!file) {
+      return reply.status(400).send({
+        success: false,
+        error: { code: 'NO_FILE', message: 'No media file provided.' },
+      });
+    }
+
+    const mimeType = file.mimetype;
+
+    // Read the file buffer
+    const chunks: Buffer[] = [];
+    for await (const chunk of file.file) {
+      chunks.push(chunk);
+    }
+    const fileBuffer = Buffer.concat(chunks);
+
+    if (fileBuffer.length === 0) {
+      return reply.status(400).send({
+        success: false,
+        error: { code: 'EMPTY_FILE', message: 'Media data is empty.' },
+      });
+    }
+
+    if (fileBuffer.length > 50 * 1024 * 1024) {
+      return reply.status(400).send({
+        success: false,
+        error: { code: 'FILE_TOO_LARGE', message: 'File too large. Max 50MB.' },
+      });
+    }
+
+    const fileId = uuidv4();
+
+    // Save to storage
+    let url: string;
+    let thumbnailUrl: string | null = null;
+
+    if (mediaType === 'image') {
+      const saved = await savePhoto(userId, fileBuffer, mimeType);
+      url = saved.url;
+      thumbnailUrl = saved.thumbnailUrl;
+    } else {
+      const saved = await saveChatFile(userId, fileBuffer, mimeType, fileId);
+      url = saved.url;
+    }
+
+    // Create the message
+    const content = caption || `Sent a ${mediaType}`;
+    const encryptedContent = encryptMessage(content, MESSAGE_ENCRYPTION_KEY);
+
+    const messageResult = await query(
+      `INSERT INTO ${TABLES.MESSAGES} (match_id, sender_id, content)
+       VALUES ($1, $2, $3) RETURNING *`,
+      [matchId, userId, encryptedContent],
+    );
+    const message = messageResult.rows[0];
+
+    // Insert chat_media record
+    const mediaResult = await query(
+      `INSERT INTO ${TABLES.CHAT_MEDIA} (message_id, sender_id, media_type, url, thumbnail_url, mime_type, file_size, duration_secs)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8) RETURNING *`,
+      [message.id, userId, mediaType, url, thumbnailUrl, mimeType, fileBuffer.length, durationSecs],
+    );
+    const media = mediaResult.rows[0];
+
+    // Prepare plaintext payload for realtime delivery
+    const mediaPayload = {
+      id: media.id,
+      messageId: media.message_id,
+      senderId: media.sender_id,
+      mediaType: media.media_type,
+      url: media.url,
+      thumbnailUrl: media.thumbnail_url || undefined,
+      mimeType: media.mime_type,
+      fileSize: media.file_size,
+      width: media.width || undefined,
+      height: media.height || undefined,
+      durationSecs: media.duration_secs != null ? media.duration_secs : undefined,
+    };
+
+    const messagePayload = {
+      id: message.id,
+      matchId: message.match_id,
+      senderId: message.sender_id,
+      content,
+      media: mediaPayload,
+      createdAt: message.created_at,
+    };
+
+    // Publish via Redis pub/sub
+    redis.publish(REDIS_KEYS.CHAT_MESSAGES_CHANNEL, JSON.stringify(messagePayload)).catch((err: Error) => {
+      console.error('[Redis] Failed to publish media message:', err.message);
+    });
+
+    // Notify the partner
+    const matchRow = matchCheck.rows[0];
+    const partnerId = matchRow.user_a_id === userId ? matchRow.user_b_id : matchRow.user_a_id;
+    const senderResult = await query(`SELECT display_name FROM ${TABLES.USERS} WHERE id = $1`, [userId]);
+    const senderName = senderResult.rows[0]?.display_name || 'Someone';
+    const preview = mediaType === 'image' ? 'Sent a photo' : `Sent ${mediaType}`;
+
+    await notificationEvents.newMessage(partnerId, senderName, preview);
+
+    return reply.status(201).send({
+      success: true,
+      data: {
+        id: message.id,
+        matchId: message.match_id,
+        senderId: message.sender_id,
+        content,
+        media: mediaPayload,
+        createdAt: message.created_at,
+        readAt: null,
+      },
+    });
   });
 
   // ─── Existing: Get Match Detail ──────────────────────

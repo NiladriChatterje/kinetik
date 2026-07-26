@@ -197,6 +197,33 @@ export async function deletePhoto(userId: string, photoId: string): Promise<void
 /**
  * Delete ALL photos for a user (e.g., when account is deleted).
  */
+/**
+ * Save a chat media file to MinIO (any type — image, video, audio, doc).
+ * Unlike savePhoto, this stores the file as-is without sharp processing.
+ */
+export async function saveChatFile(
+  userId: string,
+  fileBuffer: Buffer,
+  mimeType: string,
+  fileId: string,
+): Promise<{ url: string }> {
+  const ext = mimeType.split('/')[1] || 'bin';
+  const key = `chat/${userId}/${fileId}.${ext}`;
+  const client = getS3Client();
+
+  await client.send(
+    new PutObjectCommand({
+      Bucket: BUCKET,
+      Key: key,
+      Body: fileBuffer,
+      ContentType: mimeType,
+      CacheControl: 'public, max-age=31536000, immutable',
+    }),
+  );
+
+  return { url: `${PUBLIC_URL}${key}` };
+}
+
 export async function deleteAllUserPhotos(userId: string): Promise<void> {
   const client = getS3Client();
 
