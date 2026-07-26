@@ -486,11 +486,10 @@ class ApiClient {
     });
   }
 
-  async sendMediaMessage(matchId: string, uri: string, mediaType: string, caption?: string, durationSecs?: string) {
+  async sendMediaMessage(matchId: string, uri: string, mediaType: string, caption?: string) {
     const token = this.getToken();
     let url = `${API_URL}/api/v1/matches/conversations/${matchId}/media?media_type=${mediaType}`;
     if (caption) url += `&caption=${encodeURIComponent(caption)}`;
-    if (durationSecs) url += `&duration_secs=${durationSecs}`;
 
     const result = await Promise.race([
       FileSystem.uploadAsync(url, uri, {

@@ -1,10 +1,11 @@
-import React, { useState, useEffect, useRef, useCallback } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import {
   View, Text, StyleSheet, FlatList, TextInput, TouchableOpacity,
-  Image, KeyboardAvoidingView, Platform, ActivityIndicator, SafeAreaView,
+  Image, KeyboardAvoidingView, Platform, Keyboard, ActivityIndicator,
   Modal, Alert,
 } from 'react-native';
-import { Audio } from 'expo-av';
+import { SafeAreaView } from 'react-native-safe-area-context';
+import { AudioPlayer, AudioRecorder, createAudioPlayer, setAudioModeAsync, requestRecordingPermissionsAsync } from 'expo-audio';
 import { Ionicons } from '@expo/vector-icons';
 import * as ImagePicker from 'expo-image-picker';
 import * as DocumentPicker from 'expo-document-picker';
@@ -48,16 +49,17 @@ export const ChatScreen: React.FC<{ navigation: any; route: any }> = ({ navigati
   const [partnerTyping, setPartnerTyping] = useState(false);
   const [socketConnected, setSocketConnected] = useState(false);
   const [showMediaPicker, setShowMediaPicker] = useState(false);
+  const [keyboardWasActive, setKeyboardWasActive] = useState(false);
   const [isRecording, setIsRecording] = useState(false);
   const [recordingDuration, setRecordingDuration] = useState(0);
-  const recordingRef = useRef<Audio.Recording | null>(null);
-  const recordingTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
-  const soundRef = useRef<Audio.Sound | null>(null);
   const [playingAudioId, setPlayingAudioId] = useState<string | null>(null);
   const flatListRef = useRef<FlatList>(null);
   const socketRef = useRef<Socket | null>(null);
   const authUser = useAuthStore((s) => s.user);
   const typingTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const recordingRef = useRef<AudioRecorder | null>(null);
+  const recordingTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const playerRef = useRef<AudioPlayer | null>(null);
 
   const partnerName = pName || 'Stranger';
   const partnerIdStr = pId || '';
@@ -169,6 +171,15 @@ export const ChatScreen: React.FC<{ navigation: any; route: any }> = ({ navigati
     }
   }, [messages.length]);
 
+  // ─── Track keyboard state for dynamic padding ──────
+  useEffect(() => {
+    const show = Keyboard.addListener(
+      Platform.OS === 'ios' ? 'keyboardWillShow' : 'keyboardDidShow',
+      () => setKeyboardWasActive(true),
+    );
+    return () => show.remove();
+  }, []);
+
   // ─── Send a text message ───────────────────────────
   const handleSend = async () => {
     const text = inputText.trim();
@@ -206,7 +217,7 @@ export const ChatScreen: React.FC<{ navigation: any; route: any }> = ({ navigati
   };
 
   // ─── Send a media message ──────────────────────────
-  const sendMedia = async (uri: string, mediaType: string, durationSecs?: number) => {
+  const sendMedia = async (uri: string, mediaType: string) => {
     if (sending) return;
     setSending(true);
     setShowMediaPicker(false);
@@ -214,7 +225,7 @@ export const ChatScreen: React.FC<{ navigation: any; route: any }> = ({ navigati
     const tempId = `temp-${Date.now()}`;
     const previewText = mediaType === 'image' ? 'Sent a photo' : `Sent ${mediaType}`;
 
-    // Optimistically add a temp message with duration if provided
+    // Optimistically add a temp message
     setMessages((prev) => [...prev, {
       id: tempId,
       matchId,
@@ -222,11 +233,10 @@ export const ChatScreen: React.FC<{ navigation: any; route: any }> = ({ navigati
       content: previewText,
       createdAt: new Date().toISOString(),
       readAt: null,
-      media: durationSecs ? { mediaType: mediaType as any, durationSecs, url: '' } as any : undefined,
     }]);
 
     try {
-      const res = await api.sendMediaMessage(matchId, uri, mediaType, undefined, durationSecs ? String(durationSecs) : undefined);
+      const res = await api.sendMediaMessage(matchId, uri, mediaType);
       if (res.success && res.data) {
         // Replace temp with confirmed message
         setMessages((prev) => prev.map((m) =>
@@ -253,27 +263,23 @@ export const ChatScreen: React.FC<{ navigation: any; route: any }> = ({ navigati
   // ─── Audio Recording ──────────────────────────────
   const startRecording = async () => {
     try {
-      const { status } = await Audio.requestPermissionsAsync();
-      if (status !== 'granted') {
-        Alert.alert('Permission needed', 'Allow microphone access to record audio.');
+      const { granted } = await requestRecordingPermissionsAsync();
+      if (!granted) {
+        Alert.alert('Permission needed', 'Allow microphone access to record voice.');
         return;
       }
 
       setShowMediaPicker(false);
-      await Audio.setAudioModeAsync({
-        allowsRecordingIOS: true,
-        playsInSilentModeIOS: true,
-        staysActiveInBackground: false,
-      });
 
-      const recording = new Audio.Recording();
-      await recording.prepareToRecordAsync(Audio.RecordingOptionsPresets.HIGH_QUALITY);
-      await recording.startAsync();
-      recordingRef.current = recording;
+      await setAudioModeAsync({ allowsRecording: true });
+
+      const recorder = new AudioRecorder({});
+      await recorder.prepareToRecordAsync();
+      recorder.record();
+      recordingRef.current = recorder;
       setIsRecording(true);
       setRecordingDuration(0);
 
-      // Count up elapsed seconds
       recordingTimerRef.current = setInterval(() => {
         setRecordingDuration((prev) => prev + 1);
       }, 1000);
@@ -289,16 +295,16 @@ export const ChatScreen: React.FC<{ navigation: any; route: any }> = ({ navigati
         recordingTimerRef.current = null;
       }
 
-      const recording = recordingRef.current;
-      if (!recording) return;
+      const recorder = recordingRef.current;
+      if (!recorder) return;
 
-      await recording.stopAndUnloadAsync();
-      const uri = recording.getURI();
+      await recorder.stop();
+      const uri = recorder.uri;
       recordingRef.current = null;
       setIsRecording(false);
 
       if (uri) {
-        await sendMedia(uri, 'audio', recordingDuration);
+        await sendMedia(uri, 'audio');
       }
     } catch (err: any) {
       Alert.alert('Error', err.message || 'Could not stop recording.');
@@ -311,10 +317,10 @@ export const ChatScreen: React.FC<{ navigation: any; route: any }> = ({ navigati
       clearInterval(recordingTimerRef.current);
       recordingTimerRef.current = null;
     }
-    const recording = recordingRef.current;
-    if (recording) {
+    const recorder = recordingRef.current;
+    if (recorder) {
       try {
-        await recording.stopAndUnloadAsync();
+        await recorder.stop();
       } catch {}
       recordingRef.current = null;
     }
@@ -326,58 +332,50 @@ export const ChatScreen: React.FC<{ navigation: any; route: any }> = ({ navigati
   const togglePlayAudio = async (messageId: string, url: string) => {
     if (playingAudioId === messageId) {
       // Stop current
-      if (soundRef.current) {
-        await soundRef.current.stopAsync();
-        await soundRef.current.unloadAsync();
-        soundRef.current = null;
+      if (playerRef.current) {
+        playerRef.current.pause();
+        playerRef.current = null;
       }
       setPlayingAudioId(null);
       return;
     }
 
-    // Stop previous sound if any
-    if (soundRef.current) {
-      await soundRef.current.stopAsync();
-      await soundRef.current.unloadAsync();
-      soundRef.current = null;
+    // Stop previous player if any
+    if (playerRef.current) {
+      playerRef.current.pause();
+      playerRef.current = null;
     }
 
     try {
-      await Audio.setAudioModeAsync({
-        allowsRecordingIOS: false,
-        playsInSilentModeIOS: true,
-        staysActiveInBackground: false,
+      const player = createAudioPlayer(resolveUrl(url));
+      player.addListener('playbackStatusUpdate', (status: any) => {
+        if (status.didJustFinish) {
+          setPlayingAudioId(null);
+          playerRef.current = null;
+        }
       });
-
-      const { sound } = await Audio.Sound.createAsync(
-        { uri: resolveUrl(url) },
-        { shouldPlay: true },
-        (status) => {
-          if (status.isLoaded && 'didJustFinish' in status && status.didJustFinish) {
-            setPlayingAudioId(null);
-            soundRef.current = null;
-          }
-        },
-      );
-      soundRef.current = sound;
+      player.play();
+      playerRef.current = player;
       setPlayingAudioId(messageId);
     } catch (err: any) {
       Alert.alert('Playback Error', err.message || 'Could not play audio.');
     }
   };
 
-  // Cleanup sound on unmount
+  // Cleanup on unmount
   useEffect(() => {
     return () => {
-      if (soundRef.current) {
-        soundRef.current.stopAsync().catch(() => {});
-        soundRef.current.unloadAsync().catch(() => {});
+      if (playerRef.current) {
+        playerRef.current.pause();
+        playerRef.current = null;
       }
       if (recordingRef.current) {
-        recordingRef.current.stopAndUnloadAsync().catch(() => {});
+        recordingRef.current.stop().catch(() => {});
+        recordingRef.current = null;
       }
       if (recordingTimerRef.current) {
         clearInterval(recordingTimerRef.current);
+        recordingTimerRef.current = null;
       }
     };
   }, []);
@@ -464,8 +462,7 @@ export const ChatScreen: React.FC<{ navigation: any; route: any }> = ({ navigati
     const metaIconColor = isMine ? 'rgba(255,255,255,0.65)' : colors.textMuted;
     const readIconColor = isMine ? colors.textInverse : colors.success;
 
-    // Determine display content
-    const displayContent = hasMedia ? item.content : item.content;
+    const displayContent = item.content;
 
     return (
       <View style={[styles.messageRow, isMine && styles.messageRowMine]}>
@@ -598,8 +595,8 @@ export const ChatScreen: React.FC<{ navigation: any; route: any }> = ({ navigati
       {/* Messages */}
       <KeyboardAvoidingView
         style={styles.chatArea}
-        behavior={Platform.OS === 'ios' ? 'padding' : undefined}
-        keyboardVerticalOffset={Platform.OS === 'ios' ? 90 : 0}
+        behavior="padding"
+        keyboardVerticalOffset={0}
       >
         {loading ? (
           <View style={styles.centered}>
@@ -645,7 +642,7 @@ export const ChatScreen: React.FC<{ navigation: any; route: any }> = ({ navigati
         ) : null}
 
         {/* Input bar */}
-        <View style={styles.inputBar}>
+        <View style={[styles.inputBar, { paddingBottom: keyboardWasActive ? spacing.xs : spacing.sm }]}>
           <TouchableOpacity
             style={styles.attachBtn}
             onPress={() => setShowMediaPicker(true)}
@@ -715,10 +712,10 @@ export const ChatScreen: React.FC<{ navigation: any; route: any }> = ({ navigati
               </TouchableOpacity>
 
               <TouchableOpacity style={styles.mediaOption} onPress={startRecording}>
-                <View style={[styles.mediaOptionIcon, { backgroundColor: '#FF6B6B' }]}>
+                <View style={[styles.mediaOptionIcon, { backgroundColor: '#8B5CF6' }]}>
                   <Ionicons name="mic-outline" size={24} color="#fff" />
                 </View>
-                <Text style={styles.mediaOptionLabel}>Record Audio</Text>
+                <Text style={styles.mediaOptionLabel}>Voice</Text>
               </TouchableOpacity>
             </View>
 
@@ -880,7 +877,8 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'flex-end',
     paddingHorizontal: spacing.md,
-    paddingVertical: spacing.sm,
+    paddingTop: spacing.sm,
+    paddingBottom: spacing.xs,
     borderTopWidth: 1,
     borderTopColor: colors.surfaceHighlight,
     gap: spacing.sm,
