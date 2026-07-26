@@ -9,7 +9,7 @@ import { query, TABLES } from '../services/database';
 import { notificationEvents } from '../services/notificationService';
 import { eventBus } from '../services/eventBus';
 import { getRedis } from '../services/redis';
-import { savePhoto, saveChatFile } from '../services/photoStorage';
+import { savePhoto, saveChatFile, saveEncryptedChatFile, getEncryptedChatFileBuffer } from '../services/photoStorage';
 
 const MESSAGE_ENCRYPTION_KEY = process.env.MESSAGE_ENCRYPTION_KEY || '';
 const redis = getRedis();
@@ -771,7 +771,8 @@ export async function matchRoutes(app: FastifyInstance) {
       url = saved.url;
       thumbnailUrl = saved.thumbnailUrl;
     } else {
-      const saved = await saveChatFile(userId, fileBuffer, mimeType, fileId);
+      // All non-image media (audio, video, file) use encrypted-at-rest storage
+      const saved = await saveEncryptedChatFile(userId, fileBuffer, mimeType, fileId);
       url = saved.url;
     }
 
@@ -844,6 +845,97 @@ export async function matchRoutes(app: FastifyInstance) {
         readAt: null,
       },
     });
+  });
+
+  // ─── Serve Decrypted Media File ─────────────────────────
+  // Proxy endpoint that reads an encrypted file from MinIO, decrypts it
+  // on-the-fly, and streams the plaintext to the authenticated user.
+  // URL format: /api/v1/matches/media/chat/{userId}/{fileId}.enc?ext=mp4
+  app.get('/media/*', async (request: FastifyRequest, reply: FastifyReply) => {
+    const { sub: userId } = request.user as any;
+
+    // Extract the MinIO key from the wildcard path (everything after /media/)
+    // e.g., /api/v1/matches/media/chat/user123/abc.enc?ext=m4a
+    //   → key = "chat/user123/abc.enc"
+    const fullPath = request.url;
+    const mediaPath = fullPath.split('/media/')[1];
+    if (!mediaPath) {
+      return reply.status(400).send({
+        success: false,
+        error: { code: 'INVALID_PATH', message: 'Invalid media path.' },
+      });
+    }
+
+    // Extract the extension query param for Content-Type
+    const urlObj = new URL(fullPath, 'http://localhost');
+    const ext = urlObj.searchParams.get('ext') || 'bin';
+
+    // The key is the path up to ?ext=...
+    const key = mediaPath.split('?')[0];
+
+    // Verify the user is part of the match by checking the chat/media ownership
+    // The key format is: chat/{ownerUserId}/{fileId}.enc
+    // We check if the requesting userId matches the owner userId in the key
+    // or if they're matched with the owner
+    const ownerMatch = key.match(/^chat\/([^/]+)\//);
+    if (!ownerMatch) {
+      return reply.status(400).send({
+        success: false,
+        error: { code: 'INVALID_KEY', message: 'Invalid media key format.' },
+      });
+    }
+
+    const ownerId = ownerMatch[1];
+
+    // Verify the requesting user is either the owner or matched with the owner
+    if (ownerId !== userId) {
+      const matchCheck = await query(
+        `SELECT id FROM ${TABLES.MATCHES}
+         WHERE is_active = TRUE
+           AND ((user_a_id = $1 AND user_b_id = $2) OR (user_a_id = $2 AND user_b_id = $1))`,
+        [userId, ownerId],
+      );
+      if (!matchCheck.rows[0]) {
+        return reply.status(403).send({
+          success: false,
+          error: { code: ERROR_CODES.FORBIDDEN, message: 'Not authorized to access this media.' },
+        });
+      }
+    }
+
+    try {
+      const { buffer } = await getEncryptedChatFileBuffer(key);
+
+      // Map extension to MIME type
+      const mimeMap: Record<string, string> = {
+        m4a: 'audio/mp4',
+        mp4: 'video/mp4',
+        mp3: 'audio/mpeg',
+        wav: 'audio/wav',
+        ogg: 'audio/ogg',
+        webm: 'video/webm',
+        jpg: 'image/jpeg',
+        jpeg: 'image/jpeg',
+        png: 'image/png',
+        webp: 'image/webp',
+        gif: 'image/gif',
+        pdf: 'application/pdf',
+        bin: 'application/octet-stream',
+      };
+      const contentType = mimeMap[ext] || 'application/octet-stream';
+
+      return reply
+        .header('Content-Type', contentType)
+        .header('Content-Length', buffer.length.toString())
+        .header('Cache-Control', 'private, max-age=3600')
+        .send(buffer);
+    } catch (err: any) {
+      console.error('[MediaProxy] Failed to serve encrypted file:', err.message);
+      return reply.status(404).send({
+        success: false,
+        error: { code: 'MEDIA_NOT_FOUND', message: 'Media file not found.' },
+      });
+    }
   });
 
   // ─── Existing: Get Match Detail ──────────────────────

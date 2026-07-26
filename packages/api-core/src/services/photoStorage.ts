@@ -17,10 +17,11 @@
  *   MINIO_PUBLIC_URL — Public-facing URL for photos (default: /uploads/)
  */
 
-import { S3Client, PutObjectCommand, DeleteObjectCommand, ListObjectsV2Command } from '@aws-sdk/client-s3';
+import { S3Client, PutObjectCommand, GetObjectCommand, DeleteObjectCommand, ListObjectsV2Command } from '@aws-sdk/client-s3';
 import sharp from 'sharp';
 import { v4 as uuidv4 } from 'uuid';
 import { encode } from 'blurhash';
+import { encryptBuffer, decryptBuffer } from '@kinetik/shared';
 
 // ─── Constants ───────────────────────────────────────────────────────
 
@@ -31,6 +32,9 @@ const USE_SSL = process.env.MINIO_USE_SSL === 'true';
 const BUCKET = process.env.MINIO_BUCKET || 'kinetik-photos';
 /** Public URL prefix for serving images (via nginx or MinIO console) */
 const PUBLIC_URL = process.env.MINIO_PUBLIC_URL || '/uploads/';
+
+/** Encryption key for chat media files at rest (same key used for text messages) */
+const FILE_ENCRYPTION_KEY = process.env.MESSAGE_ENCRYPTION_KEY || '';
 
 /** Thumbnail max dimension */
 const THUMB_SIZE = 300;
@@ -222,6 +226,75 @@ export async function saveChatFile(
   );
 
   return { url: `${PUBLIC_URL}${key}` };
+}
+
+/**
+ * Save a chat media file with encryption at rest.
+ * The file buffer is encrypted with AES-256-GCM before being stored in MinIO.
+ * The returned URL points to the authenticated proxy endpoint that decrypts on-the-fly.
+ */
+export async function saveEncryptedChatFile(
+  userId: string,
+  fileBuffer: Buffer,
+  mimeType: string,
+  fileId: string,
+): Promise<{ url: string }> {
+  const ext = mimeType.split('/')[1] || 'bin';
+  const key = `chat/${userId}/${fileId}.enc`; // always .enc extension for encrypted files
+  const client = getS3Client();
+
+  // Encrypt the buffer before storage
+  const encryptedBuffer = encryptBuffer(fileBuffer, FILE_ENCRYPTION_KEY);
+
+  await client.send(
+    new PutObjectCommand({
+      Bucket: BUCKET,
+      Key: key,
+      Body: encryptedBuffer,
+      ContentType: 'application/octet-stream', // hide original MIME type
+      CacheControl: 'private, no-cache',        // never cache encrypted data
+    }),
+  );
+
+  // URL points to the authenticated proxy endpoint that decrypts on-the-fly
+  const proxyUrl = `/api/v1/matches/media/${key}?ext=${ext}`;
+
+  console.log(
+    `[photoStorage] Encrypted chat file saved: ${key} ` +
+      `| original=${(fileBuffer.length / 1024).toFixed(1)}KB ` +
+      `encrypted=${(encryptedBuffer.length / 1024).toFixed(1)}KB`,
+  );
+
+  return { url: proxyUrl };
+}
+
+/**
+ * Read an encrypted chat file from MinIO and decrypt it.
+ * Returns the original plaintext Buffer and MIME type for streaming.
+ */
+export async function getEncryptedChatFileBuffer(
+  key: string,
+): Promise<{ buffer: Buffer; mimeType: string }> {
+  const client = getS3Client();
+
+  const response = await client.send(
+    new GetObjectCommand({
+      Bucket: BUCKET,
+      Key: key,
+    }),
+  );
+
+  // Read the stream into a buffer
+  const chunks: Buffer[] = [];
+  for await (const chunk of response.Body as any) {
+    chunks.push(Buffer.from(chunk));
+  }
+  const encryptedBuffer = Buffer.concat(chunks);
+
+  // Decrypt
+  const plainBuffer = decryptBuffer(encryptedBuffer, FILE_ENCRYPTION_KEY);
+
+  return { buffer: plainBuffer, mimeType: 'application/octet-stream' };
 }
 
 export async function deleteAllUserPhotos(userId: string): Promise<void> {

@@ -139,4 +139,5 @@ export function formatDuration(seconds: number): string {
 
 export * from './h3';
 export * from './messageCrypto';
+export * from './fileCrypto';
 export * from './openingLines';

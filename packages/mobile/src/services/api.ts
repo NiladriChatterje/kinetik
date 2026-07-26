@@ -298,9 +298,6 @@ class ApiClient {
   }
 
   // ─── Photos ───────────────────────────────────────────
-  /**
-   * Delete a profile photo. Throws on failure so callers can handle errors.
-   */
   async deletePhoto(photoId: string): Promise<void> {
     const response = await this.request(`/api/v1/users/photos/${photoId}`, {
       method: 'DELETE',
@@ -310,16 +307,10 @@ class ApiClient {
     }
   }
 
-  /**
-   * Get all profile photos for the current user.
-   */
   async getPhotos() {
     return this.request('/api/v1/users/photos');
   }
 
-  /**
-   * Set a photo as the primary profile photo.
-   */
   async setPrimaryPhoto(photoId: string) {
     return this.request(`/api/v1/users/photos/${photoId}/primary`, {
       method: 'PUT',
@@ -327,10 +318,6 @@ class ApiClient {
   }
 
   // ─── KYC Documents & Face Verification ────────────────────
-
-  /**
-   * Trigger face matching between the uploaded KYC document and profile photos.
-   */
   async verifyKycFace(): Promise<{
     match: boolean;
     confidence: number;
@@ -356,10 +343,6 @@ class ApiClient {
   }
 
   // ─── KYC Documents ────────────────────────────────────────
-  /**
-   * Upload a KYC identity document (PDF, JPG, PNG).
-   * Uses native multipart upload with document_type field.
-   */
   async submitKycDocument(uri: string, documentType: string, mimeType: string): Promise<{
     id: string;
     documentType: string;
@@ -401,9 +384,6 @@ class ApiClient {
     throw new Error(errorMessage);
   }
 
-  /**
-   * Get the user's KYC status and latest document info.
-   */
   async getKycStatus(): Promise<{
     kycStatus: string;
     latestDocument: {
@@ -421,9 +401,6 @@ class ApiClient {
   }
 
   // ─── Area / Location Details ─────────────────────────────
-  /**
-   * Get the user's current area details (city, county, region, country, H3).
-   */
   async getAreaDetails(): Promise<{
     latitude: number | null;
     longitude: number | null;
@@ -442,12 +419,6 @@ class ApiClient {
   }
 
   // ─── Pose Verification ──────────────────────────────────
-  /**
-   * Submit a pose verification selfie photo for face matching
-   * against the user's existing profile photos.
-   * The selfie is NOT saved to MinIO — only used for verification.
-   * Uses native multipart upload (same as photoService).
-   */
   // ─── Match / Swipe ────────────────────────────────────
   async getSwipeProfiles() {
     return this.request<{ profiles: any[] }>('/api/v1/matches/profiles');
@@ -491,12 +462,29 @@ class ApiClient {
     let url = `${API_URL}/api/v1/matches/conversations/${matchId}/media?media_type=${mediaType}`;
     if (caption) url += `&caption=${encodeURIComponent(caption)}`;
 
+    // Use FileSystem.uploadAsync (native multipart) instead of fetch + FormData.
+    // The fetch + FormData approach with JS file objects triggers React Native's
+    // "Unsupported FormDataPart implementation" bug on Android.
+    // FileSystem.uploadAsync uses the native platform's HTTP client (OkHttp on
+    // Android), bypassing the RN FormData polyfill entirely.
+    //
+    // The caller (ChatScreen) now writes audio recordings to the FileSystem cache
+    // directory first, so they are accessible to FileInputStream (no sandbox issue).
+    const mimeType =
+      mediaType === 'image'
+        ? 'image/jpeg'
+        : mediaType === 'audio'
+          ? 'audio/mp4'
+          : mediaType === 'video'
+            ? 'video/mp4'
+            : 'application/octet-stream';
+
     const result = await Promise.race([
       FileSystem.uploadAsync(url, uri, {
         httpMethod: 'POST',
         uploadType: FileSystem.FileSystemUploadType.MULTIPART,
         fieldName: 'file',
-        mimeType: mediaType === 'image' ? 'image/jpeg' : 'application/octet-stream',
+        mimeType,
         headers: {
           ...(token ? { Authorization: `Bearer ${token}` } : {}),
         },

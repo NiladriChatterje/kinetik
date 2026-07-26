@@ -5,7 +5,8 @@ import {
   Modal, Alert,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { AudioPlayer, AudioRecorder, createAudioPlayer, setAudioModeAsync, requestRecordingPermissionsAsync } from 'expo-audio';
+import { useAudioRecorder, createAudioPlayer, setAudioModeAsync, requestRecordingPermissionsAsync, RecordingPresets } from 'expo-audio';
+import * as FileSystem from 'expo-file-system/legacy';
 import { Ionicons } from '@expo/vector-icons';
 import * as ImagePicker from 'expo-image-picker';
 import * as DocumentPicker from 'expo-document-picker';
@@ -57,9 +58,12 @@ export const ChatScreen: React.FC<{ navigation: any; route: any }> = ({ navigati
   const socketRef = useRef<Socket | null>(null);
   const authUser = useAuthStore((s) => s.user);
   const typingTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const recordingRef = useRef<AudioRecorder | null>(null);
+  const audioRecorder = useAudioRecorder(RecordingPresets.HIGH_QUALITY);
+  const audioRecorderRef = useRef(audioRecorder);
+  audioRecorderRef.current = audioRecorder;
   const recordingTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
-  const playerRef = useRef<AudioPlayer | null>(null);
+  const lastCacheUriRef = useRef<string | null>(null);
+  const playerRef = useRef<ReturnType<typeof createAudioPlayer> | null>(null);
 
   const partnerName = pName || 'Stranger';
   const partnerIdStr = pId || '';
@@ -269,14 +273,29 @@ export const ChatScreen: React.FC<{ navigation: any; route: any }> = ({ navigati
         return;
       }
 
+      // Clean up previous cached voice file
+      if (lastCacheUriRef.current) {
+        FileSystem.deleteAsync(lastCacheUriRef.current).catch(() => {});
+        lastCacheUriRef.current = null;
+      }
+
+      // Dismiss keyboard and close picker when starting recording
+      Keyboard.dismiss();
       setShowMediaPicker(false);
 
       await setAudioModeAsync({ allowsRecording: true });
 
-      const recorder = new AudioRecorder({});
+      const recorder = audioRecorderRef.current;
+
+      // Release any previous session before preparing a new one
+      try {
+        await recorder.stop();
+      } catch {
+        // Ignore — stop() throws if no session is active
+      }
+
       await recorder.prepareToRecordAsync();
       recorder.record();
-      recordingRef.current = recorder;
       setIsRecording(true);
       setRecordingDuration(0);
 
@@ -284,6 +303,7 @@ export const ChatScreen: React.FC<{ navigation: any; route: any }> = ({ navigati
         setRecordingDuration((prev) => prev + 1);
       }, 1000);
     } catch (err: any) {
+      console.error('[ChatAudio] Recording error:', err);
       Alert.alert('Recording Error', err.message || 'Could not start recording.');
     }
   };
@@ -295,17 +315,76 @@ export const ChatScreen: React.FC<{ navigation: any; route: any }> = ({ navigati
         recordingTimerRef.current = null;
       }
 
-      const recorder = recordingRef.current;
-      if (!recorder) return;
+      const recorder = audioRecorderRef.current;
+      const duration = recordingDuration;
+      setIsRecording(false);
+      setRecordingDuration(0);
 
       await recorder.stop();
-      const uri = recorder.uri;
-      recordingRef.current = null;
-      setIsRecording(false);
 
-      if (uri) {
-        await sendMedia(uri, 'audio');
+      // Ignore very short taps (< 1 second) — likely accidental
+      if (duration < 1) return;
+
+      const sourceUri = recorder.uri;
+      if (!sourceUri) {
+        console.error('[ChatAudio] recorder.uri is null after stop');
+        Alert.alert('Send Failed', 'Recording did not produce an audio file. Please try again.');
+        return;
       }
+
+      console.log('[ChatAudio] Recording URI:', sourceUri);
+
+      // Pause briefly for the file system to finalize the recording
+      await new Promise((r) => setTimeout(r, 200));
+
+      // ─── Platform-specific file copy ─────────────────────────
+      // On Android 10+, FileSystem.uploadAsync uses FileInputStream
+      // which cannot read files created by expo-audio in the sandbox.
+      // We work around this by reading via fetch (which uses Android's
+      // ContentResolver) and writing a copy to the app's cache dir.
+      //
+      // On iOS, fetch() does NOT support file:// URIs (it throws a
+      // TypeError). But iOS has no sandbox read restriction — the
+      // expo-audio file is directly accessible to NSURLSession, so
+      // FileSystem.uploadAsync works with the original URI directly.
+      let uploadUri: string;
+
+      if (Platform.OS === 'android') {
+        try {
+          console.log('[ChatAudio] Android: copying via fetch to cache...');
+          const response = await fetch(sourceUri);
+          const arrayBuffer = await response.arrayBuffer();
+          console.log('[ChatAudio] Fetched ArrayBuffer size:', arrayBuffer.byteLength, 'bytes');
+
+          // Convert ArrayBuffer to base64 (Hermes-compatible)
+          const bytes = new Uint8Array(arrayBuffer);
+          const chars = new Array(bytes.length);
+          for (let i = 0; i < bytes.length; i++) {
+            chars[i] = String.fromCharCode(bytes[i]);
+          }
+          const base64Content = btoa(chars.join(''));
+
+          const cacheDir = FileSystem.cacheDirectory;
+          if (!cacheDir) throw new Error('cacheDirectory is null');
+
+          const cacheUri = `${cacheDir}voice_${Date.now()}.m4a`;
+          await FileSystem.writeAsStringAsync(cacheUri, base64Content, {
+            encoding: FileSystem.EncodingType.Base64,
+          });
+          console.log('[ChatAudio] Android: wrote cache copy:', cacheUri);
+          uploadUri = cacheUri;
+          lastCacheUriRef.current = cacheUri;
+        } catch (err) {
+          console.warn('[ChatAudio] Android: fetch copy failed, falling back to source URI:', err);
+          uploadUri = sourceUri;
+        }
+      } else {
+        // iOS: no sandbox issue, upload the original file directly
+        console.log('[ChatAudio] iOS: uploading original file directly');
+        uploadUri = sourceUri;
+      }
+
+      await sendMedia(uploadUri, 'audio');
     } catch (err: any) {
       Alert.alert('Error', err.message || 'Could not stop recording.');
       setIsRecording(false);
@@ -317,13 +396,10 @@ export const ChatScreen: React.FC<{ navigation: any; route: any }> = ({ navigati
       clearInterval(recordingTimerRef.current);
       recordingTimerRef.current = null;
     }
-    const recorder = recordingRef.current;
-    if (recorder) {
-      try {
-        await recorder.stop();
-      } catch {}
-      recordingRef.current = null;
-    }
+    const recorder = audioRecorderRef.current;
+    try {
+      await recorder.stop();
+    } catch {}
     setIsRecording(false);
     setRecordingDuration(0);
   };
@@ -331,7 +407,6 @@ export const ChatScreen: React.FC<{ navigation: any; route: any }> = ({ navigati
   // ─── Audio Playback ────────────────────────────────
   const togglePlayAudio = async (messageId: string, url: string) => {
     if (playingAudioId === messageId) {
-      // Stop current
       if (playerRef.current) {
         playerRef.current.pause();
         playerRef.current = null;
@@ -340,7 +415,6 @@ export const ChatScreen: React.FC<{ navigation: any; route: any }> = ({ navigati
       return;
     }
 
-    // Stop previous player if any
     if (playerRef.current) {
       playerRef.current.pause();
       playerRef.current = null;
@@ -368,10 +442,6 @@ export const ChatScreen: React.FC<{ navigation: any; route: any }> = ({ navigati
       if (playerRef.current) {
         playerRef.current.pause();
         playerRef.current = null;
-      }
-      if (recordingRef.current) {
-        recordingRef.current.stop().catch(() => {});
-        recordingRef.current = null;
       }
       if (recordingTimerRef.current) {
         clearInterval(recordingTimerRef.current);
@@ -628,6 +698,7 @@ export const ChatScreen: React.FC<{ navigation: any; route: any }> = ({ navigati
             <TouchableOpacity onPress={cancelRecording} style={styles.recordingCancelBtn}>
               <Ionicons name="close" size={22} color="#FF6B6B" />
             </TouchableOpacity>
+            <Text style={styles.recordingHint}>Release to send</Text>
             <View style={styles.recordingIndicator}>
               <View style={styles.recordingDot} />
               <Text style={styles.recordingTimer}>
@@ -635,9 +706,6 @@ export const ChatScreen: React.FC<{ navigation: any; route: any }> = ({ navigati
                 {String(recordingDuration % 60).padStart(2, '0')}
               </Text>
             </View>
-            <TouchableOpacity onPress={stopRecording} style={styles.recordingStopBtn}>
-              <Ionicons name="stop" size={22} color="#fff" />
-            </TouchableOpacity>
           </View>
         ) : null}
 
@@ -659,17 +727,28 @@ export const ChatScreen: React.FC<{ navigation: any; route: any }> = ({ navigati
             multiline
             maxLength={2000}
           />
-          <TouchableOpacity
-            style={[styles.sendBtn, !inputText.trim() && styles.sendBtnDisabled]}
-            onPress={handleSend}
-            disabled={!inputText.trim() || sending}
-          >
-            <Ionicons
-              name="send"
-              size={20}
-              color={inputText.trim() ? colors.textPrimary : colors.textMuted}
-            />
-          </TouchableOpacity>
+          {inputText.trim().length > 0 ? (
+            <TouchableOpacity
+              style={styles.sendBtn}
+              onPress={handleSend}
+              disabled={sending}
+            >
+              <Ionicons name="send" size={20} color={colors.textInverse} />
+            </TouchableOpacity>
+          ) : (
+            <TouchableOpacity
+              style={[styles.micBtn, isRecording && styles.micBtnActive]}
+              onPressIn={startRecording}
+              onPressOut={stopRecording}
+              disabled={sending}
+            >
+              <Ionicons
+                name="mic"
+                size={22}
+                color={isRecording ? colors.textInverse : colors.textSecondary}
+              />
+            </TouchableOpacity>
+          )}
         </View>
       </KeyboardAvoidingView>
 
@@ -709,13 +788,6 @@ export const ChatScreen: React.FC<{ navigation: any; route: any }> = ({ navigati
                   <Ionicons name="document-outline" size={24} color="#fff" />
                 </View>
                 <Text style={styles.mediaOptionLabel}>Document</Text>
-              </TouchableOpacity>
-
-              <TouchableOpacity style={styles.mediaOption} onPress={startRecording}>
-                <View style={[styles.mediaOptionIcon, { backgroundColor: '#8B5CF6' }]}>
-                  <Ionicons name="mic-outline" size={24} color="#fff" />
-                </View>
-                <Text style={styles.mediaOptionLabel}>Voice</Text>
               </TouchableOpacity>
             </View>
 
@@ -848,19 +920,12 @@ const styles = StyleSheet.create({
     backgroundColor: '#FF3B30',
   },
   recordingTimer: { ...typography.h3, color: '#FF3B30', fontSize: 16 },
+  recordingHint: { ...typography.caption, color: colors.textMuted, flex: 1, textAlign: 'center' },
   recordingCancelBtn: {
     width: 36,
     height: 36,
     borderRadius: 18,
     backgroundColor: colors.surface,
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  recordingStopBtn: {
-    width: 36,
-    height: 36,
-    borderRadius: 18,
-    backgroundColor: '#FF3B30',
     justifyContent: 'center',
     alignItems: 'center',
   },
@@ -911,6 +976,19 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   sendBtnDisabled: { backgroundColor: colors.surfaceHighlight },
+  // Mic button (hold-to-record)
+  micBtn: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    backgroundColor: colors.surfaceHighlight,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  micBtnActive: {
+    backgroundColor: '#FF3B30',
+    transform: [{ scale: 1.1 }],
+  },
   // Media picker modal
   modalOverlay: {
     flex: 1,
