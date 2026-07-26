@@ -2,7 +2,7 @@ import { FastifyInstance, FastifyRequest, FastifyReply } from 'fastify';
 import {
   ERROR_CODES, REDIS_KEYS, SUPER_LIKE_LIMIT_DAILY_FREE,
   SUPER_LIKE_LIMIT_DAILY_PREMIUM, EVENT_BUS_CHANNELS,
-  encryptMessage, decryptMessage,
+  encryptMessage, decryptMessage, getOpeningLine,
 } from '@kinetik/shared';
 import { query, TABLES } from '../services/database';
 import { notificationEvents } from '../services/notificationService';
@@ -280,9 +280,11 @@ export async function matchRoutes(app: FastifyInstance) {
           console.error('[EventBus] Failed to publish match.created:', err);
         });
 
-        // Send push notifications to both users with correct names
-        await notificationEvents.matchFound(userId, partnerName);
-        await notificationEvents.matchFound(targetUserId, swiperName);
+        // Auto-send an opening line as the first message
+        await sendOpeningLineAsMessage(match.id, userId, targetUserId);
+
+        // Send new message notification instead of match notification
+        await notificationEvents.newMessage(targetUserId, swiperName, 'You have a new match! Say hi 💬');
 
         return reply.status(201).send({
           success: true,
@@ -349,7 +351,9 @@ export async function matchRoutes(app: FastifyInstance) {
        FROM ${TABLES.USER_INTERACTIONS} ui
        JOIN ${TABLES.USERS} u ON u.id = ui.actor_id
        LEFT JOIN ${TABLES.PROFILE_PHOTOS} pp ON pp.user_id = u.id AND pp.is_primary = TRUE
-       WHERE ui.target_id = $1 AND ui.action IN ('like', 'super_like')
+       WHERE ui.target_id = $1
+        AND ui.action IN ('like', 'super_like')
+        AND ui.is_mutual = FALSE
        ORDER BY ui.created_at DESC
        LIMIT 50`,
       [userId],
@@ -367,7 +371,6 @@ export async function matchRoutes(app: FastifyInstance) {
       photoUrl: row.photo_url || undefined,
       thumbnailUrl: row.thumbnail_url || undefined,
       isVerified: row.is_verified,
-      isMutual: row.is_mutual,
       respondedAt: row.responded_at || undefined,
       isSuperLike: row.action === 'super_like',
     }));
@@ -470,8 +473,12 @@ export async function matchRoutes(app: FastifyInstance) {
       console.error('[EventBus] Failed to publish match.created:', err);
     });
 
-    // Notify both
-    await notificationEvents.matchFound(userId, partnerName);
+    // Auto-send an opening line as the first message
+    await sendOpeningLineAsMessage(match.id, userId, targetUserId);
+
+    // Notify both users via new message notification
+    await notificationEvents.newMessage(userId, partnerName, 'You have a new match! Say hi 💬');
+    await notificationEvents.newMessage(targetUserId, responderName, 'You have a new match! Say hi 💬');
 
     return reply.status(201).send({
       success: true,
@@ -724,4 +731,56 @@ export async function matchRoutes(app: FastifyInstance) {
 
     return reply.send({ success: true, data: result.rows[0] });
   });
+}
+
+// ─── Helper: Auto-send opening line on match ─────────────
+// Picks a curated line based on the dating category of either user,
+// encrypts it at rest, inserts as a message, and publishes via Redis pub/sub.
+async function sendOpeningLineAsMessage(
+  matchId: string,
+  userAId: string,
+  userBId: string,
+): Promise<void> {
+  try {
+    // Get dating category from both users — prefer userB (target), fallback to userA (actor)
+    const catResult = await query(
+      `SELECT id, dating_category FROM ${TABLES.USERS}
+       WHERE id IN ($1, $2)`,
+      [userAId, userBId],
+    );
+
+    const userACat = catResult.rows.find((r: any) => r.id === userAId)?.dating_category;
+    const userBCat = catResult.rows.find((r: any) => r.id === userBId)?.dating_category;
+
+    // Prefer userB's category for the line, then userA's, then default to 'casual'
+    const category: string = userBCat || userACat || 'casual';
+    const openingLine = getOpeningLine(category as any, matchId);
+
+    const encryptedContent = encryptMessage(openingLine, MESSAGE_ENCRYPTION_KEY);
+
+    // Insert the message (sender = userA, the one who initiated the match)
+    const result = await query(
+      `INSERT INTO ${TABLES.MESSAGES} (match_id, sender_id, content)
+       VALUES ($1, $2, $3) RETURNING *`,
+      [matchId, userAId, encryptedContent],
+    );
+    const message = result.rows[0];
+
+    // Publish via Redis pub/sub so realtime service delivers it
+    const messagePayload = {
+      id: message.id,
+      matchId: message.match_id,
+      senderId: message.sender_id,
+      content: openingLine,
+      createdAt: message.created_at,
+    };
+    redis.publish(REDIS_KEYS.CHAT_MESSAGES_CHANNEL, JSON.stringify(messagePayload)).catch((err: Error) => {
+      console.error('[Redis] Failed to publish opening line:', err.message);
+    });
+
+    console.log(`[OpeningLine] Sent to match ${matchId} (category: ${category}): "${openingLine.slice(0, 50)}..."`);
+  } catch (err) {
+    // Non-critical — match already created, opening line is best-effort
+    console.error('[OpeningLine] Failed to send opening line:', err);
+  }
 }

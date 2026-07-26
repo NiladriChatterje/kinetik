@@ -9,6 +9,11 @@ import { api } from '../../services/api';
 import { colors, typography, spacing, radius } from '../../theme';
 
 const GENDER_OPTIONS = ['Male', 'Female', 'Non-binary', 'Other', 'Prefer not to say'] as const;
+const DATING_CATEGORIES = [
+  { value: 'casual', label: 'Casual', description: 'Fun dates, new connections' },
+  { value: 'serious', label: 'Serious', description: 'Looking for something real' },
+  { value: 'intimacy', label: 'Intimacy', description: 'Deep chemistry, no games' },
+] as const;
 
 /** Auto-format DOB input as DD/MM/YYYY
  *  Adds "/" the moment DD is complete (2 digits) and when MM is complete (2 more digits). */
@@ -73,6 +78,8 @@ export const IdentityScreen: React.FC<{ navigation: any }> = ({ navigation }) =>
   const [dob, setDob] = useState('');
   const [gender, setGender] = useState<string | null>(null);
   const [genderTouched, setGenderTouched] = useState(false);
+  const [datingCategory, setDatingCategory] = useState<string | null>(null);
+  const [datingCategoryTouched, setDatingCategoryTouched] = useState(false);
   const [pronouns, setPronouns] = useState('');
   const [loading, setLoading] = useState(false);
   const { user } = useAuthStore();
@@ -88,6 +95,7 @@ export const IdentityScreen: React.FC<{ navigation: any }> = ({ navigation }) =>
   }, []);
 
   const genderError = genderTouched && !gender ? 'Please select your gender' : undefined;
+  const datingCategoryError = datingCategoryTouched && !datingCategory ? 'Please select your dating preference' : undefined;
 
   const handleSubmit = async () => {
     // Mark all fields as touched so inline errors show
@@ -96,9 +104,10 @@ export const IdentityScreen: React.FC<{ navigation: any }> = ({ navigation }) =>
     // Check all required fields are filled
     const dobFilled = dob.length >= 10;
     const genderFilled = gender !== null && gender.length > 0;
+    const categoryFilled = datingCategory !== null && datingCategory.length > 0;
     const pronounsFilled = pronouns.trim().length > 0;
 
-    if (!dobFilled || !genderFilled || !pronounsFilled) {
+    if (!dobFilled || !genderFilled || !categoryFilled || !pronounsFilled) {
       toast.showGlass('Must fill all the fields!', 'Please complete your profile information.');
       return;
     }
@@ -115,7 +124,7 @@ export const IdentityScreen: React.FC<{ navigation: any }> = ({ navigation }) =>
     const dobIso = `${parts[2]}-${parts[1]}-${parts[0]}`;
 
     setLoading(true);
-    const res = await api.updateProfile({ displayName: user?.displayName, dateOfBirth: dobIso, gender: gender.toLowerCase(), pronouns });
+    const res = await api.updateProfile({ displayName: user?.displayName, dateOfBirth: dobIso, gender: gender.toLowerCase(), pronouns, datingCategory: datingCategory });
     if (res.success) {
       await api.updateOnboardingStep('identity');
       navigation.navigate('Location');
@@ -152,6 +161,36 @@ export const IdentityScreen: React.FC<{ navigation: any }> = ({ navigation }) =>
         </View>
         {genderError && <Text style={styles.fieldError}>{genderError}</Text>}
 
+        {/* Dating Category */}
+        <Text style={styles.fieldLabel}>What are you looking for? *</Text>
+        <View style={styles.categoryGrid}>
+          {DATING_CATEGORIES.map((cat) => (
+            <View
+              key={cat.value}
+              style={[
+                styles.categoryChip,
+                datingCategory === cat.value && styles.categoryChipActive,
+              ]}              >
+              <Text
+                style={[
+                  styles.categoryChipText,
+                  datingCategory === cat.value && styles.categoryChipTextActive,
+                ]}
+                onPress={() => {
+                  setDatingCategoryTouched(true);
+                  setDatingCategory(cat.value);
+                }}
+              >
+                {cat.label}
+              </Text>
+              <Text style={[styles.categoryChipDesc, datingCategory === cat.value && { color: 'rgba(255,255,255,0.7)' }]}>
+                {cat.description}
+              </Text>
+            </View>
+          ))}
+        </View>
+        {datingCategoryError && <Text style={styles.fieldError}>{datingCategoryError}</Text>}
+
         <Input label="Pronouns" value={pronouns} onChangeText={setPronouns} placeholder="they/them, she/her, he/him" required />
       </ScrollView>
 
@@ -179,5 +218,17 @@ const styles = StyleSheet.create({
   genderChipText: { ...typography.body2, color: colors.textSecondary },
   fieldError: { ...typography.caption, color: colors.error, marginBottom: spacing.lg, marginTop: -spacing.sm },
   genderChipTextActive: { color: colors.textInverse },
+  categoryGrid: { flexDirection: 'column', gap: spacing.sm, marginBottom: spacing.lg },
+  categoryChip: {
+    padding: spacing.md,
+    borderRadius: radius.lg,
+    backgroundColor: colors.inputBg,
+    borderWidth: 1,
+    borderColor: colors.inputBorder,
+  },
+  categoryChipActive: { borderColor: colors.primary, backgroundColor: colors.primary },
+  categoryChipText: { ...typography.body1, color: colors.textPrimary, fontWeight: '600' },
+  categoryChipTextActive: { color: colors.textInverse },
+  categoryChipDesc: { ...typography.caption, color: colors.textMuted, marginTop: 2 },
   footer: { position: 'absolute', bottom: 40, left: spacing.xxl, right: spacing.xxl },
 });

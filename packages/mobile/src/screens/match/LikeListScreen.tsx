@@ -142,37 +142,30 @@ export const LikeListScreen: React.FC<{ navigation: any }> = ({ navigation }) =>
         </View>
       </View>
 
-      {item.isMutual ? (
-        <View style={styles.mutualBadge}>
-          <Ionicons name="heart" size={16} color={colors.success} />
-          <Text style={styles.mutualText}>Matched</Text>
-        </View>
-      ) : (
-        <View style={styles.actions}>
-          <TouchableOpacity
-            style={[styles.actionBtn, styles.discardBtn]}
-            onPress={() => handleRespond(item.userId, 'discard')}
-            disabled={responding === item.userId}
-          >
-            {responding === item.userId ? (
-              <ActivityIndicator size="small" color="#FF6B6B" />
-            ) : (
-              <Ionicons name="close" size={22} color="#FF6B6B" />
-            )}
-          </TouchableOpacity>
-          <TouchableOpacity
-            style={[styles.actionBtn, styles.likeBackBtn]}
-            onPress={() => handleRespond(item.userId, 'like')}
-            disabled={responding === item.userId}
-          >
-            {responding === item.userId ? (
-              <ActivityIndicator size="small" color="#4ECDC4" />
-            ) : (
-              <Ionicons name="heart" size={22} color="#4ECDC4" />
-            )}
-          </TouchableOpacity>
-        </View>
-      )}
+      <View style={styles.actions}>
+        <TouchableOpacity
+          style={[styles.actionBtn, styles.discardBtn]}
+          onPress={() => handleRespond(item.userId, 'discard')}
+          disabled={responding === item.userId}
+        >
+          {responding === item.userId ? (
+            <ActivityIndicator size="small" color="#FF6B6B" />
+          ) : (
+            <Ionicons name="close" size={22} color="#FF6B6B" />
+          )}
+        </TouchableOpacity>
+        <TouchableOpacity
+          style={[styles.actionBtn, styles.likeBackBtn]}
+          onPress={() => handleRespond(item.userId, 'like')}
+          disabled={responding === item.userId}
+        >
+          {responding === item.userId ? (
+            <ActivityIndicator size="small" color="#4ECDC4" />
+          ) : (
+            <Ionicons name="heart" size={22} color="#4ECDC4" />
+          )}
+        </TouchableOpacity>
+      </View>
     </View>
   );
 
@@ -251,18 +244,6 @@ const styles = StyleSheet.create({
   nameRow: { flexDirection: 'row', alignItems: 'center' },
   name: { ...typography.body1, color: colors.textPrimary, fontWeight: '600' },
   bio: { ...typography.caption, color: colors.textSecondary, marginTop: 2 },
-  mutualBadge: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 6,
-    marginTop: spacing.md,
-    paddingHorizontal: spacing.md,
-    paddingVertical: 6,
-    backgroundColor: 'rgba(78, 205, 196, 0.15)',
-    borderRadius: radius.full,
-    alignSelf: 'flex-start',
-  },
-  mutualText: { ...typography.caption, color: colors.success, fontWeight: '600' },
   actions: {
     flexDirection: 'row',
     justifyContent: 'center',

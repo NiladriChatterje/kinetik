@@ -56,6 +56,9 @@ CREATE TABLE users (
     -- Pose verification selfie URL (from migration 003)
     pose_photo_url  TEXT,
 
+    -- Dating category (required during onboarding)
+    dating_category VARCHAR(20) CHECK (dating_category IN ('casual', 'serious', 'intimacy')),
+
     -- Status
     is_active       BOOLEAN DEFAULT TRUE,
     is_banned       BOOLEAN DEFAULT FALSE,

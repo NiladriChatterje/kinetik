@@ -19,6 +19,7 @@ const UpdateProfileSchema = z.object({
   education: z.string().max(255).optional(),
   latitude: z.number().min(-90).max(90).optional(),
   longitude: z.number().min(-180).max(180).optional(),
+  datingCategory: z.enum(['casual', 'serious', 'intimacy']).optional(),
 });
 
 const PreferencesSchema = z.object({
@@ -92,6 +93,7 @@ export async function userRoutes(app: FastifyInstance) {
         county: user.county || null,
         region: user.region || null,
         country: user.country || null,
+        datingCategory: user.dating_category || null,
         onboardingComplete: user.onboarding_complete,
         onboardingStep: user.onboarding_step,
         primaryPhoto: user.primary_photo_url ? {
@@ -130,6 +132,7 @@ export async function userRoutes(app: FastifyInstance) {
       education: 'education',
       latitude: 'latitude',
       longitude: 'longitude',
+      datingCategory: 'dating_category',
     };
 
     for (const [key, value] of Object.entries(data)) {

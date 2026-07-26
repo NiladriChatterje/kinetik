@@ -8,6 +8,7 @@ export type WindowStatus = 'scheduled' | 'active' | 'closed';
 export type OnboardingStep = 'splash' | 'identity' | 'location' | 'photos' | 'pose' | 'kyc' | 'complete';
 export type InteractionAction = 'like' | 'pass' | 'super_like';
 export type AuthProvider = 'phone' | 'google' | 'apple';
+export type DatingCategory = 'casual' | 'serious' | 'intimacy';
 
 // ─── Re-export match types ────────────────────────────────
 export * from './match';
@@ -35,6 +36,7 @@ export interface User {
   county?: string;
   region?: string;
   country?: string;
+  datingCategory?: DatingCategory;
   isActive: boolean;
   onboardingComplete: boolean;
   onboardingStep: OnboardingStep;
