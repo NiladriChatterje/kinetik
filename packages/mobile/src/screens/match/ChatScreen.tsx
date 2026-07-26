@@ -1,11 +1,14 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
 import {
   View, Text, StyleSheet, FlatList, TextInput, TouchableOpacity,
   Image, KeyboardAvoidingView, Platform, Keyboard, ActivityIndicator,
-  Modal, Alert,
+  Modal, Alert, Dimensions, Linking,
+  StatusBar,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useAudioRecorder, createAudioPlayer, AudioPlayer, setAudioModeAsync, requestRecordingPermissionsAsync, RecordingPresets } from 'expo-audio';
+import { usePreventScreenCapture } from 'expo-screen-capture';
+
 import * as FileSystem from 'expo-file-system/legacy';
 import { Ionicons } from '@expo/vector-icons';
 import * as ImagePicker from 'expo-image-picker';
@@ -29,6 +32,8 @@ interface ChatMedia {
   width?: number;
   height?: number;
   durationSecs?: number;
+  isViewOnce?: boolean;
+  viewedAt?: string;
 }
 
 interface Message {
@@ -40,6 +45,9 @@ interface Message {
   readAt: string | null;
   media?: ChatMedia;
 }
+
+const SCREEN_WIDTH = Dimensions.get('window').width;
+const SCREEN_HEIGHT = Dimensions.get('window').height;
 
 export const ChatScreen: React.FC<{ navigation: any; route: any }> = ({ navigation, route }) => {
   const { matchId, partnerName: pName, partnerId: pId, partnerPhotoUrl: pPhoto } = route.params || {};
@@ -53,7 +61,22 @@ export const ChatScreen: React.FC<{ navigation: any; route: any }> = ({ navigati
   const [keyboardWasActive, setKeyboardWasActive] = useState(false);
   const [isRecording, setIsRecording] = useState(false);
   const [recordingDuration, setRecordingDuration] = useState(0);
+  const [previewPhotoUrl, setPreviewPhotoUrl] = useState<string | null>(null);
   const [playingAudioId, setPlayingAudioId] = useState<string | null>(null);
+
+  // ─── View-Once Media State ────────────────────────────
+  const [viewOnce, setViewOnce] = useState(false); // Toggle in media picker
+  const [viewingOnceMedia, setViewingOnceMedia] = useState<{
+    mediaId: string;
+    url: string;
+    mediaType: 'image' | 'video';
+  } | null>(null); // Currently being viewed in one-time viewer
+
+  // ─── Prevent screenshots on this screen ───────────────
+  // This applies FLAG_SECURE on Android to prevent both screenshots and screen recording.
+  // On iOS, prevention is best-effort (black screen in recordings).
+  usePreventScreenCapture();
+
   const flatListRef = useRef<FlatList>(null);
   const socketRef = useRef<Socket | null>(null);
   const authUser = useAuthStore((s) => s.user);
@@ -135,6 +158,25 @@ export const ChatScreen: React.FC<{ navigation: any; route: any }> = ({ navigati
     socket.on('chat:typing', (data: any) => {
       if (data.userId !== authUser?.id) {
         setPartnerTyping(data.isTyping);
+      }
+    });
+
+    // Handle media:viewed event to update view-once status
+    socket.on('media:viewed', (data: any) => {
+      if (data.mediaId && data.viewedAt) {
+        setMessages((prev) =>
+          prev.map((m) =>
+            m.media?.id === data.mediaId
+              ? {
+                  ...m,
+                  media: {
+                    ...m.media!,
+                    viewedAt: data.viewedAt,
+                  },
+                }
+              : m,
+          ),
+        );
       }
     });
 
@@ -225,9 +267,14 @@ export const ChatScreen: React.FC<{ navigation: any; route: any }> = ({ navigati
     if (sending) return;
     setSending(true);
     setShowMediaPicker(false);
+    setViewOnce(false); // Reset the toggle
 
     const tempId = `temp-${Date.now()}`;
-    const previewText = mediaType === 'image' ? 'Sent a photo' : `Sent ${mediaType}`;
+    const previewText = viewOnce
+      ? 'Sent a view-once photo'
+      : mediaType === 'image'
+        ? 'Sent a photo'
+        : `Sent ${mediaType}`;
 
     // Optimistically add a temp message
     setMessages((prev) => [...prev, {
@@ -240,7 +287,7 @@ export const ChatScreen: React.FC<{ navigation: any; route: any }> = ({ navigati
     }]);
 
     try {
-      const res = await api.sendMediaMessage(matchId, uri, mediaType);
+      const res = await api.sendMediaMessage(matchId, uri, mediaType, undefined, viewOnce);
       if (res.success && res.data) {
         // Replace temp with confirmed message
         setMessages((prev) => prev.map((m) =>
@@ -263,6 +310,67 @@ export const ChatScreen: React.FC<{ navigation: any; route: any }> = ({ navigati
       setSending(false);
     }
   };
+
+  // ─── One-Time View Handler ─────────────────────────
+  const openOneTimeView = useCallback((media: ChatMedia) => {
+    // For sender, we show the media normally (they don't need view-once behavior)
+    if (media.senderId === authUser?.id) return;
+
+    // If already viewed, don't allow opening
+    if (media.viewedAt) {
+      Alert.alert('Media viewed', 'This media has already been viewed.');
+      return;
+    }
+
+    if (media.mediaType === 'image') {
+      setViewingOnceMedia({
+        mediaId: media.id,
+        url: resolveUrl(media.url),
+        mediaType: 'image',
+      });
+    } else if (media.mediaType === 'video') {
+      setViewingOnceMedia({
+        mediaId: media.id,
+        url: resolveUrl(media.url),
+        mediaType: 'video',
+      });
+    }
+  }, [authUser?.id]);
+
+  const closeOneTimeView = useCallback(async () => {
+    if (!viewingOnceMedia) return;
+
+    const { mediaId } = viewingOnceMedia;
+
+    // Mark as viewed on the backend — only clear local state on success
+    try {
+      await api.markMediaViewed(mediaId);
+
+      // Clear the URL from local state so it cannot be re-viewed
+      setMessages((prev) =>
+        prev.map((m) =>
+          m.media?.id === mediaId
+            ? {
+                ...m,
+                media: {
+                  ...m.media!,
+                  viewedAt: new Date().toISOString(),
+                  url: '',
+                  thumbnailUrl: undefined,
+                },
+              }
+            : m,
+        ),
+      );
+    } catch {
+      // Network failed — don't clear local state so user can retry
+      // The backend file remains intact for now
+      Alert.alert('Failed to confirm view', 'Could not reach the server. The media may still be viewable.');
+    }
+
+    // Close the viewer regardless
+    setViewingOnceMedia(null);
+  }, [viewingOnceMedia]);
 
   // ─── Audio Recording ──────────────────────────────
   const startRecording = async () => {
@@ -531,6 +639,149 @@ export const ChatScreen: React.FC<{ navigation: any; route: any }> = ({ navigati
     }
   };
 
+  // ─── Render media content for a message ────────────
+  const renderMediaContent = (item: Message, isMine: boolean) => {
+    if (!item.media) return null;
+    const media = item.media;
+
+    // View-once media that has been viewed — show "Opened" placeholder
+    if (media.isViewOnce && media.viewedAt) {
+      return (
+        <View style={styles.viewOnceViewed}>
+          <Ionicons
+            name={isMine ? 'checkmark-done' : 'eye-outline'}
+            size={20}
+            color={isMine ? colors.textInverse : colors.textMuted}
+          />
+          <Text style={[styles.viewOnceViewedText, isMine && { color: colors.textInverse }]}>
+            {isMine ? 'Opened' : 'Viewed'}
+          </Text>
+        </View>
+      );
+    }
+
+    // View-once media NOT yet viewed (receiver side) — show "Tap to view" CTA
+    if (media.isViewOnce && !media.viewedAt && !isMine) {
+      return (
+        <TouchableOpacity
+          onPress={() => openOneTimeView(media)}
+          activeOpacity={0.8}
+          style={styles.viewOnceCta}
+        >
+          <View style={styles.viewOnceIconWrap}>
+            <Ionicons name="eye-outline" size={28} color="#fff" />
+            <View style={styles.viewOnceBadge}>
+              <Text style={styles.viewOnceBadgeText}>1</Text>
+            </View>
+          </View>
+          <Text style={styles.viewOnceCtaText}>View once</Text>
+          <Text style={styles.viewOnceCtaHint}>Tap to open</Text>
+        </TouchableOpacity>
+      );
+    }
+
+    // Regular media content (including sender's own view-once)
+    if (media.mediaType === 'image') {
+      return (
+        <TouchableOpacity
+          onPress={() => {
+            // Sender can preview their own view-once images normally
+            setPreviewPhotoUrl(resolveUrl(media.thumbnailUrl || media.url));
+          }}
+          activeOpacity={0.9}
+        >
+          <View style={styles.mediaImageWrap}>
+            <Image
+              source={{
+                uri: resolveUrl(media.thumbnailUrl || media.url),
+              }}
+              style={styles.mediaImage}
+              resizeMode="cover"
+            />
+            {media.isViewOnce && (
+              <View style={styles.viewOnceOverlay}>
+                <Ionicons name="eye-outline" size={16} color="#fff" />
+                <Text style={styles.viewOnceOverlayText}>View once</Text>
+              </View>
+            )}
+          </View>
+        </TouchableOpacity>
+      );
+    }
+
+    if (media.mediaType === 'video') {
+      return (
+        <TouchableOpacity
+          onPress={() => {
+            // For view-once video on receiver side, this shouldn't be reached
+            // as we show the viewOnceCta above instead
+            const baseUrl = resolveUrl(media.url);
+            const token = api.getToken();
+            const separator = baseUrl.includes('?') ? '&' : '?';
+            const videoUrl = token
+              ? `${baseUrl}${separator}token=${encodeURIComponent(token)}`
+              : baseUrl;
+            Linking.openURL(videoUrl).catch(() =>
+              Alert.alert('Error', 'Could not open video player.')
+            );
+          }}
+          activeOpacity={0.8}
+        >
+          <View style={[styles.videoThumbContainer, isMine && styles.videoThumbMine]}>
+            <Ionicons name="videocam" size={28} color="#fff" />
+            <View style={styles.videoPlayBadge}>
+              <Ionicons name="play" size={14} color="#fff" />
+            </View>
+            <Text style={styles.videoThumbText}>Tap to play</Text>
+          </View>
+        </TouchableOpacity>
+      );
+    }
+
+    if (media.mediaType === 'audio') {
+      return (
+        <TouchableOpacity
+          onPress={() => togglePlayAudio(item.id, media.url)}
+          activeOpacity={0.7}
+          style={styles.audioPlayer}
+        >
+          <Ionicons
+            name={playingAudioId === item.id ? 'pause-circle' : 'play-circle'}
+            size={36}
+            color={isMine ? colors.textInverse : colors.textPrimary}
+          />
+          <View style={styles.audioWaveform}>
+            <View style={[styles.audioWaveBar, { backgroundColor: isMine ? 'rgba(255,255,255,0.5)' : colors.textMuted }]} />
+            <View style={[styles.audioWaveBar, styles.audioWaveBarTall, { backgroundColor: isMine ? 'rgba(255,255,255,0.6)' : colors.textSecondary }]} />
+            <View style={[styles.audioWaveBar, { backgroundColor: isMine ? 'rgba(255,255,255,0.5)' : colors.textMuted }]} />
+            <View style={[styles.audioWaveBar, styles.audioWaveBarTall, { backgroundColor: isMine ? 'rgba(255,255,255,0.6)' : colors.textSecondary }]} />
+            <View style={[styles.audioWaveBar, { backgroundColor: isMine ? 'rgba(255,255,255,0.5)' : colors.textMuted }]} />
+          </View>
+          {media.durationSecs ? (
+            <Text style={[styles.audioDuration, isMine && { color: 'rgba(255,255,255,0.7)' }]}>
+              {media.durationSecs}s
+            </Text>
+          ) : null}
+        </TouchableOpacity>
+      );
+    }
+
+    if (media.mediaType === 'file') {
+      return (
+        <TouchableOpacity onPress={() => Alert.alert('File', resolveUrl(media.url))} activeOpacity={0.7}>
+          <View style={styles.mediaFileContainer}>
+            <Ionicons name="document" size={32} color={isMine ? colors.textInverse : colors.textPrimary} />
+            <Text style={[styles.mediaFileText, isMine && styles.myMessageText]} numberOfLines={1}>
+              {media.fileName || 'File'}
+            </Text>
+          </View>
+        </TouchableOpacity>
+      );
+    }
+
+    return null;
+  };
+
   // ─── Render message ────────────────────────────────
   const renderMessage = ({ item }: { item: Message }) => {
     const isMine = item.senderId === authUser?.id;
@@ -556,76 +807,10 @@ export const ChatScreen: React.FC<{ navigation: any; route: any }> = ({ navigati
 
         <View style={[styles.messageBubble, isMine ? styles.myBubble : styles.theirBubble]}>
           {/* Media attachment */}
-          {hasMedia && item.media && (
-            <View style={styles.mediaContainer}>
-              {item.media.mediaType === 'image' && (
-                <TouchableOpacity
-                  onPress={() => {
-                    // Could open a full-screen image viewer
-                    Alert.alert('Photo', resolveUrl(item.media!.url));
-                  }}
-                  activeOpacity={0.9}
-                >
-                  <Image
-                    source={{
-                      uri: resolveUrl(item.media.thumbnailUrl || item.media.url),
-                    }}
-                    style={styles.mediaImage}
-                    resizeMode="cover"
-                  />
-                </TouchableOpacity>
-              )}
+          {hasMedia && renderMediaContent(item, isMine)}
 
-              {item.media.mediaType === 'video' && (
-                <TouchableOpacity onPress={() => Alert.alert('Video', resolveUrl(item.media!.url))} activeOpacity={0.7}>
-                  <View style={styles.mediaFileContainer}>
-                    <Ionicons name="videocam" size={32} color={isMine ? colors.textInverse : colors.textPrimary} />
-                    <Text style={[styles.mediaFileText, isMine && styles.myMessageText]}>Video</Text>
-                  </View>
-                </TouchableOpacity>
-              )}
-
-              {item.media.mediaType === 'audio' && (
-                <TouchableOpacity
-                  onPress={() => togglePlayAudio(item.id, item.media!.url)}
-                  activeOpacity={0.7}
-                  style={styles.audioPlayer}
-                >
-                  <Ionicons
-                    name={playingAudioId === item.id ? 'pause-circle' : 'play-circle'}
-                    size={36}
-                    color={isMine ? colors.textInverse : colors.textPrimary}
-                  />
-                  <View style={styles.audioWaveform}>
-                    <View style={[styles.audioWaveBar, { backgroundColor: isMine ? 'rgba(255,255,255,0.5)' : colors.textMuted }]} />
-                    <View style={[styles.audioWaveBar, styles.audioWaveBarTall, { backgroundColor: isMine ? 'rgba(255,255,255,0.6)' : colors.textSecondary }]} />
-                    <View style={[styles.audioWaveBar, { backgroundColor: isMine ? 'rgba(255,255,255,0.5)' : colors.textMuted }]} />
-                    <View style={[styles.audioWaveBar, styles.audioWaveBarTall, { backgroundColor: isMine ? 'rgba(255,255,255,0.6)' : colors.textSecondary }]} />
-                    <View style={[styles.audioWaveBar, { backgroundColor: isMine ? 'rgba(255,255,255,0.5)' : colors.textMuted }]} />
-                  </View>
-                  {item.media.durationSecs ? (
-                    <Text style={[styles.audioDuration, isMine && { color: 'rgba(255,255,255,0.7)' }]}>
-                      {item.media.durationSecs}s
-                    </Text>
-                  ) : null}
-                </TouchableOpacity>
-              )}
-
-              {item.media.mediaType === 'file' && (
-                <TouchableOpacity onPress={() => Alert.alert('File', resolveUrl(item.media!.url))} activeOpacity={0.7}>
-                  <View style={styles.mediaFileContainer}>
-                    <Ionicons name="document" size={32} color={isMine ? colors.textInverse : colors.textPrimary} />
-                    <Text style={[styles.mediaFileText, isMine && styles.myMessageText]} numberOfLines={1}>
-                      {item.media.fileName || 'File'}
-                    </Text>
-                  </View>
-                </TouchableOpacity>
-              )}
-            </View>
-          )}
-
-          {/* Text content (caption or description) */}
-          {!hasMedia && (
+          {/* Text content (caption or description) — hidden for view-once media */}
+          {hasMedia && item.media?.isViewOnce && item.media?.viewedAt ? null : hasMedia ? null : (
             <Text style={[styles.messageText, isMine && styles.myMessageText]}>
               {displayContent}
             </Text>
@@ -762,6 +947,128 @@ export const ChatScreen: React.FC<{ navigation: any; route: any }> = ({ navigati
         </View>
       </KeyboardAvoidingView>
 
+      {/* Full-Screen Photo Preview Modal */}
+      <Modal
+        visible={previewPhotoUrl !== null}
+        transparent
+        animationType="fade"
+        statusBarTranslucent
+        onRequestClose={() => setPreviewPhotoUrl(null)}
+      >
+        <StatusBar barStyle="light-content" backgroundColor="#000" />
+        <View style={styles.previewOverlay}>
+          <TouchableOpacity
+            style={styles.previewCloseBtn}
+            onPress={() => setPreviewPhotoUrl(null)}
+            activeOpacity={0.7}
+          >
+            <View style={styles.previewCloseBtnInner}>
+              <Ionicons name="close" size={24} color="#fff" />
+            </View>
+          </TouchableOpacity>
+
+          <TouchableOpacity
+            style={styles.previewImageContainer}
+            activeOpacity={1}
+            onPress={() => setPreviewPhotoUrl(null)}
+          >
+            {previewPhotoUrl && (
+              <Image
+                source={{ uri: previewPhotoUrl }}
+                style={styles.previewImage}
+                resizeMode="contain"
+              />
+            )}
+          </TouchableOpacity>
+
+          <View style={styles.previewHint}>
+            <Ionicons name="hand-left-outline" size={16} color="rgba(255,255,255,0.5)" />
+            <Text style={styles.previewHintText}>Tap to close</Text>
+          </View>
+        </View>
+      </Modal>
+
+      {/* ─── One-Time View Media Modal ─────────────────── */}
+      <Modal
+        visible={viewingOnceMedia !== null}
+        transparent
+        animationType="fade"
+        statusBarTranslucent
+        onRequestClose={closeOneTimeView}
+      >
+        {/* Black overlay with 100% opacity — no background see-through */}
+        <StatusBar barStyle="light-content" backgroundColor="#000" />
+        <View style={styles.onceViewOverlay}>
+          {/* Close / burn button */}
+          <TouchableOpacity
+            style={styles.onceViewCloseBtn}
+            onPress={closeOneTimeView}
+            activeOpacity={0.7}
+          >
+            <View style={styles.onceViewCloseBtnInner}>
+              <Ionicons name="close" size={24} color="#fff" />
+            </View>
+          </TouchableOpacity>
+
+          {/* View-once warning banner */}
+          <View style={styles.onceViewWarning}>
+            <Ionicons name="eye-off-outline" size={16} color="rgba(255,255,255,0.7)" />
+            <Text style={styles.onceViewWarningText}>
+              This media can only be viewed once
+            </Text>
+          </View>
+
+          {/* The actual media content */}
+          <TouchableOpacity
+            style={styles.onceViewContent}
+            activeOpacity={1}
+            onPress={closeOneTimeView}
+          >
+            {viewingOnceMedia?.mediaType === 'image' && (
+              <Image
+                source={{ uri: viewingOnceMedia.url }}
+                style={styles.onceViewImage}
+                resizeMode="contain"
+              />
+            )}
+            {viewingOnceMedia?.mediaType === 'video' && (
+              <View style={styles.onceViewVideoPlaceholder}>
+                <Ionicons name="videocam" size={48} color="rgba(255,255,255,0.5)" />
+                <Text style={styles.onceViewVideoText}>
+                  Video will open in your default player
+                </Text>
+                <TouchableOpacity
+                  style={styles.onceViewVideoBtn}
+                  onPress={() => {
+                    const token = api.getToken();
+                    const separator = viewingOnceMedia.url.includes('?') ? '&' : '?';
+                    const videoUrl = token
+                      ? `${viewingOnceMedia.url}${separator}token=${encodeURIComponent(token)}`
+                      : viewingOnceMedia.url;
+                    Linking.openURL(videoUrl).catch(() => {
+                      Alert.alert('Error', 'Could not open video player.');
+                    });
+                    // Close the viewer immediately since we're handing off to external player
+                    closeOneTimeView();
+                  }}
+                >
+                  <Ionicons name="play" size={20} color="#fff" />
+                  <Text style={styles.onceViewVideoBtnText}>Play video</Text>
+                </TouchableOpacity>
+              </View>
+            )}
+          </TouchableOpacity>
+
+          {/* Bottom burn hint */}
+          <View style={styles.onceViewFooter}>
+            <Ionicons name="flame-outline" size={14} color="rgba(255,255,255,0.4)" />
+            <Text style={styles.onceViewFooterText}>
+              Tap anywhere or press close to burn this media
+            </Text>
+          </View>
+        </View>
+      </Modal>
+
       {/* Media Picker Modal */}
       <Modal
         visible={showMediaPicker}
@@ -777,6 +1084,34 @@ export const ChatScreen: React.FC<{ navigation: any; route: any }> = ({ navigati
           <View style={styles.mediaPickerSheet}>
             <View style={styles.mediaPickerHandle} />
             <Text style={styles.mediaPickerTitle}>Send Media</Text>
+
+            {/* View-Once Toggle */}
+            <TouchableOpacity
+              style={[styles.viewOnceToggle, viewOnce && styles.viewOnceToggleActive]}
+              onPress={() => setViewOnce(!viewOnce)}
+              activeOpacity={0.7}
+            >
+              <View style={styles.viewOnceToggleLeft}>
+                <Ionicons
+                  name={viewOnce ? 'eye-off' : 'eye-outline'}
+                  size={20}
+                  color={viewOnce ? colors.primary : colors.textSecondary}
+                />
+                <View style={styles.viewOnceToggleTextWrap}>
+                  <Text style={[styles.viewOnceToggleLabel, viewOnce && { color: colors.primary }]}>
+                    View once
+                  </Text>
+                  <Text style={styles.viewOnceToggleDesc}>
+                    Media will disappear after viewing
+                  </Text>
+                </View>
+              </View>
+              <Ionicons
+                name={viewOnce ? 'checkbox' : 'square-outline'}
+                size={22}
+                color={viewOnce ? colors.primary : colors.textMuted}
+              />
+            </TouchableOpacity>
 
             <View style={styles.mediaPickerOptions}>
               <TouchableOpacity style={styles.mediaOption} onPress={pickFromGallery}>
@@ -803,7 +1138,10 @@ export const ChatScreen: React.FC<{ navigation: any; route: any }> = ({ navigati
 
             <TouchableOpacity
               style={styles.mediaCancelBtn}
-              onPress={() => setShowMediaPicker(false)}
+              onPress={() => {
+                setShowMediaPicker(false);
+                setViewOnce(false);
+              }}
             >
               <Text style={styles.mediaCancelText}>Cancel</Text>
             </TouchableOpacity>
@@ -869,6 +1207,10 @@ const styles = StyleSheet.create({
   // Media styles
   mediaContainer: {
     marginBottom: 4,
+  },
+  mediaImageWrap: {
+    position: 'relative',
+    marginVertical: 2,
   },
   mediaImage: {
     width: 200,
@@ -986,7 +1328,6 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   sendBtnDisabled: { backgroundColor: colors.surfaceHighlight },
-  // Mic button (hold-to-record)
   micBtn: {
     width: 40,
     height: 40,
@@ -998,6 +1339,236 @@ const styles = StyleSheet.create({
   micBtnActive: {
     backgroundColor: '#FF3B30',
     transform: [{ scale: 1.1 }],
+  },
+  // Video thumbnail in message bubble
+  videoThumbContainer: {
+    width: 180,
+    height: 120,
+    borderRadius: radius.md,
+    backgroundColor: '#1a1a2e',
+    justifyContent: 'center',
+    alignItems: 'center',
+    gap: spacing.xs,
+    marginVertical: 2,
+  },
+  videoThumbMine: {
+    backgroundColor: '#2a2a3e',
+  },
+  videoPlayBadge: {
+    width: 32,
+    height: 32,
+    borderRadius: 16,
+    backgroundColor: 'rgba(255,255,255,0.25)',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  videoThumbText: {
+    ...typography.caption,
+    color: 'rgba(255,255,255,0.7)',
+    fontSize: 10,
+  },
+  // Full-screen photo preview
+  previewOverlay: {
+    flex: 1,
+    backgroundColor: '#000',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  previewCloseBtn: {
+    position: 'absolute',
+    top: Platform.OS === 'ios' ? 56 : 40,
+    right: spacing.md,
+    zIndex: 10,
+  },
+  previewCloseBtnInner: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    backgroundColor: 'rgba(255,255,255,0.2)',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  previewImageContainer: {
+    flex: 1,
+    width: '100%',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  previewImage: {
+    width: SCREEN_WIDTH,
+    height: SCREEN_HEIGHT,
+  },
+  previewHint: {
+    position: 'absolute',
+    bottom: Platform.OS === 'ios' ? 44 : 24,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.xs,
+    opacity: 0.6,
+  },
+  previewHintText: {
+    ...typography.caption,
+    color: 'rgba(255,255,255,0.5)',
+  },
+  // ─── View-Once Media Styles ──────────────────────────
+  // Overlay badge on sender's view-once image
+  viewOnceOverlay: {
+    position: 'absolute',
+    top: spacing.sm,
+    right: spacing.sm,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    backgroundColor: 'rgba(0,0,0,0.6)',
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: radius.sm,
+  },
+  viewOnceOverlayText: {
+    ...typography.caption,
+    color: '#fff',
+    fontSize: 10,
+  },
+  // "Tap to view" CTA for received view-once media
+  viewOnceCta: {
+    alignItems: 'center',
+    justifyContent: 'center',
+    width: 180,
+    height: 180,
+    borderRadius: radius.md,
+    backgroundColor: '#1a1a2e',
+    gap: spacing.xs,
+    marginVertical: 2,
+  },
+  viewOnceIconWrap: {
+    position: 'relative',
+    width: 48,
+    height: 48,
+    borderRadius: 24,
+    backgroundColor: 'rgba(255,255,255,0.15)',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  viewOnceBadge: {
+    position: 'absolute',
+    top: -2,
+    right: -2,
+    width: 18,
+    height: 18,
+    borderRadius: 9,
+    backgroundColor: colors.primary,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  viewOnceBadgeText: {
+    color: '#fff',
+    fontSize: 10,
+    fontWeight: '700',
+  },
+  viewOnceCtaText: {
+    ...typography.body2,
+    color: '#fff',
+    fontWeight: '600',
+  },
+  viewOnceCtaHint: {
+    ...typography.caption,
+    color: 'rgba(255,255,255,0.5)',
+    fontSize: 10,
+  },
+  // "Viewed" / "Opened" state after one-time media is consumed
+  viewOnceViewed: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.xs,
+    paddingVertical: spacing.md,
+    paddingHorizontal: spacing.sm,
+    minWidth: 100,
+  },
+  viewOnceViewedText: {
+    ...typography.body2,
+    color: colors.textMuted,
+    fontStyle: 'italic',
+    fontSize: 13,
+  },
+  // One-Time Viewer Modal
+  onceViewOverlay: {
+    flex: 1,
+    backgroundColor: '#000',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  onceViewCloseBtn: {
+    position: 'absolute',
+    top: Platform.OS === 'ios' ? 56 : 40,
+    right: spacing.md,
+    zIndex: 10,
+  },
+  onceViewCloseBtnInner: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    backgroundColor: 'rgba(255,255,255,0.2)',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  onceViewWarning: {
+    position: 'absolute',
+    top: Platform.OS === 'ios' ? 110 : 90,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.xs,
+    opacity: 0.7,
+  },
+  onceViewWarningText: {
+    ...typography.caption,
+    color: 'rgba(255,255,255,0.7)',
+    fontSize: 12,
+  },
+  onceViewContent: {
+    flex: 1,
+    width: '100%',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  onceViewImage: {
+    width: SCREEN_WIDTH,
+    height: SCREEN_HEIGHT,
+  },
+  onceViewVideoPlaceholder: {
+    alignItems: 'center',
+    gap: spacing.md,
+    padding: spacing.xxl,
+  },
+  onceViewVideoText: {
+    ...typography.body2,
+    color: 'rgba(255,255,255,0.6)',
+    textAlign: 'center',
+  },
+  onceViewVideoBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.sm,
+    backgroundColor: colors.primary,
+    paddingHorizontal: spacing.xl,
+    paddingVertical: spacing.md,
+    borderRadius: radius.full,
+  },
+  onceViewVideoBtnText: {
+    ...typography.button,
+    color: '#fff',
+  },
+  onceViewFooter: {
+    position: 'absolute',
+    bottom: Platform.OS === 'ios' ? 44 : 24,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.xs,
+    opacity: 0.4,
+  },
+  onceViewFooterText: {
+    ...typography.caption,
+    color: 'rgba(255,255,255,0.4)',
+    fontSize: 11,
   },
   // Media picker modal
   modalOverlay: {
@@ -1021,7 +1592,42 @@ const styles = StyleSheet.create({
     alignSelf: 'center',
     marginBottom: spacing.lg,
   },
-  mediaPickerTitle: { ...typography.h3, color: colors.textPrimary, textAlign: 'center', marginBottom: spacing.xxl },
+  mediaPickerTitle: { ...typography.h3, color: colors.textPrimary, textAlign: 'center', marginBottom: spacing.lg },
+  // View-once toggle in picker
+  viewOnceToggle: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    backgroundColor: colors.surfaceHighlight,
+    borderRadius: radius.md,
+    paddingHorizontal: spacing.md,
+    paddingVertical: spacing.sm + 2,
+    marginBottom: spacing.lg,
+  },
+  viewOnceToggleActive: {
+    borderWidth: 1.5,
+    borderColor: colors.primary,
+    backgroundColor: 'rgba(99,102,241,0.08)',
+  },
+  viewOnceToggleLeft: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.sm,
+    flex: 1,
+  },
+  viewOnceToggleTextWrap: {
+    gap: 1,
+  },
+  viewOnceToggleLabel: {
+    ...typography.body2,
+    color: colors.textPrimary,
+    fontWeight: '500',
+  },
+  viewOnceToggleDesc: {
+    ...typography.caption,
+    color: colors.textMuted,
+    fontSize: 10,
+  },
   mediaPickerOptions: {
     flexDirection: 'row',
     justifyContent: 'space-around',

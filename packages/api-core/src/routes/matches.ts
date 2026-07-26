@@ -9,7 +9,7 @@ import { query, TABLES } from '../services/database';
 import { notificationEvents } from '../services/notificationService';
 import { eventBus } from '../services/eventBus';
 import { getRedis } from '../services/redis';
-import { savePhoto, saveChatFile, saveEncryptedChatFile, getEncryptedChatFileBuffer } from '../services/photoStorage';
+import { savePhoto, saveChatFile, saveEncryptedChatFile, getEncryptedChatFileBuffer, deleteChatFile } from '../services/photoStorage';
 
 const MESSAGE_ENCRYPTION_KEY = process.env.MESSAGE_ENCRYPTION_KEY || '';
 const redis = getRedis();
@@ -583,7 +583,9 @@ export async function matchRoutes(app: FastifyInstance) {
          cm.file_size as media_file_size,
          cm.duration_secs as media_duration_secs,
          cm.width as media_width,
-         cm.height as media_height
+         cm.height as media_height,
+         cm.is_view_once as media_is_view_once,
+         cm.viewed_at as media_viewed_at
        FROM ${TABLES.MESSAGES} m
        LEFT JOIN ${TABLES.CHAT_MEDIA} cm ON cm.message_id = m.id
        WHERE m.match_id = $1
@@ -618,6 +620,8 @@ export async function matchRoutes(app: FastifyInstance) {
               width: m.media_width || undefined,
               height: m.media_height || undefined,
               durationSecs: m.media_duration_secs != null ? m.media_duration_secs : undefined,
+              isViewOnce: m.media_is_view_once || false,
+              viewedAt: m.media_viewed_at || undefined,
             };
           }
 
@@ -759,6 +763,7 @@ export async function matchRoutes(app: FastifyInstance) {
     const mediaType = (request.query as any).media_type || 'image';
     const caption = (request.query as any).caption || '';
     const durationSecs = parseInt((request.query as any).duration_secs, 10) || null;
+    const viewOnce = (request.query as any).view_once === 'true';
 
     if (!['image', 'video', 'audio', 'file'].includes(mediaType)) {
       return reply.status(400).send({
@@ -828,9 +833,9 @@ export async function matchRoutes(app: FastifyInstance) {
 
     // Insert chat_media record
     const mediaResult = await query(
-      `INSERT INTO ${TABLES.CHAT_MEDIA} (message_id, sender_id, media_type, url, thumbnail_url, mime_type, file_size, duration_secs)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8) RETURNING *`,
-      [message.id, userId, mediaType, url, thumbnailUrl, mimeType, fileBuffer.length, durationSecs],
+      `INSERT INTO ${TABLES.CHAT_MEDIA} (message_id, sender_id, media_type, url, thumbnail_url, mime_type, file_size, duration_secs, is_view_once)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9) RETURNING *`,
+      [message.id, userId, mediaType, url, thumbnailUrl, mimeType, fileBuffer.length, durationSecs, viewOnce],
     );
     const media = mediaResult.rows[0];
 
@@ -847,6 +852,8 @@ export async function matchRoutes(app: FastifyInstance) {
       width: media.width || undefined,
       height: media.height || undefined,
       durationSecs: media.duration_secs != null ? media.duration_secs : undefined,
+      isViewOnce: viewOnce || false,
+      viewedAt: undefined,
     };
 
     const messagePayload = {
@@ -1014,6 +1021,94 @@ export async function matchRoutes(app: FastifyInstance) {
         error: { code: 'MEDIA_NOT_FOUND', message: 'Media file not found.' },
       });
     }
+  });
+
+  // ─── Mark One-Time View Media as Viewed ─────────────────
+  // Marks a one-time view media as viewed and deletes the actual file from storage.
+  // After this call, the media URL becomes invalid.
+  app.post('/media/:mediaId/view', async (request: FastifyRequest<{ Params: { mediaId: string } }>, reply: FastifyReply) => {
+    const { sub: userId } = request.user as any;
+    const { mediaId } = request.params;
+
+    // Atomically mark as viewed — only succeeds if it hasn't been viewed yet.
+    // Using a single UPDATE ... WHERE viewed_at IS NULL RETURNING * avoids a
+    // race condition where two concurrent requests could both view the same media.
+    const mediaResult = await query(
+      `UPDATE ${TABLES.CHAT_MEDIA} SET viewed_at = NOW()
+       WHERE id = $1 AND is_view_once = TRUE AND viewed_at IS NULL
+       RETURNING id, sender_id, url, message_id`,
+      [mediaId],
+    );
+
+    const mediaRow = mediaResult.rows[0];
+    if (!mediaRow) {
+      return reply.status(404).send({
+        success: false,
+        error: { code: 'MEDIA_NOT_FOUND', message: 'View-once media not found or already viewed.' },
+      });
+    }
+
+    // Verify the requesting user is the recipient (not the sender)
+    if (mediaRow.sender_id === userId) {
+      return reply.status(403).send({
+        success: false,
+        error: { code: 'FORBIDDEN', message: 'Cannot mark your own sent media as viewed.' },
+      });
+    }
+
+    // Delete the file from storage (best-effort, non-critical if it fails)
+    const url = mediaRow.url;
+    let keyToDelete: string | null = null;
+
+    if (url.startsWith('/api/v1/matches/media/')) {
+      // Encrypted file URL — extract the MinIO key from the proxy path
+      // Format: /api/v1/matches/media/chat/{userId}/{fileId}.enc?ext=...
+      const pathPart = url.split('/api/v1/matches/media/')[1];
+      if (pathPart) {
+        keyToDelete = pathPart.split('?')[0];
+      }
+    } else if (url.startsWith('/uploads/')) {
+      // Direct upload URL — extract the key from /uploads/{key}
+      const uploadKey = url.replace('/uploads/', '');
+      if (uploadKey) {
+        await deleteChatFile(uploadKey).catch(() => {});
+        // Also delete thumbnail if it exists
+        const thumbKey = uploadKey.replace('.webp', '_thumb.webp');
+        if (thumbKey !== uploadKey) {
+          await deleteChatFile(thumbKey).catch(() => {});
+        }
+      }
+    }
+
+    if (keyToDelete) {
+      await deleteChatFile(keyToDelete).catch((err: Error) => {
+        console.error(`[MediaView] Failed to delete file ${keyToDelete}:`, err.message);
+      });
+    }
+
+    // Look up the matchId for this message so we can route the view event to the right room
+    const msgResult = await query(
+      `SELECT match_id FROM ${TABLES.MESSAGES} WHERE id = $1`,
+      [mediaRow.message_id],
+    );
+    const matchIdForEvent = msgResult.rows[0]?.match_id;
+
+    if (matchIdForEvent) {
+      // Publish a view event so the realtime service can notify the sender
+      redis.publish(REDIS_KEYS.CHAT_MESSAGES_CHANNEL, JSON.stringify({
+        type: 'media:viewed',
+        matchId: matchIdForEvent,
+        mediaId,
+        viewedAt: new Date().toISOString(),
+      })).catch((err: Error) => {
+        console.error('[Redis] Failed to publish media:viewed:', err.message);
+      });
+    }
+
+    return reply.send({
+      success: true,
+      data: { viewedAt: new Date().toISOString() },
+    });
   });
 
   // ─── Existing: Get Match Detail ──────────────────────

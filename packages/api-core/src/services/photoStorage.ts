@@ -330,3 +330,21 @@ export async function deleteAllUserPhotos(userId: string): Promise<void> {
 
   console.log(`[photoStorage] Deleted ${listed.Contents.length} objects for user ${userId}`);
 }
+
+/**
+ * Delete a single chat media file from MinIO by its storage key.
+ * Used for one-time view media cleanup after the media has been viewed.
+ * The key should be the full path within the bucket (e.g. "chat/{userId}/{fileId}.enc").
+ */
+export async function deleteChatFile(key: string): Promise<void> {
+  const client = getS3Client();
+
+  await client.send(
+    new DeleteObjectCommand({
+      Bucket: BUCKET,
+      Key: key,
+    }),
+  );
+
+  console.log(`[photoStorage] Deleted chat file: minio://${BUCKET}/${key}`);
+}

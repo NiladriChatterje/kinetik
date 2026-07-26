@@ -241,6 +241,8 @@ export interface ChatMedia {
   width?: number;
   height?: number;
   durationSecs?: number;
+  isViewOnce?: boolean;
+  viewedAt?: string;
   createdAt: string;
 }
 

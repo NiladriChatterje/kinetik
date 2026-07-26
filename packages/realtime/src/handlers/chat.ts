@@ -45,6 +45,18 @@ export class ChatHandler {
       if (channel === REDIS_KEYS.CHAT_MESSAGES_CHANNEL) {
         try {
           const payload = JSON.parse(message);
+
+          // Handle view-once media viewed events separately
+          if (payload.type === 'media:viewed') {
+            if (payload.matchId) {
+              this.nsp.to(`match:${payload.matchId}`).emit('media:viewed', {
+                mediaId: payload.mediaId,
+                viewedAt: payload.viewedAt,
+              });
+            }
+            return;
+          }
+
           this.broadcastMessage(payload.matchId, payload);
         } catch (err) {
           console.error('[Chat] Failed to parse cross-instance message:', err);
@@ -154,6 +166,8 @@ export class ChatHandler {
       width?: number;
       height?: number;
       durationSecs?: number;
+      isViewOnce?: boolean;
+      viewedAt?: string;
     };
   }) {
     this.nsp.to(`match:${matchId}`).emit(WsEvent.CHAT_MESSAGE, message);

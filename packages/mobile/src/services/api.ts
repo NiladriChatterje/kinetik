@@ -457,10 +457,11 @@ class ApiClient {
     });
   }
 
-  async sendMediaMessage(matchId: string, uri: string, mediaType: string, caption?: string) {
+  async sendMediaMessage(matchId: string, uri: string, mediaType: string, caption?: string, viewOnce?: boolean) {
     const token = this.getToken();
     let url = `${API_URL}/api/v1/matches/conversations/${matchId}/media?media_type=${mediaType}`;
     if (caption) url += `&caption=${encodeURIComponent(caption)}`;
+    if (viewOnce) url += `&view_once=true`;
 
     // Use FileSystem.uploadAsync (native multipart) instead of fetch + FormData.
     // The fetch + FormData approach with JS file objects triggers React Native's
@@ -505,6 +506,13 @@ class ApiClient {
       errorMessage = body?.error?.message || errorMessage;
     } catch { /* non-JSON */ }
     throw new Error(errorMessage);
+  }
+
+  // ─── Mark One-Time View Media as Viewed ───────────────
+  async markMediaViewed(mediaId: string): Promise<ApiResponse<{ viewedAt: string }>> {
+    return this.request<{ viewedAt: string }>(`/api/v1/matches/media/${mediaId}/view`, {
+      method: 'POST',
+    });
   }
 
   // ─── Pose Verification ──────────────────────────────────
