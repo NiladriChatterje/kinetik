@@ -1,9 +1,15 @@
 import { FastifyInstance, FastifyRequest, FastifyReply } from 'fastify';
-import { ERROR_CODES, REDIS_KEYS, SUPER_LIKE_LIMIT_DAILY_FREE, SUPER_LIKE_LIMIT_DAILY_PREMIUM, EVENT_BUS_CHANNELS } from '@kinetik/shared';
+import {
+  ERROR_CODES, REDIS_KEYS, SUPER_LIKE_LIMIT_DAILY_FREE,
+  SUPER_LIKE_LIMIT_DAILY_PREMIUM, EVENT_BUS_CHANNELS,
+  encryptMessage, decryptMessage,
+} from '@kinetik/shared';
 import { query, TABLES } from '../services/database';
 import { notificationEvents } from '../services/notificationService';
 import { eventBus } from '../services/eventBus';
 import { getRedis } from '../services/redis';
+
+const MESSAGE_ENCRYPTION_KEY = process.env.MESSAGE_ENCRYPTION_KEY || '';
 const redis = getRedis();
 
 export async function matchRoutes(app: FastifyInstance) {
@@ -518,7 +524,9 @@ export async function matchRoutes(app: FastifyInstance) {
       partnerName: row.partner_name,
       partnerPhotoUrl: row.partner_photo_url || undefined,
       partnerThumbnailUrl: row.partner_thumbnail_url || undefined,
-      lastMessage: row.last_message_content || undefined,
+      lastMessage: row.last_message_content
+        ? decryptMessage(row.last_message_content, MESSAGE_ENCRYPTION_KEY)
+        : undefined,
       lastMessageAt: row.last_message_at || undefined,
       lastMessageSenderId: row.last_message_sender_id || undefined,
       unreadCount: row.unread_count || 0,
@@ -569,7 +577,7 @@ export async function matchRoutes(app: FastifyInstance) {
           id: m.id,
           matchId: m.match_id,
           senderId: m.sender_id,
-          content: m.content,
+          content: decryptMessage(m.content, MESSAGE_ENCRYPTION_KEY),
           createdAt: m.created_at,
           readAt: m.read_at,
         })),
@@ -610,19 +618,22 @@ export async function matchRoutes(app: FastifyInstance) {
       });
     }
 
+    const plainContent = content.trim();
+    const encryptedContent = encryptMessage(plainContent, MESSAGE_ENCRYPTION_KEY);
+
     const result = await query(
       `INSERT INTO ${TABLES.MESSAGES} (match_id, sender_id, content)
        VALUES ($1, $2, $3) RETURNING *`,
-      [matchId, userId, content.trim()],
+      [matchId, userId, encryptedContent],
     );
     const message = result.rows[0];
 
-    // Publish to Redis pub/sub for cross-instance real-time delivery
+    // Publish to Redis pub/sub with PLAINTEXT (clients render plaintext)
     const messagePayload = {
       id: message.id,
       matchId: message.match_id,
       senderId: message.sender_id,
-      content: message.content,
+      content: plainContent,
       createdAt: message.created_at,
     };
     redis.publish(REDIS_KEYS.CHAT_MESSAGES_CHANNEL, JSON.stringify(messagePayload)).catch((err: Error) => {
@@ -634,7 +645,7 @@ export async function matchRoutes(app: FastifyInstance) {
     const partnerId = matchRow.user_a_id === userId ? matchRow.user_b_id : matchRow.user_a_id;
     const senderResult = await query(`SELECT display_name FROM ${TABLES.USERS} WHERE id = $1`, [userId]);
     const senderName = senderResult.rows[0]?.display_name || 'Someone';
-    const preview = content.trim().length > 80 ? content.trim().slice(0, 80) + '…' : content.trim();
+    const preview = plainContent.length > 80 ? plainContent.slice(0, 80) + '…' : plainContent;
 
     await notificationEvents.newMessage(partnerId, senderName, preview);
 
@@ -644,7 +655,7 @@ export async function matchRoutes(app: FastifyInstance) {
         id: message.id,
         matchId: message.match_id,
         senderId: message.sender_id,
-        content: message.content,
+        content: plainContent,
         createdAt: message.created_at,
         readAt: message.read_at,
       },

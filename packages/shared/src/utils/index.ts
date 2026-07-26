@@ -138,3 +138,4 @@ export function formatDuration(seconds: number): string {
 }
 
 export * from './h3';
+export * from './messageCrypto';

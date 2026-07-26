@@ -2,7 +2,7 @@
 -- Stores media files (images, videos, audio, documents) sent
 -- in chat messages between matched users.
 
-CREATE TABLE chat_media (
+CREATE TABLE IF NOT EXISTS chat_media (
     id              UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     message_id      UUID NOT NULL REFERENCES messages(id) ON DELETE CASCADE,
     sender_id       UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
@@ -18,5 +18,5 @@ CREATE TABLE chat_media (
     created_at      TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
-CREATE INDEX idx_chat_media_message ON chat_media(message_id);
-CREATE INDEX idx_chat_media_sender  ON chat_media(sender_id);
+CREATE INDEX IF NOT EXISTS idx_chat_media_message ON chat_media(message_id);
+CREATE INDEX IF NOT EXISTS idx_chat_media_sender  ON chat_media(sender_id);

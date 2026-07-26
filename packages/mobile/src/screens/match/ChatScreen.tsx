@@ -51,10 +51,28 @@ export const ChatScreen: React.FC<{ navigation: any; route: any }> = ({ navigati
       socket.emit('chat:read', { matchId });
     });
 
-    // Incoming message from partner
+    // Incoming message — from partner OR our own broadcast
     socket.on('chat:message', (data: any) => {
       setMessages((prev) => {
+        // Case 1: already have this exact message ID — skip (no dupes)
         if (prev.some((m) => m.id === data.id)) return prev;
+
+        // Case 2: this is OUR own message (we sent it) — find and replace the temp message
+        if (data.senderId === authUser?.id) {
+          const idx = prev.findIndex((m) => m.id.startsWith('temp-'));
+          if (idx !== -1) {
+            const updated = [...prev];
+            updated[idx] = {
+              ...updated[idx],
+              id: data.id,
+              content: data.content,
+              createdAt: data.createdAt || updated[idx].createdAt,
+            };
+            return updated;
+          }
+        }
+
+        // Case 3: new message from partner — append
         return [...prev, {
           id: data.id || `temp-${Date.now()}`,
           matchId: data.matchId,
@@ -187,6 +205,10 @@ export const ChatScreen: React.FC<{ navigation: any; route: any }> = ({ navigati
     const isTemp = item.id.startsWith('temp-');
     const isRead = !!item.readAt;
 
+    // Icon colors inside my bubble (black bg) must be light; inside their bubble (light bg) use normal muted
+    const metaIconColor = isMine ? 'rgba(255,255,255,0.65)' : colors.textMuted;
+    const readIconColor = isMine ? colors.textInverse : colors.success;
+
     return (
       <View style={[styles.messageRow, isMine && styles.messageRowMine]}>
         {showAvatar && pPhoto ? (
@@ -205,11 +227,11 @@ export const ChatScreen: React.FC<{ navigation: any; route: any }> = ({ navigati
           {isMine && (
             <View style={styles.messageMeta}>
               {isTemp ? (
-                <Ionicons name="time-outline" size={12} color={colors.textMuted} />
+                <Ionicons name="time-outline" size={12} color={metaIconColor} />
               ) : isRead ? (
-                <Ionicons name="checkmark-done" size={14} color={colors.success} />
+                <Ionicons name="checkmark-done" size={14} color={readIconColor} />
               ) : (
-                <Ionicons name="checkmark" size={14} color={colors.textMuted} />
+                <Ionicons name="checkmark" size={14} color={metaIconColor} />
               )}
             </View>
           )}
@@ -343,7 +365,7 @@ const styles = StyleSheet.create({
     borderBottomLeftRadius: radius.sm,
   },
   messageText: { ...typography.body2, color: colors.textPrimary },
-  myMessageText: { color: colors.textPrimary },
+  myMessageText: { color: colors.textInverse },
   messageMeta: {
     flexDirection: 'row',
     justifyContent: 'flex-end',

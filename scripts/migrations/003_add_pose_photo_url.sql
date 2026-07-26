@@ -2,4 +2,4 @@
 -- Stores the URL of the selfie submitted during pose verification,
 -- so the future FastAPI pose verification service can retrieve it.
 
-ALTER TABLE users ADD COLUMN pose_photo_url TEXT;
+ALTER TABLE users ADD COLUMN IF NOT EXISTS pose_photo_url TEXT;

@@ -349,9 +349,11 @@ export const MatchScreen: React.FC<{ navigation: any }> = ({ navigation }) => {
     setSwiping(true);
     const action = direction === 'right' ? 'like' : 'pass';
 
+    let shouldAdvance = false;
     try {
       const res = await api.swipe(profile.userId, action);
       if (res.success && res.data) {
+        shouldAdvance = true;
         const data = res.data;
         if (data.matched) {
           Alert.alert(
@@ -365,10 +367,20 @@ export const MatchScreen: React.FC<{ navigation: any }> = ({ navigation }) => {
               },
             ],
           );
+        } else if (direction === 'right') {
+          toast.showSuccess('Like Sent! 💘', 'They\'ll see you in their likes.');
         }
+      } else {
+        // API returned an error — don't advance, show feedback
+        toast.showError(res.error?.message || 'Swipe failed — please try again');
       }
     } catch (err: any) {
       toast.showError(err.message || 'Swipe failed');
+    }
+
+    if (!shouldAdvance) {
+      setSwiping(false);
+      return;
     }
 
     const nextIndex = currentIndex + 1;
@@ -558,7 +570,7 @@ const styles = StyleSheet.create({
     backgroundColor: colors.primary,
     borderRadius: radius.full,
   },
-  refreshBtnText: { ...typography.button, color: colors.textPrimary },
+  refreshBtnText: { ...typography.button, color: colors.textInverse },
   cardsContainer: {
     flex: 1,
     alignItems: 'center',

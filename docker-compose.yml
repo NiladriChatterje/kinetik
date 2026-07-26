@@ -34,6 +34,32 @@ services:
       retries: 5
     logging: *default-logging
 
+  # ─── Database Migration Runner (one-shot) ────────────────
+  # Applies all pending migration SQL files against PostgreSQL
+  # on every stack start. Idempotent — safe to run repeatedly.
+  migration-runner:
+    image: postgres:16-alpine
+    container_name: kinetik-migration-runner
+    restart: "no"
+    environment:
+      DB_HOST: postgres
+      DB_PORT: 5432
+      DB_USER: ${POSTGRES_USER:-kinetik}
+      DB_PASSWORD: ${POSTGRES_PASSWORD:-kinetik_dev_2024}
+      DB_NAME: ${POSTGRES_DB:-kinetik}
+      MIGRATIONS_DIR: /app/scripts/migrations
+    volumes:
+      - ./scripts:/app/scripts:ro
+    command:
+      - /bin/sh
+      - -c
+      - |
+        exec /app/scripts/run-migrations.sh
+    depends_on:
+      postgres:
+        condition: service_healthy
+    logging: *default-logging
+
   # ─── Redis (Caching + Socket.IO adapter + presence) ─────
   redis:
     image: redis:7-alpine
@@ -135,6 +161,9 @@ services:
       TWILIO_AUTH_TOKEN: ${TWILIO_AUTH_TOKEN:-}
       TWILIO_PHONE_NUMBER: ${TWILIO_PHONE_NUMBER:-}
 
+      # Message encryption key (AES-256-GCM, any string)
+      MESSAGE_ENCRYPTION_KEY: ${MESSAGE_ENCRYPTION_KEY:-kinetik_msg_enc_key_2024_dev}
+
       # Geoapify reverse geocoding
       GEOAPIFY_API: ${GEOAPIFY_API:-}
 
@@ -152,6 +181,8 @@ services:
         condition: service_healthy
       redis-events:
         condition: service_healthy
+      migration-runner:
+        condition: service_completed_successfully
       pose-service:
         condition: service_started
     deploy:
@@ -190,6 +221,8 @@ services:
         condition: service_healthy
       redis-events:
         condition: service_healthy
+      migration-runner:
+        condition: service_completed_successfully
       livekit:
         condition: service_started
     deploy:

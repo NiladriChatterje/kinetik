@@ -47,6 +47,15 @@ CREATE TABLE users (
     h3_index        VARCHAR(15),       -- Uber H3 hexagon index
     location_updated_at TIMESTAMPTZ,
 
+    -- Reverse-geocoded location names (from migration 002)
+    city            VARCHAR(100),
+    county          VARCHAR(100),
+    region          VARCHAR(100),
+    country         VARCHAR(100),
+
+    -- Pose verification selfie URL (from migration 003)
+    pose_photo_url  TEXT,
+
     -- Status
     is_active       BOOLEAN DEFAULT TRUE,
     is_banned       BOOLEAN DEFAULT FALSE,
@@ -213,6 +222,40 @@ CREATE TABLE matches (
 CREATE INDEX idx_matches_users ON matches(user_a_id, user_b_id);
 CREATE INDEX idx_matches_active ON matches(is_active);
 
+-- ─── Chat Messages (from migration 004) ────────────────────
+CREATE TABLE messages (
+    id              UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    match_id        UUID NOT NULL REFERENCES matches(id) ON DELETE CASCADE,
+    sender_id       UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    content         TEXT NOT NULL,
+    created_at      TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    read_at         TIMESTAMPTZ          -- NULL until the receiver reads it
+);
+
+CREATE INDEX idx_messages_match   ON messages(match_id, created_at ASC);
+CREATE INDEX idx_messages_sender  ON messages(sender_id);
+CREATE INDEX idx_messages_unread  ON messages(match_id, read_at) WHERE read_at IS NULL;
+
+-- ─── Chat Media (from migration 005) ───────────────────────
+CREATE TABLE chat_media (
+    id              UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    message_id      UUID NOT NULL REFERENCES messages(id) ON DELETE CASCADE,
+    sender_id       UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    media_type      VARCHAR(20) NOT NULL CHECK (media_type IN ('image', 'video', 'audio', 'file')),
+    url             TEXT NOT NULL,
+    thumbnail_url   TEXT,
+    file_name       VARCHAR(255),
+    file_size       INTEGER,                    -- size in bytes
+    mime_type       VARCHAR(100),
+    width           INTEGER,                    -- for images/video
+    height          INTEGER,                    -- for images/video
+    duration_secs   INTEGER,                    -- for video/audio
+    created_at      TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE INDEX idx_chat_media_message ON chat_media(message_id);
+CREATE INDEX idx_chat_media_sender  ON chat_media(sender_id);
+
 -- ─── Venues (B2B) ─────────────────────────────────────────
 CREATE TABLE venues (
     id              UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
@@ -299,12 +342,17 @@ CREATE TABLE user_interactions (
     actor_id        UUID NOT NULL REFERENCES users(id),
     target_id       UUID NOT NULL REFERENCES users(id),
     action          VARCHAR(20) NOT NULL,    -- 'like', 'pass', 'super_like'
+    is_mutual       BOOLEAN NOT NULL DEFAULT FALSE,
+    responded_at    TIMESTAMPTZ,
     created_at      TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     UNIQUE (actor_id, target_id)
 );
 
 CREATE INDEX idx_interactions_target ON user_interactions(target_id, action);
 CREATE INDEX idx_interactions_actor ON user_interactions(actor_id);
+CREATE INDEX idx_interactions_likes_received
+    ON user_interactions(target_id, action, created_at DESC)
+    WHERE action = 'like' AND is_mutual = FALSE;
 
 -- ─── Vector Embeddings Table (Cache Layer) ────────────────
 CREATE TABLE user_vectors (

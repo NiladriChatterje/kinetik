@@ -130,7 +130,7 @@ export type MainTabParamList = {
   FlashCountdown: undefined;
   ActiveRadar: undefined;
   Match: undefined;
-  Chat: undefined;
+  ChatListTab: undefined;
   Profile: undefined;
 };
 
@@ -219,7 +219,7 @@ const MainTabNavigator = React.memo(function MainTabNavigator() {
         }}
       />
       <MainTab.Screen
-        name="Chat"
+        name="ChatListTab"
         component={ChatListScreen}
         options={{
           tabBarLabel: 'Chat',

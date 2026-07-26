@@ -51,6 +51,8 @@ function getToastConfig(type: ToastType) {
  * Supports error (reddish-brown), success (darkish green), and glass (black) variants.
  */
 export const GlassToast: React.FC<GlassToastProps> = React.memo(({ type = 'glass', text1, text2, hide, onPress }) => {
+  const title = text1 || '';
+  const message = text2 || '';
   const handlePress = () => {
     if (onPress) onPress();
     hide();
@@ -74,8 +76,8 @@ export const GlassToast: React.FC<GlassToastProps> = React.memo(({ type = 'glass
 
           {/* Content */}
           <View style={styles.content}>
-            {text1 ? <Text style={styles.title} numberOfLines={1}>{text1}</Text> : null}
-            {text2 ? <Text style={styles.message} numberOfLines={2}>{text2}</Text> : null}
+            {title ? <Text style={styles.title} numberOfLines={1}>{title}</Text> : null}
+            {message ? <Text style={styles.message} numberOfLines={2}>{message}</Text> : null}
           </View>
 
           {/* Close button */}

@@ -145,6 +145,8 @@ export const useAuthStore = create<AuthState>((set, get) => ({
 
           // Connect real-time socket for like/match updates
           get().connectLikesSocket();
+          // Fetch any pending likes for the badge count
+          get().fetchUnreadLikeCount();
         } else {
           // Profile fetch failed — token may be stale
           await SecureStore.deleteItemAsync('auth_token');
