@@ -311,7 +311,7 @@ export const MatchScreen: React.FC<{ navigation: any }> = ({ navigation }) => {
         }
         if (data.matched) {
           Alert.alert(
-            'It\'s a Match! 🎉',
+            'It\'s a Match!',
             `You super liked ${data.partnerName} and they liked you back!`,
             [
               { text: 'Keep Swiping', style: 'cancel' },
@@ -357,7 +357,7 @@ export const MatchScreen: React.FC<{ navigation: any }> = ({ navigation }) => {
         const data = res.data;
         if (data.matched) {
           Alert.alert(
-            'It\'s a Match! 🎉',
+            'It\'s a Match!',
             `You matched with ${data.partnerName}! Start chatting now.`,
             [
               { text: 'Keep Swiping', style: 'cancel' },
@@ -368,7 +368,7 @@ export const MatchScreen: React.FC<{ navigation: any }> = ({ navigation }) => {
             ],
           );
         } else if (direction === 'right') {
-          toast.showSuccess('Like Sent! 💘', 'They\'ll see you in their likes.');
+          toast.showSuccess('Like Sent!', 'They\'ll see you in their likes.');
         }
       } else {
         // API returned an error — don't advance, show feedback

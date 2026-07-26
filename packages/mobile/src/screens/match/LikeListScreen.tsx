@@ -91,7 +91,7 @@ export const LikeListScreen: React.FC<{ navigation: any }> = ({ navigation }) =>
         const data = res.data;
         if (data.matched && action === 'like') {
           Alert.alert(
-            'It\'s a Match! 🎉',
+            'It\'s a Match!',
             `You matched with ${data.partnerName}! Start chatting now.`,
             [
               { text: 'Keep Browsing', style: 'cancel' },

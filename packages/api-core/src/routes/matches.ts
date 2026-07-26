@@ -284,7 +284,7 @@ export async function matchRoutes(app: FastifyInstance) {
         await sendOpeningLineAsMessage(match.id, userId, targetUserId);
 
         // Send new message notification instead of match notification
-        await notificationEvents.newMessage(targetUserId, swiperName, 'You have a new match! Say hi 💬');
+        await notificationEvents.newMessage(targetUserId, swiperName, 'You have a new match! Say hi');
 
         return reply.status(201).send({
           success: true,
@@ -477,8 +477,8 @@ export async function matchRoutes(app: FastifyInstance) {
     await sendOpeningLineAsMessage(match.id, userId, targetUserId);
 
     // Notify both users via new message notification
-    await notificationEvents.newMessage(userId, partnerName, 'You have a new match! Say hi 💬');
-    await notificationEvents.newMessage(targetUserId, responderName, 'You have a new match! Say hi 💬');
+    await notificationEvents.newMessage(userId, partnerName, 'You have a new match! Say hi');
+    await notificationEvents.newMessage(targetUserId, responderName, 'You have a new match! Say hi');
 
     return reply.status(201).send({
       success: true,

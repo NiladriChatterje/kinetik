@@ -176,7 +176,7 @@ async function sendToTokens(
 export const notificationEvents = {
   async matchFound(userId: string, partnerName: string): Promise<void> {
     await sendPushNotification(userId, 'match.found', {
-      title: 'New Match! 🎉',
+      title: 'New Match!',
       body: `You matched with ${partnerName}! Say hello and plan your date.`,
       data: { type: 'match.found', screen: 'LockStatus' },
     });
@@ -204,7 +204,7 @@ export const notificationEvents = {
     }
 
     await sendPushNotification(userId, 'flash.window', {
-      title: `⚡ Flash Window in ${minutesUntilStart} min`,
+      title: `Flash Window in ${minutesUntilStart} min`,
       body: `The next flash window in ${city} is about to start. Get ready!`,
       data: { type: 'flash.window', screen: 'FlashCountdown' },
     });
@@ -221,7 +221,7 @@ export const notificationEvents = {
 
   async newLike(userId: string, likerName: string): Promise<void> {
     await sendPushNotification(userId, 'new.like', {
-      title: 'New Like 💘',
+      title: 'New Like',
       body: `${likerName} liked your profile! See who likes you.`,
       data: { type: 'new.like', screen: 'Likes' },
     });
@@ -229,7 +229,7 @@ export const notificationEvents = {
 
   async duoInvite(userId: string, inviterName: string): Promise<void> {
     await sendPushNotification(userId, 'duo.invite', {
-      title: 'Duo Crew Invite 🎯',
+      title: 'Duo Crew Invite',
       body: `${inviterName} invited you to be their wingman!`,
       data: { type: 'duo.invite', screen: 'DuoWingman' },
     });
