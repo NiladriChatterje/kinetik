@@ -660,22 +660,38 @@ export const ChatScreen: React.FC<{ navigation: any; route: any }> = ({ navigati
       );
     }
 
-    // View-once media NOT yet viewed (receiver side) — show "Tap to view" CTA
+    // View-once media NOT yet viewed (receiver side) — show "View once" card
     if (media.isViewOnce && !media.viewedAt && !isMine) {
       return (
         <TouchableOpacity
           onPress={() => openOneTimeView(media)}
-          activeOpacity={0.8}
-          style={styles.viewOnceCta}
+          activeOpacity={0.85}
+          style={styles.viewOnceCard}
         >
-          <View style={styles.viewOnceIconWrap}>
-            <Ionicons name="eye-outline" size={28} color="#fff" />
-            <View style={styles.viewOnceBadge}>
-              <Text style={styles.viewOnceBadgeText}>1</Text>
+          <View style={styles.viewOnceCardTop}>
+            <View style={styles.viewOnceCardIconRow}>
+              <View style={styles.viewOnceCardIconRing}>
+                <Ionicons name="eye-outline" size={18} color={colors.primary} />
+              </View>
+              <View style={styles.viewOnceCardLabelGroup}>
+                <Text style={styles.viewOnceCardLabel}>View once photo</Text>
+                <Text style={styles.viewOnceCardSub}>
+                  {media.mediaType === 'video' ? 'Video' : 'Photo'} — tap to view
+                </Text>
+              </View>
+            </View>
+            <View style={styles.viewOnceCardBadge}>
+              <Ionicons name="lock-closed" size={12} color={colors.primary} />
+              <Text style={styles.viewOnceCardBadgeText}>1</Text>
             </View>
           </View>
-          <Text style={styles.viewOnceCtaText}>View once</Text>
-          <Text style={styles.viewOnceCtaHint}>Tap to open</Text>
+          <View style={styles.viewOnceCardDivider} />
+          <View style={styles.viewOnceCardFooter}>
+            <Ionicons name="information-circle-outline" size={12} color={colors.textMuted} />
+            <Text style={styles.viewOnceCardFooterText}>
+              This {media.mediaType === 'video' ? 'video' : 'photo'} will disappear after viewing
+            </Text>
+          </View>
         </TouchableOpacity>
       );
     }
@@ -1429,50 +1445,79 @@ const styles = StyleSheet.create({
     color: '#fff',
     fontSize: 10,
   },
-  // "Tap to view" CTA for received view-once media
-  viewOnceCta: {
-    alignItems: 'center',
-    justifyContent: 'center',
-    width: 180,
-    height: 180,
+  // "View once" card for received view-once media
+  viewOnceCard: {
+    minWidth: 200,
     borderRadius: radius.md,
     backgroundColor: '#1a1a2e',
-    gap: spacing.xs,
+    borderWidth: 1,
+    borderColor: 'rgba(99,102,241,0.25)',
+    overflow: 'hidden',
     marginVertical: 2,
   },
-  viewOnceIconWrap: {
-    position: 'relative',
-    width: 48,
-    height: 48,
-    borderRadius: 24,
-    backgroundColor: 'rgba(255,255,255,0.15)',
+  viewOnceCardTop: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingHorizontal: spacing.md,
+    paddingVertical: spacing.sm + 2,
+  },
+  viewOnceCardIconRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.sm,
+    flex: 1,
+  },
+  viewOnceCardIconRing: {
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    backgroundColor: 'rgba(99,102,241,0.12)',
     justifyContent: 'center',
     alignItems: 'center',
   },
-  viewOnceBadge: {
-    position: 'absolute',
-    top: -2,
-    right: -2,
-    width: 18,
-    height: 18,
-    borderRadius: 9,
-    backgroundColor: colors.primary,
-    justifyContent: 'center',
-    alignItems: 'center',
+  viewOnceCardLabelGroup: {
+    gap: 1,
   },
-  viewOnceBadgeText: {
-    color: '#fff',
-    fontSize: 10,
-    fontWeight: '700',
-  },
-  viewOnceCtaText: {
+  viewOnceCardLabel: {
     ...typography.body2,
     color: '#fff',
     fontWeight: '600',
+    fontSize: 14,
   },
-  viewOnceCtaHint: {
+  viewOnceCardSub: {
     ...typography.caption,
-    color: 'rgba(255,255,255,0.5)',
+    color: 'rgba(255,255,255,0.45)',
+    fontSize: 11,
+  },
+  viewOnceCardBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 3,
+    backgroundColor: 'rgba(99,102,241,0.15)',
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: radius.full,
+  },
+  viewOnceCardBadgeText: {
+    color: colors.primary,
+    fontSize: 11,
+    fontWeight: '700',
+  },
+  viewOnceCardDivider: {
+    height: 1,
+    backgroundColor: 'rgba(255,255,255,0.06)',
+  },
+  viewOnceCardFooter: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    paddingHorizontal: spacing.md,
+    paddingVertical: spacing.sm,
+  },
+  viewOnceCardFooterText: {
+    ...typography.caption,
+    color: 'rgba(255,255,255,0.35)',
     fontSize: 10,
   },
   // "Viewed" / "Opened" state after one-time media is consumed
