@@ -23,7 +23,7 @@ function getPublisher(): Redis {
       port: parseInt(process.env.REDIS_EVENTS_PORT || '6380', 10),
       password: process.env.REDIS_EVENTS_PASSWORD,
       retryStrategy: (times) => Math.min(times * 50, 2000),
-      maxRetriesPerRequest: 3,
+      maxRetriesPerRequest: null,    // Infinite retries — critical event bus
       enableOfflineQueue: false,
       lazyConnect: true,
     });

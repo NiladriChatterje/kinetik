@@ -17,11 +17,16 @@ const PORT = parseInt(process.env.PORT || '3002', 10);
 const JWT_SECRET = process.env.JWT_SECRET || 'super-secret-jwt-key-change-in-production-2024';
 
 // ─── Redis Clients (main — for Socket.IO adapter + presence + caching) ─
+// The Socket.IO Redis adapter requires two connections to the same Redis
+// instance: one for publishing, one for subscribing. ioredis duplicate()
+// creates a separate TCP connection sharing the same config.
 const pubClient = new Redis({
   host: process.env.REDIS_HOST || 'localhost',
   port: parseInt(process.env.REDIS_PORT || '6379', 10),
   password: process.env.REDIS_PASSWORD,
   retryStrategy: (times) => Math.min(times * 50, 2000),
+  maxRetriesPerRequest: null,    // Infinite retries — adapter recovers after Redis outage
+  enableOfflineQueue: false,     // Fail fast when Redis is down rather than queuing
 });
 
 const subClient = pubClient.duplicate();
@@ -32,6 +37,8 @@ const eventBusClient = new Redis({
   port: parseInt(process.env.REDIS_EVENTS_PORT || '6380', 10),
   password: process.env.REDIS_EVENTS_PASSWORD,
   retryStrategy: (times) => Math.min(times * 50, 2000),
+  maxRetriesPerRequest: null,    // Critical event bus — keep retrying
+  enableOfflineQueue: false,
 });
 
 // ─── HTTP Server ──────────────────────────────────────────
