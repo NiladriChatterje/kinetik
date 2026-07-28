@@ -16,13 +16,14 @@ const redis = getRedis();
 
 export async function matchRoutes(app: FastifyInstance) {
   app.addHook('preHandler', async (request: FastifyRequest, reply: FastifyReply) => {
-    // Skip JWT auth for the media proxy endpoint — it accepts a token query
-    // parameter that the native audio/video player can pass (no way to set
-    // custom headers on native media players). The proxy has its own access
-    // control via the key structure and match-membership DB check.
-    // Skip auth for media proxy — native players can't set auth headers.
-    // The route accepts token as query param and has its own access control.
-    if (request.url.startsWith('/api/v1/matches/media/')) return;
+    // Skip JWT auth ONLY for the GET media proxy endpoint — native audio/video
+    // players cannot set custom HTTP headers, so they pass the JWT as a query
+    // parameter (?token=...). The proxy verifies it manually and has its own
+    // access control via the key structure and match-membership DB check.
+    //
+    // POST /media/:mediaId/view (markMediaViewed) must NOT skip auth — it
+    // relies on request.user being populated by jwtVerify().
+    if (request.method === 'GET' && request.url.startsWith('/api/v1/matches/media/')) return;
     try {
       await request.jwtVerify();
     } catch {

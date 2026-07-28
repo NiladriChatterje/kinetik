@@ -34,9 +34,16 @@ class ApiClient {
     options: RequestInit = {},
   ): Promise<ApiResponse<T>> {
     const headers: Record<string, string> = {
-      'Content-Type': 'application/json',
       ...(options.headers as Record<string, string>),
     };
+
+    // Only set Content-Type for requests that have a body.
+    // Fastify rejects requests with application/json + empty body
+    // (FST_ERR_CTP_EMPTY_JSON_BODY), so skip the header for bodyless
+    // requests (GET, some POST/DELETE with no payload).
+    if (options.body) {
+      headers['Content-Type'] = 'application/json';
+    }
 
     if (this.token) {
       headers['Authorization'] = `Bearer ${this.token}`;

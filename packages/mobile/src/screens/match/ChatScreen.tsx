@@ -162,6 +162,8 @@ export const ChatScreen: React.FC<{ navigation: any; route: any }> = ({ navigati
     });
 
     // Handle media:viewed event to update view-once status
+    // Also clears URL/thumbnail so the media can never be re-viewed even if
+    // state gets stale (socket reconnection, stale broadcast replay, etc.)
     socket.on('media:viewed', (data: any) => {
       if (data.mediaId && data.viewedAt) {
         setMessages((prev) =>
@@ -172,6 +174,8 @@ export const ChatScreen: React.FC<{ navigation: any; route: any }> = ({ navigati
                   media: {
                     ...m.media!,
                     viewedAt: data.viewedAt,
+                    url: '',
+                    thumbnailUrl: undefined,
                   },
                 }
               : m,
@@ -322,6 +326,10 @@ export const ChatScreen: React.FC<{ navigation: any; route: any }> = ({ navigati
       return;
     }
 
+    // Guard: URL might be empty if an optimistic clear is in-flight from
+    // closeOneTimeView (rapid close + reopen before API completes).
+    if (!media.url) return;
+
     if (media.mediaType === 'image') {
       setViewingOnceMedia({
         mediaId: media.id,
@@ -342,30 +350,28 @@ export const ChatScreen: React.FC<{ navigation: any; route: any }> = ({ navigati
 
     const { mediaId } = viewingOnceMedia;
 
-    // Mark as viewed on the backend — only clear local state on success
-    try {
-      await api.markMediaViewed(mediaId);
+    // Do NOT optimistically clear the URL — doing so creates a transition where
+    // the message has url='' but viewedAt is not yet set, causing the render to
+    // show a broken "empty" message on the sender's side until the API confirms.
+    // Instead, only update state AFTER the backend confirms success.
+    const res = await api.markMediaViewed(mediaId);
 
-      // Clear the URL from local state so it cannot be re-viewed
+    if (res.success && res.data?.viewedAt) {
+      // Backend confirmed: set viewedAt + clear URL in one atomic update.
+      // The message now shows the "Viewed" or "Opened" placeholder.
       setMessages((prev) =>
         prev.map((m) =>
           m.media?.id === mediaId
-            ? {
-                ...m,
-                media: {
-                  ...m.media!,
-                  viewedAt: new Date().toISOString(),
-                  url: '',
-                  thumbnailUrl: undefined,
-                },
-              }
+            ? { ...m, media: { ...m.media!, viewedAt: res.data!.viewedAt, url: '', thumbnailUrl: undefined } }
             : m,
         ),
       );
-    } catch {
-      // Network failed — don't clear local state so user can retry
-      // The backend file remains intact for now
-      Alert.alert('Failed to confirm view', 'Could not reach the server. The media may still be viewable.');
+    } else {
+      // Backend failed — media stays intact for retry. No state change needed.
+      Alert.alert(
+        'Failed to confirm view',
+        res.error?.message || 'Could not reach the server. Please try again.',
+      );
     }
 
     // Close the viewer regardless
