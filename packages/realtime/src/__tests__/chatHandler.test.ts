@@ -12,6 +12,7 @@ function createMockSocket(userId: string) {
     on: vi.fn(),
     to: vi.fn(() => socket), // chained call: socket.to(room).emit(...)
     emit: vi.fn(),
+    rooms: new Set<string>(),
   };
   return socket;
 }
@@ -19,7 +20,9 @@ function createMockSocket(userId: string) {
 function createMockRedis() {
   return {
     on: vi.fn(),
-    subscribe: vi.fn((_channel: string, cb?: (err: Error | null) => void) => {
+    subscribe: vi.fn((_channels: string | string[], _cb?: (err: Error | null) => void) => {
+      // Handle both single string and array of strings
+      const cb = typeof _cb === 'function' ? _cb : undefined;
       if (cb) cb(null);
     }),
     publish: vi.fn().mockResolvedValue(1),
@@ -33,6 +36,7 @@ function createMockNamespace() {
     on: vi.fn(),
     to: vi.fn(() => nsp), // chained call: nsp.to(room).emit(...)
     emit: vi.fn(),
+    sockets: new Map<string, any>(),
   };
   return nsp;
 }
@@ -42,6 +46,10 @@ function createMockNamespace() {
 function simulateConnection(nsp: any): { socket: any; userId: string } {
   const userId = 'user-123';
   const socket = createMockSocket(userId);
+
+  // Add socket to namespace's local sockets map
+  nsp.sockets.set(socket.id || 'socket-1', socket);
+
   // The namespace 'connection' listener was registered in the constructor.
   // We grab it and invoke it with the mock socket.
   const connectionHandler = nsp.on.mock.calls.find(
@@ -53,11 +61,30 @@ function simulateConnection(nsp: any): { socket: any; userId: string } {
   return { socket, userId };
 }
 
+function simulateSecondConnection(nsp: any, userId: string): any {
+  const socket = createMockSocket(userId);
+  nsp.sockets.set(socket.id || `socket-${userId}`, socket);
+  const connectionHandler = nsp.on.mock.calls.find(
+    ([event]: [string]) => event === 'connection',
+  )?.[1];
+  if (connectionHandler) {
+    connectionHandler(socket);
+  }
+  return socket;
+}
+
 /** Register a specific event handler on a socket. */
 function registerHandler(socket: any, event: string): (...args: any[]) => void {
   const call = socket.on.mock.calls.find(([e]: [string]) => e === event);
   if (!call) throw new Error(`Handler for "${event}" was never registered`);
   return call[1];
+}
+
+/** Get the message handler registered on the subClient */
+function getMessageHandler(subClient: any, event: string = 'message'): (...args: any[]) => void {
+  return subClient.on.mock.calls.find(
+    ([e]: [string]) => e === event,
+  )?.[1];
 }
 
 // ─── Tests ─────────────────────────────────────────────────────────
@@ -117,11 +144,10 @@ describe('ChatHandler', () => {
 
       handlerFn({ matchId: 'match-456' });
       handlerFn({ matchId: 'match-789' });
-
-      // Verify internal state by joining a third and checking using broadcastMessage
       handlerFn({ matchId: 'match-456' }); // duplicate join — should not error
-      // We can test the internal map by checking if broadcastMessage emits correctly
-      // The userMatches map is private; we test indirectly via the leave event later.
+
+      // No direct assertion on private map — tested indirectly via leave/disconnect
+      expect(true).toBe(true);
     });
   });
 
@@ -150,130 +176,139 @@ describe('ChatHandler', () => {
   // ─── CHAT_MESSAGE ─────────────────────────────────────────────
 
   describe(`${WsEvent.CHAT_MESSAGE} event`, () => {
-    it('should emit CHAT_MESSAGE to the match room with senderId and content', () => {
-      const { socket, userId } = simulateConnection(nsp);
+    it('should be a no-op (delivery handled via HTTP POST + Redis pub/sub)', () => {
+      const { socket } = simulateConnection(nsp);
       const msgFn = registerHandler(socket, WsEvent.CHAT_MESSAGE);
 
       msgFn({ matchId: 'match-456', content: 'Hello!' });
 
-      expect(nsp.to).toHaveBeenCalledWith('match:match-456');
-      // nsp.to() returns the nsp itself, so emit is called on it
-      expect(nsp.emit).toHaveBeenCalledWith(WsEvent.CHAT_MESSAGE, expect.objectContaining({
-        matchId: 'match-456',
-        senderId: userId,
-        content: 'Hello!',
-      }));
-    });
-
-    it('should include an ISO timestamp in the emitted payload', () => {
-      const { socket } = simulateConnection(nsp);
-      const msgFn = registerHandler(socket, WsEvent.CHAT_MESSAGE);
-
-      msgFn({ matchId: 'match-456', content: 'Hey' });
-
-      const emittedPayload = nsp.emit.mock.calls[0][1];
-      expect(emittedPayload.createdAt).toBeDefined();
-      expect(() => new Date(emittedPayload.createdAt)).not.toThrow();
-    });
-
-    it('should ignore empty content', () => {
-      const { socket } = simulateConnection(nsp);
-      const msgFn = registerHandler(socket, WsEvent.CHAT_MESSAGE);
-
-      msgFn({ matchId: 'match-456', content: '' });
-
+      // The CHAT_MESSAGE socket handler is a no-op — real-time delivery
+      // happens via Redis pub/sub after api-core persists the message.
       expect(nsp.emit).not.toHaveBeenCalled();
     });
 
-    it('should ignore whitespace-only content', () => {
+    it('should ignore empty content gracefully', () => {
       const { socket } = simulateConnection(nsp);
       const msgFn = registerHandler(socket, WsEvent.CHAT_MESSAGE);
 
-      msgFn({ matchId: 'match-456', content: '   ' });
-
-      expect(nsp.emit).not.toHaveBeenCalled();
-    });
-
-    it('should reject content exceeding 2000 characters', () => {
-      const { socket } = simulateConnection(nsp);
-      const msgFn = registerHandler(socket, WsEvent.CHAT_MESSAGE);
-
-      msgFn({ matchId: 'match-456', content: 'a'.repeat(2001) });
-
-      expect(nsp.emit).not.toHaveBeenCalled();
-    });
-
-    it('should trim content before emitting', () => {
-      const { socket } = simulateConnection(nsp);
-      const msgFn = registerHandler(socket, WsEvent.CHAT_MESSAGE);
-
-      msgFn({ matchId: 'match-456', content: '  Hello World  ' });
-
-      expect(nsp.emit).toHaveBeenCalledWith(
-        WsEvent.CHAT_MESSAGE,
-        expect.objectContaining({ content: 'Hello World' }),
-      );
-    });
-
-    it('should accept content of exactly 2000 characters', () => {
-      const { socket } = simulateConnection(nsp);
-      const msgFn = registerHandler(socket, WsEvent.CHAT_MESSAGE);
-
-      msgFn({ matchId: 'match-456', content: 'a'.repeat(2000) });
-
-      expect(nsp.emit).toHaveBeenCalled();
+      expect(() => msgFn({ matchId: 'match-456', content: '' })).not.toThrow();
+      expect(() => msgFn({ matchId: 'match-456', content: '   ' })).not.toThrow();
+      expect(() => msgFn({ matchId: 'match-456', content: 'a'.repeat(2001) })).not.toThrow();
     });
   });
 
   // ─── CHAT_TYPING ──────────────────────────────────────────────
 
   describe(`${WsEvent.CHAT_TYPING} event`, () => {
-    it('should emit CHAT_TYPING to everyone EXCEPT the sender in the match room', () => {
+    it('should emit CHAT_TYPING locally to everyone EXCEPT the sender in the match room', () => {
+      const { socket: sender, userId } = simulateConnection(nsp);
+      const receiver = simulateSecondConnection(nsp, 'user-456');
+      const typingFn = registerHandler(sender, WsEvent.CHAT_TYPING);
+
+      // Both join the match room
+      sender.rooms.add('match:match-456');
+      receiver.rooms.add('match:match-456');
+
+      typingFn({ matchId: 'match-456', isTyping: true });
+
+      // Receiver gets it
+      expect(receiver.emit).toHaveBeenCalledWith(WsEvent.CHAT_TYPING, {
+        matchId: 'match-456',
+        userId,
+        isTyping: true,
+      });
+      // Sender does NOT get it
+      expect(sender.emit).not.toHaveBeenCalledWith(WsEvent.CHAT_TYPING, expect.anything());
+    });
+
+    it('should publish to Redis CHAT_TYPING_CHANNEL for cross-instance delivery', () => {
       const { socket, userId } = simulateConnection(nsp);
       const typingFn = registerHandler(socket, WsEvent.CHAT_TYPING);
 
       typingFn({ matchId: 'match-456', isTyping: true });
 
-      // socket.to() is used (excludes sender)
-      expect(socket.to).toHaveBeenCalledWith('match:match-456');
-      expect(socket.emit).toHaveBeenCalledWith(WsEvent.CHAT_TYPING, {
-        matchId: 'match-456',
-        userId,
-        isTyping: true,
-      });
+      expect(pubClient.publish).toHaveBeenCalledWith(
+        REDIS_KEYS.CHAT_TYPING_CHANNEL,
+        JSON.stringify({ matchId: 'match-456', userId, isTyping: true }),
+      );
     });
 
     it('should emit isTyping: false when user stops typing', () => {
-      const { socket, userId } = simulateConnection(nsp);
-      const typingFn = registerHandler(socket, WsEvent.CHAT_TYPING);
+      const { socket: sender, userId } = simulateConnection(nsp);
+      const receiver = simulateSecondConnection(nsp, 'user-456');
+      const typingFn = registerHandler(sender, WsEvent.CHAT_TYPING);
+
+      sender.rooms.add('match:match-456');
+      receiver.rooms.add('match:match-456');
 
       typingFn({ matchId: 'match-456', isTyping: false });
 
-      expect(socket.emit).toHaveBeenCalledWith(WsEvent.CHAT_TYPING, {
+      expect(receiver.emit).toHaveBeenCalledWith(WsEvent.CHAT_TYPING, {
         matchId: 'match-456',
         userId,
         isTyping: false,
       });
+    });
+
+    it('should handle publish failures gracefully', () => {
+      const { socket } = simulateConnection(nsp);
+      const typingFn = registerHandler(socket, WsEvent.CHAT_TYPING);
+      pubClient.publish.mockRejectedValueOnce(new Error('Redis down'));
+
+      expect(() => typingFn({ matchId: 'match-456', isTyping: true })).not.toThrow();
     });
   });
 
   // ─── CHAT_READ ────────────────────────────────────────────────
 
   describe(`${WsEvent.CHAT_READ} event`, () => {
-    it('should emit CHAT_READ to the match room with userId and readAt timestamp', () => {
-      const { socket, userId } = simulateConnection(nsp);
-      const readFn = registerHandler(socket, WsEvent.CHAT_READ);
+    it('should emit CHAT_READ locally to the match room via emitToLocalRoom', () => {
+      const { socket: reader, userId } = simulateConnection(nsp);
+      const partner = simulateSecondConnection(nsp, 'user-456');
+      const readFn = registerHandler(reader, WsEvent.CHAT_READ);
+
+      reader.rooms.add('match:match-456');
+      partner.rooms.add('match:match-456');
 
       readFn({ matchId: 'match-456' });
 
-      expect(nsp.to).toHaveBeenCalledWith('match:match-456');
-      const emittedPayload = nsp.emit.mock.calls[0][1];
+      // Both local sockets in the room receive the read event
+      const emittedPayload = partner.emit.mock.calls[0][1];
       expect(emittedPayload).toMatchObject({
         matchId: 'match-456',
         userId,
       });
       expect(emittedPayload.readAt).toBeDefined();
       expect(() => new Date(emittedPayload.readAt)).not.toThrow();
+
+      // Should NOT use nsp.to() which would trigger the adapter relay
+      expect(nsp.to).not.toHaveBeenCalled();
+    });
+
+    it('should publish to Redis CHAT_READ_CHANNEL for cross-instance delivery', () => {
+      const { socket, userId } = simulateConnection(nsp);
+      const readFn = registerHandler(socket, WsEvent.CHAT_READ);
+
+      readFn({ matchId: 'match-456' });
+
+      const publishCall = pubClient.publish.mock.calls.find(
+        ([channel]: [string]) => channel === REDIS_KEYS.CHAT_READ_CHANNEL,
+      );
+      expect(publishCall).toBeDefined();
+      const publishedPayload = JSON.parse(publishCall[1]);
+      expect(publishedPayload).toMatchObject({
+        matchId: 'match-456',
+        userId,
+      });
+      expect(publishedPayload.readAt).toBeDefined();
+    });
+
+    it('should handle publish failures gracefully', () => {
+      const { socket } = simulateConnection(nsp);
+      const readFn = registerHandler(socket, WsEvent.CHAT_READ);
+      pubClient.publish.mockRejectedValueOnce(new Error('Redis down'));
+
+      expect(() => readFn({ matchId: 'match-456' })).not.toThrow();
     });
   });
 
@@ -289,8 +324,6 @@ describe('ChatHandler', () => {
       joinFn({ matchId: 'match-789' });
       disconnectFn();
 
-      // No further assertions needed — the disconnect handler just cleans up
-      // The userMatches map is private, but we verify no error is thrown
       expect(true).toBe(true);
     });
 
@@ -305,7 +338,14 @@ describe('ChatHandler', () => {
   // ─── broadcastMessage ─────────────────────────────────────────
 
   describe('broadcastMessage()', () => {
-    it('should emit CHAT_MESSAGE to the given match room', async () => {
+    it('should emit CHAT_MESSAGE directly to local sockets in the match room (no adapter relay)', async () => {
+      const { socket: senderSocket } = simulateConnection(nsp);
+      const receiverSocket = simulateSecondConnection(nsp, 'user-456');
+
+      // Both sockets join the match room via their rooms Set
+      senderSocket.rooms.add('match:match-456');
+      receiverSocket.rooms.add('match:match-456');
+
       const messagePayload = {
         id: 'msg-1',
         matchId: 'match-456',
@@ -316,11 +356,55 @@ describe('ChatHandler', () => {
 
       await handler.broadcastMessage('match-456', messagePayload);
 
-      expect(nsp.to).toHaveBeenCalledWith('match:match-456');
-      expect(nsp.emit).toHaveBeenCalledWith(WsEvent.CHAT_MESSAGE, messagePayload);
+      // Both local sockets in the room should receive the message
+      expect(senderSocket.emit).toHaveBeenCalledWith(WsEvent.CHAT_MESSAGE, messagePayload);
+      expect(receiverSocket.emit).toHaveBeenCalledWith(WsEvent.CHAT_MESSAGE, messagePayload);
+
+      // Should NOT use nsp.to().emit() (which would trigger the Redis adapter)
+      expect(nsp.to).not.toHaveBeenCalled();
+      expect(nsp.emit).not.toHaveBeenCalled();
+    });
+
+    it('should NOT emit to sockets NOT in the match room', async () => {
+      const { socket: socketA } = simulateConnection(nsp);
+      const socketB = simulateSecondConnection(nsp, 'user-456');
+
+      // Only one socket joins the match room
+      socketA.rooms.add('match:match-456');
+
+      const messagePayload = {
+        id: 'msg-2',
+        matchId: 'match-456',
+        senderId: 'user-456',
+        content: 'Only room members',
+        createdAt: new Date().toISOString(),
+      };
+
+      await handler.broadcastMessage('match-456', messagePayload);
+
+      expect(socketA.emit).toHaveBeenCalledWith(WsEvent.CHAT_MESSAGE, messagePayload);
+      expect(socketB.emit).not.toHaveBeenCalled();
+    });
+
+    it('should handle empty rooms gracefully (no crash)', async () => {
+      const messagePayload = {
+        id: 'msg-3',
+        matchId: 'match-nonexistent',
+        senderId: 'user-456',
+        content: 'No one here',
+        createdAt: new Date().toISOString(),
+      };
+
+      // No sockets in the room — should not throw
+      await expect(
+        handler.broadcastMessage('match-nonexistent', messagePayload),
+      ).resolves.not.toThrow();
     });
 
     it('should broadcast the exact message payload without modification', async () => {
+      const { socket } = simulateConnection(nsp);
+      socket.rooms.add('match:match-789');
+
       const messagePayload = {
         id: 'msg-2',
         matchId: 'match-789',
@@ -331,16 +415,19 @@ describe('ChatHandler', () => {
 
       await handler.broadcastMessage('match-789', messagePayload);
 
-      expect(nsp.emit).toHaveBeenCalledWith(WsEvent.CHAT_MESSAGE, messagePayload);
+      expect(socket.emit).toHaveBeenCalledWith(WsEvent.CHAT_MESSAGE, messagePayload);
     });
   });
 
   // ─── Redis Pub/Sub (Cross-Instance) ──────────────────────────
 
   describe('cross-instance Redis pub/sub', () => {
-    it('should subscribe to CHAT_MESSAGES_CHANNEL on construction', () => {
+    it('should subscribe to all chat-related Redis channels on construction', () => {
       expect(subClient.subscribe).toHaveBeenCalledWith(
         REDIS_KEYS.CHAT_MESSAGES_CHANNEL,
+        REDIS_KEYS.CHAT_TYPING_CHANNEL,
+        REDIS_KEYS.CHAT_READ_CHANNEL,
+        REDIS_KEYS.CHAT_MEDIA_EVENTS_CHANNEL,
         expect.any(Function),
       );
     });
@@ -349,11 +436,8 @@ describe('ChatHandler', () => {
       expect(subClient.on).toHaveBeenCalledWith('message', expect.any(Function));
     });
 
-    it('should parse JSON messages and call broadcastMessage', () => {
-      // Access the message handler registered on subClient
-      const messageHandler = subClient.on.mock.calls.find(
-        ([event]: [string]) => event === 'message',
-      )?.[1];
+    it('should parse JSON messages and call broadcastMessage for CHAT_MESSAGES_CHANNEL', () => {
+      const messageHandler = getMessageHandler(subClient);
       expect(messageHandler).toBeDefined();
 
       const payload = {
@@ -363,20 +447,17 @@ describe('ChatHandler', () => {
         content: 'Redis delivered!',
         createdAt: new Date().toISOString(),
       };
-      const jsonMessage = JSON.stringify(payload);
 
       // Spy on broadcastMessage
       const broadcastSpy = vi.spyOn(handler, 'broadcastMessage');
 
-      messageHandler(REDIS_KEYS.CHAT_MESSAGES_CHANNEL, jsonMessage);
+      messageHandler(REDIS_KEYS.CHAT_MESSAGES_CHANNEL, JSON.stringify(payload));
 
       expect(broadcastSpy).toHaveBeenCalledWith('match-456', payload);
     });
 
-    it('should ignore messages from other Redis channels', () => {
-      const messageHandler = subClient.on.mock.calls.find(
-        ([event]: [string]) => event === 'message',
-      )?.[1];
+    it('should ignore messages from unknown Redis channels', () => {
+      const messageHandler = getMessageHandler(subClient);
       const broadcastSpy = vi.spyOn(handler, 'broadcastMessage');
 
       messageHandler('other:channel', JSON.stringify({ matchId: 'm-1' }));
@@ -385,13 +466,85 @@ describe('ChatHandler', () => {
     });
 
     it('should not throw on malformed JSON', () => {
-      const messageHandler = subClient.on.mock.calls.find(
-        ([event]: [string]) => event === 'message',
-      )?.[1];
+      const messageHandler = getMessageHandler(subClient);
 
       expect(() =>
         messageHandler(REDIS_KEYS.CHAT_MESSAGES_CHANNEL, 'not-json'),
       ).not.toThrow();
+    });
+
+    it('should forward typing events from CHAT_TYPING_CHANNEL to local sockets', () => {
+      const { socket } = simulateConnection(nsp);
+      socket.rooms.add('match:match-t456');
+
+      const messageHandler = getMessageHandler(subClient);
+      const typingEvent = {
+        matchId: 'match-t456',
+        userId: 'user-remote',
+        isTyping: true,
+      };
+
+      messageHandler(REDIS_KEYS.CHAT_TYPING_CHANNEL, JSON.stringify(typingEvent));
+
+      expect(socket.emit).toHaveBeenCalledWith(WsEvent.CHAT_TYPING, typingEvent);
+    });
+
+    it('should forward read events from CHAT_READ_CHANNEL to local sockets', () => {
+      const { socket } = simulateConnection(nsp);
+      socket.rooms.add('match:match-r456');
+
+      const messageHandler = getMessageHandler(subClient);
+      const readEvent = {
+        matchId: 'match-r456',
+        userId: 'user-remote',
+        readAt: new Date().toISOString(),
+      };
+
+      messageHandler(REDIS_KEYS.CHAT_READ_CHANNEL, JSON.stringify(readEvent));
+
+      expect(socket.emit).toHaveBeenCalledWith(WsEvent.CHAT_READ, expect.objectContaining(readEvent));
+    });
+
+    it('should forward media:viewed events from CHAT_MEDIA_EVENTS_CHANNEL', () => {
+      const { socket } = simulateConnection(nsp);
+      socket.rooms.add('match:match-m456');
+
+      const messageHandler = getMessageHandler(subClient);
+      const mediaEvent = {
+        type: 'media:viewed',
+        matchId: 'match-m456',
+        mediaId: 'media-1',
+        viewedAt: new Date().toISOString(),
+      };
+
+      messageHandler(REDIS_KEYS.CHAT_MEDIA_EVENTS_CHANNEL, JSON.stringify(mediaEvent));
+
+      expect(socket.emit).toHaveBeenCalledWith('media:viewed', {
+        mediaId: 'media-1',
+        viewedAt: mediaEvent.viewedAt,
+      });
+    });
+
+    it('should exclude the sender from typing events on CHAT_TYPING_CHANNEL', () => {
+      const { socket: sender } = simulateConnection(nsp);
+      const receiver = simulateSecondConnection(nsp, 'user-456');
+
+      sender.rooms.add('match:match-x');
+      receiver.rooms.add('match:match-x');
+
+      const messageHandler = getMessageHandler(subClient);
+      const typingEvent = {
+        matchId: 'match-x',
+        userId: 'user-123', // same as sender
+        isTyping: true,
+      };
+
+      messageHandler(REDIS_KEYS.CHAT_TYPING_CHANNEL, JSON.stringify(typingEvent));
+
+      // Receiver gets it
+      expect(receiver.emit).toHaveBeenCalledWith(WsEvent.CHAT_TYPING, typingEvent);
+      // Sender does NOT get it (excluded via userId match)
+      expect(sender.emit).not.toHaveBeenCalledWith(WsEvent.CHAT_TYPING, typingEvent);
     });
   });
 });

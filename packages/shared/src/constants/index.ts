@@ -90,6 +90,15 @@ export const REDIS_KEYS = {
 
   // Chat messages (pub/sub channel for cross-instance chat message delivery)
   CHAT_MESSAGES_CHANNEL: 'chat:messages',
+
+  // Chat typing (pub/sub channel for cross-instance typing indicator delivery)
+  CHAT_TYPING_CHANNEL: 'chat:typing',
+
+  // Chat read receipts (pub/sub channel for cross-instance read receipt delivery)
+  CHAT_READ_CHANNEL: 'chat:read',
+
+  // Chat media events (pub/sub channel for cross-instance media:viewed delivery)
+  CHAT_MEDIA_EVENTS_CHANNEL: 'chat:media',
 } as const;
 
 // ─── Event Bus Channels (Redis Pub/Sub — replaces Kafka) ──────
