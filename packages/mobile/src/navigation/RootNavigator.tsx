@@ -1,6 +1,6 @@
 import React from 'react';
 import { ActivityIndicator, View, StyleSheet, Text } from 'react-native';
-import { NavigationContainer } from '@react-navigation/native';
+import { createNavigationContainerRef, NavigationContainer } from '@react-navigation/native';
 import { createStackNavigator } from '@react-navigation/stack';
 import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
 import { Ionicons } from '@expo/vector-icons';
@@ -74,6 +74,10 @@ import { MatchScreen } from '../screens/match/MatchScreen';
 import { LikeListScreen } from '../screens/match/LikeListScreen';
 import { ChatListScreen } from '../screens/match/ChatListScreen';
 import { ChatScreen } from '../screens/match/ChatScreen';
+import { CallScreen } from '../screens/match/CallScreen';
+
+// Calls
+import { IncomingCallOverlay } from '../components/call/IncomingCallOverlay';
 
 // Wallet
 import { TokenVaultScreen } from '../screens/wallet/TokenVaultScreen';
@@ -104,6 +108,7 @@ export type RootStackParamList = {
   Likes: undefined;
   ChatList: undefined;
   Chat: { matchId: string; partnerName: string; partnerId?: string; partnerPhotoUrl?: string };
+  Call: { matchId: string; partnerName: string; partnerPhotoUrl?: string; partnerId?: string; mode?: 'caller' | 'callee' };
   // Kept for profile access
   DuoWingman: undefined;
   KYCVerify: undefined;
@@ -135,6 +140,8 @@ export type MainTabParamList = {
 };
 
 const RootStack = createStackNavigator<RootStackParamList>();
+
+export const navigationRef = createNavigationContainerRef<RootStackParamList>();
 const OnboardingStack = createStackNavigator<OnboardingStackParamList>();
 const PreferencesStack = createStackNavigator<PreferencesStackParamList>();
 const MainTab = createBottomTabNavigator<MainTabParamList>();
@@ -253,9 +260,11 @@ export function RootNavigator() {
   const showOnboarding = !isAuthenticated || onboardingStep !== 'complete';
 
   return (
-    <NavigationContainer>
+    <NavigationContainer ref={navigationRef}>
       {/* Notification tap handler must be inside NavigationContainer */}
       <NotificationHandler />
+      {/* Global incoming-call overlay — rendered above every screen */}
+      {isAuthenticated && <IncomingCallOverlay navigationRef={navigationRef} />}
       <RootStack.Navigator
         screenOptions={screenOptions}
         initialRouteName={showOnboarding ? 'Onboarding' : 'Main'}
@@ -266,6 +275,7 @@ export function RootNavigator() {
         <RootStack.Screen name="Likes" component={LikeListScreen} />
         <RootStack.Screen name="ChatList" component={ChatListScreen} />
         <RootStack.Screen name="Chat" component={ChatScreen} />
+        <RootStack.Screen name="Call" component={CallScreen} />
         {/* Screens navigated from Profile */}
         <RootStack.Screen name="TokenVault" component={TokenVaultScreen} />
         <RootStack.Screen name="DuoWingman" component={DuoWingmanScreen} />

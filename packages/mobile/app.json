@@ -54,7 +54,14 @@
           "color": "#000000"
         }
       ],
-      "expo-audio"
+      "expo-audio",
+      [
+        "@config-plugins/react-native-webrtc",
+        {
+          "cameraPermission": "Allow $(PRODUCT_NAME) to access your camera for video calls.",
+          "microphonePermission": "Allow $(PRODUCT_NAME) to access your microphone for calls."
+        }
+      ]
     ],
     "web": {
       "bundler": "metro",

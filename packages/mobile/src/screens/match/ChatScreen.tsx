@@ -877,6 +877,23 @@ export const ChatScreen: React.FC<{ navigation: any; route: any }> = ({ navigati
             {partnerTyping ? 'Typing...' : socketConnected ? 'Online' : 'Offline'}
           </Text>
         </View>
+
+        {/* 1:1 voice/video call (private date call) */}
+        <TouchableOpacity
+          style={styles.callBtn}
+          onPress={() =>
+            navigation.navigate('Call', {
+              matchId,
+              partnerName,
+              partnerPhotoUrl: pPhoto,
+              partnerId: pId,
+              mode: 'caller',
+            })
+          }
+          activeOpacity={0.7}
+        >
+          <Ionicons name="call" size={20} color={colors.textPrimary} />
+        </TouchableOpacity>
       </View>
 
       {/* Messages */}
@@ -1190,6 +1207,15 @@ const styles = StyleSheet.create({
   headerInfo: { flex: 1 },
   headerName: { ...typography.body1, color: colors.textPrimary, fontWeight: '600' },
   headerStatus: { ...typography.caption, color: colors.textMuted, fontSize: 11 },
+  callBtn: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    backgroundColor: colors.surfaceHighlight,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginLeft: spacing.sm,
+  },
   chatArea: { flex: 1 },
   centered: { flex: 1, justifyContent: 'center', alignItems: 'center' },
   messagesList: { padding: spacing.lg, paddingBottom: spacing.md },

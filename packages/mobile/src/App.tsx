@@ -1,5 +1,10 @@
 import React, { useEffect, useRef } from 'react';
 import { LogBox, View, Text, StyleSheet, Animated, TouchableOpacity, Platform } from 'react-native';
+import { registerGlobals } from '@livekit/react-native';
+
+// Set up WebRTC globals (RTCPeerConnection, mediaDevices, etc.) required by
+// LiveKit before any call screen is rendered.
+registerGlobals();
 import { StatusBar } from 'expo-status-bar';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';

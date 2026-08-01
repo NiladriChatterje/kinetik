@@ -2,6 +2,7 @@ import { create } from 'zustand';
 import * as SecureStore from 'expo-secure-store';
 import { io, Socket } from 'socket.io-client';
 import { api } from '../services/api';
+import { closeCallSocket } from '../services/callSocket';
 import { WS_URL } from '../config';
 
 interface User {
@@ -337,6 +338,7 @@ export const useAuthStore = create<AuthState>((set, get) => ({
 
   logout: () => {
     get().disconnectLikesSocket();
+    closeCallSocket();
     api.setToken(null);
     set({
       user: null, token: null, isAuthenticated: false,
