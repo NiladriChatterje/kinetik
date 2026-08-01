@@ -73,6 +73,14 @@ interface MessagePayload {
 
 export class ChatHandler {
   private userMatches: Map<string, Set<string>> = new Map(); // userId -> Set<matchId>
+  // NOTE: per-instance in-memory (same pattern as userMatches). With the
+  // Redis adapter's horizontal scaling, a busy user on another instance won't
+  // be seen here — mitigated by nginx ip_hash sticky sessions which pin a
+  // match's users to the same instance.
+  // Tracked per-SOCKET because a user holds several sockets at once (the
+  // shared call socket + per-screen chat sockets) — only the socket that
+  // emitted call:active_join may clear busy on disconnect.
+  private busyUsers: Map<string, Set<string>> = new Map(); // userId -> socketIds in an active call
 
   constructor(
     private nsp: Namespace,
@@ -223,6 +231,9 @@ export class ChatHandler {
       case 'cancel':
         this.emitToLocalRoom(room, WsEvent.CALL_CANCEL, event);
         break;
+      case 'busy':
+        this.emitToLocalRoom(room, WsEvent.CALL_BUSY, event);
+        break;
     }
   }
 
@@ -246,6 +257,20 @@ export class ChatHandler {
       if (socket.rooms.has(room) && (socket as any).userId !== senderUserId) {
         socket.emit(event, data);
       }
+    }
+  }
+
+  /**
+   * Remove a socket from a user's busy set. Busy is cleared only when the
+   * LAST socket that joined the active call leaves/disconnects — a secondary
+   * chat socket dropping must not clear busy mid-call.
+   */
+  private removeBusySocket(userId: string, socketId: string) {
+    const sockets = this.busyUsers.get(userId);
+    if (!sockets) return;
+    sockets.delete(socketId);
+    if (sockets.size === 0) {
+      this.busyUsers.delete(userId);
     }
   }
 
@@ -340,8 +365,8 @@ export class ChatHandler {
       });
 
       // ── 1:1 call signaling (LiveKit) ──
-      // Invite/accept/decline/cancel are routed to the target user's PERSONAL
-      // room via the Redis subscriber (exactly-once delivery per instance).
+      // Invite/accept/decline/cancel/busy are routed to the target user's
+      // PERSONAL room via the Redis subscriber (exactly-once per instance).
 
       socket.on(WsEvent.CALL_INVITE, (data: CallInvitePayload) => {
         const { matchId, partnerId, callerName, callerPhotoUrl } = data || {};
@@ -350,6 +375,18 @@ export class ChatHandler {
         // Caller must be a participant of the match (joined it via chat:join)
         if (!this.userMatches.get(userId)?.has(matchId)) return;
 
+        // If the callee is already in another call, auto-reply busy instead
+        // of ringing. Busy state is set via call:active_join (see below) and
+        // cleared on call:active_leave or socket disconnect.
+        if (this.busyUsers.has(partnerId)) {
+          this.publishCallEvent('busy', userId, {
+            matchId,
+            calleeId: partnerId,
+            timestamp: new Date().toISOString(),
+          });
+          return;
+        }
+
         this.publishCallEvent('invite', partnerId, {
           matchId,
           callerId: userId,
@@ -357,6 +394,19 @@ export class ChatHandler {
           callerPhotoUrl: callerPhotoUrl || '',
           timestamp: new Date().toISOString(),
         });
+      });
+
+      // Mark the user as in an active 1:1 call (busy). Emitted by the mobile
+      // CallScreen on mount and cleared on unmount / disconnect.
+      socket.on(WsEvent.CALL_ACTIVE_JOIN, () => {
+        if (!this.busyUsers.has(userId)) {
+          this.busyUsers.set(userId, new Set());
+        }
+        this.busyUsers.get(userId)!.add(socket.id);
+      });
+
+      socket.on(WsEvent.CALL_ACTIVE_LEAVE, () => {
+        this.removeBusySocket(userId, socket.id);
       });
 
       socket.on(WsEvent.CALL_ACCEPT, (data: CallRespondPayload) => {
@@ -417,6 +467,7 @@ export class ChatHandler {
       socket.on('disconnect', () => {
         console.log(`[Chat] User ${userId} disconnected`);
         this.userMatches.delete(userId);
+        this.removeBusySocket(userId, socket.id);
       });
     });
   }

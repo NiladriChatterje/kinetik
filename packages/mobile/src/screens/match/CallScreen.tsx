@@ -10,6 +10,8 @@ import {
   onCallEvent,
   emitCallInvite,
   emitCallCancel,
+  emitJoinActiveCall,
+  emitLeaveActiveCall,
 } from '../../services/callSocket';
 import { resolveUrl } from '../../config';
 import { colors, typography, spacing, radius } from '../../theme';
@@ -25,6 +27,7 @@ type CallPhase =
   | 'active'       // in the call
   | 'declined'     // callee declined
   | 'noAnswer'     // ringing timed out
+  | 'busy'         // callee already in another call
   | 'error';       // failed to start
 
 const RING_TIMEOUT_MS = 45000; // aligned with the overlay's ring timeout
@@ -50,6 +53,13 @@ export const CallScreen: React.FC<Props> = ({ navigation, route }) => {
   const ringTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const invitedRef = useRef(false);
   const startedRef = useRef(false);
+
+  // ─── Mark this user as in an active call while this screen is mounted ─
+  // The server replies `call:busy` to anyone else who rings this user.
+  useEffect(() => {
+    emitJoinActiveCall();
+    return () => emitLeaveActiveCall();
+  }, []);
 
   // ─── Caller: ring the partner via the shared call socket ─
   useEffect(() => {
@@ -111,9 +121,20 @@ export const CallScreen: React.FC<Props> = ({ navigation, route }) => {
         setPhase('declined');
       }
     });
+    const offBusy = onCallEvent('call:busy', (data: any) => {
+      if (data.matchId === matchId && !endedRef.current) {
+        endedRef.current = true;
+        if (ringTimerRef.current) {
+          clearTimeout(ringTimerRef.current);
+          ringTimerRef.current = null;
+        }
+        setPhase('busy');
+      }
+    });
     return () => {
       offAccept();
       offDecline();
+      offBusy();
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isCaller, matchId]);
@@ -272,18 +293,23 @@ export const CallScreen: React.FC<Props> = ({ navigation, route }) => {
     );
   }
 
-  // ─── Declined / no answer ────────────────────────────
-  if (phase === 'declined' || phase === 'noAnswer') {
+  // ─── Declined / no answer / busy ─────────────────────
+  if (phase === 'declined' || phase === 'noAnswer' || phase === 'busy') {
+    const busy = phase === 'busy';
     return (
       <SafeAreaView style={styles.container}>
         <View style={styles.centerOverlay}>
           <Ionicons
             name="call-outline"
             size={48}
-            color={phase === 'declined' ? colors.error : colors.textMuted}
+            color={busy ? colors.textMuted : phase === 'declined' ? colors.error : colors.textMuted}
           />
           <Text style={styles.centerText}>
-            {phase === 'declined' ? `${partnerName} declined the call` : 'No answer'}
+            {busy
+              ? `${partnerName} is in another call`
+              : phase === 'declined'
+                ? `${partnerName} declined the call`
+                : 'No answer'}
           </Text>
           <TouchableOpacity style={styles.errorBtn} onPress={() => navigation.goBack()}>
             <Text style={styles.errorBtnText}>Close</Text>

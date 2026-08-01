@@ -344,6 +344,9 @@ export enum WsEvent {
   CALL_ACCEPT = 'call:accept',
   CALL_DECLINE = 'call:decline',
   CALL_CANCEL = 'call:cancel',
+  CALL_BUSY = 'call:busy',
+  CALL_ACTIVE_JOIN = 'call:active_join',
+  CALL_ACTIVE_LEAVE = 'call:active_leave',
 }
 
 // ─── API Response Types ───────────────────────────────────

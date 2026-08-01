@@ -17,7 +17,11 @@ export const CALL_EVENTS = {
   ACCEPT: 'call:accept',
   DECLINE: 'call:decline',
   CANCEL: 'call:cancel',
+  BUSY: 'call:busy',
 } as const;
+
+export const CALL_ACTIVE_JOIN = 'call:active_join';
+export const CALL_ACTIVE_LEAVE = 'call:active_leave';
 
 export interface CallInvitePayload {
   matchId: string;
@@ -123,6 +127,16 @@ export function emitCallDecline(matchId: string, callerId: string) {
 /** Caller → callee: hung up while ringing. */
 export function emitCallCancel(matchId: string, partnerId: string) {
   emitWhenConnected(getCallSocket(), CALL_EVENTS.CANCEL, { matchId, partnerId });
+}
+
+/** Mark this user as in an active 1:1 call — the server replies call:busy to other callers. */
+export function emitJoinActiveCall() {
+  emitWhenConnected(getCallSocket(), CALL_ACTIVE_JOIN, {});
+}
+
+/** Clear the in-call flag — the server will ring this user again. */
+export function emitLeaveActiveCall() {
+  emitWhenConnected(getCallSocket(), CALL_ACTIVE_LEAVE, {});
 }
 
 /** Tear down the shared socket (e.g. on logout). */

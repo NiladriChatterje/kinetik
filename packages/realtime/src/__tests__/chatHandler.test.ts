@@ -4,8 +4,11 @@ import { ChatHandler } from '../handlers/chat';
 
 // ─── Mocks ────────────────────────────────────────────────────────
 
+let mockSocketSeq = 0;
+
 function createMockSocket(userId: string) {
   const socket: any = {
+    id: `socket-${userId}-${++mockSocketSeq}`, // unique per connection — real sockets always have an id
     userId,
     join: vi.fn(),
     leave: vi.fn(),
@@ -97,6 +100,7 @@ describe('ChatHandler', () => {
 
   beforeEach(() => {
     vi.clearAllMocks();
+    mockSocketSeq = 0;
     nsp = createMockNamespace();
     pubClient = createMockRedis();
     subClient = createMockRedis();
@@ -127,6 +131,8 @@ describe('ChatHandler', () => {
       expect(registeredEvents).toContain(WsEvent.CALL_ACCEPT);
       expect(registeredEvents).toContain(WsEvent.CALL_DECLINE);
       expect(registeredEvents).toContain(WsEvent.CALL_CANCEL);
+      expect(registeredEvents).toContain(WsEvent.CALL_ACTIVE_JOIN);
+      expect(registeredEvents).toContain(WsEvent.CALL_ACTIVE_LEAVE);
       expect(registeredEvents).toContain('disconnect');
     });
   });
@@ -468,6 +474,158 @@ describe('ChatHandler', () => {
       expect(() =>
         messageHandler(REDIS_KEYS.CHAT_CALL_CHANNEL, JSON.stringify({ type: 'bogus' })),
       ).not.toThrow();
+    });
+
+    it('should deliver CALL_BUSY from Redis to the target personal room locally', () => {
+      const caller = simulateSecondConnection(nsp, 'user-111');
+      const messageHandler = getMessageHandler(subClient);
+
+      caller.rooms.add('user:user-111');
+
+      const busyEvent = {
+        type: 'busy',
+        targetUserId: 'user-111',
+        event: {
+          matchId: 'match-456',
+          calleeId: 'user-456',
+          timestamp: new Date().toISOString(),
+        },
+      };
+
+      messageHandler(REDIS_KEYS.CHAT_CALL_CHANNEL, JSON.stringify(busyEvent));
+
+      expect(caller.emit).toHaveBeenCalledWith(WsEvent.CALL_BUSY, busyEvent.event);
+    });
+
+    it('should publish CALL_BUSY instead of CALL_INVITE when the callee is in an active call', () => {
+      const { socket: caller } = simulateConnection(nsp);
+      const callee = simulateSecondConnection(nsp, 'user-456');
+
+      const joinFn = registerHandler(caller, WsEvent.CHAT_JOIN);
+      const inviteFn = registerHandler(caller, WsEvent.CALL_INVITE);
+      const activeJoinFn = registerHandler(callee, WsEvent.CALL_ACTIVE_JOIN);
+
+      joinFn({ matchId: 'match-456' });
+
+      // Ring user-456 while they're NOT busy → invite
+      inviteFn({ matchId: 'match-456', partnerId: 'user-456' });
+
+      // Mark user-456 as busy (the callee's socket joins an active call)
+      activeJoinFn();
+
+      // Ring user-456 again → busy
+      inviteFn({ matchId: 'match-456', partnerId: 'user-456' });
+
+      const publishes = pubClient.publish.mock.calls
+        .filter(([channel]: [string]) => channel === REDIS_KEYS.CHAT_CALL_CHANNEL)
+        .map(([, msg]: [string, string]) => JSON.parse(msg));
+
+      expect(publishes[0].type).toBe('invite');
+      expect(publishes[0].targetUserId).toBe('user-456');
+      expect(publishes[1].type).toBe('busy');
+      expect(publishes[1].targetUserId).toBe('user-123'); // back to the caller
+      expect(publishes[1].event).toMatchObject({ matchId: 'match-456', calleeId: 'user-456' });
+      expect(publishes[1].event.timestamp).toBeDefined();
+    });
+
+    it('should publish CALL_INVITE again after CALL_ACTIVE_LEAVE clears busy state', () => {
+      const { socket: caller } = simulateConnection(nsp);
+      const callee = simulateSecondConnection(nsp, 'user-456');
+
+      const joinFn = registerHandler(caller, WsEvent.CHAT_JOIN);
+      const inviteFn = registerHandler(caller, WsEvent.CALL_INVITE);
+      const activeJoinFn = registerHandler(callee, WsEvent.CALL_ACTIVE_JOIN);
+      const activeLeaveFn = registerHandler(callee, WsEvent.CALL_ACTIVE_LEAVE);
+
+      joinFn({ matchId: 'match-456' });
+      activeJoinFn();
+      activeLeaveFn();
+      inviteFn({ matchId: 'match-456', partnerId: 'user-456' });
+
+      const publishes = pubClient.publish.mock.calls
+        .filter(([channel]: [string]) => channel === REDIS_KEYS.CHAT_CALL_CHANNEL)
+        .map(([, msg]: [string, string]) => JSON.parse(msg));
+
+      expect(publishes[0].type).toBe('invite');
+    });
+
+    it('should clear busy state on disconnect', () => {
+      const { socket: caller } = simulateConnection(nsp);
+      const callee = simulateSecondConnection(nsp, 'user-456');
+
+      const joinFn = registerHandler(caller, WsEvent.CHAT_JOIN);
+      const inviteFn = registerHandler(caller, WsEvent.CALL_INVITE);
+      const activeJoinFn = registerHandler(callee, WsEvent.CALL_ACTIVE_JOIN);
+      const disconnectFn = registerHandler(callee, 'disconnect');
+
+      joinFn({ matchId: 'match-456' });
+      activeJoinFn();
+      disconnectFn();
+      inviteFn({ matchId: 'match-456', partnerId: 'user-456' });
+
+      const publishes = pubClient.publish.mock.calls
+        .filter(([channel]: [string]) => channel === REDIS_KEYS.CHAT_CALL_CHANNEL)
+        .map(([, msg]: [string, string]) => JSON.parse(msg));
+
+      expect(publishes[0].type).toBe('invite');
+    });
+
+    it('should KEEP the user busy when a secondary socket disconnects mid-call', () => {
+      const { socket: caller } = simulateConnection(nsp);
+      // Same user holds TWO sockets: the shared call socket (sets busy) and a
+      // per-screen chat socket. Both join `user:456` personal room.
+      const callSocket = simulateSecondConnection(nsp, 'user-456');
+      const chatSocket = simulateSecondConnection(nsp, 'user-456');
+
+      const joinFn = registerHandler(caller, WsEvent.CHAT_JOIN);
+      const inviteFn = registerHandler(caller, WsEvent.CALL_INVITE);
+      const activeJoinFn = registerHandler(callSocket, WsEvent.CALL_ACTIVE_JOIN);
+      const chatDisconnectFn = registerHandler(chatSocket, 'disconnect');
+
+      joinFn({ matchId: 'match-456' });
+      activeJoinFn(); // call socket marks user-456 busy
+      chatDisconnectFn(); // secondary chat socket drops — busy must persist
+
+      inviteFn({ matchId: 'match-456', partnerId: 'user-456' });
+
+      const publishes = pubClient.publish.mock.calls
+        .filter(([channel]: [string]) => channel === REDIS_KEYS.CHAT_CALL_CHANNEL)
+        .map(([, msg]: [string, string]) => JSON.parse(msg));
+
+      expect(publishes[0].type).toBe('busy'); // still busy → busy reply
+      expect(publishes[0].targetUserId).toBe('user-123');
+
+      // Now the call socket itself disconnects → busy finally clears
+      const callDisconnectFn = registerHandler(callSocket, 'disconnect');
+      callDisconnectFn();
+      inviteFn({ matchId: 'match-456', partnerId: 'user-456' });
+
+      const publishesAfter = pubClient.publish.mock.calls
+        .filter(([channel]: [string]) => channel === REDIS_KEYS.CHAT_CALL_CHANNEL)
+        .map(([, msg]: [string, string]) => JSON.parse(msg));
+
+      expect(publishesAfter[publishesAfter.length - 1].type).toBe('invite');
+    });
+
+    it('should NOT publish CALL_BUSY to self or with missing fields', () => {
+      const { socket: caller } = simulateConnection(nsp);
+      const callee = simulateSecondConnection(nsp, 'user-456');
+
+      const joinFn = registerHandler(caller, WsEvent.CHAT_JOIN);
+      const inviteFn = registerHandler(caller, WsEvent.CALL_INVITE);
+      const activeJoinFn = registerHandler(callee, WsEvent.CALL_ACTIVE_JOIN);
+
+      joinFn({ matchId: 'match-456' });
+      activeJoinFn();
+
+      // Ringing self or missing partner — should not publish anything
+      inviteFn({ matchId: 'match-456', partnerId: 'user-123' });
+      inviteFn({ matchId: '' });
+
+      expect(pubClient.publish).not.toHaveBeenCalledWith(
+        REDIS_KEYS.CHAT_CALL_CHANNEL,
+        expect.anything(),
+      );
     });
   });
 
