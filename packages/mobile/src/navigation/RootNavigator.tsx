@@ -91,9 +91,9 @@ export type RootStackParamList = {
   Main: undefined;
   NotificationPreferences: undefined;
   TokenVault: undefined;
-  VibeCheck: { vibeId: string; partnerName: string };
+  VibeCheck: { vibeId: string; partnerId?: string; partnerName?: string };
   Unmasking: { vibeId: string };
-  Commitment: { vibeId: string };
+  Commitment: { vibeId: string; matched?: boolean };
   LockStatus: { vibeId: string; partnerName: string };
   CalendarSync: { matchId: string };
   VenueSelector: { matchId: string };
@@ -128,7 +128,7 @@ export type PreferencesStackParamList = {
 
 export type MainTabParamList = {
   FlashCountdown: undefined;
-  ActiveRadar: undefined;
+  ActiveRadar: { windowId?: string } | undefined;
   Match: undefined;
   ChatListTab: undefined;
   Profile: undefined;

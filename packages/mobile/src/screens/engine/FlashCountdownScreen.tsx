@@ -9,6 +9,7 @@ import { Button } from '../../components/common/Button';
 import { Card } from '../../components/common/Card';
 import { colors, typography, spacing, radius } from '../../theme';
 import { api } from '../../services/api';
+import { useToast } from '../../hooks/useToast';
 
 const { height: SCREEN_HEIGHT } = Dimensions.get('window');
 const MODAL_SHEET_HEIGHT = 400;
@@ -24,8 +25,24 @@ interface AreaDetails {
   locationUpdatedAt: string | null;
 }
 
+interface FlashWindow {
+  id: string;
+  city: string;
+  region?: string | null;
+  country?: string | null;
+  starts_at: string;
+  ends_at: string;
+  status: 'scheduled' | 'active' | 'closed';
+  max_participants: number;
+  participant_count: number;
+  current_participants?: number;
+}
+
 export const FlashCountdownScreen: React.FC<{ navigation: any }> = ({ navigation }) => {
-  const [timeLeft, setTimeLeft] = useState(47 * 60 + 32);
+  const [window, setWindow] = useState<FlashWindow | null>(null);
+  const [windowsLoading, setWindowsLoading] = useState(true);
+  const [timeLeft, setTimeLeft] = useState(0);
+  const [joining, setJoining] = useState(false);
   const [locationName, setLocationName] = useState<string | null>(null);
   const [areaDetails, setAreaDetails] = useState<AreaDetails | null>(null);
   const [areaLoading, setAreaLoading] = useState(false);
@@ -34,6 +51,7 @@ export const FlashCountdownScreen: React.FC<{ navigation: any }> = ({ navigation
   const pulseAnim = useRef(new Animated.Value(1)).current;
   const slideAnim = useRef(new Animated.Value(MODAL_SHEET_HEIGHT)).current;
   const fadeAnim = useRef(new Animated.Value(0)).current;
+  const { showError } = useToast();
 
   // ─── Fetch location on mount (single fetch — backend handles 3-min polling) ─
   const fetchAreaDetails = useCallback(async () => {
@@ -47,13 +65,51 @@ export const FlashCountdownScreen: React.FC<{ navigation: any }> = ({ navigation
     }
   }, []);
 
+  // ─── Fetch next flash window (poll every 30s so the countdown stays in sync) ─
+  const fetchWindows = useCallback(async () => {
+    try {
+      const res = await api.getActiveWindows();
+      if (res.success && Array.isArray(res.data) && res.data.length > 0) {
+        setWindow(res.data[0] as FlashWindow);
+      } else {
+        setWindow(null);
+      }
+    } catch {
+      setWindow(null);
+    } finally {
+      setWindowsLoading(false);
+    }
+  }, []);
+
   useEffect(() => {
     fetchAreaDetails();
-  }, [fetchAreaDetails]);
+    fetchWindows();
+    const poll = setInterval(fetchWindows, 30000);
+    return () => clearInterval(poll);
+  }, [fetchAreaDetails, fetchWindows]);
 
-  // ─── Countdown timer ──────────────────────────────────
+  // ─── Countdown driven by the real window's starts_at/ends_at ─
   useEffect(() => {
-    const interval = setInterval(() => setTimeLeft((t) => Math.max(0, t - 1)), 1000);
+    if (!window) return;
+    const update = () => {
+      const startsAt = new Date(window.starts_at).getTime();
+      const endsAt = new Date(window.ends_at).getTime();
+      const now = Date.now();
+      if (now < startsAt) {
+        setTimeLeft(Math.floor((startsAt - now) / 1000));
+      } else if (now < endsAt) {
+        setTimeLeft(0); // LIVE
+      } else {
+        setTimeLeft(0);
+      }
+    };
+    update();
+    const interval = setInterval(update, 1000);
+    return () => clearInterval(interval);
+  }, [window]);
+
+  // ─── Pulse animation ──────────────────────────────────
+  useEffect(() => {
     const pulse = Animated.loop(
       Animated.sequence([
         Animated.timing(pulseAnim, { toValue: 1.05, duration: 1000, useNativeDriver: true }),
@@ -61,8 +117,8 @@ export const FlashCountdownScreen: React.FC<{ navigation: any }> = ({ navigation
       ]),
     );
     pulse.start();
-    return () => { clearInterval(interval); pulse.stop(); };
-  }, []);
+    return () => pulse.stop();
+  }, [pulseAnim]);
 
   // ─── Modal animations ─────────────────────────────────
   useEffect(() => {
@@ -86,9 +142,25 @@ export const FlashCountdownScreen: React.FC<{ navigation: any }> = ({ navigation
   const mins = Math.floor(timeLeft / 60);
   const secs = timeLeft % 60;
   const displayLocation = locationName || 'Your Area';
-  const participants = 1284;
+  const isLive = !!window && new Date(window.starts_at).getTime() <= Date.now();
+  const liveCount = window?.current_participants ?? window?.participant_count ?? 0;
 
-  const handleJoin = () => navigation.navigate('ActiveRadar');
+  const handleJoin = async () => {
+    if (!window || joining) return;
+    setJoining(true);
+    try {
+      const res = await api.joinWindow(window.id);
+      if (res.success) {
+        navigation.navigate('ActiveRadar', { windowId: window.id });
+      } else {
+        showError('Could not join', res.error?.message || 'Please try again.');
+      }
+    } catch (e: any) {
+      showError('Could not join', e?.message || 'Please try again.');
+    } finally {
+      setJoining(false);
+    }
+  };
 
   const openAreaModal = useCallback(() => {
     setModalVisible(true);
@@ -125,48 +197,86 @@ export const FlashCountdownScreen: React.FC<{ navigation: any }> = ({ navigation
       </View>
 
       {/* Countdown */}
-      <View style={styles.countdownSection}>
-        <Animated.View style={[styles.countdownCircle, { transform: [{ scale: pulseAnim }] }]}>
-          <View style={styles.countdownFace}>
-            <Text style={styles.countdownTimer}>
-              {String(mins).padStart(2, '0')}:{String(secs).padStart(2, '0')}
-            </Text>
-            <Text style={styles.countdownLabel}>until flash window</Text>
+      {windowsLoading ? (
+        <View style={styles.loadingSection}>
+          <ActivityIndicator size="large" color={colors.textPrimary} />
+          <Text style={styles.loadingText}>Checking for flash windows…</Text>
+        </View>
+      ) : !window ? (
+        <View style={styles.emptySection}>
+          <View style={styles.emptyCircle}>
+            <Ionicons name="time-outline" size={44} color={colors.textMuted} />
           </View>
-        </Animated.View>
-      </View>
+          <Text style={styles.emptyTitle}>No flash window right now</Text>
+          <Text style={styles.emptyDesc}>
+            Flash windows open every evening in your area. We'll check again in a moment.
+          </Text>
+          <Button
+            title="Check Again"
+            onPress={fetchWindows}
+            variant="outline"
+            size="md"
+          />
+        </View>
+      ) : (
+        <>
+          <View style={styles.countdownSection}>
+            <Animated.View style={[styles.countdownCircle, { transform: [{ scale: pulseAnim }] }]}>
+              <View style={styles.countdownFace}>
+                {isLive ? (
+                  <>
+                    <Text style={styles.liveText}>● LIVE</Text>
+                    <Text style={styles.countdownLabel}>flash window in progress</Text>
+                  </>
+                ) : (
+                  <>
+                    <Text style={styles.countdownTimer}>
+                      {String(mins).padStart(2, '0')}:{String(secs).padStart(2, '0')}
+                    </Text>
+                    <Text style={styles.countdownLabel}>until flash window</Text>
+                  </>
+                )}
+              </View>
+            </Animated.View>
+          </View>
 
-      {/* Stats */}
-      <View style={styles.statsRow}>
-        <Card style={styles.statCard}>
-          <Text style={styles.statNumber}>{participants}</Text>
-          <Text style={styles.statLabel}>Live Now</Text>
-        </Card>
-        <Card style={styles.statCard}>
-          <Text style={styles.statNumber}>{Math.floor(participants * 0.6)}</Text>
-          <Text style={styles.statLabel}>In Queue</Text>
-        </Card>
-        <Card style={styles.statCard}>
-          <Text style={styles.statNumber}>{Math.floor(participants * 0.15)}</Text>
-          <Text style={styles.statLabel}>Matches</Text>
-        </Card>
-      </View>
+          {/* Stats */}
+          <View style={styles.statsRow}>
+            <Card style={styles.statCard}>
+              <Text style={styles.statNumber}>{liveCount}</Text>
+              <Text style={styles.statLabel}>Live Now</Text>
+            </Card>
+            <Card style={styles.statCard}>
+              <Text style={styles.statNumber}>{window?.participant_count ?? 0}</Text>
+              <Text style={styles.statLabel}>In Queue</Text>
+            </Card>
+            <Card style={styles.statCard}>
+              <Text style={styles.statNumber}>{window?.max_participants ?? '—'}</Text>
+              <Text style={styles.statLabel}>Max</Text>
+            </Card>
+          </View>
 
-      <Text style={styles.infoText}>
-        At 8:30 PM, the queue opens. You'll be matched live for{'\n'}
-        3-minute Vibe Checks. No swiping, no texting.
-      </Text>
+          <Text style={styles.infoText}>
+            {isLive
+              ? "The queue is open. You'll be matched live for 3-minute Vibe Checks."
+              : `At ${new Date(window.starts_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}, the queue opens. You'll be matched live for 3-minute Vibe Checks.`}
+          </Text>
 
-      <View style={styles.bottomSection}>
-        <Button
-          title="Join the Queue"
-          onPress={handleJoin}
-          fullWidth
-          size="lg"
-          icon={<Ionicons name="enter-outline" size={20} color={colors.textPrimary} />}
-        />
-        <Text style={styles.hintText}>2,340 people are queued in your area</Text>
-      </View>
+          <View style={styles.bottomSection}>
+            <Button
+              title={isLive ? 'Join Now' : 'Join the Queue'}
+              onPress={handleJoin}
+              fullWidth
+              size="lg"
+              loading={joining}
+              icon={<Ionicons name="enter-outline" size={20} color={colors.textPrimary} />}
+            />
+            <Text style={styles.hintText}>
+              {liveCount > 0 ? `${liveCount} people are queued in your area` : 'Be the first in line for the next window'}
+            </Text>
+          </View>
+        </>
+      )}
 
       {/* ─── Area Details Bottom-Sheet Modal ──────────────── */}
       <Modal
@@ -235,7 +345,7 @@ export const FlashCountdownScreen: React.FC<{ navigation: any }> = ({ navigation
                   {areaDetails?.h3Index && (
                     <View style={styles.detailRow}>
                       <View style={styles.detailIconWrap}>
-                        <Ionicons name="hexagon-outline" size={18} color={colors.textPrimary} />
+                        <Ionicons name="grid-outline" size={18} color={colors.textPrimary} />
                       </View>
                       <View style={styles.detailContent}>
                         <Text style={styles.detailLabel}>H3 Grid Cell</Text>
@@ -252,7 +362,7 @@ export const FlashCountdownScreen: React.FC<{ navigation: any }> = ({ navigation
                     <View style={styles.detailContent}>
                       <Text style={styles.detailLabel}>Coordinates</Text>
                       <Text style={styles.detailValueMono}>
-                        {areaDetails?.latitude?.toFixed(4)}, {areaDetails?.longitude?.toFixed(4)}
+                        {areaDetails?.latitude?.toFixed(4) ?? '—'}, {areaDetails?.longitude?.toFixed(4) ?? '—'}
                       </Text>
                     </View>
                   </View>
@@ -313,11 +423,24 @@ const styles = StyleSheet.create({
   },
   locationText: { ...typography.body2, color: colors.textSecondary, marginHorizontal: spacing.xs },
 
+  // Loading / empty states
+  loadingSection: { flex: 1, justifyContent: 'center', alignItems: 'center' },
+  loadingText: { ...typography.body2, color: colors.textMuted, marginTop: spacing.lg },
+  emptySection: { flex: 1, justifyContent: 'center', alignItems: 'center', paddingHorizontal: spacing.md },
+  emptyCircle: {
+    width: 96, height: 96, borderRadius: 48,
+    backgroundColor: colors.surfaceHighlight,
+    alignItems: 'center', justifyContent: 'center', marginBottom: spacing.lg,
+  },
+  emptyTitle: { ...typography.h3, color: colors.textPrimary, marginBottom: spacing.sm, textAlign: 'center' },
+  emptyDesc: { ...typography.body2, color: colors.textMuted, textAlign: 'center', lineHeight: 20, marginBottom: spacing.xl },
+
   // Countdown
   countdownSection: { flex: 1, justifyContent: 'center', alignItems: 'center' },
   countdownCircle: { width: 220, height: 220, borderRadius: 110, overflow: 'hidden' },
   countdownFace: { flex: 1, alignItems: 'center', justifyContent: 'center', backgroundColor: colors.textPrimary },
   countdownTimer: { ...typography.countdown, color: colors.textInverse },
+  liveText: { ...typography.h3, color: colors.textInverse, letterSpacing: 1 },
   countdownLabel: { ...typography.caption, color: colors.textInverse, marginTop: spacing.xs, opacity: 0.7 },
 
   // Stats
