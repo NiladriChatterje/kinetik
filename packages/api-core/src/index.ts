@@ -11,6 +11,7 @@ import { userRoutes } from './routes/users';
 import { onboardingRoutes } from './routes/onboarding';
 import { windowRoutes } from './routes/windows';
 import { matchRoutes } from './routes/matches';
+import { callRoutes } from './routes/calls';
 import { paymentRoutes } from './routes/payments';
 import { venueRoutes } from './routes/venues';
 import { fanRoutes } from './routes/fans';
@@ -109,6 +110,7 @@ async function bootstrap() {
   await app.register(onboardingRoutes, { prefix: '/api/v1/onboarding' });
   await app.register(windowRoutes, { prefix: API_ROUTES.WINDOWS_PREFIX });
   await app.register(matchRoutes, { prefix: API_ROUTES.MATCHES_PREFIX });
+  await app.register(callRoutes, { prefix: API_ROUTES.MATCHES_PREFIX });
   await app.register(fanRoutes, { prefix: '/api/v1/fans' });
   await app.register(venueRoutes, { prefix: API_ROUTES.VENUES_PREFIX });
   await app.register(paymentRoutes, { prefix: API_ROUTES.PAYMENTS_PREFIX });

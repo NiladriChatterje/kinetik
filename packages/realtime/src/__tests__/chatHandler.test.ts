@@ -115,7 +115,7 @@ describe('ChatHandler', () => {
       expect(socket.join).toHaveBeenCalledWith(`user:${userId}`);
     });
 
-    it('should register CHAT_JOIN, CHAT_LEAVE, CHAT_MESSAGE, CHAT_TYPING, CHAT_READ, and disconnect handlers', () => {
+    it('should register CHAT_JOIN, CHAT_LEAVE, CHAT_MESSAGE, CHAT_TYPING, CHAT_READ, call events, and disconnect handlers', () => {
       const { socket } = simulateConnection(nsp);
       const registeredEvents = socket.on.mock.calls.map(([e]: [string]) => e);
       expect(registeredEvents).toContain(WsEvent.CHAT_JOIN);
@@ -123,6 +123,10 @@ describe('ChatHandler', () => {
       expect(registeredEvents).toContain(WsEvent.CHAT_MESSAGE);
       expect(registeredEvents).toContain(WsEvent.CHAT_TYPING);
       expect(registeredEvents).toContain(WsEvent.CHAT_READ);
+      expect(registeredEvents).toContain(WsEvent.CALL_INVITE);
+      expect(registeredEvents).toContain(WsEvent.CALL_ACCEPT);
+      expect(registeredEvents).toContain(WsEvent.CALL_DECLINE);
+      expect(registeredEvents).toContain(WsEvent.CALL_CANCEL);
       expect(registeredEvents).toContain('disconnect');
     });
   });
@@ -312,6 +316,161 @@ describe('ChatHandler', () => {
     });
   });
 
+  // ─── 1:1 CALL SIGNALING ────────────────────────────────────
+
+  describe('1:1 call signaling', () => {
+    it('should publish CALL_INVITE to the partner personal room via Redis for a match participant', () => {
+      const { socket } = simulateConnection(nsp);
+      const joinFn = registerHandler(socket, WsEvent.CHAT_JOIN);
+      const inviteFn = registerHandler(socket, WsEvent.CALL_INVITE);
+
+      joinFn({ matchId: 'match-456' });
+      inviteFn({ matchId: 'match-456', partnerId: 'user-456', callerName: 'Ava', callerPhotoUrl: '/p.jpg' });
+
+      const publishCall = pubClient.publish.mock.calls.find(
+        ([channel]: [string]) => channel === REDIS_KEYS.CHAT_CALL_CHANNEL,
+      );
+      expect(publishCall).toBeDefined();
+      const published = JSON.parse(publishCall[1]);
+      expect(published.type).toBe('invite');
+      expect(published.targetUserId).toBe('user-456');
+      expect(published.event).toMatchObject({
+        matchId: 'match-456',
+        callerId: 'user-123',
+        callerName: 'Ava',
+        callerPhotoUrl: '/p.jpg',
+      });
+      expect(published.event.timestamp).toBeDefined();
+    });
+
+    it('should NOT publish CALL_INVITE when the caller is not a match participant', () => {
+      const { socket } = simulateConnection(nsp);
+      const inviteFn = registerHandler(socket, WsEvent.CALL_INVITE);
+
+      // Never joined match-456 via chat:join
+      inviteFn({ matchId: 'match-456', partnerId: 'user-456' });
+
+      expect(pubClient.publish).not.toHaveBeenCalledWith(
+        REDIS_KEYS.CHAT_CALL_CHANNEL,
+        expect.anything(),
+      );
+    });
+
+    it('should NOT publish CALL_INVITE to self or with missing fields', () => {
+      const { socket } = simulateConnection(nsp);
+      const joinFn = registerHandler(socket, WsEvent.CHAT_JOIN);
+      const inviteFn = registerHandler(socket, WsEvent.CALL_INVITE);
+
+      joinFn({ matchId: 'match-456' });
+      inviteFn({ matchId: 'match-456', partnerId: 'user-123' }); // self
+      inviteFn({ matchId: '', partnerId: 'user-456' }); // missing match
+      inviteFn({ matchId: 'match-456' }); // missing partner
+
+      expect(pubClient.publish).not.toHaveBeenCalledWith(
+        REDIS_KEYS.CHAT_CALL_CHANNEL,
+        expect.anything(),
+      );
+    });
+
+    it('should publish CALL_ACCEPT to the caller personal room', () => {
+      const { socket } = simulateConnection(nsp);
+      const acceptFn = registerHandler(socket, WsEvent.CALL_ACCEPT);
+
+      acceptFn({ matchId: 'match-456', callerId: 'user-111' });
+
+      const publishCall = pubClient.publish.mock.calls.find(
+        ([channel]: [string]) => channel === REDIS_KEYS.CHAT_CALL_CHANNEL,
+      );
+      expect(publishCall).toBeDefined();
+      const published = JSON.parse(publishCall[1]);
+      expect(published.type).toBe('accept');
+      expect(published.targetUserId).toBe('user-111');
+      expect(published.event).toMatchObject({ matchId: 'match-456', calleeId: 'user-123' });
+    });
+
+    it('should publish CALL_DECLINE to the caller personal room', () => {
+      const { socket } = simulateConnection(nsp);
+      const declineFn = registerHandler(socket, WsEvent.CALL_DECLINE);
+
+      declineFn({ matchId: 'match-456', callerId: 'user-111' });
+
+      const publishCall = pubClient.publish.mock.calls.find(
+        ([channel]: [string]) => channel === REDIS_KEYS.CHAT_CALL_CHANNEL,
+      );
+      expect(publishCall).toBeDefined();
+      const published = JSON.parse(publishCall[1]);
+      expect(published.type).toBe('decline');
+      expect(published.targetUserId).toBe('user-111');
+    });
+
+    it('should publish CALL_CANCEL to the partner personal room', () => {
+      const { socket } = simulateConnection(nsp);
+      const cancelFn = registerHandler(socket, WsEvent.CALL_CANCEL);
+
+      cancelFn({ matchId: 'match-456', partnerId: 'user-456' });
+
+      const publishCall = pubClient.publish.mock.calls.find(
+        ([channel]: [string]) => channel === REDIS_KEYS.CHAT_CALL_CHANNEL,
+      );
+      expect(publishCall).toBeDefined();
+      const published = JSON.parse(publishCall[1]);
+      expect(published.type).toBe('cancel');
+      expect(published.targetUserId).toBe('user-456');
+      expect(published.event.callerId).toBe('user-123');
+    });
+
+    it('should deliver call events from Redis to the target personal room locally', () => {
+      const callee = simulateSecondConnection(nsp, 'user-456');
+      const messageHandler = getMessageHandler(subClient);
+
+      // Callee's socket is in their personal room
+      callee.rooms.add('user:user-456');
+
+      const inviteEvent = {
+        type: 'invite',
+        targetUserId: 'user-456',
+        event: {
+          matchId: 'match-456',
+          callerId: 'user-123',
+          callerName: 'Ava',
+          callerPhotoUrl: '',
+          timestamp: new Date().toISOString(),
+        },
+      };
+
+      messageHandler(REDIS_KEYS.CHAT_CALL_CHANNEL, JSON.stringify(inviteEvent));
+
+      expect(callee.emit).toHaveBeenCalledWith(WsEvent.CALL_INVITE, inviteEvent.event);
+    });
+
+    it('should NOT deliver call events to sockets outside the target personal room', () => {
+      const unrelated = simulateSecondConnection(nsp, 'user-999');
+      unrelated.rooms.add('user:user-999'); // different room
+      const messageHandler = getMessageHandler(subClient);
+
+      const inviteEvent = {
+        type: 'invite',
+        targetUserId: 'user-456',
+        event: { matchId: 'match-456', callerId: 'user-123' },
+      };
+
+      messageHandler(REDIS_KEYS.CHAT_CALL_CHANNEL, JSON.stringify(inviteEvent));
+
+      expect(unrelated.emit).not.toHaveBeenCalledWith(WsEvent.CALL_INVITE, expect.anything());
+    });
+
+    it('should handle malformed call events gracefully', () => {
+      const messageHandler = getMessageHandler(subClient);
+
+      expect(() =>
+        messageHandler(REDIS_KEYS.CHAT_CALL_CHANNEL, 'not-json'),
+      ).not.toThrow();
+      expect(() =>
+        messageHandler(REDIS_KEYS.CHAT_CALL_CHANNEL, JSON.stringify({ type: 'bogus' })),
+      ).not.toThrow();
+    });
+  });
+
   // ─── Disconnect ───────────────────────────────────────────────
 
   describe('disconnect event', () => {
@@ -428,6 +587,7 @@ describe('ChatHandler', () => {
         REDIS_KEYS.CHAT_TYPING_CHANNEL,
         REDIS_KEYS.CHAT_READ_CHANNEL,
         REDIS_KEYS.CHAT_MEDIA_EVENTS_CHANNEL,
+        REDIS_KEYS.CHAT_CALL_CHANNEL,
         expect.any(Function),
       );
     });

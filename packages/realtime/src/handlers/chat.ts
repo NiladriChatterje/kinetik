@@ -15,6 +15,23 @@ interface ChatTypingPayload {
   isTyping: boolean;
 }
 
+interface CallInvitePayload {
+  matchId: string;
+  partnerId: string;
+  callerName?: string;
+  callerPhotoUrl?: string;
+}
+
+interface CallRespondPayload {
+  matchId: string;
+  callerId: string;
+}
+
+interface CallCancelPayload {
+  matchId: string;
+  partnerId: string;
+}
+
 interface MessagePayload {
   id: string;
   matchId: string;
@@ -78,11 +95,12 @@ export class ChatHandler {
       REDIS_KEYS.CHAT_TYPING_CHANNEL,
       REDIS_KEYS.CHAT_READ_CHANNEL,
       REDIS_KEYS.CHAT_MEDIA_EVENTS_CHANNEL,
+      REDIS_KEYS.CHAT_CALL_CHANNEL,
       (err) => {
         if (err) {
           console.error('[Chat] Failed to subscribe to cross-instance channels:', err.message);
         } else {
-          console.log(`[Chat] Subscribed to cross-instance channels: messages, typing, read, media`);
+          console.log(`[Chat] Subscribed to cross-instance channels: messages, typing, read, media, call`);
         }
       },
     );
@@ -106,6 +124,10 @@ export class ChatHandler {
 
           case REDIS_KEYS.CHAT_MEDIA_EVENTS_CHANNEL:
             this.handleIncomingMediaEvent(payload);
+            break;
+
+          case REDIS_KEYS.CHAT_CALL_CHANNEL:
+            this.handleIncomingCallEvent(payload);
             break;
         }
       } catch (err) {
@@ -173,6 +195,37 @@ export class ChatHandler {
     }
   }
 
+  // ─── Handle incoming 1:1 call signaling from Redis pub/sub ─
+  // Delivered ONLY via the Redis subscriber (same pattern as messages)
+  // so each instance emits exactly once — no double-ring on the same
+  // instance. The event is routed to the target user's PERSONAL room
+  // (`user:<id>`), which every socket joins on connection, so a call
+  // invite reaches the callee no matter which screen they're on.
+  private handleIncomingCallEvent(payload: any) {
+    const { type, targetUserId, event } = payload || {};
+    if (!type || !targetUserId || !event) return;
+
+    // Reuses emitToLocalRoom with the personal room (`user:<id>`) — every
+    // socket joins it on connect, so the target receives the event regardless
+    // of which screen they're on. NOTE: this is best-effort ring signaling;
+    // the real 1:1 security boundary is the LiveKit token endpoint in api-core.
+    const room = `user:${targetUserId}`;
+    switch (type) {
+      case 'invite':
+        this.emitToLocalRoom(room, WsEvent.CALL_INVITE, event);
+        break;
+      case 'accept':
+        this.emitToLocalRoom(room, WsEvent.CALL_ACCEPT, event);
+        break;
+      case 'decline':
+        this.emitToLocalRoom(room, WsEvent.CALL_DECLINE, event);
+        break;
+      case 'cancel':
+        this.emitToLocalRoom(room, WsEvent.CALL_CANCEL, event);
+        break;
+    }
+  }
+
   // ─── Local-only broadcast helpers ──────────────────────────
   // These emit directly to sockets on the CURRENT instance only,
   // bypassing the Socket.IO Redis adapter entirely. This is critical
@@ -194,6 +247,16 @@ export class ChatHandler {
         socket.emit(event, data);
       }
     }
+  }
+
+  /** Publish a 1:1 call signaling event for cross-instance delivery. */
+  private publishCallEvent(type: string, targetUserId: string, event: any) {
+    this.pubClient.publish(
+      REDIS_KEYS.CHAT_CALL_CHANNEL,
+      JSON.stringify({ type, targetUserId, event }),
+    ).catch((err: Error) => {
+      console.error('[Chat] Failed to publish call event:', err.message);
+    });
   }
 
   // ─── Socket Event Handlers ─────────────────────────────────
@@ -273,6 +336,59 @@ export class ChatHandler {
           JSON.stringify({ matchId, userId, isTyping }),
         ).catch((err: Error) => {
           console.error('[Chat] Failed to publish typing indicator:', err.message);
+        });
+      });
+
+      // ── 1:1 call signaling (LiveKit) ──
+      // Invite/accept/decline/cancel are routed to the target user's PERSONAL
+      // room via the Redis subscriber (exactly-once delivery per instance).
+
+      socket.on(WsEvent.CALL_INVITE, (data: CallInvitePayload) => {
+        const { matchId, partnerId, callerName, callerPhotoUrl } = data || {};
+        if (!matchId || !partnerId || partnerId === userId) return;
+
+        // Caller must be a participant of the match (joined it via chat:join)
+        if (!this.userMatches.get(userId)?.has(matchId)) return;
+
+        this.publishCallEvent('invite', partnerId, {
+          matchId,
+          callerId: userId,
+          callerName: callerName || '',
+          callerPhotoUrl: callerPhotoUrl || '',
+          timestamp: new Date().toISOString(),
+        });
+      });
+
+      socket.on(WsEvent.CALL_ACCEPT, (data: CallRespondPayload) => {
+        const { matchId, callerId } = data || {};
+        if (!matchId || !callerId || callerId === userId) return;
+
+        this.publishCallEvent('accept', callerId, {
+          matchId,
+          calleeId: userId,
+          timestamp: new Date().toISOString(),
+        });
+      });
+
+      socket.on(WsEvent.CALL_DECLINE, (data: CallRespondPayload) => {
+        const { matchId, callerId } = data || {};
+        if (!matchId || !callerId || callerId === userId) return;
+
+        this.publishCallEvent('decline', callerId, {
+          matchId,
+          calleeId: userId,
+          timestamp: new Date().toISOString(),
+        });
+      });
+
+      socket.on(WsEvent.CALL_CANCEL, (data: CallCancelPayload) => {
+        const { matchId, partnerId } = data || {};
+        if (!matchId || !partnerId || partnerId === userId) return;
+
+        this.publishCallEvent('cancel', partnerId, {
+          matchId,
+          callerId: userId,
+          timestamp: new Date().toISOString(),
         });
       });
 

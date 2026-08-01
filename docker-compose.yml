@@ -164,6 +164,12 @@ services:
       # Message encryption key (AES-256-GCM, any string)
       MESSAGE_ENCRYPTION_KEY: ${MESSAGE_ENCRYPTION_KEY:-kinetik_msg_enc_key_2024_dev}
 
+      # LiveKit WebRTC (call tokens are issued by api-core)
+      LIVEKIT_API_KEY: ${LIVEKIT_API_KEY:-kinetik_livekit_key}
+      LIVEKIT_API_SECRET: ${LIVEKIT_API_SECRET:-kinetik_livekit_secret_2024_dev_xyz}
+      LIVEKIT_HOST: livekit:7880
+      LIVEKIT_PUBLIC_URL: ${LIVEKIT_PUBLIC_URL:-ws://localhost:7880}
+
       # Geoapify reverse geocoding
       GEOAPIFY_API: ${GEOAPIFY_API:-}
 
