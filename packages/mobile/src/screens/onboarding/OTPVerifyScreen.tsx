@@ -90,11 +90,12 @@ export const OTPVerifyScreen: React.FC<{ navigation: any }> = ({ navigation }) =
           // Profile is fully set up — go straight to Main
           navigation.getParent()?.reset({ index: 0, routes: [{ name: 'Main' }] });
         } else if (currentStep === 'identity') {
-          // Identity data already exists — skip to Location
-          navigation.navigate('Location');
-        } else if (currentStep === 'location' || currentStep === 'photos' || currentStep === 'pose' || currentStep === 'kyc') {
+          // Identity data already exists — skip to About
+          navigation.navigate('About');
+        } else if (currentStep === 'about' || currentStep === 'location' || currentStep === 'photos' || currentStep === 'pose' || currentStep === 'kyc') {
           // User is further along — determine next screen based on step
           const screenMap: Record<string, string> = {
+            about: 'Location',
             location: 'Photos',
             photos: 'PoseVerification',
             pose: 'KYC',

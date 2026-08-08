@@ -4,12 +4,12 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { Ionicons } from '@expo/vector-icons';
 import { Button } from '../../components/common/Button';
-import { colors, typography, spacing, radius } from '../../theme';
+import { colors, typography, spacing } from '../../theme';
 
 interface Props { navigation: any; route: any; }
 
 export const LockStatusScreen: React.FC<Props> = ({ navigation, route }) => {
-  const { vibeId, matched } = route.params || {};
+  const { vibeId } = route.params || {};
   const scaleAnim = useRef(new Animated.Value(0)).current;
 
   useEffect(() => {

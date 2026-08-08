@@ -41,10 +41,6 @@ export const H3_LOW_DENSITY_RING_RADIUS = 3;
 export const H3_HIGH_DENSITY_THRESHOLD = 5000;  // users in 5km radius
 export const DEFAULT_MAX_DISTANCE_KM = 50;
 
-// ─── Vector Dimensions ───────────────────────────────────
-
-export const VECTOR_DIMENSIONS = 1024;
-export const VECTOR_SIMILARITY_TOP_K = 10;
 export const MATCH_QUEUE_BATCH_SIZE = 50;
 
 // ─── Redis Keys ───────────────────────────────────────────
@@ -257,6 +253,7 @@ export const DEFAULT_AGE_MAX = 60;
 export const ONBOARDING_STEPS: readonly string[] = [
   'splash',
   'identity',
+  'about',
   'location',
   'photos',
   'pose',

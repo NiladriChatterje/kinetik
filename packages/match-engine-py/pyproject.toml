@@ -1,7 +1,7 @@
 [project]
 name = "kinetik-match-engine"
 version = "0.1.0"
-description = "Kinetik match engine — NCF-based neural collaborative filtering with CUDA acceleration"
+description = "Kinetik match engine — hyperlocal spatial (H3) matching with Celery workers"
 requires-python = ">=3.11"
 dependencies = [
     "fastapi>=0.115.0",
@@ -11,8 +11,6 @@ dependencies = [
     "aiokafka>=0.11.0",
     "asyncpg>=0.30.0",
     "h3>=4.1.0",
-    "numpy>=1.26.0",
-    "torch>=2.4.0",
     "pydantic>=2.9.0",
     "pydantic-settings>=2.6.0",
 ]

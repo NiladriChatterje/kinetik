@@ -12,7 +12,7 @@ import {
   CallInvitePayload,
 } from '../../services/callSocket';
 import { resolveUrl } from '../../config';
-import { colors, typography, spacing, radius } from '../../theme';
+import { colors, typography, spacing } from '../../theme';
 
 const RING_TIMEOUT_MS = 45000; // auto-dismiss ringing after 45s
 

@@ -5,7 +5,7 @@ import Slider from '@react-native-community/slider';
 import { Button } from '../../components/common/Button';
 import { Card } from '../../components/common/Card';
 import { api } from '../../services/api';
-import { colors, typography, spacing, radius } from '../../theme';
+import { colors, typography, spacing } from '../../theme';
 
 export const FilterConstraintsScreen: React.FC<{ navigation: any }> = ({ navigation }) => {
   const [ageMin, setAgeMin] = useState(18);

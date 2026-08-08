@@ -30,7 +30,6 @@ export const LikeListScreen: React.FC<{ navigation: any }> = ({ navigation }) =>
   const [responding, setResponding] = useState<string | null>(null);
   const toast = useToast();
   const likesSocketRef = useRef<Socket | null>(null);
-  const resetUnreadLikeCount = useAuthStore((s) => s.resetUnreadLikeCount);
 
   const fetchLikes = useCallback(async () => {
     try {

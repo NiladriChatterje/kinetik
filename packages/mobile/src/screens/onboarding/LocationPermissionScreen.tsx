@@ -7,7 +7,7 @@ import { Button } from '../../components/common/Button';
 import { Card } from '../../components/common/Card';
 import { useToast } from '../../hooks/useToast';
 import { api } from '../../services/api';
-import { colors, typography, spacing, radius } from '../../theme';
+import { colors, typography, spacing } from '../../theme';
 
 export const LocationPermissionScreen: React.FC<{ navigation: any }> = ({ navigation }) => {
   const [loading, setLoading] = useState(false);
@@ -41,7 +41,7 @@ export const LocationPermissionScreen: React.FC<{ navigation: any }> = ({ naviga
   return (
     <SafeAreaView style={styles.container}>
       <View style={styles.content}>
-        <Text style={styles.step}>Step 2 of 5</Text>
+        <Text style={styles.step}>Step 3 of 6</Text>
         <Text style={styles.title}>Enable Location</Text>
         <Text style={styles.subtitle}>We use precise GPS to place you on the local matching grid</Text>
 

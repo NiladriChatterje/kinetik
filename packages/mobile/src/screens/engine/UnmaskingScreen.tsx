@@ -3,12 +3,9 @@ import { View, Text, StyleSheet, Animated } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { Ionicons } from '@expo/vector-icons';
-import { colors, typography, spacing, radius } from '../../theme';
+import { colors, typography, spacing } from '../../theme';
 
-interface Props { navigation: any; route: any; }
-
-export const UnmaskingScreen: React.FC<Props> = ({ navigation, route }) => {
-  const { vibeId } = route.params || {};
+export const UnmaskingScreen: React.FC = () => {
   const revealAnim = useRef(new Animated.Value(0)).current;
 
   useEffect(() => {
@@ -16,11 +13,6 @@ export const UnmaskingScreen: React.FC<Props> = ({ navigation, route }) => {
       toValue: 1, duration: 60000, useNativeDriver: false,
     }).start();
   }, []);
-
-  const blurAmount = revealAnim.interpolate({
-    inputRange: [0, 0.5, 1],
-    outputRange: [20, 8, 0],
-  });
 
   return (
     <SafeAreaView style={styles.container}>

@@ -5,7 +5,7 @@ export type MatchStatus = 'pending' | 'matched' | 'passed' | 'expired';
 export type SubscriptionTier = 'free' | 'premium' | 'infinite';
 export type VerificationStatus = 'unverified' | 'pending' | 'verified' | 'rejected';
 export type WindowStatus = 'scheduled' | 'active' | 'closed';
-export type OnboardingStep = 'splash' | 'identity' | 'location' | 'photos' | 'pose' | 'kyc' | 'complete';
+export type OnboardingStep = 'splash' | 'identity' | 'about' | 'location' | 'photos' | 'pose' | 'kyc' | 'complete';
 export type InteractionAction = 'like' | 'pass' | 'super_like';
 export type AuthProvider = 'phone' | 'google' | 'apple';
 export type DatingCategory = 'casual' | 'serious' | 'intimacy';
@@ -43,6 +43,19 @@ export interface User {
   lastActiveAt?: string;
   createdAt: string;
   updatedAt: string;
+}
+
+// ─── 'Knowing more about you' Answers ─────────────────────
+// Multi-select answers captured on the About onboarding screen.
+// Each key maps to a question; values are the selected chips
+// (built-in suggestions and user-added custom entries).
+
+export interface AboutAnswers {
+  nature: string[];         // e.g. ['Calm', 'Adventurous']
+  hobbies: string[];        // e.g. ['Travel', 'Cooking']
+  movieGenres: string[];    // e.g. ['Sci-Fi', 'Thriller']
+  music: string[];          // e.g. ['Indie', 'Classical']
+  dateStyle: string[];      // e.g. ['Coffee Date', 'Live Music']
 }
 
 export interface UserProfile {

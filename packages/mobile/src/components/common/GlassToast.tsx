@@ -6,7 +6,7 @@ import {
   TouchableOpacity,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
-import { colors, typography, radius, spacing } from '../../theme';
+import { typography, radius, spacing } from '../../theme';
 
 type ToastType = 'error' | 'success' | 'glass';
 

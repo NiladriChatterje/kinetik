@@ -41,10 +41,6 @@ colorama==0.4.6
     #   uvicorn
 fastapi==0.138.0
     # via kinetik-match-engine (pyproject.toml)
-filelock==3.29.4
-    # via torch
-fsspec==2026.6.0
-    # via torch
 h11==0.16.0
     # via uvicorn
 h3==4.5.0
@@ -53,18 +49,6 @@ httptools==0.8.0
     # via uvicorn
 idna==3.18
     # via anyio
-jinja2==3.1.6
-    # via torch
-kombu==5.6.2
-    # via celery
-markupsafe==3.0.3
-    # via jinja2
-mpmath==1.3.0
-    # via sympy
-networkx==3.6.1
-    # via torch
-numpy==2.4.6
-    # via kinetik-match-engine (pyproject.toml)
 packaging==26.2
     # via
     #   aiokafka
@@ -90,16 +74,9 @@ pyyaml==6.0.3
     # via uvicorn
 redis==8.0.1
     # via kinetik-match-engine (pyproject.toml)
-setuptools==81.0.0
-    # via torch
-six==1.17.0
     # via python-dateutil
 starlette==1.3.1
     # via fastapi
-sympy==1.14.0
-    # via torch
-torch==2.12.1
-    # via kinetik-match-engine (pyproject.toml)
 typing-extensions==4.15.0
     # via
     #   aiokafka
@@ -108,7 +85,6 @@ typing-extensions==4.15.0
     #   pydantic
     #   pydantic-core
     #   starlette
-    #   torch
     #   typing-inspection
 typing-inspection==0.4.2
     # via

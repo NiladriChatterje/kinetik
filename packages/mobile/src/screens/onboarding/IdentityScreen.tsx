@@ -127,7 +127,7 @@ export const IdentityScreen: React.FC<{ navigation: any }> = ({ navigation }) =>
     const res = await api.updateProfile({ displayName: user?.displayName, dateOfBirth: dobIso, gender: gender.toLowerCase(), pronouns, datingCategory: datingCategory });
     if (res.success) {
       await api.updateOnboardingStep('identity');
-      navigation.navigate('Location');
+      navigation.navigate('About');
     } else {
       toast.showError('Update Failed', res.error?.message || 'Could not save your profile. Please try again.');
     }
@@ -137,7 +137,7 @@ export const IdentityScreen: React.FC<{ navigation: any }> = ({ navigation }) =>
   return (
     <SafeAreaView style={styles.container}>
       <ScrollView contentContainerStyle={styles.content} keyboardShouldPersistTaps="handled" bounces={false}>
-        <Text style={styles.step}>Step 1 of 5</Text>
+        <Text style={styles.step}>Step 1 of 6</Text>
         <Text style={styles.title}>Who are you?</Text>
         <Text style={styles.subtitle}>This helps us find your best matches</Text>
 

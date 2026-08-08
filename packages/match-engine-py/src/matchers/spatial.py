@@ -29,12 +29,10 @@ logger = logging.getLogger(__name__)
 class NearbyUser:
     """A nearby active user within the spatial search radius."""
     user_id: str
-    vector: list[float]
     latitude: float
     longitude: float
     age: int
     distance_km: float
-    similarity: Optional[float] = None
 
 
 class SpatialMatcher:
@@ -180,10 +178,8 @@ class SpatialMatcher:
                 if self._pg is not None:
                     async with self._pg.acquire() as conn:
                         row = await conn.fetchrow(
-                            """SELECT u.latitude, u.longitude, u.date_of_birth,
-                                      uv.vector
+                            """SELECT u.latitude, u.longitude, u.date_of_birth
                                FROM users u
-                               LEFT JOIN user_vectors uv ON uv.user_id = u.id
                                WHERE u.id = $1""",
                             uid,
                         )
@@ -192,7 +188,6 @@ class SpatialMatcher:
                                 "latitude": float(row["latitude"] or 0),
                                 "longitude": float(row["longitude"] or 0),
                                 "date_of_birth": str(row["date_of_birth"]) if row["date_of_birth"] else None,
-                                "vector": row["vector"] or [0.5] * 64,
                             }
                             # Warm the cache
                             await self._redis.set_value(
@@ -221,11 +216,9 @@ class SpatialMatcher:
         lng = float(data.get("longitude", 0))
         dob = data.get("date_of_birth")
         age = self._calculate_age(dob) if dob else 25
-        vector = data.get("vector", [0.5] * 64)
 
         return NearbyUser(
             user_id=user_id,
-            vector=vector,
             latitude=lat,
             longitude=lng,
             age=age,

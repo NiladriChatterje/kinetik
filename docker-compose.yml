@@ -351,7 +351,7 @@ services:
           memory: 256M
     logging: *default-logging
 
-  # ─── Match Engine (Python / NCF + CPU) ────────────────────
+  # ─── Match Engine (Python / H3 spatial matching) ───────────
   match-engine:
     build:
       context: packages/match-engine-py
@@ -371,15 +371,11 @@ services:
       REDIS_EVENTS_PORT: 6379
       REDIS_EVENTS_PASSWORD: ${REDIS_EVENTS_PASSWORD:-kinetik_events_2024}
       DATABASE_URL: postgresql://${POSTGRES_USER:-kinetik}:${POSTGRES_PASSWORD:-kinetik_dev_2024}@postgres:5432/${POSTGRES_DB:-kinetik}
-      FORCE_CPU: ${FORCE_CPU:-false}
-      NCF_MODEL_PATH: /data/models/ncf.pt
     depends_on:
       redis:
         condition: service_healthy
       redis-events:
         condition: service_healthy
-    volumes:
-      - match-engine-models:/data/models
     deploy:
       resources:
         limits:
@@ -404,7 +400,6 @@ services:
       REDIS_EVENTS_PORT: 6379
       REDIS_EVENTS_PASSWORD: ${REDIS_EVENTS_PASSWORD:-kinetik_events_2024}
       DATABASE_URL: postgresql://${POSTGRES_USER:-kinetik}:${POSTGRES_PASSWORD:-kinetik_dev_2024}@postgres:5432/${POSTGRES_DB:-kinetik}
-      FORCE_CPU: ${FORCE_CPU:-false}
       CELERY_CONCURRENCY: ${CELERY_CONCURRENCY:-2}
       CELERY_LOG_LEVEL: info
     depends_on:
@@ -412,8 +407,6 @@ services:
         condition: service_healthy
       match-engine:
         condition: service_started
-    volumes:
-      - match-engine-models:/data/models
     deploy:
       resources:
         limits:
@@ -424,5 +417,4 @@ services:
 volumes:
   postgres-data:
   redis-data:
-  match-engine-models:
   minio-data:

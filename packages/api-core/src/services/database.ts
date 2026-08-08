@@ -80,7 +80,7 @@ export async function findUserById(id: string) {
       `      SELECT u.id, u.phone, u.email, u.display_name, u.date_of_birth, u.gender,
               u.pronouns, u.bio, u.occupation, u.education,
               u.is_verified, u.kyc_status, u.liveness_status,
-              u.latitude, u.longitude, u.h3_index, u.dating_category,
+              u.latitude, u.longitude, u.h3_index, u.dating_category, u.about_answers,
               u.is_active, u.onboarding_complete, u.onboarding_step,
               u.last_active_at, u.created_at, u.updated_at,
               pp.url as primary_photo_url, pp.thumbnail_url as primary_thumbnail_url

@@ -8,7 +8,7 @@ import {
   TextStyle,
 } from 'react-native';
 
-import { colors, typography, radius, spacing, shadows } from '../../theme';
+import { colors, radius, spacing } from '../../theme';
 
 type ButtonVariant = 'primary' | 'secondary' | 'outline' | 'ghost' | 'danger';
 type ButtonSize = 'sm' | 'md' | 'lg';
@@ -89,7 +89,6 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     borderRadius: radius.full,
   },
-  // removed gradient/gradientInner styles
   fullWidth: {
     width: '100%',
   },

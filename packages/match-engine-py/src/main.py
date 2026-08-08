@@ -1,18 +1,16 @@
 """
-Kinetik Match Engine — Python backend with NCF neural matching.
+Kinetik Match Engine — Python backend with hyperlocal spatial (H3) matching.
 
 Entry point that:
   - Starts a FastAPI health-check HTTP server
   - Connects to Redis (main) and Redis (event bus)
   - Subscribes to event bus channels for real-time event processing
   - Subscribes to Redis `location:updates` channel for real-time location data
-  - Detects CUDA availability and logs the device being used
 """
 
 import asyncio
 import json
 import logging
-import os
 from contextlib import asynccontextmanager
 from datetime import datetime, timezone
 
@@ -20,9 +18,8 @@ import asyncpg
 import uvicorn
 from fastapi import FastAPI
 
-from .config import settings, get_device
+from .config import settings
 from .matchers.spatial import SpatialMatcher
-from .matchers.vector import VectorMatcher
 from .services.redis_client import RedisClient
 from .services.event_bus import EventBusClient, EventBusChannels
 from .services.window_manager import WindowManager
@@ -34,7 +31,6 @@ redis_client = RedisClient()
 pg_pool: asyncpg.Pool | None = None
 event_bus_client = EventBusClient()
 spatial_matcher: SpatialMatcher | None = None
-vector_matcher: VectorMatcher | None = None
 window_manager: WindowManager | None = None
 
 # Channel name for location updates (must match the constant in shared constants)
@@ -46,12 +42,10 @@ LOCATION_UPDATES_CHANNEL = "location:updates"
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     """Startup / shutdown lifecycle for the FastAPI app."""
-    global pg_pool, spatial_matcher, vector_matcher, window_manager
+    global pg_pool, spatial_matcher, window_manager
 
-    device = get_device()
     logger.info("=" * 50)
     logger.info("  Kinetik Match Engine")
-    logger.info("  Device: %s", device.upper())
     logger.info("=" * 50)
 
     # 1. Redis (main)
@@ -68,7 +62,6 @@ async def lifespan(app: FastAPI):
 
     # 3. Services
     spatial_matcher = SpatialMatcher(redis_client, pg_pool)
-    vector_matcher = VectorMatcher()
     window_manager = WindowManager(redis_client, pg_pool)
 
     # 4. Subscribe to location updates from api-core via Redis pub/sub
@@ -218,22 +211,9 @@ app = FastAPI(
 @app.get("/health")
 async def health():
     """Health-check endpoint (mirrors the TypeScript health server)."""
-    cuda_available = False
-    cuda_device_count = 0
-    try:
-        import torch
-        cuda_available = torch.cuda.is_available()
-        cuda_device_count = torch.cuda.device_count() if cuda_available else 0
-    except (ImportError, Exception):
-        pass
-
     return {
         "status": "ok",
         "service": "match-engine",
-        "device": get_device(),
-        "cuda_available": cuda_available,
-        "cuda_device_count": cuda_device_count,
-        "ncf_loaded": vector_matcher.ncf._is_loaded if vector_matcher else False,
         "active_windows": window_manager.get_active_window_count() if window_manager else 0,
         "redis_connected": redis_client._conn is not None,
         "event_bus_connected": event_bus_client._redis is not None,

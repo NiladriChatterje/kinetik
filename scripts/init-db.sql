@@ -59,6 +59,9 @@ CREATE TABLE users (
     -- Dating category (required during onboarding)
     dating_category VARCHAR(20) CHECK (dating_category IN ('casual', 'serious', 'intimacy')),
 
+    -- 'Knowing more about you' onboarding answers (JSONB)
+    about_answers   JSONB,
+
     -- Status
     is_active       BOOLEAN DEFAULT TRUE,
     is_banned       BOOLEAN DEFAULT FALSE,
@@ -356,14 +359,6 @@ CREATE INDEX idx_interactions_actor ON user_interactions(actor_id);
 CREATE INDEX idx_interactions_likes_received
     ON user_interactions(target_id, action, created_at DESC)
     WHERE action = 'like' AND is_mutual = FALSE;
-
--- ─── Vector Embeddings Table (Cache Layer) ────────────────
-CREATE TABLE user_vectors (
-    user_id         UUID PRIMARY KEY REFERENCES users(id) ON DELETE CASCADE,
-    vector          REAL[] NOT NULL,         -- Multi-dimensional personality vector
-    version         INT DEFAULT 1,
-    updated_at      TIMESTAMPTZ NOT NULL DEFAULT NOW()
-);
 
 -- ─── KYC Documents ────────────────────────────────────────
 CREATE TABLE kyc_documents (

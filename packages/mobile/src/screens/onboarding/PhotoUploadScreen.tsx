@@ -113,7 +113,7 @@ export const PhotoUploadScreen: React.FC<{ navigation: any }> = ({ navigation })
   return (
     <SafeAreaView style={styles.container}>
       <ScrollView contentContainerStyle={styles.content}>
-        <Text style={styles.step}>Step 3 of 5</Text>
+        <Text style={styles.step}>Step 4 of 6</Text>
         <Text style={styles.title}>Add Photos</Text>
         <Text style={styles.subtitle}>Upload at least 2 clear photos for your profile</Text>
 

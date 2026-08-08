@@ -85,6 +85,7 @@ export async function matchRoutes(app: FastifyInstance) {
         u.education,
         u.pronouns,
         u.is_verified,
+        u.about_answers,
         u.h3_index,
         u.latitude,
         u.longitude
@@ -146,6 +147,7 @@ export async function matchRoutes(app: FastifyInstance) {
             emoji: i.emoji,
             category: i.category,
           })),
+          aboutAnswers: row.about_answers || undefined,
           isVerified: row.is_verified,
         };
       }),

@@ -131,7 +131,7 @@ export const KYCScreen: React.FC<{ navigation: any; route?: any }> = ({ navigati
     setUploadError(null);
 
     try {
-      const result = await api.submitKycDocument(
+      await api.submitKycDocument(
         selectedFile.uri,
         docType,
         selectedFile.mimeType,

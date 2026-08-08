@@ -118,7 +118,7 @@ export const PoseVerificationScreen: React.FC<{ navigation: any }> = ({ navigati
     return (
       <SafeAreaView style={styles.container}>
         <View style={styles.content}>
-          <Text style={styles.step}>Step 4 of 5</Text>
+          <Text style={styles.step}>Step 5 of 6</Text>
           <Text style={styles.title}>Verify You're Real</Text>
           <Text style={styles.subtitle}>
             We need access to your camera to take a verification selfie.
@@ -140,7 +140,7 @@ export const PoseVerificationScreen: React.FC<{ navigation: any }> = ({ navigati
     return (
       <SafeAreaView style={styles.container}>
         <View style={styles.content}>
-          <Text style={styles.step}>Step 4 of 5</Text>
+          <Text style={styles.step}>Step 5 of 6</Text>
           <Text style={styles.title}>Verify You're Real</Text>
           <Text style={styles.subtitle}>Follow the prompts to complete liveness verification</Text>
 
@@ -165,7 +165,7 @@ export const PoseVerificationScreen: React.FC<{ navigation: any }> = ({ navigati
     return (
       <SafeAreaView style={styles.container}>
         <View style={styles.content}>
-          <Text style={styles.step}>Step 4 of 5</Text>
+          <Text style={styles.step}>Step 5 of 6</Text>
           <Text style={styles.title}>Verify You're Real</Text>
           <Text style={styles.subtitle}>Follow the prompts to complete liveness verification</Text>
 
@@ -188,7 +188,7 @@ export const PoseVerificationScreen: React.FC<{ navigation: any }> = ({ navigati
     return (
       <SafeAreaView style={styles.container}>
         <View style={styles.content}>
-          <Text style={styles.step}>Step 4 of 5</Text>
+          <Text style={styles.step}>Step 5 of 6</Text>
           <Text style={styles.title}>Verify You're Real</Text>
           <Text style={styles.subtitle}>Check your selfie before submitting</Text>
 
@@ -217,7 +217,7 @@ export const PoseVerificationScreen: React.FC<{ navigation: any }> = ({ navigati
   return (
     <SafeAreaView style={styles.container}>
       <View style={styles.content}>
-        <Text style={styles.step}>Step 4 of 5</Text>
+        <Text style={styles.step}>Step 5 of 6</Text>
         <Text style={styles.title}>Verify You're Real</Text>
         <Text style={styles.subtitle}>Take a clear selfie for liveness verification</Text>
 

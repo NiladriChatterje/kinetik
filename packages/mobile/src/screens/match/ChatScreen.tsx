@@ -89,7 +89,6 @@ export const ChatScreen: React.FC<{ navigation: any; route: any }> = ({ navigati
   const playerRef = useRef<AudioPlayer | null>(null);
 
   const partnerName = pName || 'Stranger';
-  const partnerIdStr = pId || '';
 
   // ─── Socket Connection ──────────────────────────────
   useEffect(() => {
@@ -1253,9 +1252,6 @@ const styles = StyleSheet.create({
     minHeight: 16,
   },
   // Media styles
-  mediaContainer: {
-    marginBottom: 4,
-  },
   mediaImageWrap: {
     position: 'relative',
     marginVertical: 2,
@@ -1375,7 +1371,6 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     alignItems: 'center',
   },
-  sendBtnDisabled: { backgroundColor: colors.surfaceHighlight },
   micBtn: {
     width: 40,
     height: 40,

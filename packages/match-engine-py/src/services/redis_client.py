@@ -89,7 +89,7 @@ class RedisClient:
     # ── Match-engine helpers ────────────────────────────────────
 
     async def cache_user_match_data(self, user_id: str, data: dict, ttl: int = 900) -> None:
-        """Cache a user's match-profile data (vector, location, etc.) for fast lookup."""
+        """Cache a user's match-profile data (location, etc.) for fast lookup."""
         await self.set_value(f"user:{user_id}:match_data", json.dumps(data), ex=ttl)
 
     async def get_user_match_data(self, user_id: str) -> Optional[dict]:

@@ -3,7 +3,6 @@ import { z } from 'zod';
 import { ERROR_CODES, geoToH3 } from '@kinetik/shared';
 import { query, TABLES, findUserById, updateUser, getPreferences, upsertPreferences } from '../services/database';
 import { eventBus } from '../services/eventBus';
-import { syncVectorForUser } from '../services/vectorService';
 import { reverseGeocode } from '../services/geocoding';
 
 const UpdateProfileSchema = z.object({
@@ -20,6 +19,15 @@ const UpdateProfileSchema = z.object({
   latitude: z.number().min(-90).max(90).optional(),
   longitude: z.number().min(-180).max(180).optional(),
   datingCategory: z.enum(['casual', 'serious', 'intimacy']).optional(),
+  // 'Knowing more about you' answers — each question is an array of
+  // selected chips (suggestions + custom entries). Max 8 per question.
+  aboutAnswers: z.object({
+    nature: z.array(z.string().trim().min(1).max(40)).max(8).optional(),
+    hobbies: z.array(z.string().trim().min(1).max(40)).max(8).optional(),
+    movieGenres: z.array(z.string().trim().min(1).max(40)).max(8).optional(),
+    music: z.array(z.string().trim().min(1).max(40)).max(8).optional(),
+    dateStyle: z.array(z.string().trim().min(1).max(40)).max(8).optional(),
+  }).optional(),
 });
 
 const PreferencesSchema = z.object({
@@ -94,6 +102,7 @@ export async function userRoutes(app: FastifyInstance) {
         region: user.region || null,
         country: user.country || null,
         datingCategory: user.dating_category || null,
+        aboutAnswers: user.about_answers || null,
         onboardingComplete: user.onboarding_complete,
         onboardingStep: user.onboarding_step,
         primaryPhoto: user.primary_photo_url ? {
@@ -133,6 +142,7 @@ export async function userRoutes(app: FastifyInstance) {
       latitude: 'latitude',
       longitude: 'longitude',
       datingCategory: 'dating_category',
+      aboutAnswers: 'about_answers',
     };
 
     for (const [key, value] of Object.entries(data)) {
@@ -188,12 +198,6 @@ export async function userRoutes(app: FastifyInstance) {
     }
 
     const prefs = await upsertPreferences(userId, validation.data);
-
-    // Fire-and-forget: sync user vector from updated preferences
-    // This runs asynchronously — errors are logged internally, never crash the request
-    syncVectorForUser(userId).catch((err) =>
-      console.error('[vector] syncVectorForUser failed for user', userId, err)
-    );
 
     await eventBus.sendUserEvent({
       type: 'preferences.updated',

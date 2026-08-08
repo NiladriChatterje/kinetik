@@ -249,7 +249,7 @@ Mobile (KYCScreen)                  API Core                        Pose Service
 | PostgreSQL Database | ✅ Implemented | Tables: users, matches, messages, user_interactions, profile_photos, interests, push_tokens, etc. |
 | Redis Caching | ✅ Implemented | Session, presence, rate limits, swipe counts, H3 queues |
 | Redis Event Bus | ✅ Implemented | Event-driven architecture via dedicated Redis pub/sub instance (`redis-events:6380`) — replaces Kafka |
-| Python Match Engine | ✅ Implemented | Spatial + vector-based matching with Celery workers |
+| Python Match Engine | ✅ Implemented | Hyperlocal spatial (H3) matching with Celery workers |
 | Pose Verification Service | ✅ Implemented | Face matching between selfie and profile photos |
 | H3 Geospatial Indexing | ✅ Implemented | Uber H3 hexagonal grid for location-based matching |
 | Docker Compose Setup | ✅ Implemented | All services containerized with nginx ingress |

@@ -2,9 +2,8 @@ import React from 'react';
 import { View, Text, StyleSheet, ScrollView, TouchableOpacity } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
-import { Button } from '../../components/common/Button';
 import { Card } from '../../components/common/Card';
-import { colors, typography, spacing, radius } from '../../theme';
+import { colors, typography, spacing } from '../../theme';
 
 const TOKENS = [
   { icon: 'flash-outline' as const, name: 'Fast Passes', count: 3, desc: 'Skip visual blur in Vibe Checks' },

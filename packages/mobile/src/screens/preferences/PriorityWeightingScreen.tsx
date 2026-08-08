@@ -6,7 +6,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { Button } from '../../components/common/Button';
 import { Card } from '../../components/common/Card';
 import { api } from '../../services/api';
-import { colors, typography, spacing, radius } from '../../theme';
+import { colors, typography, spacing } from '../../theme';
 
 const WEIGHTS = [
   { key: 'weightValues', label: 'Values', icon: 'heart-outline' as const, desc: 'Shared values and life priorities' },

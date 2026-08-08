@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { View, Text, StyleSheet, TouchableOpacity, Share } from 'react-native';
+import { View, Text, StyleSheet, Share } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { Button } from '../../components/common/Button';
@@ -7,7 +7,7 @@ import { Card } from '../../components/common/Card';
 import { colors, typography, spacing, radius } from '../../theme';
 
 export const DuoWingmanScreen: React.FC<{ navigation: any }> = ({ navigation }) => {
-  const [inviteCode, setInviteCode] = useState('KTNK-A8X3');
+  const [inviteCode] = useState('KTNK-A8X3');
   const [friendJoined, setFriendJoined] = useState(false);
 
   const handleShare = async () => {

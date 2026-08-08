@@ -6,7 +6,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { Button } from '../../components/common/Button';
 import { colors, typography, spacing, radius } from '../../theme';
 
-export const DoubleDateScreen: React.FC<{ navigation: any }> = ({ navigation }) => {
+export const DoubleDateScreen: React.FC = () => {
   const [isLive, setIsLive] = useState(true);
 
   return (

@@ -103,7 +103,6 @@ export const TABLES = {
   SUBSCRIPTION_LEDGER: 'subscription_ledger',
   TRANSACTIONS: 'transactions',
   USER_INTERACTIONS: 'user_interactions',
-  USER_VECTORS: 'user_vectors',
   KYC_DOCUMENTS: 'kyc_documents',
   MESSAGES: 'messages',
   CHAT_MEDIA: 'chat_media',

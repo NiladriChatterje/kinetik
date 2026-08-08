@@ -2,7 +2,6 @@ import React from 'react';
 import { View, Text, StyleSheet } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
-import { Card } from '../../components/common/Card';
 import { colors, typography, spacing, radius } from '../../theme';
 
 const HEAT_ZONES = [

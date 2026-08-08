@@ -40,6 +40,7 @@ function MatchTabIcon({ color }: { color: string }) {
 import { SplashScreen } from '../screens/onboarding/SplashScreen';
 import { OTPVerifyScreen } from '../screens/onboarding/OTPVerifyScreen';
 import { IdentityScreen } from '../screens/onboarding/IdentityScreen';
+import { AboutYouScreen } from '../screens/onboarding/AboutYouScreen';
 import { LocationPermissionScreen } from '../screens/onboarding/LocationPermissionScreen';
 import { PhotoUploadScreen } from '../screens/onboarding/PhotoUploadScreen';
 import { PoseVerificationScreen } from '../screens/onboarding/PoseVerificationScreen';
@@ -118,6 +119,7 @@ export type OnboardingStackParamList = {
   Splash: undefined;
   OTPVerify: undefined;
   Identity: undefined;
+  About: undefined;
   Location: undefined;
   Photos: undefined;
   PoseVerification: undefined;
@@ -159,6 +161,7 @@ const AuthNavigator = React.memo(function AuthNavigator() {
       <OnboardingStack.Screen name="Splash" component={SplashScreen} />
       <OnboardingStack.Screen name="OTPVerify" component={OTPVerifyScreen} />
       <OnboardingStack.Screen name="Identity" component={IdentityScreen} />
+      <OnboardingStack.Screen name="About" component={AboutYouScreen} />
       <OnboardingStack.Screen name="Location" component={LocationPermissionScreen} />
       <OnboardingStack.Screen name="Photos" component={PhotoUploadScreen} />
       <OnboardingStack.Screen name="PoseVerification" component={PoseVerificationScreen} />

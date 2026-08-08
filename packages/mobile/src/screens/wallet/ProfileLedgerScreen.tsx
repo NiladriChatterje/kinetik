@@ -139,7 +139,7 @@ export const ProfileLedgerScreen: React.FC = () => {
     setMutatingPhotoId(`upload-${Date.now()}`);
 
     try {
-      const saved = await compressAndUploadPhoto(uri);
+      await compressAndUploadPhoto(uri);
       toast.showSuccess('Photo Added', 'Your photo has been uploaded.');
       await fetchProfileAndPhotos();
     } catch (err: any) {

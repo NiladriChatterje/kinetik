@@ -7,14 +7,12 @@ import {
   TouchableOpacity,
   Image,
   Animated,
-  Dimensions,
   TouchableWithoutFeedback,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { resolveUrl } from '../../config';
 import { colors, typography, spacing, radius } from '../../theme';
 
-const { height: SCREEN_HEIGHT } = Dimensions.get('window');
 const SHEET_HEIGHT = 340;
 
 interface PhotoOptionsModalProps {

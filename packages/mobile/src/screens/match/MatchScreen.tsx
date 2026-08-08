@@ -29,8 +29,29 @@ interface SwipeProfile {
   pronouns?: string;
   photos: { id: string; url: string; thumbnailUrl?: string; isPrimary: boolean }[];
   interests: { id: string; name: string; emoji: string; category: string }[];
+  aboutAnswers?: {
+    nature?: string[];
+    hobbies?: string[];
+    movieGenres?: string[];
+    music?: string[];
+    dateStyle?: string[];
+  };
   isVerified: boolean;
 }
+
+// 'Knowing more about you' — monotone icon + label per question.
+// Icons stay monochrome (outline, single tone) — no emojis, no color fills.
+const ABOUT_SECTIONS: {
+  key: keyof NonNullable<SwipeProfile['aboutAnswers']>;
+  icon: 'leaf-outline' | 'fitness-outline' | 'film-outline' | 'musical-notes-outline' | 'cafe-outline';
+  label: string;
+}[] = [
+  { key: 'nature', icon: 'leaf-outline', label: 'Nature' },
+  { key: 'hobbies', icon: 'fitness-outline', label: 'Hobbies' },
+  { key: 'movieGenres', icon: 'film-outline', label: 'Movies' },
+  { key: 'music', icon: 'musical-notes-outline', label: 'Music' },
+  { key: 'dateStyle', icon: 'cafe-outline', label: 'Dates' },
+];
 
 function SwipeCard({
   profile,
@@ -229,6 +250,35 @@ function SwipeCard({
             ))}
           </View>
         )}
+
+        {/* 'Knowing more about you' answers */}
+        {(() => {
+          const answered = ABOUT_SECTIONS.filter(({ key }) => (profile.aboutAnswers?.[key] ?? []).length > 0);
+          if (answered.length === 0) return null;
+          return (
+            <View style={styles.aboutSection}>
+              <Text style={styles.aboutHeading}>More about them</Text>
+              {answered.map(({ key, icon, label }) => {
+                const items = profile.aboutAnswers?.[key] ?? [];
+                return (
+                  <View key={key} style={styles.aboutRow}>
+                    <Ionicons name={icon} size={15} color={colors.textSecondary} />
+                    <View style={styles.aboutRowBody}>
+                      <Text style={styles.aboutLabel}>{label}</Text>
+                      <View style={styles.aboutChips}>
+                        {items.map((item) => (
+                          <View key={item} style={styles.aboutChip}>
+                            <Text style={styles.aboutChipText}>{item}</Text>
+                          </View>
+                        ))}
+                      </View>
+                    </View>
+                  </View>
+                );
+              })}
+            </View>
+          );
+        })()}
       </ScrollView>
 
       {/* Super Like badge on card when remaining */}
@@ -246,19 +296,19 @@ function SwipeCard({
             style={[styles.actionBtn, styles.passBtn]}
             onPress={onPass}
           >
-            <Ionicons name="close" size={28} color="#FF6B6B" />
+            <Ionicons name="close" size={28} color={colors.textPrimary} />
           </TouchableOpacity>
           <TouchableOpacity
             style={[styles.actionBtn, styles.superLikeBtn]}
             onPress={onSuperLike}
           >
-            <Ionicons name="star" size={24} color="#1E90FF" />
+            <Ionicons name="star" size={24} color={colors.textPrimary} />
           </TouchableOpacity>
           <TouchableOpacity
             style={[styles.actionBtn, styles.likeBtn]}
             onPress={onLike}
           >
-            <Ionicons name="heart" size={28} color="#4ECDC4" />
+            <Ionicons name="heart" size={28} color={colors.textPrimary} />
           </TouchableOpacity>
         </View>
       )}
@@ -272,7 +322,6 @@ export const MatchScreen: React.FC<{ navigation: any }> = ({ navigation }) => {
   const [loading, setLoading] = useState(true);
   const [swiping, setSwiping] = useState(false);
   const [superLikesRemaining, setSuperLikesRemaining] = useState(5); // default: free tier daily limit
-  const authUser = useAuthStore((s) => s.user);
   const unreadLikeCount = useAuthStore((s) => s.unreadLikeCount);
   const fetchUnreadLikeCount = useAuthStore((s) => s.fetchUnreadLikeCount);
   const toast = useToast();
@@ -741,13 +790,13 @@ const styles = StyleSheet.create({
   },
   likeSticker: {
     right: 20,
-    borderColor: '#4ECDC4',
-    backgroundColor: 'rgba(78, 205, 196, 0.3)',
+    borderColor: colors.textPrimary,
+    backgroundColor: 'rgba(0, 0, 0, 0.2)',
   },
   passSticker: {
     left: 20,
-    borderColor: '#FF6B6B',
-    backgroundColor: 'rgba(255, 107, 107, 0.3)',
+    borderColor: colors.textPrimary,
+    backgroundColor: 'rgba(0, 0, 0, 0.2)',
   },
   stickerText: {
     fontSize: 32,
@@ -789,7 +838,33 @@ const styles = StyleSheet.create({
     borderRadius: radius.full,
   },
   interestText: { ...typography.caption, color: colors.textSecondary, fontSize: 11 },
-  moreInterests: { ...typography.caption, color: colors.textMuted, alignSelf: 'center' },
+  aboutSection: {
+    marginTop: spacing.lg,
+    paddingTop: spacing.lg,
+    borderTopWidth: StyleSheet.hairlineWidth,
+    borderTopColor: colors.cardBorder,
+  },
+  aboutHeading: {
+    ...typography.label,
+    color: colors.textMuted,
+    marginBottom: spacing.sm,
+  },
+  aboutRow: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    gap: spacing.sm,
+    marginBottom: spacing.md,
+  },
+  aboutRowBody: { flex: 1 },
+  aboutLabel: { ...typography.caption, color: colors.textMuted, marginBottom: 4 },
+  aboutChips: { flexDirection: 'row', flexWrap: 'wrap', gap: spacing.xs },
+  aboutChip: {
+    backgroundColor: colors.surface,
+    paddingHorizontal: spacing.sm,
+    paddingVertical: 3,
+    borderRadius: radius.full,
+  },
+  aboutChipText: { ...typography.caption, color: colors.textSecondary, fontSize: 11 },
   actionButtons: {
     position: 'absolute',
     bottom: spacing.lg,
@@ -825,7 +900,7 @@ const styles = StyleSheet.create({
     shadowOpacity: 0.2,
     shadowRadius: 4,
     borderWidth: 2,
-    borderColor: '#1E90FF',
+    borderColor: colors.textPrimary,
   },
   likeBtn: { backgroundColor: '#fff' },
   superLikeHint: {
@@ -835,7 +910,7 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     gap: 4,
-    backgroundColor: 'rgba(30, 144, 255, 0.85)',
+    backgroundColor: 'rgba(0, 0, 0, 0.85)',
     paddingHorizontal: spacing.sm,
     paddingVertical: 3,
     borderRadius: radius.full,
