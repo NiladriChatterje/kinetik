@@ -1,7 +1,6 @@
 import React, { useEffect, useRef, useState, useCallback } from 'react';
 import { View, Text, StyleSheet, TouchableOpacity, ActivityIndicator, Image } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { VideoView } from '@livekit/react-native';
 import { Room, RoomEvent, Track } from 'livekit-client';
 import { Ionicons } from '@expo/vector-icons';
 import { api } from '../../services/api';
@@ -31,6 +30,34 @@ type CallPhase =
   | 'error';       // failed to start
 
 const RING_TIMEOUT_MS = 45000; // aligned with the overlay's ring timeout
+
+/**
+ * VideoView from @livekit/react-native requires the react-native-webrtc native
+ * module, which only ships in development/production builds — not Expo Go.
+ * Importing it statically would crash the whole app at module load (this screen
+ * is on the boot path via RootNavigator), so lazy-load it on first render and
+ * render nothing when it's unavailable.
+ */
+function LiveKitVideoView(props: { videoTrack: any; style: any; mirror?: boolean }) {
+  const [VideoView, setVideoView] = useState<React.ComponentType<any> | null>(null);
+
+  useEffect(() => {
+    let mounted = true;
+    try {
+      // eslint-disable-next-line @typescript-eslint/no-var-requires
+      const { VideoView } = require('@livekit/react-native');
+      if (mounted) setVideoView(() => VideoView);
+    } catch (e) {
+      console.warn('[webrtc] LiveKit unavailable — video preview disabled:', e);
+    }
+    return () => {
+      mounted = false;
+    };
+  }, []);
+
+  if (!VideoView) return null;
+  return <VideoView {...props} />;
+}
 
 export const CallScreen: React.FC<Props> = ({ navigation, route }) => {
   const { matchId, partnerName: pName, partnerPhotoUrl: pPhoto, partnerId, mode } = route.params || {};
@@ -340,7 +367,7 @@ export const CallScreen: React.FC<Props> = ({ navigation, route }) => {
       {/* Remote video (full screen) */}
       <View style={styles.remoteArea}>
         {remoteTrack ? (
-          <VideoView videoTrack={remoteTrack} style={styles.remoteVideo} />
+          <LiveKitVideoView videoTrack={remoteTrack} style={styles.remoteVideo} />
         ) : (
           <View style={styles.remotePlaceholder}>
             <View style={styles.remoteAvatarWrap}>
@@ -362,7 +389,7 @@ export const CallScreen: React.FC<Props> = ({ navigation, route }) => {
       {phase === 'active' && (
         <View style={styles.localPip}>
           {localTrack ? (
-            <VideoView videoTrack={localTrack} style={styles.localVideo} mirror />
+            <LiveKitVideoView videoTrack={localTrack} style={styles.localVideo} mirror />
           ) : (
             <View style={[styles.localVideo, styles.localVideoOff]}>
               <Ionicons name="videocam-off-outline" size={20} color={colors.textMuted} />
