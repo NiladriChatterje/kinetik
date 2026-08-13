@@ -149,9 +149,20 @@ export const useAuthStore = create<AuthState>((set, get) => ({
           // Fetch any pending likes for the badge count
           get().fetchUnreadLikeCount();
         } else {
-          // Profile fetch failed — token may be stale
-          await SecureStore.deleteItemAsync('auth_token');
-          api.setToken(null);
+          // Profile fetch failed. Only treat it as a stale/expired session when
+          // the server explicitly rejected the token (401/403). A 502/5xx from
+          // a gateway or a network error means the server is temporarily
+          // unavailable — keep the token so a transient outage doesn't log the
+          // user out (the offline banner covers that UX).
+          const status = profileRes.error?.status;
+          const isAuthFailure =
+            profileRes.error?.code === 'UNAUTHORIZED' ||
+            status === 401 ||
+            status === 403;
+          if (isAuthFailure) {
+            await SecureStore.deleteItemAsync('auth_token');
+            api.setToken(null);
+          }
           set({ isLoading: false });
         }
       } else {

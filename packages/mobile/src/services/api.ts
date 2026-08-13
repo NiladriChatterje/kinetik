@@ -5,7 +5,7 @@ import { API_URL, WS_URL } from '../config';
 interface ApiResponse<T = any> {
   success: boolean;
   data?: T;
-  error?: { code: string; message: string; details?: unknown };
+  error?: { code: string; message: string; details?: unknown; status?: number };
 }
 
 class ApiClient {
@@ -61,18 +61,31 @@ class ApiClient {
 
       clearTimeout(timeout);
 
-      // Try to parse JSON — non-JSON responses (e.g. nginx 502) should not crash
+      // Parse the body defensively — proxies/gateways can return non-JSON
+      // (e.g. an nginx HTML error page on 502) or an empty body on success.
       let data: any;
       try {
         data = await response.json();
       } catch {
+        data = undefined;
+      }
+
+      // 2xx with no usable JSON body (204, or a proxy that swallowed the
+      // payload) is still a success — not an error.
+      if (response.ok && data === undefined) {
+        return { success: true, data: undefined };
+      }
+
+      // Non-JSON error body (nginx 502 page, Cloudflare error page, ...)
+      if (data === undefined) {
         if (__DEV__) {
           console.error(`[API] Non-JSON response ${response.status} from ${endpoint}`);
         }
         return {
           success: false,
           error: {
-            code: 'SERVER_ERROR',
+            code: response.status >= 500 ? 'SERVER_ERROR' : 'NETWORK_ERROR',
+            status: response.status,
             message: response.status === 502
               ? 'Server is unavailable. Please try again later.'
               : `Unexpected server response (${response.status})`,
@@ -80,8 +93,41 @@ class ApiClient {
         };
       }
 
+      // Normalize unexpected payloads (e.g. `{ ok: true }`, bare arrays, plain
+      // strings) into the { success, data?, error? } envelope so callers can
+      // rely on `res.success` always being a boolean.
+      if (data === null || typeof data !== 'object' || typeof data.success !== 'boolean') {
+        if (!response.ok && __DEV__) {
+          console.error(`[API] ${response.status} ${endpoint}:`, data);
+        }
+        return response.ok
+          ? { success: true, data }
+          : {
+              success: false,
+              error: {
+                code: 'SERVER_ERROR',
+                status: response.status,
+                message: `Unexpected server response (${response.status})`,
+              },
+            };
+      }
+
       if (!response.ok && __DEV__) {
         console.error(`[API] ${response.status} ${endpoint}:`, JSON.stringify(data));
+      }
+
+      // Attach the HTTP status to error payloads so consumers can tell a
+      // 401/403 ("session expired") apart from a 502 ("server down").
+      if (!data.success) {
+        if (!data.error || typeof data.error !== 'object') {
+          data.error = {
+            code: 'SERVER_ERROR',
+            status: response.status,
+            message: `Unexpected server response (${response.status})`,
+          };
+        } else if (!data.error.status) {
+          data.error.status = response.status;
+        }
       }
 
       return data as ApiResponse<T>;
@@ -115,6 +161,23 @@ class ApiClient {
         success: false,
         error: { code: 'NETWORK_ERROR', message: error.message || 'Network request failed' },
       };
+    }
+  }
+
+  /**
+   * Parse the body of a FileSystem.uploadAsync response, tolerating non-JSON
+   * bodies (gateway error pages, proxies) on any status code instead of letting
+   * a raw SyntaxError escape to the caller.
+   */
+  private parseUploadBody(body: string, status: number): any {
+    try {
+      return JSON.parse(body);
+    } catch {
+      throw new Error(
+        status >= 200 && status < 300
+          ? `Server returned a non-JSON response (HTTP ${status})`
+          : `Upload failed (HTTP ${status})`,
+      );
     }
   }
 
@@ -378,17 +441,18 @@ class ApiClient {
       ),
     ]);
 
-    if (result.status >= 200 && result.status < 300) {
-      const body = JSON.parse(result.body);
-      return body.data;
+    let body: any;
+    try {
+      body = this.parseUploadBody(result.body, result.status);
+    } catch (e: any) {
+      throw new Error(e?.message || `Upload failed (HTTP ${result.status})`);
     }
 
-    let errorMessage = `Upload failed (HTTP ${result.status})`;
-    try {
-      const body = JSON.parse(result.body);
-      errorMessage = body?.error?.message || errorMessage;
-    } catch { /* non-JSON */ }
-    throw new Error(errorMessage);
+    if (result.status >= 200 && result.status < 300) {
+      return body?.data;
+    }
+
+    throw new Error(body?.error?.message || `Upload failed (HTTP ${result.status})`);
   }
 
   async getKycStatus(): Promise<{
@@ -502,17 +566,18 @@ class ApiClient {
       ),
     ]);
 
+    let body: any;
+    try {
+      body = this.parseUploadBody(result.body, result.status);
+    } catch (e: any) {
+      throw new Error(e?.message || `Upload failed (HTTP ${result.status})`);
+    }
+
     if (result.status >= 200 && result.status < 300) {
-      const body = JSON.parse(result.body);
       return body;
     }
 
-    let errorMessage = `Upload failed (HTTP ${result.status})`;
-    try {
-      const body = JSON.parse(result.body);
-      errorMessage = body?.error?.message || errorMessage;
-    } catch { /* non-JSON */ }
-    throw new Error(errorMessage);
+    throw new Error(body?.error?.message || `Upload failed (HTTP ${result.status})`);
   }
 
   // ─── 1:1 Voice/Video Calls (LiveKit) ─────────────────
@@ -556,17 +621,18 @@ class ApiClient {
       ),
     ]);
 
-    if (result.status >= 200 && result.status < 300) {
-      const body = JSON.parse(result.body);
-      return body.data;
+    let body: any;
+    try {
+      body = this.parseUploadBody(result.body, result.status);
+    } catch (e: any) {
+      throw new Error(e?.message || `Upload failed (HTTP ${result.status})`);
     }
 
-    let errorMessage = `Upload failed (HTTP ${result.status})`;
-    try {
-      const body = JSON.parse(result.body);
-      errorMessage = body?.error?.message || errorMessage;
-    } catch { /* non-JSON */ }
-    throw new Error(errorMessage);
+    if (result.status >= 200 && result.status < 300) {
+      return body?.data;
+    }
+
+    throw new Error(body?.error?.message || `Upload failed (HTTP ${result.status})`);
   }
 }
 
