@@ -112,16 +112,36 @@ services:
     container_name: kinetik-livekit
     restart: unless-stopped
     ports:
-      - "7880:7880"
-      - "7881:7881"
-      - "7882:7882/udp"
-      - "3478:3478/udp"
-      - "3479:3479/tcp"
+      - "7880:7880"       # signaling (WS/WSS)
+      - "7881:7881"       # ICE/TCP fallback
+      - "7882:7882/udp"   # ICE/UDP
+      - "3478:3478/udp"   # TURN/UDP
+      - "3478:3478/tcp"   # TURN/TCP
+      - "5349:5349/tcp"   # TURN/TLS
     volumes:
       - ./config/livekit.yaml:/etc/livekit.yaml
+      - ./config/certs:/etc/livekit/certs:ro   # TURN certs (turn.crt / turn.key) when LIVEKIT_TURN_ENABLED=true
     command: ["--config", "/etc/livekit.yaml"]
     environment:
       LIVEKIT_LOG_LEVEL: info
+      # ─── TURN (self-hosted prod only) ───────────────────────
+      # Off by default (no certs in dev). To enable, set these in your .env
+      # and drop a CA-signed turn.crt/turn.key into ./config/certs. The
+      # config-file block in config/livekit.yaml documents the same options.
+      LIVEKIT_TURN_ENABLED: ${LIVEKIT_TURN_ENABLED:-false}
+      LIVEKIT_TURN_DOMAIN: ${LIVEKIT_TURN_DOMAIN:-}
+      LIVEKIT_TURN_CERT_FILE: ${LIVEKIT_TURN_CERT_FILE:-/etc/livekit/certs/turn.crt}
+      LIVEKIT_TURN_KEY_FILE: ${LIVEKIT_TURN_KEY_FILE:-/etc/livekit/certs/turn.key}
+      LIVEKIT_TURN_TLS_PORT: ${LIVEKIT_TURN_TLS_PORT:-5349}
+      LIVEKIT_TURN_UDP_PORT: ${LIVEKIT_TURN_UDP_PORT:-3478}
+      LIVEKIT_TURN_TCP_PORT: ${LIVEKIT_TURN_TCP_PORT:-3478}
+      # ─── LAN dev: advertised IP ────────────────────────────────
+      # In Docker the container advertises its internal bridge IP (172.x/10.x)
+      # in ICE candidates, which phones on the LAN can't reach — signaling
+      # connects but video/audio never flows. Set this to the host's LAN IP
+      # for dev, e.g. LIVEKIT_RTC_NODE_IP=192.168.1.50. Requires
+      # use_external_ip: false (already set in livekit.yaml).
+      LIVEKIT_RTC_NODE_IP: ${LIVEKIT_RTC_NODE_IP:-}
     depends_on:
       redis:
         condition: service_healthy
@@ -165,10 +185,14 @@ services:
       MESSAGE_ENCRYPTION_KEY: ${MESSAGE_ENCRYPTION_KEY:-kinetik_msg_enc_key_2024_dev}
 
       # LiveKit WebRTC (call tokens are issued by api-core)
+      # LIVEKIT_PUBLIC_URL defaults to EMPTY so the token endpoint derives the
+      # client-facing URL from the request host (the LAN IP / domain the device
+      # actually used) instead of baking in `localhost`, which no physical
+      # device can reach. Set it explicitly for LiveKit Cloud (wss://...).
       LIVEKIT_API_KEY: ${LIVEKIT_API_KEY:-kinetik_livekit_key}
       LIVEKIT_API_SECRET: ${LIVEKIT_API_SECRET:-kinetik_livekit_secret_2024_dev_xyz}
       LIVEKIT_HOST: livekit:7880
-      LIVEKIT_PUBLIC_URL: ${LIVEKIT_PUBLIC_URL:-ws://localhost:7880}
+      LIVEKIT_PUBLIC_URL: ${LIVEKIT_PUBLIC_URL:-}
 
       # Geoapify reverse geocoding
       GEOAPIFY_API: ${GEOAPIFY_API:-}
@@ -212,6 +236,7 @@ services:
     environment:
       NODE_ENV: ${NODE_ENV:-development}
       PORT: 3002
+      DATABASE_URL: postgresql://${POSTGRES_USER:-kinetik}:${POSTGRES_PASSWORD:-kinetik_dev_2024}@postgres:5432/${POSTGRES_DB:-kinetik}
       REDIS_HOST: redis
       REDIS_PORT: 6379
       REDIS_PASSWORD: ${REDIS_PASSWORD:-kinetik_redis_2024}

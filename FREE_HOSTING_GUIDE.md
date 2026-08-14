@@ -216,6 +216,12 @@ LIVEKIT_PUBLIC_URL=wss://<project>.livekit.cloud
 
 > Don't self-host LiveKit on a free tier — it needs UDP port ranges + TURN, which requires a real VM. The free Build plan is the right call and needs no card.
 
+> **Self-hosting LiveKit instead (e.g. the $5–6 VPS ladder)?** The compose file ships the embedded TURN server — just set `LIVEKIT_TURN_ENABLED=true`, `LIVEKIT_TURN_DOMAIN=turn.<yourdomain>`, `LIVEKIT_TURN_TLS_PORT=443` (unless you have a load balancer in front), and drop a **CA-signed** `turn.crt`/`turn.key` (self-signed won't work) into `config/certs/`. Clients then get `wss://` + TURN automatically. The Build plan above already includes all of this for free.
+
+> **Dev on a physical iPhone over plain `ws://` (LAN)?** iOS ATS would block cleartext WebSockets — `app.json` ships `NSAppTransportSecurity → NSAllowsLocalNetworking: true`, which exempts only local-network connections (RFC1918 IPs) and keeps ATS strict for everything else, so it's App-Store-safe. In production the app always talks `wss://`, which needs no exception.
+
+> **Testing calls over LAN with docker?** Set `LIVEKIT_RTC_NODE_IP=<your machine's LAN IP>` in your `.env` and `docker compose up -d livekit` — without it the LiveKit container advertises its internal docker IP, so the call *connects* but no video/audio flows. Everything else stays `ws://` + TURN off, which is exactly right for LAN dev.
+
 ---
 
 ## 7. Step 5 — api-core → **Render** (free forever)
@@ -405,6 +411,7 @@ POSE_SERVICE_URL=             # leave unset
 
 ```
 JWT_SECRET=<long-random-string>          # ⚠️ MUST match api-core exactly
+DATABASE_URL=postgresql://kinetik_user:PASSWORD@ep-XXXX-pooler.us-east-2.aws.neon.tech/kinetik?sslmode=require
 REDIS_HOST=<cache>.upstash.io
 REDIS_PORT=6379
 REDIS_PASSWORD=<token>

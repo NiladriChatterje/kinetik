@@ -1,6 +1,17 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { WsEvent, REDIS_KEYS } from '@kinetik/shared';
+import { WsEvent, REDIS_KEYS, query } from '@kinetik/shared';
 import { ChatHandler } from '../handlers/chat';
+
+// CHAT_JOIN now validates match membership against Postgres via `query`.
+// Mock it so tests never touch a real DB; the actual WsEvent/REDIS_KEYS
+// exports are preserved via importOriginal.
+vi.mock('@kinetik/shared', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('@kinetik/shared')>();
+  return {
+    ...actual,
+    query: vi.fn(),
+  };
+});
 
 // ─── Mocks ────────────────────────────────────────────────────────
 
@@ -105,6 +116,8 @@ describe('ChatHandler', () => {
     pubClient = createMockRedis();
     subClient = createMockRedis();
     handler = new ChatHandler(nsp, pubClient, subClient);
+    // Default: the joining user IS a participant of the match
+    vi.mocked(query).mockResolvedValue({ rowCount: 1, rows: [{ id: 'match-456' }] } as any);
   });
 
   // ─── Socket Connection ────────────────────────────────────────
@@ -140,36 +153,75 @@ describe('ChatHandler', () => {
   // ─── CHAT_JOIN ────────────────────────────────────────────────
 
   describe(`${WsEvent.CHAT_JOIN} event`, () => {
-    it('should join the socket to the match room', () => {
+    it('should join the socket to the match room when the user is a participant', async () => {
       const { socket } = simulateConnection(nsp);
       const handlerFn = registerHandler(socket, WsEvent.CHAT_JOIN);
-      handlerFn({ matchId: 'match-456' });
+      await handlerFn({ matchId: 'match-456' });
 
       expect(socket.join).toHaveBeenCalledWith('match:match-456');
     });
 
-    it('should track the match in userMatches map', () => {
+    it('should track the match in userMatches map', async () => {
       const { socket } = simulateConnection(nsp);
       const handlerFn = registerHandler(socket, WsEvent.CHAT_JOIN);
 
-      handlerFn({ matchId: 'match-456' });
-      handlerFn({ matchId: 'match-789' });
-      handlerFn({ matchId: 'match-456' }); // duplicate join — should not error
+      await handlerFn({ matchId: 'match-456' });
+      await handlerFn({ matchId: 'match-789' });
+      await handlerFn({ matchId: 'match-456' }); // duplicate join — should not error
 
       // No direct assertion on private map — tested indirectly via leave/disconnect
       expect(true).toBe(true);
+    });
+
+    it('should NOT join the room when the user is not a participant of the match', async () => {
+      const { socket } = simulateConnection(nsp);
+      const handlerFn = registerHandler(socket, WsEvent.CHAT_JOIN);
+      const inviteFn = registerHandler(socket, WsEvent.CALL_INVITE);
+      vi.mocked(query).mockResolvedValue({ rowCount: 0, rows: [] } as any);
+
+      await handlerFn({ matchId: 'match-456' });
+
+      expect(socket.join).not.toHaveBeenCalledWith('match:match-456');
+
+      // Denied join also blocks the userMatches gate on CALL_INVITE
+      inviteFn({ matchId: 'match-456', partnerId: 'user-456' });
+      expect(pubClient.publish).not.toHaveBeenCalledWith(
+        REDIS_KEYS.CHAT_CALL_CHANNEL,
+        expect.anything(),
+      );
+    });
+
+    it('should fail open (allow join) when the DB membership check errors', async () => {
+      const { socket } = simulateConnection(nsp);
+      const handlerFn = registerHandler(socket, WsEvent.CHAT_JOIN);
+      vi.mocked(query).mockRejectedValue(new Error('db down'));
+
+      await handlerFn({ matchId: 'match-456' });
+
+      expect(socket.join).toHaveBeenCalledWith('match:match-456');
+    });
+
+    it('should ignore joins with a missing matchId', async () => {
+      const { socket } = simulateConnection(nsp);
+      const handlerFn = registerHandler(socket, WsEvent.CHAT_JOIN);
+
+      await handlerFn({ matchId: '' });
+
+      // Only the personal-room join from connection is allowed — no match room
+      const matchJoins = socket.join.mock.calls.filter(([room]: [string]) => room.startsWith('match:'));
+      expect(matchJoins).toHaveLength(0);
     });
   });
 
   // ─── CHAT_LEAVE ───────────────────────────────────────────────
 
   describe(`${WsEvent.CHAT_LEAVE} event`, () => {
-    it('should leave the match room and remove the socket from the room', () => {
+    it('should leave the match room and remove the socket from the room', async () => {
       const { socket } = simulateConnection(nsp);
       const joinFn = registerHandler(socket, WsEvent.CHAT_JOIN);
       const leaveFn = registerHandler(socket, WsEvent.CHAT_LEAVE);
 
-      joinFn({ matchId: 'match-456' });
+      await joinFn({ matchId: 'match-456' });
       leaveFn({ matchId: 'match-456' });
 
       expect(socket.leave).toHaveBeenCalledWith('match:match-456');
@@ -325,12 +377,12 @@ describe('ChatHandler', () => {
   // ─── 1:1 CALL SIGNALING ────────────────────────────────────
 
   describe('1:1 call signaling', () => {
-    it('should publish CALL_INVITE to the partner personal room via Redis for a match participant', () => {
+    it('should publish CALL_INVITE to the partner personal room via Redis for a match participant', async () => {
       const { socket } = simulateConnection(nsp);
       const joinFn = registerHandler(socket, WsEvent.CHAT_JOIN);
       const inviteFn = registerHandler(socket, WsEvent.CALL_INVITE);
 
-      joinFn({ matchId: 'match-456' });
+      await joinFn({ matchId: 'match-456' });
       inviteFn({ matchId: 'match-456', partnerId: 'user-456', callerName: 'Ava', callerPhotoUrl: '/p.jpg' });
 
       const publishCall = pubClient.publish.mock.calls.find(
@@ -362,12 +414,12 @@ describe('ChatHandler', () => {
       );
     });
 
-    it('should NOT publish CALL_INVITE to self or with missing fields', () => {
+    it('should NOT publish CALL_INVITE to self or with missing fields', async () => {
       const { socket } = simulateConnection(nsp);
       const joinFn = registerHandler(socket, WsEvent.CHAT_JOIN);
       const inviteFn = registerHandler(socket, WsEvent.CALL_INVITE);
 
-      joinFn({ matchId: 'match-456' });
+      await joinFn({ matchId: 'match-456' });
       inviteFn({ matchId: 'match-456', partnerId: 'user-123' }); // self
       inviteFn({ matchId: '', partnerId: 'user-456' }); // missing match
       inviteFn({ matchId: 'match-456' }); // missing partner
@@ -497,7 +549,7 @@ describe('ChatHandler', () => {
       expect(caller.emit).toHaveBeenCalledWith(WsEvent.CALL_BUSY, busyEvent.event);
     });
 
-    it('should publish CALL_BUSY instead of CALL_INVITE when the callee is in an active call', () => {
+    it('should publish CALL_BUSY instead of CALL_INVITE when the callee is in an active call', async () => {
       const { socket: caller } = simulateConnection(nsp);
       const callee = simulateSecondConnection(nsp, 'user-456');
 
@@ -505,7 +557,7 @@ describe('ChatHandler', () => {
       const inviteFn = registerHandler(caller, WsEvent.CALL_INVITE);
       const activeJoinFn = registerHandler(callee, WsEvent.CALL_ACTIVE_JOIN);
 
-      joinFn({ matchId: 'match-456' });
+      await joinFn({ matchId: 'match-456' });
 
       // Ring user-456 while they're NOT busy → invite
       inviteFn({ matchId: 'match-456', partnerId: 'user-456' });
@@ -528,7 +580,7 @@ describe('ChatHandler', () => {
       expect(publishes[1].event.timestamp).toBeDefined();
     });
 
-    it('should publish CALL_INVITE again after CALL_ACTIVE_LEAVE clears busy state', () => {
+    it('should publish CALL_INVITE again after CALL_ACTIVE_LEAVE clears busy state', async () => {
       const { socket: caller } = simulateConnection(nsp);
       const callee = simulateSecondConnection(nsp, 'user-456');
 
@@ -537,7 +589,7 @@ describe('ChatHandler', () => {
       const activeJoinFn = registerHandler(callee, WsEvent.CALL_ACTIVE_JOIN);
       const activeLeaveFn = registerHandler(callee, WsEvent.CALL_ACTIVE_LEAVE);
 
-      joinFn({ matchId: 'match-456' });
+      await joinFn({ matchId: 'match-456' });
       activeJoinFn();
       activeLeaveFn();
       inviteFn({ matchId: 'match-456', partnerId: 'user-456' });
@@ -549,7 +601,7 @@ describe('ChatHandler', () => {
       expect(publishes[0].type).toBe('invite');
     });
 
-    it('should clear busy state on disconnect', () => {
+    it('should clear busy state on disconnect', async () => {
       const { socket: caller } = simulateConnection(nsp);
       const callee = simulateSecondConnection(nsp, 'user-456');
 
@@ -558,7 +610,7 @@ describe('ChatHandler', () => {
       const activeJoinFn = registerHandler(callee, WsEvent.CALL_ACTIVE_JOIN);
       const disconnectFn = registerHandler(callee, 'disconnect');
 
-      joinFn({ matchId: 'match-456' });
+      await joinFn({ matchId: 'match-456' });
       activeJoinFn();
       disconnectFn();
       inviteFn({ matchId: 'match-456', partnerId: 'user-456' });
@@ -570,7 +622,7 @@ describe('ChatHandler', () => {
       expect(publishes[0].type).toBe('invite');
     });
 
-    it('should KEEP the user busy when a secondary socket disconnects mid-call', () => {
+    it('should KEEP the user busy when a secondary socket disconnects mid-call', async () => {
       const { socket: caller } = simulateConnection(nsp);
       // Same user holds TWO sockets: the shared call socket (sets busy) and a
       // per-screen chat socket. Both join `user:456` personal room.
@@ -582,7 +634,7 @@ describe('ChatHandler', () => {
       const activeJoinFn = registerHandler(callSocket, WsEvent.CALL_ACTIVE_JOIN);
       const chatDisconnectFn = registerHandler(chatSocket, 'disconnect');
 
-      joinFn({ matchId: 'match-456' });
+      await joinFn({ matchId: 'match-456' });
       activeJoinFn(); // call socket marks user-456 busy
       chatDisconnectFn(); // secondary chat socket drops — busy must persist
 
@@ -607,7 +659,7 @@ describe('ChatHandler', () => {
       expect(publishesAfter[publishesAfter.length - 1].type).toBe('invite');
     });
 
-    it('should NOT publish CALL_BUSY to self or with missing fields', () => {
+    it('should NOT publish CALL_BUSY to self or with missing fields', async () => {
       const { socket: caller } = simulateConnection(nsp);
       const callee = simulateSecondConnection(nsp, 'user-456');
 
@@ -615,7 +667,7 @@ describe('ChatHandler', () => {
       const inviteFn = registerHandler(caller, WsEvent.CALL_INVITE);
       const activeJoinFn = registerHandler(callee, WsEvent.CALL_ACTIVE_JOIN);
 
-      joinFn({ matchId: 'match-456' });
+      await joinFn({ matchId: 'match-456' });
       activeJoinFn();
 
       // Ringing self or missing partner — should not publish anything
@@ -632,13 +684,13 @@ describe('ChatHandler', () => {
   // ─── Disconnect ───────────────────────────────────────────────
 
   describe('disconnect event', () => {
-    it('should remove the user from userMatches on disconnect', () => {
+    it('should remove the user from userMatches on disconnect', async () => {
       const { socket } = simulateConnection(nsp);
       const joinFn = registerHandler(socket, WsEvent.CHAT_JOIN);
       const disconnectFn = registerHandler(socket, 'disconnect');
 
-      joinFn({ matchId: 'match-456' });
-      joinFn({ matchId: 'match-789' });
+      await joinFn({ matchId: 'match-456' });
+      await joinFn({ matchId: 'match-789' });
       disconnectFn();
 
       expect(true).toBe(true);

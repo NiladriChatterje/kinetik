@@ -1,6 +1,6 @@
 # Kinetik App — Features & Status Document
 
-> **Last updated:** July 19, 2026
+> **Last updated:** August 14, 2026
 > **Project:** Kinetik — real-time matchmaking platform (skip the chat, meet already)
 
 ---
@@ -77,6 +77,7 @@
 | Chat Namespace (/chat) | ✅ Implemented | Join/leave rooms, message relay, typing, read receipts |
 | Flash Window Namespace | ✅ Implemented | Queue management, countdown, join/leave |
 | Vibe Check Namespace | ✅ Implemented | Audio toggle, phase changes, decisions |
+| 1:1 Call Signaling (LiveKit) | ✅ Implemented | `call:invite/accept/decline/cancel/busy` over the shared `/chat` socket → Redis pub/sub → personal rooms; per-socket busy state |
 | Graceful Shutdown | ✅ Implemented | SIGTERM/SIGINT handlers for Redis, event bus, Socket.IO |
 
 ---
@@ -291,3 +292,61 @@ When User A swipes right on User B, the backend in `POST /matches/swipe` does th
 5. The target user's app receives this via Socket.IO and **increments the unread like badge count**
 
 > The push notification respects user preferences — if push is disabled, the notification is skipped but the real-time badge still updates.
+
+---
+
+## 16. 1:1 Voice/Video Calls (WebRTC / LiveKit)
+
+| Feature | Status | Details |
+|---------|--------|---------|
+| LiveKit SFU (WebRTC) | ✅ Implemented | `livekit-server` container (dev) or **LiveKit Cloud** (prod) — SFU handles ICE, TURN and media routing; no raw P2P |
+| Call Token Endpoint | ✅ Implemented | `POST /api/v1/matches/:matchId/call/token` — JWT + active-match participant check, room-scoped token (`match:<id>`, canPublish/canSubscribe, 4h TTL) |
+| wss-aware Client URL | ✅ Implemented | Token response mirrors the inbound scheme (`X-Forwarded-Proto` / `request.protocol`): `wss://` over TLS, `ws://` on LAN dev; `LIVEKIT_PUBLIC_URL` overrides |
+| 1:1 Call Signaling | ✅ Implemented | `call:invite/accept/decline/cancel/busy` over the shared `/chat` socket → Redis pub/sub → callee's personal room (`user:<id>`) — rings on any screen |
+| Busy Handling | ✅ Implemented | `call:active_join/leave` per socket; busy cleared only when the last in-call socket disconnects; second caller gets `call:busy` |
+| Incoming-Call Overlay | ✅ Implemented | Global accept/decline sheet (45s ring timeout) rendered in RootNavigator — works on any screen |
+| Call Screen | ✅ Implemented | Caller ringing → connecting → active; mic mute, camera toggle, duration timer, local PiP, remote fullscreen, partner-left; declined/no-answer/busy/error states |
+| Match-Room Security | ✅ Implemented | `chat:join` validates match membership against Postgres (active match + participant) — closes chat eavesdropping + unsolicited rings; fails open on DB errors |
+| Expo Go Degradation | ✅ Implemented | `registerGlobals()` guarded + lazy `VideoView` — app boots in Expo Go with calls disabled instead of crashing |
+| WebRTC Dependencies | ✅ Implemented | LiveKit v2 stack only: `@livekit/react-native`, fork `@livekit/react-native-webrtc`, `@livekit/react-native-expo-plugin`, `livekit-client`; upstream `react-native-webrtc` removed (duplicate native module) |
+| iOS ATS for LAN dev | ✅ Implemented | `NSAllowsLocalNetworking: true` — permits `ws://` to LAN IPs in dev, ATS stays strict elsewhere (App-Store-safe) |
+| TURN (self-hosted) | ⚠️ Config-ready | Embedded LiveKit TURN off by default (needs CA-signed cert); enable via `LIVEKIT_TURN_*` env + certs in `config/certs/`. LiveKit Cloud Build plan includes TURN |
+
+### Architecture
+
+```
+Phone A (Caller)                     Phone B (Callee)
+    │  POST /matches/:id/call/token      │
+    ├──────────────► api-core ◄──────────┤  (JWT + match-participant check → LiveKit token)
+    │                                    │
+    │  ws/wss://<livekit>  +  token      │  ws/wss://<livekit>  +  token
+    ├──────────────► LiveKit SFU ◄───────┤  (signaling + media via ICE/TURN)
+    │                                    │
+    │  call:invite (via /chat socket)    │
+    ├──────────────► realtime ◄──────────┤
+    │   Redis pub/sub → user:<B> room    │
+    │                                    │
+    │◄────────────── call:accept ────────┤
+    │◄──────────── media flows ─────────►│
+```
+
+### Key Design Decisions
+
+1. **SFU over raw P2P** — LiveKit (not `RTCPeerConnection` directly): TURN/ICE/reconnection handled by the SFU; no TURN-less P2P failures
+2. **Security boundary at the token endpoint** — participants verified against `matches` before a room-scoped token is issued; rooms namespaced `match:<id>`
+3. **Signaling decoupled from media** — Redis pub/sub → personal rooms means invites land on any screen; busy is server-enforced
+4. **DB-backed room join** — `chat:join` now validates membership (previously any authenticated user could join any match room and eavesdrop); fails open so a DB blip never breaks chat
+5. **Expo Go first** — the WebRTC native module only exists in dev/production builds; guarded globals + lazy views keep the app bootable everywhere
+
+### ⚠️ Caveats
+
+1. **No push-notification fallback for call invites** — a ring is delivered only over a live socket. If the callee's app is backgrounded/offline (or the realtime service is asleep on free hosting), the invite is never delivered and the caller gets "No answer" after 45s. Push infrastructure exists but isn't wired to `call:invite` — **the #1 production reliability gap.**
+2. **Expo Go doesn't support calls** — native WebRTC module absent; use dev builds (`expo run:android` / `expo run:ios` or a dev client)
+3. **Free-tier limits** — LiveKit Cloud Build: 5,000 WebRTC minutes/month + 50 GB downstream; fine for alpha, burns fast with real usage
+4. **Free-tier sleep latency** — Render (~15 min), Koyeb (~1 h), Neon (~5 min) idle sleeps; the first call after idle is slow, and a sleeping realtime drops rings
+5. **TURN off by default** — fine on LAN; strict NATs/corporate firewalls need TURN enabled (CA-signed cert; `LIVEKIT_TURN_TLS_PORT=443` without a load balancer)
+6. **ws:// vs wss://** — dev LAN uses `ws://` (iOS covered by `NSAllowsLocalNetworking`); production must set `LIVEKIT_PUBLIC_URL=wss://<project>.livekit.cloud`
+7. **Docker LAN media** — the LiveKit container advertises its internal bridge IP; set `LIVEKIT_RTC_NODE_IP=<host LAN IP>` or the call connects with no media. Windows firewall must also allow TCP 7880/7881, UDP 7882, UDP 50000–60000
+8. **Single-invite overlay** — two simultaneous invites overwrite each other; the first caller rings to timeout
+9. **Busy state is per-instance in-memory** — relies on nginx `ip_hash` sticky sessions when scaling horizontally
+10. **Call token TTL 4h** — longer than a call needs; harmless given room-scoping, reduce if paranoid

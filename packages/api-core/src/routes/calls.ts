@@ -90,11 +90,24 @@ export async function callRoutes(app: FastifyInstance) {
 
       // Clients can't reach `localhost` on a physical device/emulator — derive
       // the public URL from the request host (the same LAN IP the API is on),
-      // swapping the API port for the LiveKit port. Explicit env var wins.
+      // swapping the API port for the LiveKit port. Explicit env var wins
+      // (set LIVEKIT_PUBLIC_URL to e.g. `wss://<project>.livekit.cloud`).
+      //
+      // Scheme mirrors the inbound connection: `wss://` when the API was
+      // reached over TLS (LiveKit Cloud / TLS-terminating proxy), `ws://` for
+      // plain HTTP (LAN dev). X-Forwarded-Proto is read directly because
+      // Fastify's trustProxy is not enabled (this runs behind nginx).
       const reqHost = request.hostname;
+      const xfp = request.headers['x-forwarded-proto'];
+      const forwardedSecure = typeof xfp === 'string'
+        ? xfp.split(',')[0].trim() === 'https'
+        : Array.isArray(xfp) && xfp[0] === 'https';
+      const scheme = request.protocol === 'https' || forwardedSecure ? 'wss' : 'ws';
       const publicUrl =
         LIVEKIT_PUBLIC_URL ||
-        (reqHost ? `ws://${reqHost}:${LIVEKIT_PUBLIC_PORT}` : `ws://localhost:${LIVEKIT_PUBLIC_PORT}`);
+        (reqHost
+          ? `${scheme}://${reqHost}:${LIVEKIT_PUBLIC_PORT}`
+          : `${scheme}://localhost:${LIVEKIT_PUBLIC_PORT}`);
 
       return reply.send({
         success: true,

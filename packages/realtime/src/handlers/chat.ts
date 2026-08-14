@@ -3,6 +3,8 @@ import { Redis } from 'ioredis';
 import {
   WsEvent,
   REDIS_KEYS,
+  query,
+  TABLES,
 } from '@kinetik/shared';
 
 interface ChatMessagePayload {
@@ -294,8 +296,29 @@ export class ChatHandler {
       socket.join(`user:${userId}`);
 
       // Join conversation room
+      // Only the two participants of an ACTIVE match may join its room. Without
+      // this check any authenticated user could join any `match:<id>` room and
+      // (a) eavesdrop on that match's chat and (b) pass the userMatches gate on
+      // CALL_INVITE to ring arbitrary users. Fails open on DB errors so a
+      // transient Postgres blip doesn't break chat for everyone.
       socket.on(WsEvent.CHAT_JOIN, async (data: { matchId: string }) => {
         const { matchId } = data;
+        if (!matchId) return;
+
+        try {
+          const result = await query(
+            `SELECT id FROM ${TABLES.MATCHES}
+             WHERE id = $1 AND is_active = TRUE AND (user_a_id = $2 OR user_b_id = $2)`,
+            [matchId, userId],
+          );
+          if (result.rowCount === 0) {
+            console.warn(`[Chat] User ${userId} denied join to match:${matchId} (not a participant)`);
+            return;
+          }
+        } catch (err: any) {
+          console.warn(`[Chat] Membership check failed for match:${matchId} — allowing join:`, err?.message);
+        }
+
         socket.join(`match:${matchId}`);
 
         // Track which matches this user is in

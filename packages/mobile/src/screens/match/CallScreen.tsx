@@ -204,6 +204,14 @@ export const CallScreen: React.FC<Props> = ({ navigation, route }) => {
       room.on(RoomEvent.TrackSubscribed, (track: any) => {
         if (track.kind === 'video' && !endedRef.current) setRemoteTrack(track);
       });
+      // The camera publication may complete after setCameraEnabled resolves
+      // (e.g. permission prompt), so listen for it instead of only reading
+      // the publication once right after connect.
+      room.on(RoomEvent.LocalTrackPublished, (pub: any) => {
+        if (pub?.track?.kind === 'video' && !endedRef.current) {
+          setLocalTrack(pub.track);
+        }
+      });
       room.on(RoomEvent.TrackUnsubscribed, (track: any) => {
         setRemoteTrack((cur: any) => (cur === track ? null : cur));
       });
@@ -282,7 +290,11 @@ export const CallScreen: React.FC<Props> = ({ navigation, route }) => {
     const next = !camEnabled;
     setCamEnabled(next);
     await room.localParticipant.setCameraEnabled(next);
-    if (!next) setLocalTrack(null);
+    // Muting keeps the publication around, so re-enabling must re-fetch the
+    // track — otherwise the PiP stays on the "cam off" placeholder while the
+    // camera is actually live again.
+    const pub = room.localParticipant.getTrackPublication(Track.Source.Camera);
+    setLocalTrack(next ? pub?.videoTrack ?? null : null);
   };
 
   const endCall = useCallback(() => {
