@@ -31,8 +31,12 @@ export const VibeCheckScreen: React.FC<Props> = ({ navigation, route }) => {
 
     const handleConnect = () => setConnected(true);
 
+    let loggedConnectError = false;
     const handleConnectError = (err: any) => {
-      console.error('[VibeSocket] Connection error:', err.message);
+      if (!loggedConnectError) {
+        loggedConnectError = true;
+        console.warn('[VibeSocket] Connection error (will keep retrying):', err.message);
+      }
       if (!errorShownRef.current) {
         errorShownRef.current = true;
         showError('Disconnected', 'Vibe Check server unreachable — running locally.');

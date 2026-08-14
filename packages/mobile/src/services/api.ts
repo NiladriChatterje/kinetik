@@ -85,10 +85,10 @@ class ApiClient {
           success: false,
           error: {
             code: response.status >= 500 ? 'SERVER_ERROR' : 'NETWORK_ERROR',
-            status: response.status,
+            status: response.status, // machine-readable for devs — never shown to the user
             message: response.status === 502
               ? 'Server is unavailable. Please try again later.'
-              : `Unexpected server response (${response.status})`,
+              : 'Something went wrong on the server. Please try again.',
           },
         };
       }
@@ -106,13 +106,17 @@ class ApiClient {
               success: false,
               error: {
                 code: 'SERVER_ERROR',
-                status: response.status,
-                message: `Unexpected server response (${response.status})`,
+                status: response.status, // machine-readable for devs — never shown to the user
+                message: 'Something went wrong on the server. Please try again.',
               },
             };
       }
 
-      if (!response.ok && __DEV__) {
+      // Log only genuine server failures (5xx). Expected 4xx business errors —
+      // wrong password (401), duplicate phone (409), validation (400), rate
+      // limit (429) — are surfaced to the user by each screen's toast/banner,
+      // so logging them as errors here is just noise.
+      if (!response.ok && __DEV__ && response.status >= 500) {
         console.error(`[API] ${response.status} ${endpoint}:`, JSON.stringify(data));
       }
 
@@ -122,8 +126,8 @@ class ApiClient {
         if (!data.error || typeof data.error !== 'object') {
           data.error = {
             code: 'SERVER_ERROR',
-            status: response.status,
-            message: `Unexpected server response (${response.status})`,
+            status: response.status, // machine-readable for devs — never shown to the user
+            message: 'Something went wrong on the server. Please try again.',
           };
         } else if (!data.error.status) {
           data.error.status = response.status;

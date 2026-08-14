@@ -47,8 +47,12 @@ export const CommitmentGateScreen: React.FC<Props> = ({ navigation, route }) => 
     // Direct mutual-lock signal
     socket.on('match:success', () => finish(true));
 
+    let loggedConnectError = false;
     const handleConnectError = (err: any) => {
-      console.error('[CommitSocket] Connection error:', err.message);
+      if (!loggedConnectError) {
+        loggedConnectError = true;
+        console.warn('[CommitSocket] Connection error (will keep retrying):', err.message);
+      }
     };
     socket.on('connect_error', handleConnectError);
 

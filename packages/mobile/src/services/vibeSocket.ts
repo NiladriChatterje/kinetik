@@ -31,11 +31,16 @@ export function getVibeSocket(): Socket {
       forceNew: true,
     });
 
+    let loggedConnectError = false;
     socket.on('connect', () => {
+      loggedConnectError = false;
       console.log('[VibeSocket] Connected');
     });
     socket.on('connect_error', (err) => {
-      console.error('[VibeSocket] Connection error:', err.message);
+      if (!loggedConnectError) {
+        loggedConnectError = true;
+        console.warn('[VibeSocket] Connection error (will keep retrying):', err.message);
+      }
     });
     socket.on('disconnect', (reason) => {
       console.log('[VibeSocket] Disconnected:', reason);

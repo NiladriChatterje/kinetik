@@ -117,8 +117,12 @@ export const ActiveRadarScreen: React.FC<{ navigation: any; route: any }> = ({ n
         handleMatchFound({ ...p, vibeId: p.vibeId || p.matchId });
       });
 
+      let loggedConnectError = false;
       socket.on('connect_error', (err) => {
-        console.error('[FlashSocket] Connection error:', err.message);
+        if (!loggedConnectError) {
+          loggedConnectError = true;
+          console.warn('[FlashSocket] Connection error (will keep retrying):', err.message);
+        }
       });
 
       setIsInQueue(true);

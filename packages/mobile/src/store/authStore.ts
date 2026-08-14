@@ -64,7 +64,11 @@ function getErrorResponse(response: {
   error?: { code?: string; message?: string; details?: unknown };
 }): { message: string; code?: string } {
   const code = response.error?.code;
-  const msg = response.error?.message;
+  // Safety net: never let a raw HTTP status / technical string (e.g. "401" or
+  // "HTTP 401 Unauthorized") become the message shown to the user — fall back
+  // to friendly copy below.
+  const rawMsg = response.error?.message;
+  const msg = rawMsg && /HTTP\s*\d{3}|^\s*\d{3}\s*$/i.test(rawMsg) ? undefined : rawMsg;
   if (!msg || msg === 'Invalid input') {
     const details = response.error?.details as
       | { fieldErrors?: Record<string, string[]> }
@@ -195,8 +199,8 @@ export const useAuthStore = create<AuthState>((set, get) => ({
         get().connectLikesSocket();
         return { success: true };
       }
-      const { message } = getErrorResponse(response);
-      return { success: false, error: message };
+      const { message, code } = getErrorResponse(response);
+      return { success: false, error: message, errorCode: code };
     } catch (e: any) {
       return { success: false, error: e?.message || 'Unable to connect. Please try again.' };
     }
@@ -311,7 +315,9 @@ export const useAuthStore = create<AuthState>((set, get) => ({
       forceNew: true,
     });
 
+    let loggedConnectError = false;
     socket.on('connect', () => {
+      loggedConnectError = false;
       console.log('[LikesSocket] Connected');
     });
 
@@ -332,8 +338,13 @@ export const useAuthStore = create<AuthState>((set, get) => ({
       console.log('[LikesSocket] Disconnected');
     });
 
+    // Expected while the backend is unreachable — socket.io retries on its
+    // own, so log once at warn level instead of spamming errors per attempt.
     socket.on('connect_error', (err) => {
-      console.error('[LikesSocket] Connection error:', err.message);
+      if (!loggedConnectError) {
+        loggedConnectError = true;
+        console.warn('[LikesSocket] Connection error (will keep retrying):', err.message);
+      }
     });
 
     set({ likesSocket: socket });

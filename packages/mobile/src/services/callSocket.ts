@@ -59,11 +59,16 @@ export function getCallSocket(): Socket {
       forceNew: true,
     });
 
+    let loggedConnectError = false;
     socket.on('connect', () => {
+      loggedConnectError = false;
       console.log('[CallSocket] Connected');
     });
     socket.on('connect_error', (err) => {
-      console.error('[CallSocket] Connection error:', err.message);
+      if (!loggedConnectError) {
+        loggedConnectError = true;
+        console.warn('[CallSocket] Connection error (will keep retrying):', err.message);
+      }
     });
     socket.on('disconnect', (reason) => {
       console.log('[CallSocket] Disconnected:', reason);
