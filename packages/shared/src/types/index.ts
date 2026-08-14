@@ -11,7 +11,6 @@ export type AuthProvider = 'phone' | 'google' | 'apple';
 export type DatingCategory = 'casual' | 'serious' | 'intimacy';
 
 // ─── Re-export match types ────────────────────────────────
-export * from './match';
 
 // ─── User Types ───────────────────────────────────────────
 

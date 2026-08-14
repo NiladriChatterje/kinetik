@@ -68,7 +68,6 @@ import { ReservationLockerScreen } from '../screens/scheduling/ReservationLocker
 // Viral (Duo screens kept for profile access)
 import { DuoWingmanScreen } from '../screens/viral/DuoWingmanScreen';
 import { DoubleDateScreen } from '../screens/viral/DoubleDateScreen';
-import { HeatMapScreen } from '../screens/viral/HeatMapScreen';
 
 // Match
 import { MatchScreen } from '../screens/match/MatchScreen';
@@ -104,7 +103,6 @@ export type RootStackParamList = {
   VenueSelector: { matchId: string };
   ReservationLocker: { matchId: string; venueId: string };
   DoubleDate: { roomId: string };
-  HeatMap: undefined;
   // Match screens shown as modal overlays
   Likes: undefined;
   ChatList: undefined;
@@ -291,7 +289,6 @@ export function RootNavigator() {
         <RootStack.Screen name="VenueSelector" component={VenueSelectorScreen} />
         <RootStack.Screen name="ReservationLocker" component={ReservationLockerScreen} />
         <RootStack.Screen name="DoubleDate" component={DoubleDateScreen} />
-        <RootStack.Screen name="HeatMap" component={HeatMapScreen} />
         <RootStack.Screen name="NotificationPreferences" component={NotificationPreferencesScreen} />
         <RootStack.Screen name="KYCVerify" component={KYCScreen} />
       </RootStack.Navigator>

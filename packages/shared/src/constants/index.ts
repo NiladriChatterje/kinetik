@@ -1,16 +1,3 @@
-// ─── Application Constants ────────────────────────────────
-
-export const APP_NAME = 'Kinetik';
-export const APP_VERSION = '0.1.0';
-
-// ─── Flash Window Constants ───────────────────────────────
-
-export const FLASH_WINDOW_DURATION_MINUTES = 30;
-export const FLASH_WINDOW_DEFAULT_START_HOUR = 20;    // 8 PM
-export const FLASH_WINDOW_DEFAULT_START_MINUTE = 30;  // :30
-export const FLASH_WINDOW_MAX_PARTICIPANTS = 5000;
-export const FLASH_WINDOW_MIN_PARTICIPANTS = 10;
-
 // ─── Vibe Check Constants ─────────────────────────────────
 
 export const VIBE_CHECK_DURATION_SECONDS = 180;        // 3 minutes
@@ -21,15 +8,12 @@ export const VIBE_CHECK_DECISION_TIMEOUT_SECONDS = 15;  // Decision window
 
 // ─── Swipe / Interaction Limits ───────────────────────────
 
-export const FREE_SWIPE_LIMIT_DAILY = 50;
 export const PREMIUM_SWIPE_LIMIT_DAILY = 99999;
 export const SUPER_LIKE_LIMIT_DAILY_FREE = 5;
 export const SUPER_LIKE_LIMIT_DAILY_PREMIUM = 25;
 
 // ─── Token & Premium ────────────────────────────────────
 
-export const FAST_PASS_COST = 1;        // tokens
-export const RAIN_CHECK_COST = 2;       // tokens
 export const PREMIUM_MONTHLY_COST_INR = 499;
 export const INFINITE_MONTHLY_COST_INR = 999;
 
@@ -37,11 +21,7 @@ export const INFINITE_MONTHLY_COST_INR = 999;
 
 export const H3_DEFAULT_RESOLUTION = 7;
 export const H3_SEARCH_RING_RADIUS = 1;   // k-ring radius
-export const H3_LOW_DENSITY_RING_RADIUS = 3;
 export const H3_HIGH_DENSITY_THRESHOLD = 5000;  // users in 5km radius
-export const DEFAULT_MAX_DISTANCE_KM = 50;
-
-export const MATCH_QUEUE_BATCH_SIZE = 50;
 
 // ─── Redis Keys ───────────────────────────────────────────
 
@@ -109,18 +89,6 @@ export const EVENT_BUS_CHANNELS = {
   VIBE_EVENTS: 'event:vibe',
   WINDOW_EVENTS: 'event:window',
   PAYMENT_EVENTS: 'event:payment',
-} as const;
-
-// Deprecated: Kafka has been replaced by Redis event bus.
-// Keep as alias for backward compatibility during migration.
-/** @deprecated Use EVENT_BUS_CHANNELS instead */
-export const KAFKA_TOPICS = {
-  USER_EVENTS: 'event:user',
-  MATCH_EVENTS: 'event:match',
-  VIBE_EVENTS: 'event:vibe',
-  WINDOW_EVENTS: 'event:window',
-  PAYMENT_EVENTS: 'event:payment',
-  NOTIFICATION_EVENTS: 'event:notification',
 } as const;
 
 // ─── API Routes ───────────────────────────────────────────
