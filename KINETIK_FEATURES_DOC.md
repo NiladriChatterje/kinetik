@@ -350,3 +350,42 @@ Phone A (Caller)                     Phone B (Callee)
 8. **Single-invite overlay** — two simultaneous invites overwrite each other; the first caller rings to timeout
 9. **Busy state is per-instance in-memory** — relies on nginx `ip_hash` sticky sessions when scaling horizontally
 10. **Call token TTL 4h** — longer than a call needs; harmless given room-scoping, reduce if paranoid
+
+---
+
+## 16. Scalability Patterns — [Follow this pattern while development]
+
+These patterns were applied (commit `8619043`) so a single backend instance handles maximum users. Any new feature touching sockets, chat events, or list endpoints MUST follow them — regressing any of these multiplies per-user server cost.
+
+### A. One shared socket per namespace (client)
+- The app holds exactly **two** session-long connections: `/chat` via `getChatSocket()` (`services/callSocket.ts`) and `/presence` via `getPresenceSocket()` (`services/presenceSocket.ts`). `/vibe-check` (`services/vibeSocket.ts`) connects only during the vibe flow.
+- **Never call `io(...)` from a screen or store.** Get the shared socket, attach *named* handlers, and detach exactly those handlers on unmount:
+  ```ts
+  const socket = getChatSocket();
+  const onEvent = (data) => { ... };
+  socket.on('event', onEvent);
+  if (socket.connected) runConnectLogic();   // 'connect' won't re-fire on an already-live socket
+  socket.on('connect', runConnectLogic);     // and must re-run after every reconnect
+  return () => { socket.off('event', onEvent); socket.off('connect', runConnectLogic); };
+  ```
+- **Never `disconnect()` a shared socket from a screen** — only `closeCallSocket()` / `closePresenceSocket()` at logout tear them down.
+- **Never emit `chat:leave` on screen unmount** — the unread badge and chat list rely on room membership persisting on the shared socket.
+- Singletons recreate the socket only when `!socket || !socket.active` (`disconnected` is true mid-auto-reconnect; recreating then orphans other screens' listeners). On reuse, refresh `socket.auth` with the current token.
+- Client event handlers must guard by scope (`if (data?.matchId !== matchId) return;`) because the shared socket receives events for every joined room.
+
+### B. Throttle high-frequency client emits
+- `chat:typing` sends "typing" at most once per 2.5s (`ChatScreen.handleInputChange`); the trailing stop after 2s idle is what clears the partner's indicator. Any future per-keystroke/per-gesture signal must be throttled the same way — each emit fans out through Redis + every room socket.
+
+### C. No N+1 queries on list endpoints (api-core)
+- Fetch children for a whole page with one `WHERE x = ANY($1)` query and group in JS (see `/matches/profiles`, `routes/matches.ts`). Never query per row inside a `map`/loop.
+
+### D. Random selection: sample first, full scan as fallback
+- `/matches/profiles` tries `(SELECT * FROM users TABLESAMPLE SYSTEM (10))` and re-runs the original `ORDER BY RANDOM()` query only if the sample yields < 20 rows. The fallback guarantees behavior is identical to the unsampled query — keep that guarantee if the numbers change.
+
+### E. Local-only room broadcast (realtime)
+- Events arriving from Redis pub/sub (published by api-core) must be emitted with `nsp.local.to(room).emit(...)` — the `local` flag skips the Redis-adapter relay (prevents cross-instance double delivery) and costs O(room members).
+- **Never** iterate `nsp.sockets` to deliver events (O(all sockets) per event), and **never** use plain `nsp.to(room).emit()` from a Redis-subscriber handler (double delivery when scaled).
+- Exclude a sender across all their devices with `.except('user:<senderId>')` — every socket joins its personal `user:<id>` room on connect.
+
+### F. Chat message payload (wire contract)
+- Broadcast payload stays minimal and complete: `{ id, matchId, senderId, content, createdAt, media? }`. `matchId` routes, `senderId` distinguishes own/partner, `id` dedupes, `createdAt` orders. Don't add fields clients don't need; never remove one of these.
