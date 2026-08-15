@@ -1,8 +1,9 @@
 import { FastifyInstance, FastifyRequest, FastifyReply } from 'fastify';
 import { z } from 'zod';
-import { ERROR_CODES, geoToH3 } from '@kinetik/shared';
+import { ERROR_CODES, geoToH3, REDIS_KEYS } from '@kinetik/shared';
 import { query, TABLES, findUserById, updateUser, getPreferences, upsertPreferences } from '../services/database';
 import { eventBus } from '../services/eventBus';
+import { getRedis } from '../services/redis';
 import { reverseGeocode } from '../services/geocoding';
 
 const UpdateProfileSchema = z.object({
@@ -111,6 +112,68 @@ export async function userRoutes(app: FastifyInstance) {
         } : null,
       },
     });
+  });
+
+  // ─── Profile Stats ───────────────────────────────────
+  // Real-time activity metrics for the profile page. Counts are computed from
+  // the DB but cached in Redis for 60s, so the profile page never hammers the
+  // DB: each view is a Redis read, and the DB is queried at most once per
+  // minute per user. No DB writes at all.
+  app.get('/profile/stats', async (request: FastifyRequest, reply: FastifyReply) => {
+    const { sub: userId } = request.user as any;
+
+    const redis = getRedis();
+    try {
+      const cached = await redis.get(REDIS_KEYS.USER_STATS(userId));
+      if (cached) {
+        return reply.send({ success: true, data: JSON.parse(cached) });
+      }
+    } catch (error: any) {
+      console.warn('[users] Stats cache read failed, computing fresh:', error?.message || error);
+    }
+
+    const [vibeResult, matchResult, dateResult] = await Promise.all([
+      // Completed vibe checks + how many the user "locked it in"
+      query(
+        `SELECT COUNT(*) AS total,
+                COUNT(*) FILTER (
+                  WHERE (user_a_id = $1 AND user_a_decision = TRUE)
+                     OR (user_b_id = $1 AND user_b_decision = TRUE)
+                ) AS locked
+         FROM ${TABLES.VIBE_CHECKS}
+         WHERE (user_a_id = $1 OR user_b_id = $1) AND status <> 'pending'`,
+        [userId],
+      ),
+      query(
+        `SELECT COUNT(*) AS count
+         FROM ${TABLES.MATCHES}
+         WHERE (user_a_id = $1 OR user_b_id = $1) AND is_active = TRUE`,
+        [userId],
+      ),
+      query(
+        `SELECT COUNT(*) AS count
+         FROM ${TABLES.MATCHES}
+         WHERE (user_a_id = $1 OR user_b_id = $1) AND date_scheduled IS NOT NULL`,
+        [userId],
+      ),
+    ]);
+
+    const totalChecks = parseInt(vibeResult.rows[0]?.total ?? '0', 10);
+    const lockedChecks = parseInt(vibeResult.rows[0]?.locked ?? '0', 10);
+    const data = {
+      vibeChecks: totalChecks,
+      matches: parseInt(matchResult.rows[0]?.count ?? '0', 10),
+      lockRate: totalChecks > 0 ? Math.round((lockedChecks / totalChecks) * 100) : 0,
+      dates: parseInt(dateResult.rows[0]?.count ?? '0', 10),
+    };
+
+    try {
+      await redis.set(REDIS_KEYS.USER_STATS(userId), JSON.stringify(data), 'EX', 60);
+    } catch (error: any) {
+      console.warn('[users] Stats cache write failed:', error?.message || error);
+    }
+
+    return reply.send({ success: true, data });
   });
 
   // ─── Update Profile ──────────────────────────────────

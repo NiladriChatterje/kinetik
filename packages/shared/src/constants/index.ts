@@ -55,6 +55,9 @@ export const REDIS_KEYS = {
   // Subscription limits
   SUBSCRIPTION: (userId: string) => `sub:${userId}`,
 
+  // Profile metrics cache (vibe checks, matches, lock rate, dates)
+  USER_STATS: (userId: string) => `user:${userId}:stats`,
+
   // Rate limiting
   RATE_LIMIT: (key: string) => `ratelimit:${key}`,
 

@@ -38,11 +38,24 @@ interface ProfileData {
   primaryPhoto?: { url: string; thumbnailUrl?: string } | null;
 }
 
-const METRICS = [
-  { label: 'Vibe Checks', value: '23', icon: 'mic-outline' as const },
-  { label: 'Matches', value: '8', icon: 'heart-outline' as const },
-  { label: 'Lock Rate', value: '35%', icon: 'lock-closed-outline' as const },
-  { label: 'Dates', value: '3', icon: 'calendar-outline' as const },
+interface ProfileStats {
+  vibeChecks: number;
+  matches: number;
+  lockRate: number;
+  dates: number;
+}
+
+// Metric cards — labels/icons only; values come from the live stats endpoint.
+const METRIC_DEFS: {
+  key: keyof ProfileStats;
+  label: string;
+  icon: 'mic-outline' | 'heart-outline' | 'lock-closed-outline' | 'calendar-outline';
+  suffix?: string;
+}[] = [
+  { key: 'vibeChecks', label: 'Vibe Checks', icon: 'mic-outline' },
+  { key: 'matches', label: 'Matches', icon: 'heart-outline' },
+  { key: 'lockRate', label: 'Lock Rate', icon: 'lock-closed-outline', suffix: '%' },
+  { key: 'dates', label: 'Dates', icon: 'calendar-outline' },
 ];
 
 const SETTINGS = [
@@ -69,13 +82,15 @@ export const ProfileLedgerScreen: React.FC = () => {
   const [modalPhoto, setModalPhoto] = useState<ProfilePhoto | null>(null);
   const [kycStatus, setKycStatus] = useState<string | null>(null);
   const [deletingAccount, setDeletingAccount] = useState(false);
+  const [stats, setStats] = useState<ProfileStats | null>(null);
 
   const fetchProfileAndPhotos = useCallback(async () => {
     try {
-      const [profileRes, photosRes, kycRes] = await Promise.all([
+      const [profileRes, photosRes, kycRes, statsRes] = await Promise.all([
         api.getProfile(),
         api.getPhotos(),
         api.getKycStatus().catch(() => null),
+        api.getProfileStats().catch(() => null),
       ]);
       if (profileRes.success && profileRes.data) {
         setProfile(profileRes.data as ProfileData);
@@ -85,6 +100,9 @@ export const ProfileLedgerScreen: React.FC = () => {
       }
       if (kycRes && kycRes.kycStatus) {
         setKycStatus(kycRes.kycStatus);
+      }
+      if (statsRes?.success && statsRes.data) {
+        setStats(statsRes.data as ProfileStats);
       }
     } catch {
       // Silently fail — fall back to auth store data
@@ -345,15 +363,21 @@ export const ProfileLedgerScreen: React.FC = () => {
           </Card>
         )}
 
-        {/* Metrics */}
+        {/* Metrics — live values from the stats endpoint; '—' until loaded */}
         <View style={styles.metricsRow}>
-          {METRICS.map((m) => (
-            <Card key={m.label} style={styles.metricCard}>
-              <Ionicons name={m.icon} size={24} color={colors.textPrimary} />
-              <Text style={styles.metricValue}>{m.value}</Text>
-              <Text style={styles.metricLabel}>{m.label}</Text>
-            </Card>
-          ))}
+          {METRIC_DEFS.map((m) => {
+            const value = stats ? stats[m.key] : null;
+            const display = value === null || value === undefined
+              ? '—'
+              : `${value}${m.suffix || ''}`;
+            return (
+              <Card key={m.label} style={styles.metricCard}>
+                <Ionicons name={m.icon} size={24} color={colors.textPrimary} />
+                <Text style={styles.metricValue}>{display}</Text>
+                <Text style={styles.metricLabel}>{m.label}</Text>
+              </Card>
+            );
+          })}
         </View>
 
         {/* Settings */}

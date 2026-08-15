@@ -256,6 +256,16 @@ class ApiClient {
     });
   }
 
+  /** Real activity metrics for the profile page (server-counted, Redis-cached). */
+  async getProfileStats() {
+    return this.request<{
+      vibeChecks: number;
+      matches: number;
+      lockRate: number;
+      dates: number;
+    }>('/api/v1/users/profile/stats');
+  }
+
   async updateLocation(latitude: number, longitude: number) {
     return this.request<{
       latitude: number;
