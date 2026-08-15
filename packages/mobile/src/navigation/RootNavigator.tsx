@@ -7,13 +7,20 @@ import { Ionicons } from '@expo/vector-icons';
 import { useAuthStore } from '../store/authStore';
 import { colors, typography } from '../theme';
 
-/** Tab icon with badge for the Match tab — shows incoming like count */
-function MatchTabIcon({ color }: { color: string }) {
-  const unreadLikeCount = useAuthStore((s) => s.unreadLikeCount);
+/** Tab icon with a count badge — used by the Match and Chat tabs */
+function TabIcon({
+  icon,
+  count,
+  color,
+}: {
+  icon: React.ComponentProps<typeof Ionicons>['name'];
+  count: number;
+  color: string;
+}) {
   return (
     <View style={{ position: 'relative' }}>
-      <Ionicons name="heart-outline" size={22} color={color} />
-      {unreadLikeCount > 0 && (
+      <Ionicons name={icon} size={22} color={color} />
+      {count > 0 && (
         <View style={{
           position: 'absolute',
           top: -6,
@@ -27,12 +34,24 @@ function MatchTabIcon({ color }: { color: string }) {
           paddingHorizontal: 3,
         }}>
           <Text style={{ color: '#fff', fontSize: 10, fontWeight: '800' }}>
-            {unreadLikeCount > 9 ? '9+' : unreadLikeCount}
+            {count > 9 ? '9+' : count}
           </Text>
         </View>
       )}
     </View>
   );
+}
+
+/** Tab icon with badge for the Match tab — shows incoming like count */
+function MatchTabIcon({ color }: { color: string }) {
+  const unreadLikeCount = useAuthStore((s) => s.unreadLikeCount);
+  return <TabIcon icon="heart-outline" count={unreadLikeCount} color={color} />;
+}
+
+/** Tab icon with badge for the Chat tab — shows incoming unread message count */
+function ChatTabIcon({ color }: { color: string }) {
+  const unreadChatCount = useAuthStore((s) => s.unreadChatCount);
+  return <TabIcon icon="chatbubbles-outline" count={unreadChatCount} color={color} />;
 }
 
 // ─── Screen Imports ─────────────────────────────────────
@@ -233,7 +252,7 @@ const MainTabNavigator = React.memo(function MainTabNavigator() {
         component={ChatListScreen}
         options={{
           tabBarLabel: 'Chat',
-          tabBarIcon: ({ color }) => <Ionicons name="chatbubbles-outline" size={22} color={color} />,
+          tabBarIcon: ({ color }) => <ChatTabIcon color={color} />,
         }}
       />
       <MainTab.Screen

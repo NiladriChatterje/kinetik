@@ -41,10 +41,20 @@ interface AuthState {
   fetchUnreadLikeCount: () => Promise<void>;
   resetUnreadLikeCount: () => void;
 
+  // Chat badge
+  unreadChatCount: number;
+  fetchUnreadChatCount: () => Promise<void>;
+  resetUnreadChatCount: () => void;
+
   // Socket for real-time like/match updates
   likesSocket: Socket | null;
   connectLikesSocket: () => void;
   disconnectLikesSocket: () => void;
+
+  // Socket for real-time chat updates
+  chatSocket: Socket | null;
+  connectChatsSocket: () => void;
+  disconnectChatsSocket: () => void;
 
   // Actions
   initialize: () => Promise<void>;
@@ -97,7 +107,9 @@ export const useAuthStore = create<AuthState>((set, get) => ({
   pendingPhone: null,
   pendingUserId: null,
   unreadLikeCount: 0,
+  unreadChatCount: 0,
   likesSocket: null,
+  chatSocket: null,
 
   checkConnection: async () => {
     const prev = get().connectionStatus;
@@ -149,10 +161,12 @@ export const useAuthStore = create<AuthState>((set, get) => ({
             isLoading: false,
           });
 
-          // Connect real-time socket for like/match updates
+          // Connect real-time sockets for like/match and chat updates
           get().connectLikesSocket();
-          // Fetch any pending likes for the badge count
+          get().connectChatsSocket();
+          // Fetch pending counts for the badges
           get().fetchUnreadLikeCount();
+          get().fetchUnreadChatCount();
         } else {
           // Profile fetch failed. Only treat it as a stale/expired session when
           // the server explicitly rejected the token (401/403). A 502/5xx from
@@ -196,8 +210,9 @@ export const useAuthStore = create<AuthState>((set, get) => ({
           isAuthenticated: true,
         });
 
-        // Connect real-time socket for like/match updates
+        // Connect real-time sockets for like/match and chat updates
         get().connectLikesSocket();
+        get().connectChatsSocket();
         return { success: true };
       }
       const { message, code } = getErrorResponse(response);
@@ -288,8 +303,9 @@ export const useAuthStore = create<AuthState>((set, get) => ({
           pendingUserId: null,
         });
 
-        // Connect real-time socket for like/match updates
+        // Connect real-time sockets for like/match and chat updates
         get().connectLikesSocket();
+        get().connectChatsSocket();
         return { success: true };
       }
       const { message } = getErrorResponse(response);
@@ -359,14 +375,100 @@ export const useAuthStore = create<AuthState>((set, get) => ({
     }
   },
 
+  connectChatsSocket: () => {
+    const { user, chatSocket } = get();
+    if (!user || chatSocket?.connected) return;
+
+    const token = api.getToken();
+    if (!token) return;
+
+    const socket = io(`${WS_URL}/chat`, {
+      auth: { token },
+      transports: ['websocket'],
+      forceNew: true,
+    });
+
+    // Join every conversation room so incoming messages reach this socket.
+    // Re-runs on every (re)connect because rooms are per-socket on the server.
+    const joinAllRooms = async () => {
+      try {
+        const res = await api.getConversations();
+        const convs = res.data?.conversations || [];
+        convs.forEach((conv: any) => socket.emit('chat:join', { matchId: conv.matchId }));
+      } catch {
+        // Silent — the socket retries joining on the next connect event
+      }
+    };
+
+    let loggedConnectError = false;
+    socket.on('connect', () => {
+      loggedConnectError = false;
+      console.log('[ChatsSocket] Connected');
+      joinAllRooms();
+    });
+
+    // Real-time incoming message -> unread badge count
+    socket.on('chat:message', (data: any) => {
+      if (!data || data.senderId === get().user?.id) return;
+      const current = get().unreadChatCount;
+      set({ unreadChatCount: current + 1 });
+    });
+
+    // A new match opens a new chat room — join it so its messages arrive here
+    socket.on('match:new', (data: any) => {
+      if (data?.matchId) socket.emit('chat:join', { matchId: data.matchId });
+    });
+
+    socket.on('disconnect', () => {
+      console.log('[ChatsSocket] Disconnected');
+    });
+
+    // Expected while the backend is unreachable — socket.io retries on its
+    // own, so log once at warn level instead of spamming errors per attempt.
+    socket.on('connect_error', (err) => {
+      if (!loggedConnectError) {
+        loggedConnectError = true;
+        console.warn('[ChatsSocket] Connection error (will keep retrying):', err.message);
+      }
+    });
+
+    set({ chatSocket: socket });
+  },
+
+  disconnectChatsSocket: () => {
+    const { chatSocket } = get();
+    if (chatSocket) {
+      chatSocket.disconnect();
+      set({ chatSocket: null });
+    }
+  },
+
+  fetchUnreadChatCount: async () => {
+    try {
+      const res = await api.getConversations();
+      if (res.success && res.data?.conversations) {
+        const total = res.data.conversations.reduce(
+          (sum: number, conv: any) => sum + (conv.unreadCount || 0),
+          0,
+        );
+        set({ unreadChatCount: total });
+      }
+    } catch {
+      // Silently fail
+    }
+  },
+
+  resetUnreadChatCount: () => set({ unreadChatCount: 0 }),
+
   logout: () => {
     get().disconnectLikesSocket();
+    get().disconnectChatsSocket();
     closeCallSocket();
     api.setToken(null);
     set({
       user: null, token: null, isAuthenticated: false,
       onboardingStep: 'splash', pendingPhone: null, pendingUserId: null,
-      unreadLikeCount: 0,
+      unreadLikeCount: 0, unreadChatCount: 0,
     });
   },
 
@@ -377,12 +479,13 @@ export const useAuthStore = create<AuthState>((set, get) => ({
       const response = await api.deleteAccount();
       if (response.success) {
         get().disconnectLikesSocket();
+        get().disconnectChatsSocket();
         closeCallSocket();
         api.setToken(null);
         set({
           user: null, token: null, isAuthenticated: false,
           onboardingStep: 'splash', pendingPhone: null, pendingUserId: null,
-          unreadLikeCount: 0,
+          unreadLikeCount: 0, unreadChatCount: 0,
         });
         return { success: true };
       }

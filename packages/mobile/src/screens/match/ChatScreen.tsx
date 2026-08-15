@@ -90,6 +90,27 @@ export const ChatScreen: React.FC<{ navigation: any; route: any }> = ({ navigati
 
   const partnerName = pName || 'Stranger';
 
+  // ─── Fetch & merge message history ─────────────────────
+  // Merges server history with what's already in state (live-arrived
+  // messages, pending temp-* sends) so a refetch never wipes anything.
+  // Called on mount AND on every socket (re)connect so messages missed
+  // during a disconnect / dropped broadcast show up without leaving the DM.
+  const syncMessages = useCallback(async () => {
+    try {
+      const res = await api.getMessages(matchId);
+      if (!res.success || !res.data) return;
+      const fetched = res.data.messages || [];
+      setMessages((prev) => {
+        const temps = prev.filter((m) => m.id.startsWith('temp-'));
+        const merged = [...temps, ...fetched];
+        const seen = new Set<string>();
+        return merged.filter((m) => (seen.has(m.id) ? false : (seen.add(m.id), true)));
+      });
+    } catch {
+      // Silent — retried on the next (re)connect
+    }
+  }, [matchId]);
+
   // ─── Socket Connection ──────────────────────────────
   useEffect(() => {
     const token = api.getToken();
@@ -102,6 +123,9 @@ export const ChatScreen: React.FC<{ navigation: any; route: any }> = ({ navigati
       setSocketConnected(true);
       socket.emit('chat:join', { matchId });
       socket.emit('chat:read', { matchId });
+      // Re-sync history on every (re)connect — heals any message missed
+      // while the socket was down or a broadcast was dropped
+      syncMessages();
     });
 
     // Incoming message — from partner OR our own broadcast
@@ -194,24 +218,16 @@ export const ChatScreen: React.FC<{ navigation: any; route: any }> = ({ navigati
       socket.disconnect();
       socketRef.current = null;
     };
-  }, [matchId]);
+  }, [matchId, syncMessages]);
 
   // ─── Fetch message history ─────────────────────────
   useEffect(() => {
     (async () => {
-      try {
-        setLoading(true);
-        const res = await api.getMessages(matchId);
-        if (res.success && res.data) {
-          setMessages(res.data.messages || []);
-        }
-      } catch {
-        // Silently fail
-      } finally {
-        setLoading(false);
-      }
+      setLoading(true);
+      await syncMessages();
+      setLoading(false);
     })();
-  }, [matchId]);
+  }, [syncMessages]);
 
   // ─── Scroll to bottom on new messages ──────────────
   useEffect(() => {
@@ -435,6 +451,11 @@ export const ChatScreen: React.FC<{ navigation: any; route: any }> = ({ navigati
 
       await recorder.stop();
 
+      // Return the audio session to playback mode. startRecording set
+      // allowsRecording: true; leaving it set keeps the mic/earpiece routing
+      // active so the recorded note plays back silent or via the earpiece.
+      setAudioModeAsync({ allowsRecording: false }).catch(() => {});
+
       // Ignore very short taps (< 1 second) — likely accidental
       if (duration < 1) return;
 
@@ -449,6 +470,42 @@ export const ChatScreen: React.FC<{ navigation: any; route: any }> = ({ navigati
 
       // Pause briefly for the file system to finalize the recording
       await new Promise((r) => setTimeout(r, 200));
+
+      // ─── Android: guard against the expo-audio zero-byte bug ──
+      // Known expo-audio Android issue: recorder.uri can point to an EMPTY
+      // file while the actual recording is written to a sibling file in the
+      // cache "Audio" directory. If the reported file is empty, fall back to
+      // the newest non-empty recording in that directory.
+      let uploadSourceUri = sourceUri;
+      if (Platform.OS === 'android') {
+        try {
+          const info = await FileSystem.getInfoAsync(sourceUri);
+          if (!info.exists || !('size' in info) || (info.size ?? 0) === 0) {
+            const audioDir = `${FileSystem.cacheDirectory}Audio/`;
+            const names = await FileSystem.readDirectoryAsync(audioDir);
+            const candidates = await Promise.all(
+              names.map(async (name) => {
+                const uri = `${audioDir}${name}`;
+                const fi = await FileSystem.getInfoAsync(uri).catch(() => null);
+                return {
+                  uri,
+                  size: fi?.exists ? fi.size ?? 0 : 0,
+                  mod: fi?.exists ? fi.modificationTime ?? 0 : 0,
+                };
+              }),
+            );
+            const actual = candidates
+              .filter((f) => f.size > 0)
+              .sort((a, b) => b.mod - a.mod)[0];
+            if (actual) {
+              console.log('[ChatAudio] Reported URI is empty — using actual recording:', actual.uri);
+              uploadSourceUri = actual.uri;
+            }
+          }
+        } catch (err) {
+          console.warn('[ChatAudio] Zero-byte check failed, using reported URI:', err);
+        }
+      }
 
       // ─── Platform-specific file copy ─────────────────────────
       // On Android 10+, FileSystem.uploadAsync uses FileInputStream
@@ -465,7 +522,7 @@ export const ChatScreen: React.FC<{ navigation: any; route: any }> = ({ navigati
       if (Platform.OS === 'android') {
         try {
           console.log('[ChatAudio] Android: copying via fetch to cache...');
-          const response = await fetch(sourceUri);
+          const response = await fetch(uploadSourceUri);
           const arrayBuffer = await response.arrayBuffer();
           console.log('[ChatAudio] Fetched ArrayBuffer size:', arrayBuffer.byteLength, 'bytes');
 
@@ -489,12 +546,20 @@ export const ChatScreen: React.FC<{ navigation: any; route: any }> = ({ navigati
           lastCacheUriRef.current = cacheUri;
         } catch (err) {
           console.warn('[ChatAudio] Android: fetch copy failed, falling back to source URI:', err);
-          uploadUri = sourceUri;
+          uploadUri = uploadSourceUri;
         }
       } else {
         // iOS: no sandbox issue, upload the original file directly
         console.log('[ChatAudio] iOS: uploading original file directly');
         uploadUri = sourceUri;
+      }
+
+      // Refuse to send an empty file — would produce a voice note with no sound
+      const finalInfo = await FileSystem.getInfoAsync(uploadUri).catch(() => null);
+      if (!finalInfo?.exists || !('size' in finalInfo) || (finalInfo.size ?? 0) === 0) {
+        console.error('[ChatAudio] Refusing to send empty recording:', uploadUri);
+        Alert.alert('Send Failed', 'Recording produced an empty audio file. Please try again.');
+        return;
       }
 
       await sendMedia(uploadUri, 'audio');
@@ -513,6 +578,8 @@ export const ChatScreen: React.FC<{ navigation: any; route: any }> = ({ navigati
     try {
       await recorder.stop();
     } catch {}
+    // Return the audio session to playback mode (same as in stopRecording)
+    setAudioModeAsync({ allowsRecording: false }).catch(() => {});
     setIsRecording(false);
     setRecordingDuration(0);
   };

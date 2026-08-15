@@ -89,10 +89,12 @@ export const ChatListScreen: React.FC<{ navigation: any }> = ({ navigation }) =>
     };
   }, []);
 
-  // Re-fetch when screen comes into focus (to sync read status)
+  // Re-fetch when screen comes into focus (to sync read status) and clear
+  // the tab badge — the user has now seen their conversations
   useEffect(() => {
     const unsubscribe = navigation.addListener('focus', () => {
       fetchConversations();
+      useAuthStore.getState().resetUnreadChatCount();
     });
     return unsubscribe;
   }, [navigation]);
