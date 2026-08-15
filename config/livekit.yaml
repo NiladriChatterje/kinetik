@@ -51,7 +51,6 @@ turn:
   enabled: false
   domain: localhost
   udp_port: 3478
-  tcp_port: 3478
   tls_port: 5349
 
 
