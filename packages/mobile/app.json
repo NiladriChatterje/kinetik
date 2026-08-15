@@ -7,11 +7,6 @@
     "icon": "./src/assets/images/icon.png",
     "scheme": "kinetik",
     "userInterfaceStyle": "dark",
-    "splash": {
-      "image": "./src/assets/images/splash.png",
-      "resizeMode": "contain",
-      "backgroundColor": "#0A0A0F"
-    },
     "ios": {
       "supportsTablet": false,
       "bundleIdentifier": "com.kinetik.app",
@@ -34,15 +29,29 @@
       "googleServicesFile": "./google-services.json",
       "permissions": [
         "CAMERA",
+        "RECORD_AUDIO",
         "ACCESS_FINE_LOCATION",
         "ACCESS_COARSE_LOCATION",
-        "RECORD_AUDIO",
         "READ_EXTERNAL_STORAGE",
-        "POST_NOTIFICATIONS"
+        "POST_NOTIFICATIONS",
+        "ACCESS_NETWORK_STATE",
+        "INTERNET",
+        "MODIFY_AUDIO_SETTINGS",
+        "SYSTEM_ALERT_WINDOW",
+        "WAKE_LOCK",
+        "BLUETOOTH"
       ]
     },
     "plugins": [
       "expo-dev-client",
+      [
+        "expo-splash-screen",
+        {
+          "image": "./src/assets/images/splash.png",
+          "resizeMode": "contain",
+          "backgroundColor": "#0A0A0F"
+        }
+      ],
       "expo-location",
       "expo-camera",
       "expo-document-picker",
@@ -58,13 +67,7 @@
       ],
       "expo-audio",
       "@livekit/react-native-expo-plugin",
-      [
-        "@config-plugins/react-native-webrtc",
-        {
-          "cameraPermission": "Allow $(PRODUCT_NAME) to access your camera for video calls.",
-          "microphonePermission": "Allow $(PRODUCT_NAME) to access your microphone for calls."
-        }
-      ]
+      "expo-asset"
     ],
     "web": {
       "bundler": "metro",
