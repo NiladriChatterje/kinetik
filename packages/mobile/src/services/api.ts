@@ -335,11 +335,62 @@ class ApiClient {
     });
   }
 
-  async createSubscription(tier: 'premium' | 'infinite', planDuration: 'monthly' | 'yearly' = 'monthly') {
-    return this.request('/api/v1/payments/subscription', {
+  /**
+   * Creates a recurring Razorpay subscription (₹100/month premium plan).
+   * Returns the subscription_id + razorpayKeyId needed to open the Checkout.
+   */
+  async createRazorpaySubscription() {
+    return this.request<{
+      subscriptionId: string;
+      razorpayKeyId: string;
+      amount: number;
+      currency: string;
+      period: string;
+    }>('/api/v1/payments/subscription', { method: 'POST' });
+  }
+
+  /**
+   * Verifies the Razorpay Checkout response for a subscription payment and
+   * activates premium on the server when the signature checks out.
+   */
+  async verifyRazorpaySubscription(payload: {
+    razorpayPaymentId: string;
+    razorpaySubscriptionId: string;
+    razorpaySignature: string;
+  }) {
+    return this.request<{
+      verified: boolean;
+      activated: boolean;
+      tier?: string;
+      expiresAt?: string;
+      status?: string;
+    }>('/api/v1/payments/subscription/verify', {
       method: 'POST',
-      body: JSON.stringify({ tier, planDuration }),
+      body: JSON.stringify(payload),
     });
+  }
+
+  /** Current subscription state (tier, renewal date, auto-renew) for the checkout screen. */
+  async getSubscriptionStatus() {
+    return this.request<{
+      tier: string;
+      autoRenew: boolean;
+      expiresAt: string | null;
+      subscriptionId: string | null;
+    }>('/api/v1/payments/subscription/status');
+  }
+
+  /**
+   * Cancels the recurring Razorpay subscription. The user keeps Premium until
+   * the end of the current billing cycle, then it stops renewing.
+   */
+  async cancelRazorpaySubscription() {
+    return this.request<{
+      cancelled: boolean;
+      status: string;
+      subscriptionId: string;
+      expiresAt: string | null;
+    }>('/api/v1/payments/subscription/cancel', { method: 'POST' });
   }
 
   // ─── Duo Crew ───────────────────────────────────────

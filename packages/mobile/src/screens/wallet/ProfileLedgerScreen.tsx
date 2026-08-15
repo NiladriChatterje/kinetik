@@ -51,7 +51,7 @@ const SETTINGS = [
   { icon: 'wallet-outline' as const, label: 'Wallet', screen: 'TokenVault' as const },
   { icon: 'shield-checkmark-outline' as const, label: 'KYC Verification', screen: 'KYCVerify' as const },
   { icon: 'lock-closed-outline' as const, label: 'Privacy', screen: undefined },
-  { icon: 'card-outline' as const, label: 'Subscription', screen: undefined },
+  { icon: 'card-outline' as const, label: 'Subscription', screen: 'SubscriptionCheckout' as const },
   { icon: 'call-outline' as const, label: 'Support', screen: undefined },
 ];
 

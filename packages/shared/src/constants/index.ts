@@ -14,7 +14,7 @@ export const SUPER_LIKE_LIMIT_DAILY_PREMIUM = 25;
 
 // ─── Token & Premium ────────────────────────────────────
 
-export const PREMIUM_MONTHLY_COST_INR = 499;
+export const PREMIUM_MONTHLY_COST_INR = 100;
 export const INFINITE_MONTHLY_COST_INR = 999;
 
 // ─── H3 Geospatial ────────────────────────────────────────
@@ -142,6 +142,9 @@ export const API_ROUTES = {
   PAYMENTS_CREATE_ORDER: '/api/v1/payments/create-order',
   PAYMENTS_VERIFY: '/api/v1/payments/verify',
   PAYMENTS_SUBSCRIPTION: '/api/v1/payments/subscription',
+  PAYMENTS_SUBSCRIPTION_VERIFY: '/api/v1/payments/subscription/verify',
+  PAYMENTS_SUBSCRIPTION_STATUS: '/api/v1/payments/subscription/status',
+  PAYMENTS_SUBSCRIPTION_CANCEL: '/api/v1/payments/subscription/cancel',
 
   // Webhooks
   WEBHOOK_RAZORPAY: '/api/v1/webhooks/razorpay',

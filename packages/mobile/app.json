@@ -17,7 +17,8 @@
         "NSMicrophoneUsageDescription": "Kinetik needs microphone access for Vibe Check audio calls.",
         "NSAppTransportSecurity": {
           "NSAllowsLocalNetworking": true
-        }
+        },
+        "LSApplicationQueriesSchemes": ["tez", "phonepe", "paytmmp"]
       }
     },
     "android": {

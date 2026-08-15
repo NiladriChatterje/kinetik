@@ -82,6 +82,7 @@ import { IncomingCallOverlay } from '../components/call/IncomingCallOverlay';
 // Wallet
 import { TokenVaultScreen } from '../screens/wallet/TokenVaultScreen';
 import { ProfileLedgerScreen } from '../screens/wallet/ProfileLedgerScreen';
+import { SubscriptionCheckoutScreen } from '../screens/wallet/SubscriptionCheckoutScreen';
 
 // Notifications
 import { NotificationHandler } from '../hooks/useNotifications';
@@ -111,6 +112,7 @@ export type RootStackParamList = {
   // Kept for profile access
   DuoWingman: undefined;
   KYCVerify: undefined;
+  SubscriptionCheckout: undefined;
 };
 
 export type OnboardingStackParamList = {
@@ -291,6 +293,7 @@ export function RootNavigator() {
         <RootStack.Screen name="DoubleDate" component={DoubleDateScreen} />
         <RootStack.Screen name="NotificationPreferences" component={NotificationPreferencesScreen} />
         <RootStack.Screen name="KYCVerify" component={KYCScreen} />
+        <RootStack.Screen name="SubscriptionCheckout" component={SubscriptionCheckoutScreen} />
       </RootStack.Navigator>
     </NavigationContainer>
   );

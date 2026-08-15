@@ -1,9 +1,16 @@
 import { FastifyInstance, FastifyRequest, FastifyReply } from 'fastify';
 import { z } from 'zod';
-import { ERROR_CODES, PREMIUM_SWIPE_LIMIT_DAILY, PREMIUM_MONTHLY_COST_INR, INFINITE_MONTHLY_COST_INR } from '@kinetik/shared';
-import { query, TABLES } from '../services/database';
+import { ERROR_CODES, PREMIUM_SWIPE_LIMIT_DAILY, PREMIUM_MONTHLY_COST_INR } from '@kinetik/shared';
+import { query, TABLES, getSubscription } from '../services/database';
 import { eventBus } from '../services/eventBus';
 import { getRedis } from '../services/redis';
+import {
+  isRazorpayConfigured,
+  createPremiumSubscription,
+  fetchSubscription,
+  cancelPremiumSubscription,
+  verifySubscriptionSignature,
+} from '../services/razorpay';
 
 const CreateOrderSchema = z.object({
   amount: z.number().positive(),
@@ -17,9 +24,10 @@ const VerifyPaymentSchema = z.object({
   razorpaySignature: z.string(),
 });
 
-const SubscribeSchema = z.object({
-  tier: z.enum(['premium', 'infinite']),
-  planDuration: z.enum(['monthly', 'yearly']).default('monthly'),
+const VerifySubscriptionSchema = z.object({
+  razorpayPaymentId: z.string(),
+  razorpaySubscriptionId: z.string(),
+  razorpaySignature: z.string(),
 });
 
 export async function paymentRoutes(app: FastifyInstance) {
@@ -127,59 +135,251 @@ export async function paymentRoutes(app: FastifyInstance) {
     });
   });
 
-  // ─── Create / Update Subscription ────────────────────
+  // ─── Create Subscription (Razorpay recurring plan) ────
+  // Creates a Razorpay subscription for the ₹100/month premium plan. The
+  // client then opens the Razorpay Checkout with the returned subscription_id
+  // so the user can pay by card or set up a UPI Autopay mandate.
   app.post('/subscription', async (request: FastifyRequest, reply: FastifyReply) => {
-    const validation = SubscribeSchema.safeParse(request.body);
+    const { sub: userId } = request.user as any;
+
+    if (!isRazorpayConfigured()) {
+      return reply.status(503).send({
+        success: false,
+        error: {
+          code: ERROR_CODES.PAYMENT_FAILED,
+          message: 'Payments are not configured on the server yet. Please try again later.',
+        },
+      });
+    }
+
+    try {
+      const subscription = await createPremiumSubscription(userId);
+
+      // Remember the subscription on the ledger so /subscription/verify can
+      // confirm it actually belongs to this user, and status shows 'pending'.
+      await query(
+        `INSERT INTO ${TABLES.SUBSCRIPTION_LEDGER} (user_id, razorpay_subscription_id, updated_at)
+         VALUES ($1, $2, NOW())
+         ON CONFLICT (user_id) DO UPDATE SET razorpay_subscription_id = $2, updated_at = NOW()`,
+        [userId, subscription.id],
+      );
+
+      return reply.send({
+        success: true,
+        data: {
+          subscriptionId: subscription.id,
+          razorpayKeyId: process.env.RAZORPAY_KEY_ID,
+          amount: PREMIUM_MONTHLY_COST_INR,
+          currency: 'INR',
+          period: 'monthly',
+        },
+      });
+    } catch (error: any) {
+      console.error('[payments] Failed to create Razorpay subscription:', error?.message || error);
+      return reply.status(502).send({
+        success: false,
+        error: {
+          code: ERROR_CODES.PAYMENT_FAILED,
+          message: 'Could not start the subscription. Please try again.',
+        },
+      });
+    }
+  });
+
+  // ─── Verify Subscription Payment ──────────────────────
+  // Called by the app after the Razorpay Checkout returns. We verify the HMAC
+  // signature over payment_id + subscription_id (documented flow for
+  // subscriptions) and confirm the subscription belongs to this user before
+  // activating premium. The subscription.charged webhook handles later renewals.
+  app.post('/subscription/verify', async (request: FastifyRequest, reply: FastifyReply) => {
+    const validation = VerifySubscriptionSchema.safeParse(request.body);
     if (!validation.success) {
       return reply.status(400).send({
         success: false,
         error: {
           code: ERROR_CODES.VALIDATION_ERROR,
-          message: 'Invalid subscription data',
+          message: 'Invalid verification data',
           details: validation.error.flatten(),
         },
       });
     }
 
     const { sub: userId } = request.user as any;
-    const { tier, planDuration } = validation.data;
+    const { razorpayPaymentId, razorpaySubscriptionId, razorpaySignature } = validation.data;
 
-    const amount = tier === 'premium'
-      ? (planDuration === 'yearly' ? PREMIUM_MONTHLY_COST_INR * 10 : PREMIUM_MONTHLY_COST_INR)
-      : (planDuration === 'yearly' ? INFINITE_MONTHLY_COST_INR * 10 : INFINITE_MONTHLY_COST_INR);
+    if (!verifySubscriptionSignature({
+      paymentId: razorpayPaymentId,
+      subscriptionId: razorpaySubscriptionId,
+      signature: razorpaySignature,
+    })) {
+      return reply.status(400).send({
+        success: false,
+        error: { code: ERROR_CODES.PAYMENT_FAILED, message: 'Payment verification failed' },
+      });
+    }
 
-    const expiresAt = new Date();
-    expiresAt.setMonth(expiresAt.getMonth() + (planDuration === 'yearly' ? 12 : 1));
+    // The subscription must be one we created for this user.
+    const ledger = await getSubscription(userId);
+    if (!ledger || ledger.razorpay_subscription_id !== razorpaySubscriptionId) {
+      return reply.status(400).send({
+        success: false,
+        error: { code: ERROR_CODES.PAYMENT_FAILED, message: 'Subscription does not match this account' },
+      });
+    }
 
-    // Update subscription ledger
+    // Ask Razorpay for the authoritative subscription state. 'active' (card
+    // charged) and 'authenticated' (UPI mandate set up) both mean the user is
+    // entitled to premium; the first real charge follows per the plan schedule.
+    let subscription: any;
+    try {
+      subscription = await fetchSubscription(razorpaySubscriptionId);
+    } catch (error: any) {
+      console.error('[payments] Failed to fetch subscription:', error?.message || error);
+      return reply.status(502).send({
+        success: false,
+        error: {
+          code: ERROR_CODES.PAYMENT_FAILED,
+          message: 'Could not confirm the subscription. Please try again.',
+        },
+      });
+    }
+
+    const { status, current_end } = subscription;
+    if (status !== 'active' && status !== 'authenticated') {
+      return reply.send({
+        success: true,
+        data: { verified: true, activated: false, status },
+      });
+    }
+
+    const expiresAt = current_end
+      ? new Date(Number(current_end) * 1000)
+      : (() => { const d = new Date(); d.setMonth(d.getMonth() + 1); return d; })();
+
+    // Grant premium entitlement
     await query(
-      `UPDATE ${TABLES.SUBSCRIPTION_LEDGER} 
-       SET tier = $1, swipe_allowance = $2, expires_at = $3, 
-           fast_passes_remaining = $4, rain_checks_remaining = $5,
-           updated_at = NOW()
-       WHERE user_id = $6`,
-      [
-        tier,
-        tier === 'free' ? 50 : tier === 'premium' ? PREMIUM_SWIPE_LIMIT_DAILY : 999999,
-        expiresAt.toISOString(),
-        tier === 'free' ? 0 : tier === 'premium' ? 5 : 99,
-        tier === 'free' ? 0 : tier === 'premium' ? 3 : 99,
-        userId,
-      ],
+      `INSERT INTO ${TABLES.SUBSCRIPTION_LEDGER}
+         (user_id, tier, swipe_allowance, fast_passes_remaining, rain_checks_remaining,
+          razorpay_subscription_id, expires_at, auto_renew, updated_at)
+       VALUES ($1, 'premium', $2, 5, 3, $3, $4, TRUE, NOW())
+       ON CONFLICT (user_id) DO UPDATE SET
+         tier = 'premium',
+         swipe_allowance = $2,
+         fast_passes_remaining = 5,
+         rain_checks_remaining = 3,
+         razorpay_subscription_id = $3,
+         expires_at = $4,
+         auto_renew = TRUE,
+         updated_at = NOW()`,
+      [userId, PREMIUM_SWIPE_LIMIT_DAILY, razorpaySubscriptionId, expiresAt.toISOString()],
     );
 
-    // Clear Redis swipe cache
+    // Record the first transaction
+    await query(
+      `INSERT INTO ${TABLES.TRANSACTIONS}
+         (user_id, razorpay_payment_id, razorpay_subscription_id, amount, currency, status, description)
+       VALUES ($1, $2, $3, $4, 'INR', 'completed', $5)`,
+      [userId, razorpayPaymentId, razorpaySubscriptionId, PREMIUM_MONTHLY_COST_INR, 'Kinetik Premium — ₹100/month'],
+    );
+
+    // Clear Redis swipe cache so the new allowance applies immediately
     const redis = getRedis();
     await redis.del(`user:${userId}:swipes:daily`);
 
     await eventBus.sendPaymentEvent({
-      type: 'subscription.updated',
-      payload: { userId, tier, expiresAt },
+      type: 'subscription.activated',
+      payload: { userId, tier: 'premium', expiresAt, razorpaySubscriptionId },
     });
 
     return reply.send({
       success: true,
-      data: { tier, expiresAt, amount },
+      data: { verified: true, activated: true, tier: 'premium', expiresAt: expiresAt.toISOString() },
     });
+  });
+
+  // ─── Subscription Status ──────────────────────────────
+  // Lightweight read of the user's ledger for the checkout screen.
+  app.get('/subscription/status', async (request: FastifyRequest, reply: FastifyReply) => {
+    const { sub: userId } = request.user as any;
+    const ledger = await getSubscription(userId);
+
+    if (!ledger || !ledger.razorpay_subscription_id) {
+      return reply.send({
+        success: true,
+        data: { tier: 'free', autoRenew: false, expiresAt: null, subscriptionId: null },
+      });
+    }
+
+    return reply.send({
+      success: true,
+      data: {
+        tier: ledger.tier,
+        autoRenew: Boolean(ledger.auto_renew),
+        expiresAt: ledger.expires_at ? new Date(ledger.expires_at).toISOString() : null,
+        subscriptionId: ledger.razorpay_subscription_id,
+      },
+    });
+  });
+
+  // ─── Cancel Subscription ─────────────────────────────
+  // Cancels the Razorpay subscription at the end of the current billing cycle
+  // (the user keeps Premium until the date they already paid for, then it
+  // stops renewing). The subscription.cancelled webhook later flips the tier
+  // to free when the cycle actually ends.
+  app.post('/subscription/cancel', async (request: FastifyRequest, reply: FastifyReply) => {
+    const { sub: userId } = request.user as any;
+
+    const ledger = await getSubscription(userId);
+    const subscriptionId = ledger?.razorpay_subscription_id;
+    if (!ledger || !subscriptionId) {
+      return reply.status(400).send({
+        success: false,
+        error: { code: ERROR_CODES.PAYMENT_FAILED, message: 'No active subscription to cancel' },
+      });
+    }
+
+    try {
+      // If it's already cancelled on Razorpay's side (e.g. a previous attempt),
+      // skip the API call and just make sure our ledger reflects it.
+      const current = await fetchSubscription(subscriptionId);
+      const alreadyCancelled = ['cancelled', 'halted'].includes(current.status);
+
+      let status = current.status;
+      if (!alreadyCancelled) {
+        const cancelled = await cancelPremiumSubscription(subscriptionId);
+        status = cancelled.status;
+      }
+
+      // Keep premium until the end of the paid cycle; stop auto-renew
+      await query(
+        `UPDATE ${TABLES.SUBSCRIPTION_LEDGER}
+         SET auto_renew = FALSE, updated_at = NOW()
+         WHERE user_id = $1`,
+        [userId],
+      );
+
+      const currentEnd = current.current_end
+        ? new Date(Number(current.current_end) * 1000).toISOString()
+        : null;
+
+      await eventBus.sendPaymentEvent({
+        type: 'subscription.cancelled',
+        payload: { userId, razorpaySubscriptionId: subscriptionId, status },
+      });
+
+      return reply.send({
+        success: true,
+        data: { cancelled: true, status, subscriptionId, expiresAt: currentEnd },
+      });
+    } catch (error: any) {
+      console.error('[payments] Failed to cancel subscription:', error?.message || error);
+      return reply.status(502).send({
+        success: false,
+        error: {
+          code: ERROR_CODES.PAYMENT_FAILED,
+          message: 'Could not cancel the subscription. Please try again.',
+        },
+      });
+    }
   });
 }
