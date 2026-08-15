@@ -479,7 +479,15 @@ class ApiClient {
       created_at: string;
     } | null;
   }> {
-    const response = await this.request('/api/v1/kyc/status');
+    const response = await this.request<{
+      kycStatus: string;
+      latestDocument: {
+        id: string;
+        document_type: string;
+        status: string;
+        created_at: string;
+      } | null;
+    }>('/api/v1/kyc/status');
     if (!response.success) {
       throw new Error(response.error?.message || 'Failed to get KYC status');
     }
@@ -497,7 +505,16 @@ class ApiClient {
     country: string | null;
     locationUpdatedAt: string | null;
   }> {
-    const response = await this.request('/api/v1/users/location/area');
+    const response = await this.request<{
+      latitude: number | null;
+      longitude: number | null;
+      h3Index: string | null;
+      city: string | null;
+      county: string | null;
+      region: string | null;
+      country: string | null;
+      locationUpdatedAt: string | null;
+    }>('/api/v1/users/location/area');
     if (!response.success) {
       throw new Error(response.error?.message || 'Failed to get area details');
     }
