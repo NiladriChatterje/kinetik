@@ -15,8 +15,7 @@ import { MatchPopup } from '../../components/common/MatchPopup';
 
 const SCREEN_WIDTH = Dimensions.get('window').width;
 const SCREEN_HEIGHT = Dimensions.get('window').height;
-const CARD_WIDTH = SCREEN_WIDTH - spacing.xxl * 2;
-const CARD_HEIGHT = SCREEN_HEIGHT * 0.65;
+const CARD_WIDTH = SCREEN_WIDTH - spacing.md * 2; // cardsContainer horizontal padding
 const SWIPE_THRESHOLD = 120;
 
 interface SwipeProfile {
@@ -57,17 +56,11 @@ function SwipeCard({
   profile,
   isTop,
   onSwipe,
-  onLike,
-  onPass,
-  onSuperLike,
   superLikesRemaining,
 }: {
   profile: SwipeProfile;
   isTop: boolean;
   onSwipe: (direction: 'left' | 'right') => void;
-  onLike: () => void;
-  onPass: () => void;
-  onSuperLike: () => void;
   superLikesRemaining: number;
 }) {
   const [photoIndex, setPhotoIndex] = useState(0);
@@ -77,7 +70,10 @@ function SwipeCard({
 
   const panResponder = useRef(
     PanResponder.create({
-      onMoveShouldSetPanResponder: () => isTop,
+      // Claim only horizontal swipes so the card's inner ScrollView keeps
+      // vertical scrolling (bio/interests) to itself.
+      onMoveShouldSetPanResponder: (_, gesture) =>
+        isTop && Math.abs(gesture.dx) > Math.abs(gesture.dy),
       onPanResponderMove: (_, gesture) => {
         position.setValue({ x: gesture.dx, y: gesture.dy });
         if (gesture.dx > 0) {
@@ -140,6 +136,14 @@ function SwipeCard({
       ]}
       {...panResponder.panHandlers}
     >
+      {/* Scrollable card content — the card fills the page and scrolls
+          to the end of the view (no fixed height). */}
+      <ScrollView
+        style={styles.cardScroll}
+        contentContainerStyle={styles.cardScrollContent}
+        showsVerticalScrollIndicator={false}
+        bounces={false}
+      >
       {/* Photo Gallery */}
       <View style={styles.cardImageContainer}>
         {currentPhoto ? (            <TouchableOpacity
@@ -208,7 +212,7 @@ function SwipeCard({
       </View>
 
       {/* Info */}
-      <ScrollView style={styles.cardInfo} showsVerticalScrollIndicator={false}>
+      <View style={styles.cardInfo}>
         <View style={styles.nameRow}>
           <Text style={styles.name}>
             {profile.displayName}, {profile.age}
@@ -279,6 +283,7 @@ function SwipeCard({
             </View>
           );
         })()}
+      </View>
       </ScrollView>
 
       {/* Super Like badge on card when remaining */}
@@ -286,30 +291,6 @@ function SwipeCard({
         <View style={styles.superLikeHint}>
           <Ionicons name="star" size={12} color={colors.textInverse} />
           <Text style={styles.superLikeHintText}>{superLikesRemaining}</Text>
-        </View>
-      )}
-
-      {/* Action buttons */}
-      {isTop && (
-        <View style={styles.actionButtons}>
-          <TouchableOpacity
-            style={[styles.actionBtn, styles.passBtn]}
-            onPress={onPass}
-          >
-            <Ionicons name="close" size={28} color={colors.textPrimary} />
-          </TouchableOpacity>
-          <TouchableOpacity
-            style={[styles.actionBtn, styles.superLikeBtn]}
-            onPress={onSuperLike}
-          >
-            <Ionicons name="star" size={24} color={colors.textPrimary} />
-          </TouchableOpacity>
-          <TouchableOpacity
-            style={[styles.actionBtn, styles.likeBtn]}
-            onPress={onLike}
-          >
-            <Ionicons name="heart" size={28} color={colors.textPrimary} />
-          </TouchableOpacity>
         </View>
       )}
     </Animated.View>
@@ -436,6 +417,15 @@ export const MatchScreen: React.FC<{ navigation: any }> = ({ navigation }) => {
         } else {
           toast.showSuccess('Super Like Sent!', 'They\'ll know you\'re interested.');
         }
+      } else if (res.error?.code === 'SWIPE_LIMIT_REACHED') {
+        Alert.alert(
+          'Daily swipe limit reached',
+          "You've used all your free swipes for today. Go Premium for unlimited swipes.",
+          [
+            { text: 'Not now', style: 'cancel' },
+            { text: 'Go Premium', onPress: () => navigation.navigate('SubscriptionCheckout') },
+          ],
+        );
       }
     } catch (err: any) {
       toast.showError(err.message || 'Super Like failed');
@@ -484,7 +474,18 @@ export const MatchScreen: React.FC<{ navigation: any }> = ({ navigation }) => {
         }
       } else {
         // API returned an error — don't advance, show feedback
-        toast.showError(res.error?.message || 'Swipe failed — please try again');
+        if (res.error?.code === 'SWIPE_LIMIT_REACHED') {
+          Alert.alert(
+            'Daily swipe limit reached',
+            "You've used all your free swipes for today. Go Premium for unlimited swipes.",
+            [
+              { text: 'Not now', style: 'cancel' },
+              { text: 'Go Premium', onPress: () => navigation.navigate('SubscriptionCheckout') },
+            ],
+          );
+        } else {
+          toast.showError(res.error?.message || 'Swipe failed — please try again');
+        }
       }
     } catch (err: any) {
       toast.showError(err.message || 'Swipe failed');
@@ -611,18 +612,37 @@ export const MatchScreen: React.FC<{ navigation: any }> = ({ navigation }) => {
           profile={currentProfile}
           isTop={true}
           onSwipe={handleSwipe}
-          onLike={() => handleSwipe('right')}
-          onPass={() => handleSwipe('left')}
-          onSuperLike={handleSuperLike}
           superLikesRemaining={superLikesRemaining}
         />
       </View>
 
-      {/* Bottom navigation hint */}
-      <TouchableOpacity style={styles.chatBtn} onPress={() => navigation.navigate('ChatList')}>
-        <Ionicons name="chatbubbles-outline" size={22} color={colors.textPrimary} />
-        <Text style={styles.chatBtnText}>Messages</Text>
-      </TouchableOpacity>
+      {/* Action bar — fixed above the tab bar. Solid background (no
+          transparency), no border, no shadow. */}
+      {currentProfile && (
+        <View style={styles.actionBar}>
+          <TouchableOpacity
+            style={[styles.actionBtn, styles.passBtn]}
+            onPress={() => handleSwipe('left')}
+            activeOpacity={0.7}
+          >
+            <Ionicons name="close" size={30} color={colors.textPrimary} />
+          </TouchableOpacity>
+          <TouchableOpacity
+            style={[styles.actionBtn, styles.superLikeBtn]}
+            onPress={handleSuperLike}
+            activeOpacity={0.7}
+          >
+            <Ionicons name="star" size={26} color={colors.textPrimary} />
+          </TouchableOpacity>
+          <TouchableOpacity
+            style={[styles.actionBtn, styles.likeBtn]}
+            onPress={() => handleSwipe('right')}
+            activeOpacity={0.7}
+          >
+            <Ionicons name="heart" size={30} color={colors.textPrimary} />
+          </TouchableOpacity>
+        </View>
+      )}
 
       {/* Match Popup overlay */}
       <MatchPopup
@@ -685,30 +705,27 @@ const styles = StyleSheet.create({
   refreshBtnText: { ...typography.button, color: colors.textInverse },
   cardsContainer: {
     flex: 1,
-    alignItems: 'center',
-    justifyContent: 'center',
-    paddingHorizontal: spacing.xxl,
+    paddingHorizontal: spacing.md,
   },
   card: {
-    width: CARD_WIDTH,
-    height: CARD_HEIGHT,
+    ...StyleSheet.absoluteFill,
     borderRadius: radius.xl,
     backgroundColor: colors.surfaceHighlight,
-    position: 'absolute',
     overflow: 'hidden',
-    elevation: 5,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.3,
-    shadowRadius: 8,
   },
   nextCard: {
     transform: [{ scale: 0.95 }],
     top: 10,
   },
+  cardScroll: {
+    flex: 1,
+  },
+  cardScrollContent: {
+    paddingBottom: spacing.lg,
+  },
   cardImageContainer: {
     width: '100%',
-    height: CARD_HEIGHT * 0.6,
+    height: SCREEN_HEIGHT * 0.55,
     overflow: 'hidden',
     position: 'relative',
   },
@@ -809,7 +826,7 @@ const styles = StyleSheet.create({
   },
   cardInfo: {
     padding: spacing.lg,
-    flex: 1,
+    paddingBottom: spacing.xl,
   },
   nameRow: {
     flexDirection: 'row',
@@ -865,44 +882,31 @@ const styles = StyleSheet.create({
     borderRadius: radius.full,
   },
   aboutChipText: { ...typography.caption, color: colors.textSecondary, fontSize: 11 },
-  actionButtons: {
-    position: 'absolute',
-    bottom: spacing.lg,
-    left: 0,
-    right: 0,
+  actionBar: {
     flexDirection: 'row',
     justifyContent: 'center',
-    gap: spacing.xl,
+    alignItems: 'center',
+    gap: spacing.xxl,
+    paddingVertical: spacing.lg,
+    backgroundColor: colors.background, // solid — no transparency, no border, no shadow
   },
   actionBtn: {
-    width: 56,
-    height: 56,
-    borderRadius: 28,
+    width: 58,
+    height: 58,
+    borderRadius: 29,
+    backgroundColor: colors.surfaceHighlight,
     justifyContent: 'center',
     alignItems: 'center',
-    elevation: 4,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.2,
-    shadowRadius: 4,
   },
-  passBtn: { backgroundColor: '#fff' },
+  passBtn: {},
   superLikeBtn: {
     width: 48,
     height: 48,
     borderRadius: 24,
-    backgroundColor: '#fff',
-    justifyContent: 'center',
-    alignItems: 'center',
-    elevation: 4,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.2,
-    shadowRadius: 4,
     borderWidth: 2,
     borderColor: colors.textPrimary,
   },
-  likeBtn: { backgroundColor: '#fff' },
+  likeBtn: {},
   superLikeHint: {
     position: 'absolute',
     top: spacing.sm,
@@ -916,13 +920,4 @@ const styles = StyleSheet.create({
     borderRadius: radius.full,
   },
   superLikeHintText: { ...typography.caption, fontSize: 10, color: colors.textInverse, fontWeight: '700' },
-  chatBtn: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    gap: spacing.sm,
-    paddingVertical: spacing.md,
-    marginBottom: spacing.lg,
-  },
-  chatBtnText: { ...typography.body1, color: colors.textSecondary },
 });
