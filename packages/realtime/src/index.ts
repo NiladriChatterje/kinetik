@@ -41,6 +41,37 @@ const eventBusClient = new Redis({
   enableOfflineQueue: false,
 });
 
+// ioredis emits 'error' on connection failures — without a listener an
+// unhandled 'error' event crashes the process (and Docker restarts it in a
+// loop). Log instead; retryStrategy keeps reconnecting.
+for (const [label, client] of [
+  ['main', pubClient],
+  ['main-sub', subClient],
+  ['event-bus', eventBusClient],
+] as const) {
+  client.on('error', (err) => {
+    console.error(`[Redis:${label}] connection error:`, err.message);
+  });
+}
+
+// With enableOfflineQueue:false, ioredis REJECTS commands issued before the
+// connection is established (including the subscribe() calls the adapter and
+// handlers make at startup), which crashed realtime into a Docker restart
+// loop. Wait until each client is connected before subscribing to anything.
+async function waitForRedisReady(client: Redis, label: string): Promise<void> {
+  let warned = false;
+  while (client.status !== 'ready') {
+    if (!warned) {
+      console.warn(`[Redis:${label}] Waiting for connection (status=${client.status})...`);
+      warned = true;
+    }
+    await new Promise((resolve) => setTimeout(resolve, 500));
+  }
+  if (warned) {
+    console.log(`[Redis:${label}] connected`);
+  }
+}
+
 // ─── HTTP Server ──────────────────────────────────────────
 const server = http.createServer();
 
@@ -55,7 +86,9 @@ const io = new Server(server, {
 });
 
 // ─── Socket.IO Redis Adapter (cross-instance communication) ─
-io.adapter(createAdapter(pubClient, subClient));
+// NOTE: io.adapter() is applied in bootstrap() AFTER the Redis clients are
+// connected — the adapter constructor subscribes the subClient immediately,
+// which rejects under enableOfflineQueue:false if Redis isn't ready yet.
 
 // ─── Authentication Middleware ────────────────────────────
 io.use(async (socket, next) => {
@@ -80,12 +113,6 @@ const flashWindowNsp = io.of(WS_NAMESPACES.FLASH_WINDOW);
 const vibeCheckNsp = io.of(WS_NAMESPACES.VIBE_CHECK);
 const presenceNsp = io.of(WS_NAMESPACES.PRESENCE);
 const chatNsp = io.of(WS_NAMESPACES.CHAT);
-
-// ─── Initialize Handlers ─────────────────────────────────
-const flashWindowHandler = new FlashWindowHandler(flashWindowNsp, pubClient, subClient);
-const vibeCheckHandler = new VibeCheckHandler(vibeCheckNsp, pubClient);
-const presenceHandler = new PresenceHandler(presenceNsp, pubClient, subClient);
-const chatHandler = new ChatHandler(chatNsp, pubClient, subClient);
 
 // ─── Default Namespace (Connection Status) ───────────────
 io.on('connection', (socket) => {
@@ -188,6 +215,25 @@ async function startEventBusSubscriber() {
 // ─── Start Server ─────────────────────────────────────────
 async function bootstrap() {
   try {
+    // All subscribe() calls must happen AFTER the Redis connections are
+    // established — with enableOfflineQueue:false a command issued while
+    // disconnected is rejected, which previously exited the process at
+    // startup and put the container in a Docker restart loop.
+    await Promise.all([
+      waitForRedisReady(pubClient, 'main'),
+      waitForRedisReady(subClient, 'main-sub'),
+      waitForRedisReady(eventBusClient, 'event-bus'),
+    ]);
+
+    io.adapter(createAdapter(pubClient, subClient));
+
+    // Handlers subscribe to Redis channels in their constructors — construct
+    // them only after the connections are ready.
+    new FlashWindowHandler(flashWindowNsp, pubClient, subClient);
+    new VibeCheckHandler(vibeCheckNsp, pubClient);
+    new PresenceHandler(presenceNsp, pubClient, subClient);
+    new ChatHandler(chatNsp, pubClient, subClient);
+
     await startEventBusSubscriber();
 
     server.listen(PORT, '0.0.0.0', () => {
