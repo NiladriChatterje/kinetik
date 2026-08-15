@@ -72,8 +72,6 @@ import { PriorityWeightingScreen } from '../screens/preferences/PriorityWeightin
 import { CommCadenceScreen } from '../screens/preferences/CommCadenceScreen';
 
 // Engine
-import { FlashCountdownScreen } from '../screens/engine/FlashCountdownScreen';
-import { ActiveRadarScreen } from '../screens/engine/ActiveRadarScreen';
 import { VibeCheckScreen } from '../screens/engine/VibeCheckScreen';
 import { UnmaskingScreen } from '../screens/engine/UnmaskingScreen';
 import { CommitmentGateScreen } from '../screens/engine/CommitmentGateScreen';
@@ -89,6 +87,7 @@ import { DuoWingmanScreen } from '../screens/viral/DuoWingmanScreen';
 import { DoubleDateScreen } from '../screens/viral/DoubleDateScreen';
 
 // Match
+import { ExploreScreen } from '../screens/match/ExploreScreen';
 import { MatchScreen } from '../screens/match/MatchScreen';
 import { LikeListScreen } from '../screens/match/LikeListScreen';
 import { ChatListScreen } from '../screens/match/ChatListScreen';
@@ -153,9 +152,8 @@ export type PreferencesStackParamList = {
 };
 
 export type MainTabParamList = {
-  FlashCountdown: undefined;
-  ActiveRadar: { windowId?: string } | undefined;
-  Match: undefined;
+  Explore: undefined;
+  Match: { focusProfile?: any } | undefined;
   ChatListTab: undefined;
   Profile: undefined;
 };
@@ -224,19 +222,11 @@ const MainTabNavigator = React.memo(function MainTabNavigator() {
   return (
     <MainTab.Navigator screenOptions={tabBarScreenOptions}>
       <MainTab.Screen
-        name="FlashCountdown"
-        component={FlashCountdownScreen}
+        name="Explore"
+        component={ExploreScreen}
         options={{
-          tabBarLabel: 'Flash',
-          tabBarIcon: ({ color }) => <Ionicons name="flash-outline" size={22} color={color} />,
-        }}
-      />
-      <MainTab.Screen
-        name="ActiveRadar"
-        component={ActiveRadarScreen}
-        options={{
-          tabBarLabel: 'Radar',
-          tabBarIcon: ({ color }) => <Ionicons name="radio-outline" size={22} color={color} />,
+          tabBarLabel: 'Explore',
+          tabBarIcon: ({ color }) => <Ionicons name="grid-outline" size={22} color={color} />,
         }}
       />
       <MainTab.Screen

@@ -297,9 +297,14 @@ function SwipeCard({
   );
 }
 
-export const MatchScreen: React.FC<{ navigation: any }> = ({ navigation }) => {
+export const MatchScreen: React.FC<{ navigation: any; route?: any }> = ({ navigation, route }) => {
   const [profiles, setProfiles] = useState<SwipeProfile[]>([]);
   const [currentIndex, setCurrentIndex] = useState(0);
+  const currentIndexRef = useRef(0);
+  currentIndexRef.current = currentIndex;
+  // Profile tapped on the Explore grid — kept until swiped so a concurrent
+  // profile fetch can't knock it off the top of the deck
+  const pendingFocusRef = useRef<SwipeProfile | null>(null);
   const [loading, setLoading] = useState(true);
   const [swiping, setSwiping] = useState(false);
   const [superLikesRemaining, setSuperLikesRemaining] = useState(5); // default: free tier daily limit
@@ -321,7 +326,9 @@ export const MatchScreen: React.FC<{ navigation: any }> = ({ navigation }) => {
       setLoading(true);
       const res = await api.getSwipeProfiles();
       if (res.success && res.data) {
-        setProfiles(res.data.profiles || []);
+        const list: SwipeProfile[] = res.data.profiles || [];
+        const fp = pendingFocusRef.current;
+        setProfiles(fp ? [fp, ...list.filter((p) => p.userId !== fp.userId)] : list);
         setCurrentIndex(0);
       } else {
         toast.showError('Could not load profiles');
@@ -388,6 +395,20 @@ export const MatchScreen: React.FC<{ navigation: any }> = ({ navigation }) => {
     return unsubscribe;
   }, [navigation]);
 
+  // A profile tapped on the Explore grid arrives via route params —
+  // show it as the top card, keeping the rest of the unswiped deck behind it
+  useEffect(() => {
+    const fp: SwipeProfile | undefined = route?.params?.focusProfile;
+    if (!fp?.userId) return;
+    navigation.setParams({ focusProfile: undefined });
+    pendingFocusRef.current = fp;
+    setProfiles((prev) => [
+      fp,
+      ...prev.slice(currentIndexRef.current).filter((p) => p.userId !== fp.userId),
+    ]);
+    setCurrentIndex(0);
+  }, [route?.params?.focusProfile]);
+
   const handleSuperLike = async () => {
     if (swiping || superLikesRemaining <= 0) return;
     const profile = profiles[currentIndex];
@@ -431,6 +452,9 @@ export const MatchScreen: React.FC<{ navigation: any }> = ({ navigation }) => {
       toast.showError(err.message || 'Super Like failed');
     }
 
+    if (pendingFocusRef.current?.userId === profile.userId) {
+      pendingFocusRef.current = null;
+    }
     const nextIndex = currentIndex + 1;
     setCurrentIndex(nextIndex);
     setSwiping(false);
@@ -496,6 +520,9 @@ export const MatchScreen: React.FC<{ navigation: any }> = ({ navigation }) => {
       return;
     }
 
+    if (pendingFocusRef.current?.userId === profile.userId) {
+      pendingFocusRef.current = null;
+    }
     const nextIndex = currentIndex + 1;
     setCurrentIndex(nextIndex);
     setSwiping(false);
