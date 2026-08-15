@@ -1,11 +1,12 @@
 import React, { useEffect, useRef } from 'react';
 import {
-  View, Text, StyleSheet, Image, TouchableOpacity,
+  View, Text, StyleSheet, Image,
   Animated, Modal, Dimensions,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { colors, typography, spacing, radius } from '../../theme';
 import { resolveUrl } from '../../config';
+import { Button } from './Button';
 
 const { width: SCREEN_WIDTH, height: SCREEN_HEIGHT } = Dimensions.get('window');
 
@@ -141,17 +142,17 @@ export const MatchPopup: React.FC<MatchPopupProps> = ({
         <Animated.View style={[styles.card, { transform: [{ scale: scaleAnim }] }]}>
           {/* Floating hearts */}
           <Animated.View style={[styles.heartLeft, { transform: [{ scale: heartScale2 }, { rotate: heartRotation }] }]}>
-            <Ionicons name="heart" size={28} color="#FF6B6B" />
+            <Ionicons name="heart" size={28} color={colors.primary} />
           </Animated.View>
           <Animated.View style={[styles.heartRight, { transform: [{ scale: heartScale1 }] }]}>
-            <Ionicons name="heart" size={24} color="#FF6B6B" />
+            <Ionicons name="heart" size={24} color={colors.primary} />
           </Animated.View>
 
           {/* It's a Match! title */}
           <Animated.View style={[styles.matchTitleContainer, { transform: [{ scale: heartScale1 }] }]}>
-            <Ionicons name="heart" size={22} color="#FF6B6B" style={{ marginRight: 6 }} />
+            <Ionicons name="heart" size={22} color={colors.primary} style={{ marginRight: 6 }} />
             <Text style={styles.matchTitle}>It's a Match!</Text>
-            <Ionicons name="heart" size={22} color="#FF6B6B" style={{ marginLeft: 6 }} />
+            <Ionicons name="heart" size={22} color={colors.primary} style={{ marginLeft: 6 }} />
           </Animated.View>
 
           <Text style={styles.subtitle}>You and {partnerName} liked each other</Text>
@@ -173,22 +174,18 @@ export const MatchPopup: React.FC<MatchPopupProps> = ({
 
           {/* Action buttons */}
           <Animated.View style={[styles.buttonContainer, { opacity: buttonAnim }]}>
-            <TouchableOpacity
-              style={styles.chatButton}
+            <Button
+              title="Say Hello"
+              icon={<Ionicons name="chatbubble-ellipses" size={18} color={colors.textInverse} />}
               onPress={onSayHello}
-              activeOpacity={0.8}
-            >
-              <Ionicons name="chatbubble-ellipses" size={18} color={colors.textInverse} style={{ marginRight: 6 }} />
-              <Text style={styles.chatButtonText}>Say Hello</Text>
-            </TouchableOpacity>
-
-            <TouchableOpacity
-              style={styles.keepSwipingButton}
+              fullWidth
+            />
+            <Button
+              title="Keep Swiping"
+              variant="outline"
               onPress={onKeepSwiping}
-              activeOpacity={0.8}
-            >
-              <Text style={styles.keepSwipingText}>Keep Swiping</Text>
-            </TouchableOpacity>
+              fullWidth
+            />
           </Animated.View>
         </Animated.View>
       </Animated.View>
@@ -208,21 +205,21 @@ const styles = StyleSheet.create({
   },
   particle: {
     position: 'absolute',
-    backgroundColor: '#FF6B6B',
+    backgroundColor: colors.primary,
     borderRadius: 999,
   },
   card: {
     width: SCREEN_WIDTH * 0.82,
-    backgroundColor: '#fff',
-    borderRadius: radius.xl,
+    backgroundColor: colors.background,
+    borderRadius: radius.md,
     paddingVertical: spacing.huge,
     paddingHorizontal: spacing.xxl,
     alignItems: 'center',
-    elevation: 20,
-    shadowColor: '#FF6B6B',
+    elevation: 8,
+    shadowColor: '#000',
     shadowOffset: { width: 0, height: 8 },
-    shadowOpacity: 0.4,
-    shadowRadius: 24,
+    shadowOpacity: 0.15,
+    shadowRadius: 16,
   },
   heartLeft: {
     position: 'absolute',
@@ -240,10 +237,8 @@ const styles = StyleSheet.create({
     marginBottom: spacing.sm,
   },
   matchTitle: {
-    fontSize: 28,
-    fontWeight: '800',
-    color: '#FF6B6B',
-    letterSpacing: -0.5,
+    ...typography.h1,
+    color: colors.textPrimary,
   },
   subtitle: {
     ...typography.body2,
@@ -265,7 +260,7 @@ const styles = StyleSheet.create({
     borderRadius: 60,
     resizeMode: 'cover',
     borderWidth: 3,
-    borderColor: '#FF6B6B',
+    borderColor: colors.primary,
   },
   noPhoto: {
     backgroundColor: colors.surfaceHighlight,
@@ -279,45 +274,16 @@ const styles = StyleSheet.create({
     height: 130,
     borderRadius: 65,
     borderWidth: 2,
-    borderColor: 'rgba(255, 107, 107, 0.3)',
+    borderColor: 'rgba(0, 0, 0, 0.2)',
   },
   partnerName: {
-    fontSize: 20,
-    fontWeight: '700',
+    ...typography.h2,
     color: colors.textPrimary,
     marginBottom: spacing.xxl,
   },
   buttonContainer: {
     width: '100%',
     gap: spacing.md,
-  },
-  chatButton: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    backgroundColor: '#FF6B6B',
-    paddingVertical: spacing.md,
-    borderRadius: radius.full,
-    elevation: 4,
-    shadowColor: '#FF6B6B',
-    shadowOffset: { width: 0, height: 3 },
-    shadowOpacity: 0.35,
-    shadowRadius: 6,
-  },
-  chatButtonText: {
-    ...typography.button,
-    color: '#fff',
-  },
-  keepSwipingButton: {
-    alignItems: 'center',
-    paddingVertical: spacing.md,
-    borderRadius: radius.full,
-    borderWidth: 1.5,
-    borderColor: colors.surfaceHighlight,
-  },
-  keepSwipingText: {
-    ...typography.button,
-    color: colors.textSecondary,
   },
 });
 
