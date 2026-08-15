@@ -33,21 +33,22 @@ logger = logging.getLogger("kinetik.pose_service.verifier")
 # Using the Tasks API (newer) approach with the legacy solutions
 # for broader compatibility in Docker.
 
-# 3D model points for head pose estimation (generic face model)
-# Indices correspond to MediaPipe FaceMesh landmarks:
+# 3D model points for head pose estimation (canonical generic face model,
+# units are millimetres, y-up). Eye corners sit left/right of the nose (±x),
+# NOT along the depth axis. Indices correspond to MediaPipe FaceMesh landmarks:
 #   1 = nose tip, 33 = left eye outer corner, 263 = right eye outer corner,
-#   61 = left mouth corner, 291 = right mouth corner, 199 = chin
+#   61 = left mouth corner, 291 = right mouth corner, 152 = chin
 MODEL_POINTS_3D = np.array([
-    [0.0,     0.0,     0.0],      # Nose tip (landmark 1)
-    [0.0,    -63.6,   -12.5],     # Left eye outer corner (landmark 33)
-    [0.0,    -63.6,    12.5],     # Right eye outer corner (landmark 263)
-    [-43.3,   32.7,   -26.0],     # Left mouth corner (landmark 61)
-    [43.3,    32.7,   -26.0],     # Right mouth corner (landmark 291)
-    [0.0,     71.4,   -76.0],     # Chin (landmark 199)
+    [0.0,      0.0,     0.0],     # Nose tip (landmark 1)
+    [-225.0,  170.0,  -135.0],    # Left eye outer corner (landmark 33)
+    [225.0,   170.0,  -135.0],    # Right eye outer corner (landmark 263)
+    [-150.0, -150.0,  -125.0],    # Left mouth corner (landmark 61)
+    [150.0,  -150.0,  -125.0],    # Right mouth corner (landmark 291)
+    [0.0,    -330.0,   -65.0],    # Chin (landmark 152)
 ], dtype=np.float64)
 
 # MediaPipe FaceMesh landmark indices matching the 3D model points
-LANDMARK_INDICES = [1, 33, 263, 61, 291, 199]
+LANDMARK_INDICES = [1, 33, 263, 61, 291, 152]
 
 
 class VerificationStatus(str, Enum):
@@ -184,6 +185,18 @@ class PoseVerifier:
                 head_pitch = float(euler[0][0])
                 head_yaw = float(euler[1][0])
                 head_roll = float(euler[2][0])
+
+                # The y-up model against y-down image coordinates puts a
+                # frontal face's pitch/roll near ±180° — fold back around 0
+                # so the frontal pose reads ~0° and thresholds apply cleanly
+                if head_pitch > 90:
+                    head_pitch -= 180
+                elif head_pitch < -90:
+                    head_pitch += 180
+                if head_roll > 90:
+                    head_roll -= 180
+                elif head_roll < -90:
+                    head_roll += 180
 
                 logger.info(
                     "Head pose — yaw=%.1f° pitch=%.1f° roll=%.1f°",
@@ -388,9 +401,11 @@ class PoseVerifier:
         # Use a blend of best and average for robustness
         confidence = best_score * 0.7 + avg_score * 0.3
 
-        is_match = confidence >= min_match_threshold
+        # A match requires at least 2 profile photos with detectable faces —
+        # a single-photo comparison is too weak to grant the verified badge
+        is_match = len(profile_descriptors) >= 2 and confidence >= min_match_threshold
 
-        if not is_match:
+        if not is_match and confidence < min_match_threshold:
             rejection_reasons.append(
                 f"Face match confidence {confidence:.3f} below threshold {min_match_threshold}"
             )
@@ -483,23 +498,27 @@ class PoseVerifier:
         else:
             score += 0.1
 
-        # Check 4: Symmetry check — real faces are roughly symmetric
-        # Compare left and right halves of the face
+        # Check 4: Symmetry check — real faces are roughly symmetric.
+        # Compare left and right halves of the FACE region only; using the
+        # whole frame lets an asymmetric background sink the score
+        top, bottom = int(min(ys) * h), int(max(ys) * h)
+        left, right = int(min(xs) * w), int(max(xs) * w)
         face_center_x = int(np.mean(xs) * w)
-        left_half = gray[:, :face_center_x]
-        right_half = cv2.flip(gray[:, face_center_x:], 1)
-        # Resize to match
-        min_w = min(left_half.shape[1], right_half.shape[1])
-        if min_w > 10:
-            diff = cv2.absdiff(
-                left_half[:, :min_w],
-                right_half[:, :min_w],
-            )
-            symmetry_score = 1.0 - (np.mean(diff) / 255.0)
-            checks += 1
-            if symmetry_score > 0.5:
-                score += 1.0
-            else:
-                score += 0.3
+        if bottom > top and left < face_center_x < right:
+            left_half = gray[top:bottom, left:face_center_x]
+            right_half = cv2.flip(gray[top:bottom, face_center_x:right], 1)
+            # Resize to match
+            min_w = min(left_half.shape[1], right_half.shape[1])
+            if min_w > 10:
+                diff = cv2.absdiff(
+                    left_half[:, :min_w],
+                    right_half[:, :min_w],
+                )
+                symmetry_score = 1.0 - (np.mean(diff) / 255.0)
+                checks += 1
+                if symmetry_score > 0.5:
+                    score += 1.0
+                else:
+                    score += 0.3
 
         return score / checks if checks > 0 else 0.0

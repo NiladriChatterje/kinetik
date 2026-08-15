@@ -43,7 +43,9 @@ export async function poseVerificationRoutes(app: FastifyInstance) {
       });
     }
 
-    if (fileBuffer.length > 10 * 1024 * 1024) {
+    // Busboy silently truncates at the multipart fileSize limit — reject
+    // instead of face-matching against a corrupt (cut-off) image
+    if ((file.file as any).truncated) {
       return reply.status(400).send({
         success: false,
         error: { code: 'FILE_TOO_LARGE', message: 'Photo must be under 10MB.' },

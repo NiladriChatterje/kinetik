@@ -20,6 +20,7 @@ type Phase = 'camera' | 'preview' | 'uploading' | 'success';
 export const PoseVerificationScreen: React.FC<{ navigation: any }> = ({ navigation }) => {
   const [permission, requestPermission] = useCameraPermissions();
   const [phase, setPhase] = useState<Phase>('camera');
+  const [verified, setVerified] = useState(false);
   const [capturedUri, setCapturedUri] = useState<string | null>(null);
   const cameraRef = useRef<any>(null);
   const toast = useToast();
@@ -65,7 +66,8 @@ export const PoseVerificationScreen: React.FC<{ navigation: any }> = ({ navigati
     setPhase('uploading');
     try {
       const result = await api.submitPoseVerification(capturedUri);
-      if (result.match) {
+      if (result?.match) {
+        setVerified(true);
         toast.showSuccess(
           'Face Verified!',
           'Your selfie matches your profile photos.',
@@ -146,9 +148,13 @@ export const PoseVerificationScreen: React.FC<{ navigation: any }> = ({ navigati
 
           <View style={styles.successContainer}>
             <Ionicons name="checkmark-circle" size={64} color={colors.textPrimary} />
-            <Text style={styles.successTitle}>Identity Verified!</Text>
+            <Text style={styles.successTitle}>
+              {verified ? 'Identity Verified!' : 'Selfie Submitted'}
+            </Text>
             <Text style={styles.successSubtitle}>
-              Your selfie has been submitted and is being reviewed.
+              {verified
+                ? 'Your selfie matches your profile photos.'
+                : 'Your selfie has been submitted. You can continue with onboarding.'}
             </Text>
           </View>
         </View>
