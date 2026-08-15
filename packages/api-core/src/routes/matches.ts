@@ -8,7 +8,7 @@ import { v4 as uuidv4 } from 'uuid';
 import { query, TABLES } from '../services/database';
 import { notificationEvents } from '../services/notificationService';
 import { eventBus } from '../services/eventBus';
-import { getRedis } from '../services/redis';
+import { getRedis, publishChatMessage } from '../services/redis';
 import { savePhoto, saveChatFile, saveEncryptedChatFile, getEncryptedChatFileBuffer, deleteChatFile } from '../services/photoStorage';
 
 const MESSAGE_ENCRYPTION_KEY = process.env.MESSAGE_ENCRYPTION_KEY || '';
@@ -722,9 +722,9 @@ export async function matchRoutes(app: FastifyInstance) {
       content: plainContent,
       createdAt: message.created_at,
     };
-    redis.publish(REDIS_KEYS.CHAT_MESSAGES_CHANNEL, JSON.stringify(messagePayload)).catch((err: Error) => {
-      console.error('[Redis] Failed to publish chat message:', err.message);
-    });
+    // Publish with retry/backoff — this client fails fast on a Redis
+    // reconnect blip, which would otherwise silently drop the live broadcast
+    publishChatMessage(REDIS_KEYS.CHAT_MESSAGES_CHANNEL, messagePayload);
 
     // Notify the partner via push
     const matchRow = matchCheck.rows[0];
@@ -897,10 +897,9 @@ export async function matchRoutes(app: FastifyInstance) {
       createdAt: message.created_at,
     };
 
-    // Publish via Redis pub/sub
-    redis.publish(REDIS_KEYS.CHAT_MESSAGES_CHANNEL, JSON.stringify(messagePayload)).catch((err: Error) => {
-      console.error('[Redis] Failed to publish media message:', err.message);
-    });
+    // Publish with retry/backoff — this client fails fast on a Redis
+    // reconnect blip, which would otherwise silently drop the live broadcast
+    publishChatMessage(REDIS_KEYS.CHAT_MESSAGES_CHANNEL, messagePayload);
 
     // Notify the partner
     const matchRow = matchCheck.rows[0];
@@ -1127,13 +1126,11 @@ export async function matchRoutes(app: FastifyInstance) {
 
     if (matchIdForEvent) {
       // Publish a view event so the realtime service can notify the sender
-      redis.publish(REDIS_KEYS.CHAT_MESSAGES_CHANNEL, JSON.stringify({
+      publishChatMessage(REDIS_KEYS.CHAT_MESSAGES_CHANNEL, {
         type: 'media:viewed',
         matchId: matchIdForEvent,
         mediaId,
         viewedAt: new Date().toISOString(),
-      })).catch((err: Error) => {
-        console.error('[Redis] Failed to publish media:viewed:', err.message);
       });
     }
 
@@ -1224,9 +1221,7 @@ async function sendOpeningLineAsMessage(
       content: openingLine,
       createdAt: message.created_at,
     };
-    redis.publish(REDIS_KEYS.CHAT_MESSAGES_CHANNEL, JSON.stringify(messagePayload)).catch((err: Error) => {
-      console.error('[Redis] Failed to publish opening line:', err.message);
-    });
+    publishChatMessage(REDIS_KEYS.CHAT_MESSAGES_CHANNEL, messagePayload);
 
     console.log(`[OpeningLine] Sent to match ${matchId} (category: ${category}): "${openingLine.slice(0, 50)}..."`);
   } catch (err) {
