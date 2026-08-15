@@ -91,7 +91,13 @@ const io = new Server(server, {
 // which rejects under enableOfflineQueue:false if Redis isn't ready yet.
 
 // ─── Authentication Middleware ────────────────────────────
-io.use(async (socket, next) => {
+// IMPORTANT: io.use() only applies to the DEFAULT namespace. Custom
+// namespaces (chat, presence, vibe-check, flash-window) must register the
+// middleware via nsp.use() themselves — otherwise every socket connects
+// unauthenticated with userId undefined, which silently breaks room
+// membership checks and personal-room routing (chat:join is always denied,
+// so live chat broadcasts never arrive).
+const authMiddleware = async (socket: any, next: (err?: Error) => void) => {
   const token = socket.handshake.auth?.token || socket.handshake.query?.token;
 
   if (!token) {
@@ -106,13 +112,21 @@ io.use(async (socket, next) => {
   } catch (err) {
     return next(new Error('Invalid or expired token'));
   }
-});
+};
 
 // ─── Namespaces ──────────────────────────────────────────
 const flashWindowNsp = io.of(WS_NAMESPACES.FLASH_WINDOW);
 const vibeCheckNsp = io.of(WS_NAMESPACES.VIBE_CHECK);
 const presenceNsp = io.of(WS_NAMESPACES.PRESENCE);
 const chatNsp = io.of(WS_NAMESPACES.CHAT);
+
+// Apply auth to the default namespace AND every custom namespace (see note
+// above — io.use() alone leaves all custom namespaces unauthenticated).
+io.use(authMiddleware);
+flashWindowNsp.use(authMiddleware);
+vibeCheckNsp.use(authMiddleware);
+presenceNsp.use(authMiddleware);
+chatNsp.use(authMiddleware);
 
 // ─── Default Namespace (Connection Status) ───────────────
 io.on('connection', (socket) => {
