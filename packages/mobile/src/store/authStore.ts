@@ -55,6 +55,7 @@ interface AuthState {
   sendOtp: (phone: string) => Promise<AuthResult>;
   clearPendingOtp: () => void;
   logout: () => void;
+  deleteAccount: () => Promise<AuthResult>;
   setUser: (user: User) => void;
   setOnboardingStep: (step: string) => void;
 }
@@ -367,6 +368,29 @@ export const useAuthStore = create<AuthState>((set, get) => ({
       onboardingStep: 'splash', pendingPhone: null, pendingUserId: null,
       unreadLikeCount: 0,
     });
+  },
+
+  // Permanently deletes the account server-side, then wipes all local
+  // auth state (same reset as logout) so the app returns to onboarding.
+  deleteAccount: async () => {
+    try {
+      const response = await api.deleteAccount();
+      if (response.success) {
+        get().disconnectLikesSocket();
+        closeCallSocket();
+        api.setToken(null);
+        set({
+          user: null, token: null, isAuthenticated: false,
+          onboardingStep: 'splash', pendingPhone: null, pendingUserId: null,
+          unreadLikeCount: 0,
+        });
+        return { success: true };
+      }
+      const { message, code } = getErrorResponse(response);
+      return { success: false, error: message, errorCode: code };
+    } catch (e: any) {
+      return { success: false, error: e?.message || 'Failed to delete account.' };
+    }
   },
 
   fetchUnreadLikeCount: async () => {

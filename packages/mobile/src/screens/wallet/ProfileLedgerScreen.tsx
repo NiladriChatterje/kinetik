@@ -58,6 +58,7 @@ const SETTINGS = [
 export const ProfileLedgerScreen: React.FC = () => {
   const authUser = useAuthStore((s) => s.user);
   const logout = useAuthStore((s) => s.logout);
+  const deleteAccount = useAuthStore((s) => s.deleteAccount);
   const navigation = useNavigation();
   const toast = useToast();
 
@@ -67,6 +68,7 @@ export const ProfileLedgerScreen: React.FC = () => {
   const [mutatingPhotoId, setMutatingPhotoId] = useState<string | null>(null);
   const [modalPhoto, setModalPhoto] = useState<ProfilePhoto | null>(null);
   const [kycStatus, setKycStatus] = useState<string | null>(null);
+  const [deletingAccount, setDeletingAccount] = useState(false);
 
   const fetchProfileAndPhotos = useCallback(async () => {
     try {
@@ -164,6 +166,34 @@ export const ProfileLedgerScreen: React.FC = () => {
       setMutatingPhotoId(null);
     }
   };
+
+  // ─── Account Deletion ──────────────────────────────────
+  // Destructive action with an explicit confirmation. The server requires
+  // { confirm: true } as well, so this is double-guarded against accidents.
+  const handleDeleteAccount = useCallback(() => {
+    Alert.alert(
+      'Delete Account?',
+      'This permanently deletes your profile, photos, matches and all chat history. ' +
+      'You will not be able to log back in with this account. This cannot be undone.',
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Delete My Account',
+          style: 'destructive',
+          onPress: async () => {
+            setDeletingAccount(true);
+            const result = await deleteAccount();
+            setDeletingAccount(false);
+            if (result.success) {
+              toast.showSuccess('Account Deleted', 'Your account has been permanently deleted.');
+            } else {
+              toast.showError('Delete Failed', result.error || 'Could not delete your account. Please try again.');
+            }
+          },
+        },
+      ],
+    );
+  }, [deleteAccount, toast]);
 
   const handleDeletePhoto = (photoId: string) => {
     Alert.alert(
@@ -379,6 +409,28 @@ export const ProfileLedgerScreen: React.FC = () => {
         </Card>
 
         <Button title="Sign Out" onPress={logout} variant="outline" fullWidth />
+
+        {/* Delete Account — destructive, bottom of screen */}
+        <View style={styles.deleteSection}>
+          <TouchableOpacity
+            style={styles.deleteRow}
+            onPress={handleDeleteAccount}
+            disabled={deletingAccount}
+            activeOpacity={0.7}
+          >
+            {deletingAccount ? (
+              <ActivityIndicator size="small" color="#E53935" />
+            ) : (
+              <Ionicons name="trash-outline" size={20} color="#E53935" />
+            )}
+            <Text style={styles.deleteText}>
+              {deletingAccount ? 'Deleting…' : 'Delete Account'}
+            </Text>
+          </TouchableOpacity>
+          <Text style={styles.deleteNote}>
+            Permanently removes your profile, photos, matches and all chats. This cannot be undone.
+          </Text>
+        </View>
       </ScrollView>
 
       {/* Photo Options Modal */}
@@ -495,5 +547,29 @@ const styles = StyleSheet.create({
   },
   kycStatusTextUnverified: {
     color: colors.textMuted,
+  },
+
+  // Delete account
+  deleteSection: {
+    marginTop: spacing.xl,
+    alignItems: 'center',
+  },
+  deleteRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.sm,
+    paddingVertical: spacing.md,
+  },
+  deleteText: {
+    ...typography.body1,
+    color: '#E53935',
+    fontWeight: '600',
+  },
+  deleteNote: {
+    ...typography.caption,
+    color: colors.textMuted,
+    textAlign: 'center',
+    marginTop: spacing.xs,
+    paddingHorizontal: spacing.xxl,
   },
 });

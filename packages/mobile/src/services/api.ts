@@ -233,6 +233,17 @@ class ApiClient {
     });
   }
 
+  /**
+   * Permanently delete the authenticated user's account.
+   * The server removes the profile, photos, matches and all chat history.
+   */
+  async deleteAccount() {
+    return this.request<{ deleted: boolean }>('/api/v1/auth/account', {
+      method: 'DELETE',
+      body: JSON.stringify({ confirm: true }),
+    });
+  }
+
   // ─── Users ─────────────────────────────────────────
   async getProfile() {
     return this.request('/api/v1/users/profile');
