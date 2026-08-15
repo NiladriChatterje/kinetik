@@ -423,19 +423,8 @@ export const MatchScreen: React.FC<{ navigation: any; route?: any }> = ({ naviga
         if (data.superLikesRemaining !== undefined) {
           setSuperLikesRemaining(data.superLikesRemaining);
         }
-        if (data.matched) {
-          Alert.alert(
-            'It\'s a Match!',
-            `You super liked ${data.partnerName} and they liked you back!`,
-            [
-              { text: 'Keep Swiping', style: 'cancel' },
-              {
-                text: 'Say Hello',
-                onPress: () => navigation.navigate('Chat', { matchId: data.matchId, partnerName: data.partnerName }),
-              },
-            ],
-          );
-        } else {
+        // On a match, the match:new socket event drives the animated MatchPopup
+        if (!data.matched) {
           toast.showSuccess('Super Like Sent!', 'They\'ll know you\'re interested.');
         }
       } else if (res.error?.code === 'SWIPE_LIMIT_REACHED') {
@@ -481,19 +470,8 @@ export const MatchScreen: React.FC<{ navigation: any; route?: any }> = ({ naviga
       if (res.success && res.data) {
         shouldAdvance = true;
         const data = res.data;
-        if (data.matched) {
-          Alert.alert(
-            'It\'s a Match!',
-            `You matched with ${data.partnerName}! Start chatting now.`,
-            [
-              { text: 'Keep Swiping', style: 'cancel' },
-              {
-                text: 'Say Hello',
-                onPress: () => navigation.navigate('Chat', { matchId: data.matchId, partnerName: data.partnerName }),
-              },
-            ],
-          );
-        } else if (direction === 'right') {
+        // On a match, the match:new socket event drives the animated MatchPopup
+        if (!data.matched && direction === 'right') {
           toast.showSuccess('Like Sent!', 'They\'ll see you in their likes.');
         }
       } else {

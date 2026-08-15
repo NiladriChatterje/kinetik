@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import {
   View, Text, StyleSheet, FlatList, Image, TouchableOpacity,
-  ActivityIndicator, Alert,
+  ActivityIndicator,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
@@ -76,23 +76,8 @@ export const LikeListScreen: React.FC<{ navigation: any }> = ({ navigation }) =>
     try {
       const res = await api.respondToLike(targetUserId, action);
       if (res.success && res.data) {
-        const data = res.data;
-        if (data.matched && action === 'like') {
-          Alert.alert(
-            'It\'s a Match!',
-            `You matched with ${data.partnerName}! Start chatting now.`,
-            [
-              { text: 'Keep Browsing', style: 'cancel' },
-              {
-                text: 'Say Hello',
-                onPress: () => navigation.navigate('Chat', {
-                  matchId: data.matchId,
-                  partnerName: data.partnerName,
-                }),
-              },
-            ],
-          );
-        }
+        // On a match, the match:new socket event drives the animated
+        // MatchPopup — no extra dialog here.
         // Remove from list
         setLikes((prev) => prev.filter((l) => l.userId !== targetUserId));
       }
