@@ -100,6 +100,12 @@ export async function matchRoutes(app: FastifyInstance) {
           SELECT target_id FROM ${TABLES.USER_INTERACTIONS} WHERE actor_id = $1
           UNION
           SELECT actor_id FROM ${TABLES.USER_INTERACTIONS} WHERE target_id = $1
+          UNION
+          -- Active matches are the source of truth for "already matched" —
+          -- covers matches created without swipe interactions (e.g. vibe check)
+          SELECT user_b_id FROM ${TABLES.MATCHES} WHERE user_a_id = $1 AND is_active = TRUE
+          UNION
+          SELECT user_a_id FROM ${TABLES.MATCHES} WHERE user_b_id = $1 AND is_active = TRUE
         )
       ORDER BY RANDOM()
       LIMIT 20

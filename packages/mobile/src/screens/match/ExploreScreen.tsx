@@ -6,6 +6,7 @@ import {
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { api } from '../../services/api';
+import { getPresenceSocket } from '../../services/presenceSocket';
 import { resolveUrl } from '../../config';
 import { colors, typography, spacing, radius } from '../../theme';
 
@@ -50,6 +51,21 @@ export const ExploreScreen: React.FC<{ navigation: any }> = ({ navigation }) => 
   useEffect(() => {
     fetchProfiles();
   }, [fetchProfiles]);
+
+  // Drop a profile from the grid as soon as it becomes a match — the server
+  // excludes matched users on the next fetch; this covers the current view
+  useEffect(() => {
+    const socket = getPresenceSocket();
+    const onMatchNew = (data: any) => {
+      if (data?.partnerId) {
+        setProfiles((prev) => prev.filter((p) => p.userId !== data.partnerId));
+      }
+    };
+    socket.on('match:new', onMatchNew);
+    return () => {
+      socket.off('match:new', onMatchNew);
+    };
+  }, []);
 
   const openProfile = (profile: GridProfile) => {
     navigation.navigate('Match', { focusProfile: profile });
