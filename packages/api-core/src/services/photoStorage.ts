@@ -4,9 +4,13 @@
  * Uploads profile photos to a MinIO bucket, generates thumbnails via sharp,
  * and returns pre-signed or public URLs.
  *
+ * Full-res photos are stored as lossless WebP (zero quality loss vs. the
+ * upload, smaller than raw PNG/HEIC originals); thumbnails are lossy WebP
+ * since they're only 300px previews.
+ *
  * Bucket structure:
- *   kinetik-photos/{userId}/{photoId}.webp        (full-res)
- *   kinetik-photos/{userId}/{photoId}_thumb.webp   (thumbnail, 300px)
+ *   kinetik-photos/{userId}/{photoId}.webp        (full-res, lossless WebP)
+ *   kinetik-photos/{userId}/{photoId}_thumb.webp   (thumbnail, 300px, lossy)
  *
  * Environment variables:
  *   MINIO_ENDPOINT   — MinIO server address (default: localhost:9000)
@@ -111,9 +115,14 @@ export async function savePhoto(
   const photoId = uuidv4();
   const client = getS3Client();
 
-  // ── Generate full-res WebP ──────────────────────────────
+  // ── Generate full-res WebP (lossless) ────────────────────
+  // Full-res profile photos are stored with lossless WebP encoding so no
+  // additional quality is lost server-side (important for pose-verification /
+  // KYC face matching). Lossless WebP is still smaller than the raw JPEG/PNG/
+  // HEIC upload in most cases, and metadata is stripped in the process.
+  // `effort` (0–6) trades encode time for compression ratio — 6 = best ratio.
   const fullKey = `${userId}/${photoId}.webp`;
-  const fullBuffer = await sharp(fileBuffer).webp({ quality: 85, effort: 6 }).toBuffer();
+  const fullBuffer = await sharp(fileBuffer).webp({ lossless: true, effort: 6 }).toBuffer();
 
   await client.send(
     new PutObjectCommand({
@@ -159,7 +168,8 @@ export async function savePhoto(
 
   console.log(
     `[photoStorage] Uploaded to minio://${BUCKET}/${fullKey} ` +
-      `| full=${(fullBuffer.length / 1024).toFixed(1)}KB ` +
+      `| original=${(fileBuffer.length / 1024).toFixed(1)}KB ` +
+      `full-lossless=${(fullBuffer.length / 1024).toFixed(1)}KB ` +
       `thumb=${(thumbBuffer.length / 1024).toFixed(1)}KB ` +
       `blur=${blurHash.length}ch`,
   );
