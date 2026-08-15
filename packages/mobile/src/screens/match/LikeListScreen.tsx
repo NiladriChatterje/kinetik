@@ -118,27 +118,45 @@ export const LikeListScreen: React.FC<{ navigation: any }> = ({ navigation }) =>
   const renderLike = ({ item }: { item: IncomingLike }) => (
     <View style={styles.likeCard}>
       <View style={styles.likeHeader}>
-        {item.photoUrl ? (
-          <Image source={{ uri: resolveUrl(item.photoUrl) }} style={styles.avatar} />
-        ) : (
-          <View style={[styles.avatar, styles.noAvatar]}>
-            <Ionicons name="person-outline" size={24} color={colors.textMuted} />
-          </View>
-        )}
+        {/* Photo with ring — super likes get a star badge on the corner */}
+        <View style={styles.avatarWrap}>
+          {item.photoUrl ? (
+            <Image source={{ uri: resolveUrl(item.photoUrl) }} style={styles.avatar} />
+          ) : (
+            <View style={[styles.avatar, styles.noAvatar]}>
+              <Ionicons name="person-outline" size={26} color={colors.textMuted} />
+            </View>
+          )}
+          {item.isSuperLike && (
+            <View style={styles.superLikeStar}>
+              <Ionicons name="star" size={10} color={colors.textInverse} />
+            </View>
+          )}
+        </View>
+
         <View style={styles.likeInfo}>
           <View style={styles.nameRow}>
-            <Text style={styles.name}>{item.displayName}, {item.age}</Text>
+            <Text style={styles.name} numberOfLines={1}>
+              {item.displayName}
+              <Text style={styles.age}>  {item.age}</Text>
+            </Text>
             {item.isVerified && (
-              <Ionicons name="checkmark-circle" size={16} color={colors.success} style={{ marginLeft: 4 }} />
-            )}
-            {item.isSuperLike && (
-              <View style={styles.superLikeBadge}>
-                <Ionicons name="star" size={11} color={colors.textInverse} />
-                <Text style={styles.superLikeBadgeText}>Super Like</Text>
-              </View>
+              <Ionicons name="checkmark-circle" size={16} color={colors.textPrimary} style={{ marginLeft: 5 }} />
             )}
           </View>
           {item.bio ? <Text style={styles.bio} numberOfLines={2}>{item.bio}</Text> : null}
+          {item.isSuperLike && (
+            <View style={styles.superLikeBadge}>
+              <Ionicons name="star" size={11} color={colors.textInverse} />
+              <Text style={styles.superLikeBadgeText}>Super Like</Text>
+            </View>
+          )}
+          {item.isMutual && (
+            <View style={styles.mutualPill}>
+              <Ionicons name="heart" size={11} color={colors.textPrimary} />
+              <Text style={styles.mutualPillText}>You liked each other</Text>
+            </View>
+          )}
         </View>
       </View>
 
@@ -147,22 +165,24 @@ export const LikeListScreen: React.FC<{ navigation: any }> = ({ navigation }) =>
           style={[styles.actionBtn, styles.discardBtn]}
           onPress={() => handleRespond(item.userId, 'discard')}
           disabled={responding === item.userId}
+          activeOpacity={0.7}
         >
           {responding === item.userId ? (
-            <ActivityIndicator size="small" color="#FF6B6B" />
+            <ActivityIndicator size="small" color={colors.textSecondary} />
           ) : (
-            <Ionicons name="close" size={22} color="#FF6B6B" />
+            <Ionicons name="close" size={24} color={colors.textPrimary} />
           )}
         </TouchableOpacity>
         <TouchableOpacity
           style={[styles.actionBtn, styles.likeBackBtn]}
           onPress={() => handleRespond(item.userId, 'like')}
           disabled={responding === item.userId}
+          activeOpacity={0.7}
         >
           {responding === item.userId ? (
-            <ActivityIndicator size="small" color="#4ECDC4" />
+            <ActivityIndicator size="small" color={colors.textInverse} />
           ) : (
-            <Ionicons name="heart" size={22} color="#4ECDC4" />
+            <Ionicons name="heart" size={24} color={colors.textInverse} />
           )}
         </TouchableOpacity>
       </View>
@@ -230,50 +250,87 @@ const styles = StyleSheet.create({
   centered: { flex: 1, justifyContent: 'center', alignItems: 'center', padding: spacing.xxl },
   emptyTitle: { ...typography.h2, color: colors.textPrimary, marginTop: spacing.lg },
   emptySubtitle: { ...typography.body1, color: colors.textMuted, marginTop: spacing.sm, textAlign: 'center' },
-  list: { padding: spacing.xxl, gap: spacing.md },
+  list: { padding: spacing.lg, gap: spacing.md },
   likeCard: {
-    backgroundColor: colors.surfaceHighlight,
-    borderRadius: radius.lg,
+    backgroundColor: colors.surface,
+    borderRadius: radius.xl,
     padding: spacing.lg,
-    marginBottom: spacing.md,
+    borderWidth: 1,
+    borderColor: colors.cardBorder,
   },
-  likeHeader: { flexDirection: 'row', gap: spacing.md },
-  avatar: { width: 56, height: 56, borderRadius: 28 },
-  noAvatar: { backgroundColor: colors.surface, justifyContent: 'center', alignItems: 'center' },
+  likeHeader: { flexDirection: 'row', gap: spacing.md, alignItems: 'center' },
+  avatarWrap: { position: 'relative' },
+  avatar: {
+    width: 64,
+    height: 64,
+    borderRadius: 32,
+    borderWidth: 2,
+    borderColor: colors.background,
+  },
+  noAvatar: { backgroundColor: colors.surfaceHighlight, justifyContent: 'center', alignItems: 'center' },
+  superLikeStar: {
+    position: 'absolute',
+    right: -2,
+    bottom: -2,
+    width: 22,
+    height: 22,
+    borderRadius: 11,
+    backgroundColor: colors.textPrimary,
+    borderWidth: 2,
+    borderColor: colors.background,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
   likeInfo: { flex: 1 },
   nameRow: { flexDirection: 'row', alignItems: 'center' },
-  name: { ...typography.body1, color: colors.textPrimary, fontWeight: '600' },
-  bio: { ...typography.caption, color: colors.textSecondary, marginTop: 2 },
+  name: { ...typography.h3, color: colors.textPrimary },
+  age: { ...typography.body1, color: colors.textMuted, fontWeight: '400' },
+  bio: { ...typography.body2, color: colors.textSecondary, marginTop: spacing.xs },
   actions: {
     flexDirection: 'row',
     justifyContent: 'center',
     gap: spacing.xl,
-    marginTop: spacing.md,
+    marginTop: spacing.lg,
   },
   actionBtn: {
-    width: 48,
-    height: 48,
-    borderRadius: 24,
+    width: 54,
+    height: 54,
+    borderRadius: 27,
     justifyContent: 'center',
     alignItems: 'center',
-    backgroundColor: '#fff',
-    elevation: 2,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 1 },
-    shadowOpacity: 0.15,
-    shadowRadius: 3,
   },
-  discardBtn: {},
-  likeBackBtn: {},
+  discardBtn: {
+    backgroundColor: colors.surfaceHighlight,
+    borderWidth: 1.5,
+    borderColor: colors.cardBorder,
+  },
+  likeBackBtn: {
+    backgroundColor: colors.textPrimary,
+  },
   superLikeBadge: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 3,
-    marginLeft: 6,
-    backgroundColor: '#1E90FF',
-    paddingHorizontal: 6,
-    paddingVertical: 2,
+    gap: 4,
+    alignSelf: 'flex-start',
+    marginTop: spacing.sm,
+    backgroundColor: colors.textPrimary,
+    paddingHorizontal: spacing.sm,
+    paddingVertical: 3,
     borderRadius: radius.full,
   },
   superLikeBadgeText: { ...typography.caption, fontSize: 9, color: colors.textInverse, fontWeight: '700' },
+  mutualPill: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    alignSelf: 'flex-start',
+    marginTop: spacing.sm,
+    borderWidth: 1,
+    borderColor: colors.cardBorder,
+    backgroundColor: colors.surfaceHighlight,
+    paddingHorizontal: spacing.sm,
+    paddingVertical: 3,
+    borderRadius: radius.full,
+  },
+  mutualPillText: { ...typography.caption, fontSize: 9, color: colors.textSecondary, fontWeight: '600' },
 });
