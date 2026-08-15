@@ -1,9 +1,17 @@
 import { create } from 'zustand';
 import * as SecureStore from 'expo-secure-store';
-import { io, Socket } from 'socket.io-client';
+import { Socket } from 'socket.io-client';
 import { api } from '../services/api';
-import { closeCallSocket } from '../services/callSocket';
-import { WS_URL } from '../config';
+import { closeCallSocket, getChatSocket } from '../services/callSocket';
+import { closePresenceSocket, getPresenceSocket } from '../services/presenceSocket';
+
+// Badge listeners attached to the shared /chat socket, kept for detaching
+let chatsSocketHandlers: {
+  socket: Socket;
+  joinAllRooms: () => void;
+  onChatMessage: (data: any) => void;
+  onMatchNew: (data: any) => void;
+} | null = null;
 
 interface User {
   id: string;
@@ -321,47 +329,19 @@ export const useAuthStore = create<AuthState>((set, get) => ({
 
   connectLikesSocket: () => {
     const { user, likesSocket } = get();
-    if (!user || likesSocket?.connected) return;
+    if (!user || likesSocket) return;
 
     const token = api.getToken();
     if (!token) return;
 
-    const socket = io(`${WS_URL}/presence`, {
-      auth: { token },
-      transports: ['websocket'],
-      forceNew: true,
-    });
+    // Shared app-wide /presence socket — attach the badge listener to it
+    // instead of opening a dedicated connection
+    const socket = getPresenceSocket();
 
-    let loggedConnectError = false;
-    socket.on('connect', () => {
-      loggedConnectError = false;
-      console.log('[LikesSocket] Connected');
-    });
-
-    // Real-time new like notification
     socket.on('likes:new', (data: any) => {
       console.log('[LikesSocket] New like received:', data.likedByName);
-      // Increment the unread count
       const current = get().unreadLikeCount;
       set({ unreadLikeCount: current + 1 });
-    });
-
-    // Real-time new match notification
-    socket.on('match:new', (data: any) => {
-      console.log('[LikesSocket] New match:', data.matchId);
-    });
-
-    socket.on('disconnect', () => {
-      console.log('[LikesSocket] Disconnected');
-    });
-
-    // Expected while the backend is unreachable — socket.io retries on its
-    // own, so log once at warn level instead of spamming errors per attempt.
-    socket.on('connect_error', (err) => {
-      if (!loggedConnectError) {
-        loggedConnectError = true;
-        console.warn('[LikesSocket] Connection error (will keep retrying):', err.message);
-      }
     });
 
     set({ likesSocket: socket });
@@ -370,23 +350,21 @@ export const useAuthStore = create<AuthState>((set, get) => ({
   disconnectLikesSocket: () => {
     const { likesSocket } = get();
     if (likesSocket) {
-      likesSocket.disconnect();
+      closePresenceSocket();
       set({ likesSocket: null });
     }
   },
 
   connectChatsSocket: () => {
     const { user, chatSocket } = get();
-    if (!user || chatSocket?.connected) return;
+    if (!user || chatSocket) return;
 
     const token = api.getToken();
     if (!token) return;
 
-    const socket = io(`${WS_URL}/chat`, {
-      auth: { token },
-      transports: ['websocket'],
-      forceNew: true,
-    });
+    // Shared app-wide /chat socket (also used by call signaling and the chat
+    // screens) — attach badge listeners, don't open another connection
+    const socket = getChatSocket();
 
     // Join every conversation room so incoming messages reach this socket.
     // Re-runs on every (re)connect because rooms are per-socket on the server.
@@ -400,47 +378,38 @@ export const useAuthStore = create<AuthState>((set, get) => ({
       }
     };
 
-    let loggedConnectError = false;
-    socket.on('connect', () => {
-      loggedConnectError = false;
-      console.log('[ChatsSocket] Connected');
-      joinAllRooms();
-    });
-
     // Real-time incoming message -> unread badge count
-    socket.on('chat:message', (data: any) => {
+    const onChatMessage = (data: any) => {
       if (!data || data.senderId === get().user?.id) return;
       const current = get().unreadChatCount;
       set({ unreadChatCount: current + 1 });
-    });
+    };
 
     // A new match opens a new chat room — join it so its messages arrive here
-    socket.on('match:new', (data: any) => {
+    const onMatchNew = (data: any) => {
       if (data?.matchId) socket.emit('chat:join', { matchId: data.matchId });
-    });
+    };
 
-    socket.on('disconnect', () => {
-      console.log('[ChatsSocket] Disconnected');
-    });
+    socket.on('connect', joinAllRooms);
+    socket.on('chat:message', onChatMessage);
+    socket.on('match:new', onMatchNew);
+    if (socket.connected) joinAllRooms();
 
-    // Expected while the backend is unreachable — socket.io retries on its
-    // own, so log once at warn level instead of spamming errors per attempt.
-    socket.on('connect_error', (err) => {
-      if (!loggedConnectError) {
-        loggedConnectError = true;
-        console.warn('[ChatsSocket] Connection error (will keep retrying):', err.message);
-      }
-    });
-
+    chatsSocketHandlers = { socket, joinAllRooms, onChatMessage, onMatchNew };
     set({ chatSocket: socket });
   },
 
   disconnectChatsSocket: () => {
-    const { chatSocket } = get();
-    if (chatSocket) {
-      chatSocket.disconnect();
-      set({ chatSocket: null });
+    // Detach only the badge listeners — the shared /chat socket itself is
+    // torn down by closeCallSocket() in logout/deleteAccount
+    if (chatsSocketHandlers) {
+      const { socket, joinAllRooms, onChatMessage, onMatchNew } = chatsSocketHandlers;
+      socket.off('connect', joinAllRooms);
+      socket.off('chat:message', onChatMessage);
+      socket.off('match:new', onMatchNew);
+      chatsSocketHandlers = null;
     }
+    set({ chatSocket: null });
   },
 
   fetchUnreadChatCount: async () => {

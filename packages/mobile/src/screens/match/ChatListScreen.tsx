@@ -5,11 +5,12 @@ import {
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
-import { io, Socket } from 'socket.io-client';
+import { Socket } from 'socket.io-client';
 import { api } from '../../services/api';
+import { getChatSocket } from '../../services/callSocket';
 import { useToast } from '../../hooks/useToast';
 import { useAuthStore } from '../../store/authStore';
-import { WS_URL, resolveUrl } from '../../config';
+import { resolveUrl } from '../../config';
 import { colors, typography, spacing, radius } from '../../theme';
 
 interface Conversation {
@@ -57,26 +58,18 @@ export const ChatListScreen: React.FC<{ navigation: any }> = ({ navigation }) =>
   useEffect(() => {
     fetchConversations();
 
-    // Connect to Socket.IO for real-time message updates
-    const token = api.getToken();
-    const socket = io(`${WS_URL}/chat`, {
-      auth: { token },
-      transports: ['websocket'],
-      // Without forceNew, socket.io-client multiplexes and shares one /chat
-      // socket with ChatScreen — whose unmount cleanup disconnect() would
-      // kill this screen's live updates too.
-      forceNew: true,
-    });
+    // App-wide shared /chat socket — attach this screen's listeners to it
+    const socket = getChatSocket();
 
     // Join rooms on every (re)connect — rooms are per-socket on the server,
-    // and the fetch below may resolve before the socket finishes connecting.
-    socket.on('connect', () => {
+    // and the fetch above may resolve before the socket finishes connecting.
+    const onConnect = () => {
       conversationsRef.current.forEach((conv) => {
         socket.emit('chat:join', { matchId: conv.matchId });
       });
-    });
+    };
 
-    socket.on('chat:message', (data: any) => {
+    const onChatMessage = (data: any) => {
       // Message for a conversation we don't have yet (e.g. a brand-new
       // match's first message) — refetch the list instead of dropping it
       if (!conversationsRef.current.some((c) => c.matchId === data.matchId)) {
@@ -99,21 +92,29 @@ export const ChatListScreen: React.FC<{ navigation: any }> = ({ navigation }) =>
             : conv,
         ),
       );
-    });
+    };
 
     // A new match opens a new chat — join its room so its messages arrive
     // live, and refetch so the conversation shows up in the list
-    socket.on('match:new', (data: any) => {
+    const onMatchNew = (data: any) => {
       if (data?.matchId) {
         socket.emit('chat:join', { matchId: data.matchId });
         fetchConversations();
       }
-    });
+    };
+
+    socket.on('connect', onConnect);
+    socket.on('chat:message', onChatMessage);
+    socket.on('match:new', onMatchNew);
+    if (socket.connected) onConnect();
 
     socketRef.current = socket;
 
     return () => {
-      socket.disconnect();
+      // Shared socket — detach this screen's listeners only, never disconnect
+      socket.off('connect', onConnect);
+      socket.off('chat:message', onChatMessage);
+      socket.off('match:new', onMatchNew);
       socketRef.current = null;
     };
   }, []);

@@ -75,7 +75,7 @@ export async function matchRoutes(app: FastifyInstance) {
     }
 
     // Get profiles excluding already-interacted users and self
-    const sql = `
+    const selectAndWhere = `
       SELECT
         u.id,
         u.display_name,
@@ -89,7 +89,7 @@ export async function matchRoutes(app: FastifyInstance) {
         u.h3_index,
         u.latitude,
         u.longitude
-      FROM ${TABLES.USERS} u
+      FROM %SOURCE% u
       WHERE u.id != $1
         AND u.is_active = TRUE
         AND u.onboarding_complete = TRUE
@@ -104,54 +104,81 @@ export async function matchRoutes(app: FastifyInstance) {
       ORDER BY RANDOM()
       LIMIT 20
     `;
-    const profilesResult = await query(sql, genderParams);
 
-    // Fetch photos and interests for each profile
-    const profiles = await Promise.all(
-      profilesResult.rows.map(async (row: any) => {
-        const photosResult = await query(
-          `SELECT id, url, thumbnail_url, is_primary FROM ${TABLES.PROFILE_PHOTOS}
-           WHERE user_id = $1 ORDER BY is_primary DESC, order_index ASC`,
-          [row.id],
-        );
-
-        const interestsResult = await query(
-          `SELECT i.id, i.name, i.emoji, i.category
-           FROM ${TABLES.USER_INTERESTS} ui
-           JOIN ${TABLES.INTERESTS} i ON i.id = ui.interest_id
-           WHERE ui.user_id = $1`,
-          [row.id],
-        );
-
-        const age = row.date_of_birth
-          ? Math.floor((now.getTime() - new Date(row.date_of_birth).getTime()) / 31557600000)
-          : 0;
-
-        return {
-          userId: row.id,
-          displayName: row.display_name,
-          age,
-          bio: row.bio || '',
-          occupation: row.occupation || undefined,
-          education: row.education || undefined,
-          pronouns: row.pronouns || undefined,
-          photos: photosResult.rows.map((p: any) => ({
-            id: p.id,
-            url: p.url,
-            thumbnailUrl: p.thumbnail_url || undefined,
-            isPrimary: p.is_primary,
-          })),
-          interests: interestsResult.rows.map((i: any) => ({
-            id: i.id,
-            name: i.name,
-            emoji: i.emoji,
-            category: i.category,
-          })),
-          aboutAnswers: row.about_answers || undefined,
-          isVerified: row.is_verified,
-        };
-      }),
+    // Try a 10% block sample first — ORDER BY RANDOM() over the sample instead
+    // of the whole table. If the sample can't fill 20 (small table, small
+    // remaining pool), fall back to the original full-table query, so the
+    // result is always exactly what the unsampled query would return.
+    let profilesResult = await query(
+      selectAndWhere.replace('%SOURCE%', `(SELECT * FROM ${TABLES.USERS} TABLESAMPLE SYSTEM (10))`),
+      genderParams,
     );
+    if ((profilesResult.rowCount ?? 0) < 20) {
+      profilesResult = await query(
+        selectAndWhere.replace('%SOURCE%', TABLES.USERS),
+        genderParams,
+      );
+    }
+
+    // Fetch photos and interests for all profiles in two batched queries
+    // (was one pair of queries per profile — 41 queries per feed request)
+    const profileIds = profilesResult.rows.map((row: any) => row.id);
+    const photosByUser = new Map<string, any[]>();
+    const interestsByUser = new Map<string, any[]>();
+
+    if (profileIds.length > 0) {
+      const photosResult = await query(
+        `SELECT user_id, id, url, thumbnail_url, is_primary FROM ${TABLES.PROFILE_PHOTOS}
+         WHERE user_id = ANY($1) ORDER BY is_primary DESC, order_index ASC`,
+        [profileIds],
+      );
+      for (const p of photosResult.rows) {
+        if (!photosByUser.has(p.user_id)) photosByUser.set(p.user_id, []);
+        photosByUser.get(p.user_id)!.push(p);
+      }
+
+      const interestsResult = await query(
+        `SELECT ui.user_id, i.id, i.name, i.emoji, i.category
+         FROM ${TABLES.USER_INTERESTS} ui
+         JOIN ${TABLES.INTERESTS} i ON i.id = ui.interest_id
+         WHERE ui.user_id = ANY($1)`,
+        [profileIds],
+      );
+      for (const i of interestsResult.rows) {
+        if (!interestsByUser.has(i.user_id)) interestsByUser.set(i.user_id, []);
+        interestsByUser.get(i.user_id)!.push(i);
+      }
+    }
+
+    const profiles = profilesResult.rows.map((row: any) => {
+      const age = row.date_of_birth
+        ? Math.floor((now.getTime() - new Date(row.date_of_birth).getTime()) / 31557600000)
+        : 0;
+
+      return {
+        userId: row.id,
+        displayName: row.display_name,
+        age,
+        bio: row.bio || '',
+        occupation: row.occupation || undefined,
+        education: row.education || undefined,
+        pronouns: row.pronouns || undefined,
+        photos: (photosByUser.get(row.id) || []).map((p: any) => ({
+          id: p.id,
+          url: p.url,
+          thumbnailUrl: p.thumbnail_url || undefined,
+          isPrimary: p.is_primary,
+        })),
+        interests: (interestsByUser.get(row.id) || []).map((i: any) => ({
+          id: i.id,
+          name: i.name,
+          emoji: i.emoji,
+          category: i.category,
+        })),
+        aboutAnswers: row.about_answers || undefined,
+        isVerified: row.is_verified,
+      };
+    });
 
     return reply.send({ success: true, data: { profiles } });
   });

@@ -246,20 +246,16 @@ export class ChatHandler {
   // on every instance independently — using nsp.to().emit() would
   // trigger the adapter's own Redis relay, causing duplicate delivery.
 
+  // The `local` flag emits to this instance's room members only (the adapter
+  // skips its Redis relay), in O(room size) instead of scanning every socket.
   private emitToLocalRoom(room: string, event: string, data: any) {
-    for (const [, socket] of this.nsp.sockets) {
-      if (socket.rooms.has(room)) {
-        socket.emit(event, data);
-      }
-    }
+    this.nsp.local.to(room).emit(event, data);
   }
 
+  // Excludes the sender via their personal room (`user:<id>`), which every
+  // socket joins on connection — covers all of the sender's sockets.
   private emitToLocalRoomExcludingSender(room: string, senderUserId: string, event: string, data: any) {
-    for (const [, socket] of this.nsp.sockets) {
-      if (socket.rooms.has(room) && (socket as any).userId !== senderUserId) {
-        socket.emit(event, data);
-      }
-    }
+    this.nsp.local.to(room).except(`user:${senderUserId}`).emit(event, data);
   }
 
   /**

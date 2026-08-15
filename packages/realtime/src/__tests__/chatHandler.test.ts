@@ -21,8 +21,10 @@ function createMockSocket(userId: string) {
   const socket: any = {
     id: `socket-${userId}-${++mockSocketSeq}`, // unique per connection — real sockets always have an id
     userId,
-    join: vi.fn(),
-    leave: vi.fn(),
+    // join/leave mutate `rooms` like real sockets do — the handler's local
+    // broadcasts and room-membership checks read socket.rooms
+    join: vi.fn((room: string) => { socket.rooms.add(room); }),
+    leave: vi.fn((room: string) => { socket.rooms.delete(room); }),
     on: vi.fn(),
     to: vi.fn(() => socket), // chained call: socket.to(room).emit(...)
     emit: vi.fn(),
@@ -51,6 +53,23 @@ function createMockNamespace() {
     to: vi.fn(() => nsp), // chained call: nsp.to(room).emit(...)
     emit: vi.fn(),
     sockets: new Map<string, any>(),
+  };
+  // Emulates socket.io's `nsp.local.to(room)[.except(room)].emit()` —
+  // delivers to local sockets in `room`, skipping members of `except` rooms
+  const deliver = (room: string, exceptRooms: string[], event: string, data: any) => {
+    for (const [, s] of nsp.sockets) {
+      if (s.rooms.has(room) && !exceptRooms.some((r) => s.rooms.has(r))) {
+        s.emit(event, data);
+      }
+    }
+  };
+  nsp.local = {
+    to: (room: string) => ({
+      emit: (event: string, data: any) => deliver(room, [], event, data),
+      except: (ex: string) => ({
+        emit: (event: string, data: any) => deliver(room, [ex], event, data),
+      }),
+    }),
   };
   return nsp;
 }

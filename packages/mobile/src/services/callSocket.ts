@@ -45,7 +45,10 @@ function dispatch(event: string, data: any) {
 }
 
 export function getCallSocket(): Socket {
-  if (!socket || socket.disconnected) {
+  // Recreate only when truly dead (never created, or manually closed).
+  // `disconnected` is also true mid-auto-reconnect — tearing down then would
+  // silently drop every listener other screens attached to this socket.
+  if (!socket || !socket.active) {
     if (socket) {
       socket.removeAllListeners();
       socket.disconnect();
@@ -78,8 +81,19 @@ export function getCallSocket(): Socket {
     Object.values(CALL_EVENTS).forEach((event) => {
       socket!.on(event, (data: any) => dispatch(event, data));
     });
+  } else {
+    // Reused — make sure reconnection attempts carry the current token
+    (socket as any).auth = { token: api.getToken() };
   }
   return socket;
+}
+
+/**
+ * App-wide shared /chat socket — chat screens and the unread badge attach
+ * their own listeners here instead of opening extra connections per screen.
+ */
+export function getChatSocket(): Socket {
+  return getCallSocket();
 }
 
 /** Subscribe to a call signaling event. Returns an unsubscribe function. */

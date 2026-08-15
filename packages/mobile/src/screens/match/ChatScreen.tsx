@@ -13,10 +13,11 @@ import * as FileSystem from 'expo-file-system/legacy';
 import { Ionicons } from '@expo/vector-icons';
 import * as ImagePicker from 'expo-image-picker';
 import * as DocumentPicker from 'expo-document-picker';
-import { io, Socket } from 'socket.io-client';
+import { Socket } from 'socket.io-client';
 import { api } from '../../services/api';
+import { getChatSocket } from '../../services/callSocket';
 import { useAuthStore } from '../../store/authStore';
-import { WS_URL, resolveUrl } from '../../config';
+import { resolveUrl } from '../../config';
 import { colors, typography, spacing, radius } from '../../theme';
 
 interface ChatMedia {
@@ -81,6 +82,7 @@ export const ChatScreen: React.FC<{ navigation: any; route: any }> = ({ navigati
   const socketRef = useRef<Socket | null>(null);
   const authUser = useAuthStore((s) => s.user);
   const typingTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const lastTypingSentRef = useRef(0);
   const audioRecorder = useAudioRecorder(RecordingPresets.HIGH_QUALITY);
   const audioRecorderRef = useRef(audioRecorder);
   audioRecorderRef.current = audioRecorder;
@@ -115,30 +117,23 @@ export const ChatScreen: React.FC<{ navigation: any; route: any }> = ({ navigati
 
   // ─── Socket Connection ──────────────────────────────
   useEffect(() => {
-    const token = api.getToken();
-    const socket = io(`${WS_URL}/chat`, {
-      auth: { token },
-      transports: ['websocket'],
-      // Without forceNew, socket.io-client multiplexes and returns the SAME
-      // already-connected socket other screens created for /chat — 'connect'
-      // never fires, so chat:join is never emitted and live messages never
-      // arrive. Worse, our cleanup disconnect() would kill their socket too.
-      forceNew: true,
-    });
+    // App-wide shared /chat socket — this screen attaches its own listeners
+    // and detaches them on unmount; the connection itself stays up
+    const socket = getChatSocket();
 
-    socket.on('connect', () => {
+    const onConnect = () => {
       setSocketConnected(true);
       socket.emit('chat:join', { matchId });
       socket.emit('chat:read', { matchId });
       // Re-sync history on every (re)connect — heals any message missed
       // while the socket was down or a broadcast was dropped
       syncMessages();
-    });
+    };
 
     // Incoming message — from partner OR our own broadcast.
-    // Scoped to THIS match: this socket only joins one match room, but the
-    // guard keeps a mis-routed or stale event from landing in the wrong DM.
-    socket.on('chat:message', (data: any) => {
+    // Scoped to THIS match: the shared socket receives every joined room, so
+    // the guard keeps other conversations' events out of this DM.
+    const onChatMessage = (data: any) => {
       if (data?.matchId !== matchId) return;
       setMessages((prev) => {
         if (prev.some((m) => m.id === data.id)) return prev;
@@ -174,9 +169,9 @@ export const ChatScreen: React.FC<{ navigation: any; route: any }> = ({ navigati
       if (data.senderId !== authUser?.id && socket.connected) {
         socket.emit('chat:read', { matchId });
       }
-    });
+    };
 
-    socket.on('chat:read', (data: any) => {
+    const onChatRead = (data: any) => {
       if (data?.matchId !== matchId) return;
       if (data.userId !== authUser?.id) {
         setMessages((prev) =>
@@ -187,19 +182,19 @@ export const ChatScreen: React.FC<{ navigation: any; route: any }> = ({ navigati
           ),
         );
       }
-    });
+    };
 
-    socket.on('chat:typing', (data: any) => {
+    const onChatTyping = (data: any) => {
       if (data?.matchId !== matchId) return;
       if (data.userId !== authUser?.id) {
         setPartnerTyping(data.isTyping);
       }
-    });
+    };
 
     // Handle media:viewed event to update view-once status
     // Also clears URL/thumbnail so the media can never be re-viewed even if
     // state gets stale (socket reconnection, stale broadcast replay, etc.)
-    socket.on('media:viewed', (data: any) => {
+    const onMediaViewed = (data: any) => {
       if (data.mediaId && data.viewedAt) {
         setMessages((prev) =>
           prev.map((m) =>
@@ -217,17 +212,33 @@ export const ChatScreen: React.FC<{ navigation: any; route: any }> = ({ navigati
           ),
         );
       }
-    });
+    };
 
-    socket.on('disconnect', () => {
+    const onDisconnect = () => {
       setSocketConnected(false);
-    });
+    };
+
+    socket.on('connect', onConnect);
+    socket.on('chat:message', onChatMessage);
+    socket.on('chat:read', onChatRead);
+    socket.on('chat:typing', onChatTyping);
+    socket.on('media:viewed', onMediaViewed);
+    socket.on('disconnect', onDisconnect);
+    // The shared socket is usually already connected when this screen mounts,
+    // so 'connect' won't fire — run the join/read/sync sequence now
+    if (socket.connected) onConnect();
 
     socketRef.current = socket;
 
     return () => {
-      socket.emit('chat:leave', { matchId });
-      socket.disconnect();
+      // Detach this screen's listeners only. No chat:leave — the badge and
+      // chat list still need this room's messages on the shared socket.
+      socket.off('connect', onConnect);
+      socket.off('chat:message', onChatMessage);
+      socket.off('chat:read', onChatRead);
+      socket.off('chat:typing', onChatTyping);
+      socket.off('media:viewed', onMediaViewed);
+      socket.off('disconnect', onDisconnect);
       socketRef.current = null;
     };
   }, [matchId, syncMessages]);
@@ -723,14 +734,29 @@ export const ChatScreen: React.FC<{ navigation: any; route: any }> = ({ navigati
   };
 
   // ─── Typing indicator ──────────────────────────────
+  // Throttled: "typing" is sent at most once per 2.5s (each event fans out
+  // through Redis + every room socket server-side); the trailing "stopped"
+  // after 2s idle is unchanged, so the partner's view looks identical.
   const handleInputChange = (text: string) => {
     setInputText(text);
 
     if (socketRef.current?.connected) {
-      socketRef.current.emit('chat:typing', { matchId, isTyping: text.length > 0 });
-
       if (typingTimeoutRef.current) clearTimeout(typingTimeoutRef.current);
+
+      if (text.length === 0) {
+        lastTypingSentRef.current = 0;
+        socketRef.current.emit('chat:typing', { matchId, isTyping: false });
+        return;
+      }
+
+      const now = Date.now();
+      if (now - lastTypingSentRef.current >= 2500) {
+        lastTypingSentRef.current = now;
+        socketRef.current.emit('chat:typing', { matchId, isTyping: true });
+      }
+
       typingTimeoutRef.current = setTimeout(() => {
+        lastTypingSentRef.current = 0;
         socketRef.current?.emit('chat:typing', { matchId, isTyping: false });
       }, 2000);
     }

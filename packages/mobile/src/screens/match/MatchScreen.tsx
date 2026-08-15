@@ -9,8 +9,8 @@ import { useAuthStore } from '../../store/authStore';
 import { api } from '../../services/api';
 import { useToast } from '../../hooks/useToast';
 import { colors, typography, spacing, radius } from '../../theme';
-import { io } from 'socket.io-client';
-import { WS_URL, resolveUrl } from '../../config';
+import { getPresenceSocket } from '../../services/presenceSocket';
+import { resolveUrl } from '../../config';
 import { MatchPopup } from '../../components/common/MatchPopup';
 
 const SCREEN_WIDTH = Dimensions.get('window').width;
@@ -344,13 +344,10 @@ export const MatchScreen: React.FC<{ navigation: any; route?: any }> = ({ naviga
     fetchProfiles();
     fetchUnreadLikeCount();
 
-    // Listen for match:new events to show match popup
-    const socket = io(`${WS_URL}/presence`, {
-      auth: { token: api.getToken() },
-      transports: ['websocket'],
-    });
+    // Shared /presence socket — listen for match:new to show the match popup
+    const socket = getPresenceSocket();
 
-    socket.on('match:new', (data: any) => {
+    const onMatchNew = (data: any) => {
       console.log('[MatchScreen] New match:', data.matchId, 'with', data.partnerName);
       // Show the match popup
       setMatchPopup({
@@ -363,10 +360,13 @@ export const MatchScreen: React.FC<{ navigation: any; route?: any }> = ({ naviga
       // Fetch profiles again to refresh
       fetchProfiles();
       fetchUnreadLikeCount();
-    });
+    };
+
+    socket.on('match:new', onMatchNew);
 
     return () => {
-      socket.disconnect();
+      // Shared socket — detach this screen's listener only
+      socket.off('match:new', onMatchNew);
     };
   }, []);
 

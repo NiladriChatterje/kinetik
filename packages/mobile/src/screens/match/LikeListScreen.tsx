@@ -1,15 +1,15 @@
-import React, { useState, useEffect, useCallback, useRef } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import {
   View, Text, StyleSheet, FlatList, Image, TouchableOpacity,
   ActivityIndicator, Alert,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
-import { io, Socket } from 'socket.io-client';
 import { api } from '../../services/api';
+import { getPresenceSocket } from '../../services/presenceSocket';
 import { useToast } from '../../hooks/useToast';
 import { useAuthStore } from '../../store/authStore';
-import { WS_URL, resolveUrl } from '../../config';
+import { resolveUrl } from '../../config';
 import { colors, typography, spacing, radius } from '../../theme';
 
 interface IncomingLike {
@@ -29,7 +29,6 @@ export const LikeListScreen: React.FC<{ navigation: any }> = ({ navigation }) =>
   const [loading, setLoading] = useState(true);
   const [responding, setResponding] = useState<string | null>(null);
   const toast = useToast();
-  const likesSocketRef = useRef<Socket | null>(null);
 
   const fetchLikes = useCallback(async () => {
     try {
@@ -50,28 +49,17 @@ export const LikeListScreen: React.FC<{ navigation: any }> = ({ navigation }) =>
   useEffect(() => {
     fetchLikes();
 
-    // Connect to socket for real-time like updates
-    const token = api.getToken();
-    if (token) {
-      const socket = io(`${WS_URL}/presence`, {
-        auth: { token },
-        transports: ['websocket'],
-      });
-
-      socket.on('likes:new', (data: any) => {
-        console.log('[LikeList] New like received:', data.likedByName);
-        // Re-fetch the likes list to get full details
-        fetchLikes();
-      });
-
-      likesSocketRef.current = socket;
-    }
+    // Shared /presence socket — attach this screen's listener only
+    const socket = getPresenceSocket();
+    const onLikesNew = (data: any) => {
+      console.log('[LikeList] New like received:', data.likedByName);
+      // Re-fetch the likes list to get full details
+      fetchLikes();
+    };
+    socket.on('likes:new', onLikesNew);
 
     return () => {
-      if (likesSocketRef.current) {
-        likesSocketRef.current.disconnect();
-        likesSocketRef.current = null;
-      }
+      socket.off('likes:new', onLikesNew);
     };
   }, []);
 
