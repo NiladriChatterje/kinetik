@@ -294,14 +294,18 @@ export const ChatScreen: React.FC<{ navigation: any; route: any }> = ({ navigati
   };
 
   // ─── Send a media message ──────────────────────────
-  const sendMedia = async (uri: string, mediaType: string) => {
+  const sendMedia = async (uri: string, mediaType: string, durationSecs?: number) => {
     if (sending) return;
     setSending(true);
     setShowMediaPicker(false);
     setViewOnce(false); // Reset the toggle
 
+    // View-once only applies to visual media — a stale toggle must never
+    // flag a voice note, which would render as an unopenable card
+    const applyViewOnce = viewOnce && (mediaType === 'image' || mediaType === 'video');
+
     const tempId = `temp-${Date.now()}`;
-    const previewText = viewOnce
+    const previewText = applyViewOnce
       ? 'Sent a view-once photo'
       : mediaType === 'image'
         ? 'Sent a photo'
@@ -318,7 +322,7 @@ export const ChatScreen: React.FC<{ navigation: any; route: any }> = ({ navigati
     }]);
 
     try {
-      const res = await api.sendMediaMessage(matchId, uri, mediaType, undefined, viewOnce);
+      const res = await api.sendMediaMessage(matchId, uri, mediaType, undefined, applyViewOnce, durationSecs);
       if (res.success && res.data) {
         // Replace temp with confirmed message
         setMessages((prev) => prev.map((m) =>
@@ -574,7 +578,7 @@ export const ChatScreen: React.FC<{ navigation: any; route: any }> = ({ navigati
         return;
       }
 
-      await sendMedia(uploadUri, 'audio');
+      await sendMedia(uploadUri, 'audio', duration);
     } catch (err: any) {
       Alert.alert('Error', err.message || 'Could not stop recording.');
       setIsRecording(false);
@@ -597,20 +601,26 @@ export const ChatScreen: React.FC<{ navigation: any; route: any }> = ({ navigati
   };
 
   // ─── Audio Playback ────────────────────────────────
+  // Players from createAudioPlayer must be remove()d to free the native
+  // instance (per expo-audio docs) — pause() alone leaks it
+  const discardPlayer = () => {
+    if (playerRef.current) {
+      try {
+        playerRef.current.pause();
+        (playerRef.current as any).remove?.();
+      } catch {}
+      playerRef.current = null;
+    }
+  };
+
   const togglePlayAudio = async (messageId: string, url: string) => {
     if (playingAudioId === messageId) {
-      if (playerRef.current) {
-        playerRef.current.pause();
-        playerRef.current = null;
-      }
+      discardPlayer();
       setPlayingAudioId(null);
       return;
     }
 
-    if (playerRef.current) {
-      playerRef.current.pause();
-      playerRef.current = null;
-    }
+    discardPlayer();
 
     try {
       // Append auth token as query param — native media players (AVPlayer,
@@ -627,7 +637,7 @@ export const ChatScreen: React.FC<{ navigation: any; route: any }> = ({ navigati
       player.addListener('playbackStatusUpdate', (status: any) => {
         if (status.didJustFinish) {
           setPlayingAudioId(null);
-          playerRef.current = null;
+          discardPlayer();
         }
       });
       player.play();
@@ -642,7 +652,10 @@ export const ChatScreen: React.FC<{ navigation: any; route: any }> = ({ navigati
   useEffect(() => {
     return () => {
       if (playerRef.current) {
-        playerRef.current.pause();
+        try {
+          playerRef.current.pause();
+          (playerRef.current as any).remove?.();
+        } catch {}
         playerRef.current = null;
       }
       if (recordingTimerRef.current) {

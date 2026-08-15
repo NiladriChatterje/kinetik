@@ -621,11 +621,12 @@ class ApiClient {
     });
   }
 
-  async sendMediaMessage(matchId: string, uri: string, mediaType: string, caption?: string, viewOnce?: boolean) {
+  async sendMediaMessage(matchId: string, uri: string, mediaType: string, caption?: string, viewOnce?: boolean, durationSecs?: number) {
     const token = this.getToken();
     let url = `${API_URL}/api/v1/matches/conversations/${matchId}/media?media_type=${mediaType}`;
     if (caption) url += `&caption=${encodeURIComponent(caption)}`;
     if (viewOnce) url += `&view_once=true`;
+    if (durationSecs && durationSecs > 0) url += `&duration_secs=${Math.round(durationSecs)}`;
 
     // Use FileSystem.uploadAsync (native multipart) instead of fetch + FormData.
     // The fetch + FormData approach with JS file objects triggers React Native's

@@ -829,10 +829,12 @@ export async function matchRoutes(app: FastifyInstance) {
       });
     }
 
-    if (fileBuffer.length > 50 * 1024 * 1024) {
+    // Busboy silently truncates at the multipart fileSize limit — reject
+    // instead of storing a corrupt (cut-off) file
+    if ((file.file as any).truncated) {
       return reply.status(400).send({
         success: false,
-        error: { code: 'FILE_TOO_LARGE', message: 'File too large. Max 50MB.' },
+        error: { code: 'FILE_TOO_LARGE', message: 'File too large. Max 10MB.' },
       });
     }
 
@@ -1040,11 +1042,34 @@ export async function matchRoutes(app: FastifyInstance) {
       };
       const contentType = mimeMap[ext] || 'application/octet-stream';
 
-      return reply
+      reply
         .header('Content-Type', contentType)
-        .header('Content-Length', buffer.length.toString())
-        .header('Cache-Control', 'private, max-age=3600')
-        .send(buffer);
+        .header('Accept-Ranges', 'bytes')
+        .header('Cache-Control', 'private, max-age=3600');
+
+      // Byte-range support — iOS AVPlayer requires it for audio/video streaming
+      const total = buffer.length;
+      const rangeMatch = typeof request.headers.range === 'string'
+        ? /^bytes=(\d*)-(\d*)$/.exec(request.headers.range)
+        : null;
+      if (rangeMatch && (rangeMatch[1] !== '' || rangeMatch[2] !== '')) {
+        const start = rangeMatch[1] === ''
+          ? Math.max(0, total - parseInt(rangeMatch[2], 10))
+          : parseInt(rangeMatch[1], 10);
+        const end = rangeMatch[1] !== '' && rangeMatch[2] !== ''
+          ? Math.min(parseInt(rangeMatch[2], 10), total - 1)
+          : total - 1;
+        if (start > end || start >= total) {
+          return reply.status(416).header('Content-Range', `bytes */${total}`).send();
+        }
+        return reply
+          .status(206)
+          .header('Content-Range', `bytes ${start}-${end}/${total}`)
+          .header('Content-Length', String(end - start + 1))
+          .send(buffer.subarray(start, end + 1));
+      }
+
+      return reply.header('Content-Length', String(total)).send(buffer);
     } catch (err: any) {
       console.error('[MediaProxy] Failed to serve encrypted file:', err.message);
       return reply.status(404).send({
