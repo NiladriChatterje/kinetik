@@ -263,6 +263,21 @@ export class ChatHandler {
   }
 
   /**
+   * True if the user still has at least one live local socket in the room.
+   * A user holds several /chat sockets at once (chat-list, per-DM, unread
+   * badge, call signaling) — userMatches tracking may only be dropped once
+   * the LAST of them has left the match room.
+   */
+  private userHasLocalSocketInRoom(userId: string, room: string): boolean {
+    for (const [, socket] of this.nsp.sockets) {
+      if ((socket as any).userId === userId && socket.rooms.has(room)) {
+        return true;
+      }
+    }
+    return false;
+  }
+
+  /**
    * Remove a socket from a user's busy set. Busy is cleared only when the
    * LAST socket that joined the active call leaves/disconnects — a secondary
    * chat socket dropping must not clear busy mid-call.
@@ -335,8 +350,11 @@ export class ChatHandler {
         const { matchId } = data;
         socket.leave(`match:${matchId}`);
 
+        // Drop tracking only if no OTHER socket of this user is still in the
+        // room (leave() above already removed this one) — e.g. the DM screen
+        // closing must not untrack a match the call socket still uses.
         const matches = this.userMatches.get(userId);
-        if (matches) {
+        if (matches && !this.userHasLocalSocketInRoom(userId, `match:${matchId}`)) {
           matches.delete(matchId);
           if (matches.size === 0) {
             this.userMatches.delete(userId);
@@ -489,7 +507,22 @@ export class ChatHandler {
 
       socket.on('disconnect', () => {
         console.log(`[Chat] User ${userId} disconnected`);
-        this.userMatches.delete(userId);
+        // Prune only the matches no surviving socket of this user is still
+        // joined to — one socket dropping (of the several a user holds) must
+        // not wipe tracking for the DMs/calls the others are still in.
+        // (Socket.IO removes this socket from nsp.sockets before emitting
+        // 'disconnect', so it no longer counts as "in the room" here.)
+        const matches = this.userMatches.get(userId);
+        if (matches) {
+          for (const matchId of [...matches]) {
+            if (!this.userHasLocalSocketInRoom(userId, `match:${matchId}`)) {
+              matches.delete(matchId);
+            }
+          }
+          if (matches.size === 0) {
+            this.userMatches.delete(userId);
+          }
+        }
         this.removeBusySocket(userId, socket.id);
       });
     });

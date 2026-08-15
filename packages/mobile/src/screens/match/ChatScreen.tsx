@@ -101,8 +101,10 @@ export const ChatScreen: React.FC<{ navigation: any; route: any }> = ({ navigati
       if (!res.success || !res.data) return;
       const fetched = res.data.messages || [];
       setMessages((prev) => {
-        const temps = prev.filter((m) => m.id.startsWith('temp-'));
-        const merged = [...temps, ...fetched];
+        // Keep only THIS match's pending sends — if the screen was re-used
+        // with a new matchId param, temps from the previous DM must not leak
+        const temps = prev.filter((m) => m.id.startsWith('temp-') && m.matchId === matchId);
+        const merged = [...fetched, ...temps];
         const seen = new Set<string>();
         return merged.filter((m) => (seen.has(m.id) ? false : (seen.add(m.id), true)));
       });
@@ -117,6 +119,11 @@ export const ChatScreen: React.FC<{ navigation: any; route: any }> = ({ navigati
     const socket = io(`${WS_URL}/chat`, {
       auth: { token },
       transports: ['websocket'],
+      // Without forceNew, socket.io-client multiplexes and returns the SAME
+      // already-connected socket other screens created for /chat — 'connect'
+      // never fires, so chat:join is never emitted and live messages never
+      // arrive. Worse, our cleanup disconnect() would kill their socket too.
+      forceNew: true,
     });
 
     socket.on('connect', () => {
@@ -128,8 +135,11 @@ export const ChatScreen: React.FC<{ navigation: any; route: any }> = ({ navigati
       syncMessages();
     });
 
-    // Incoming message — from partner OR our own broadcast
+    // Incoming message — from partner OR our own broadcast.
+    // Scoped to THIS match: this socket only joins one match room, but the
+    // guard keeps a mis-routed or stale event from landing in the wrong DM.
     socket.on('chat:message', (data: any) => {
+      if (data?.matchId !== matchId) return;
       setMessages((prev) => {
         if (prev.some((m) => m.id === data.id)) return prev;
 
@@ -167,6 +177,7 @@ export const ChatScreen: React.FC<{ navigation: any; route: any }> = ({ navigati
     });
 
     socket.on('chat:read', (data: any) => {
+      if (data?.matchId !== matchId) return;
       if (data.userId !== authUser?.id) {
         setMessages((prev) =>
           prev.map((m) =>
@@ -179,6 +190,7 @@ export const ChatScreen: React.FC<{ navigation: any; route: any }> = ({ navigati
     });
 
     socket.on('chat:typing', (data: any) => {
+      if (data?.matchId !== matchId) return;
       if (data.userId !== authUser?.id) {
         setPartnerTyping(data.isTyping);
       }

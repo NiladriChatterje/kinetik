@@ -30,6 +30,7 @@ export const ChatListScreen: React.FC<{ navigation: any }> = ({ navigation }) =>
   const authUser = useAuthStore((s) => s.user);
   const toast = useToast();
   const socketRef = useRef<Socket | null>(null);
+  const conversationsRef = useRef<Conversation[]>([]);
 
   const fetchConversations = useCallback(async () => {
     try {
@@ -37,6 +38,7 @@ export const ChatListScreen: React.FC<{ navigation: any }> = ({ navigation }) =>
       const res = await api.getConversations();
       if (res.success && res.data) {
         const list = res.data.conversations || [];
+        conversationsRef.current = list;
         setConversations(list);
         // Join all match rooms on the socket for real-time updates
         if (socketRef.current?.connected && list.length > 0) {
@@ -60,9 +62,27 @@ export const ChatListScreen: React.FC<{ navigation: any }> = ({ navigation }) =>
     const socket = io(`${WS_URL}/chat`, {
       auth: { token },
       transports: ['websocket'],
+      // Without forceNew, socket.io-client multiplexes and shares one /chat
+      // socket with ChatScreen — whose unmount cleanup disconnect() would
+      // kill this screen's live updates too.
+      forceNew: true,
+    });
+
+    // Join rooms on every (re)connect — rooms are per-socket on the server,
+    // and the fetch below may resolve before the socket finishes connecting.
+    socket.on('connect', () => {
+      conversationsRef.current.forEach((conv) => {
+        socket.emit('chat:join', { matchId: conv.matchId });
+      });
     });
 
     socket.on('chat:message', (data: any) => {
+      // Message for a conversation we don't have yet (e.g. a brand-new
+      // match's first message) — refetch the list instead of dropping it
+      if (!conversationsRef.current.some((c) => c.matchId === data.matchId)) {
+        fetchConversations();
+        return;
+      }
       // Update the conversation that received a new message
       setConversations((prev) =>
         prev.map((conv) =>
@@ -79,6 +99,15 @@ export const ChatListScreen: React.FC<{ navigation: any }> = ({ navigation }) =>
             : conv,
         ),
       );
+    });
+
+    // A new match opens a new chat — join its room so its messages arrive
+    // live, and refetch so the conversation shows up in the list
+    socket.on('match:new', (data: any) => {
+      if (data?.matchId) {
+        socket.emit('chat:join', { matchId: data.matchId });
+        fetchConversations();
+      }
     });
 
     socketRef.current = socket;
