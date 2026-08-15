@@ -3,7 +3,7 @@
 // services/razorpay.ts and routes/webhooks.ts.
 
 declare module 'razorpay' {
-  interface RazorpayPlan {
+  export interface RazorpayPlan {
     id: string;
     period: string;
     interval: number;
@@ -11,7 +11,7 @@ declare module 'razorpay' {
     notes?: Record<string, unknown>;
   }
 
-  interface RazorpaySubscription {
+  export interface RazorpaySubscription {
     id: string;
     status: string;
     plan_id: string;
@@ -22,7 +22,7 @@ declare module 'razorpay' {
     notes?: Record<string, string>;
   }
 
-  interface RazorpaySubscriptionCreateParams {
+  export interface RazorpaySubscriptionCreateParams {
     plan_id: string;
     total_count: number;
     customer_notify?: number;
