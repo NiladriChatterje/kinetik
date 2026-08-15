@@ -1,9 +1,29 @@
 import { FastifyInstance, FastifyRequest, FastifyReply } from 'fastify';
 import bcrypt from 'bcrypt';
 import { z } from 'zod';
-import { ERROR_CODES } from '@kinetik/shared';
-import { createUser, findUserByPhone, findUserByEmail, createSubscription, updateUser } from '../services/database';
+import { ERROR_CODES, transaction, TABLES } from '@kinetik/shared';
+import { createUser, findUserByPhone, findUserByEmail, findUserById, createSubscription, updateUser } from '../services/database';
+import { deleteAllUserPhotos, deleteChatFile } from '../services/photoStorage';
+import { eventBus } from '../services/eventBus';
 import { sendOtpSms } from '../services/sms';
+
+/**
+ * Extract a MinIO storage key from a chat media URL so the file can be
+ * deleted from object storage. Handles both plain uploads
+ * (/uploads/chat/{userId}/{fileId}.ext) and the encrypted proxy URLs
+ * (/api/v1/matches/media/chat/{userId}/{fileId}.enc?ext=...).
+ */
+function chatMediaKeyFromUrl(url: string): string | null {
+  if (url.startsWith('/api/v1/matches/media/')) {
+    const path = url.split('/api/v1/matches/media/')[1];
+    return path ? path.split('?')[0] : null;
+  }
+  if (url.startsWith('/uploads/')) {
+    const key = url.replace('/uploads/', '');
+    return key || null;
+  }
+  return null;
+}
 
 // ─── In-memory OTP store (dev only; replace with Redis in production) ──
 const otpStore = new Map<string, { otp: string; expiresAt: number }>();
@@ -307,6 +327,163 @@ export async function authRoutes(app: FastifyInstance) {
       return reply.status(401).send({
         success: false,
         error: { code: ERROR_CODES.TOKEN_EXPIRED, message: 'Token expired. Please login again.' },
+      });
+    }
+  });
+
+  // ─── Delete Account ───────────────────────────────────
+  // Permanently deletes the user's account and ALL associated records
+  // (profile, photos, preferences, interests, KYC, push tokens, subscription,
+  // window participation, likes, duo crews, vibe checks, matches, chats and
+  // chat media files).
+  //
+  // Design:
+  //   - The users row is soft-deleted (PII scrubbed, deleted_at set) purely so
+  //     retained records (transactions, audit_log) keep a valid reference — the
+  //     account no longer exists from the app's perspective: phone/email are
+  //     NULLed so the number can be re-registered, and is_active is FALSE so no
+  //     profile query returns it.
+  //   - Matches (and their messages / chat_media via CASCADE) are hard-deleted,
+  //     so the partner's conversation list drops them and opening the chat is
+  //     impossible (endpoints 404 on missing/inactive matches).
+  //   - Requires an authenticated JWT AND { confirm: true } to prevent
+  //     accidental deletion.
+  app.delete('/account', async (request: FastifyRequest, reply: FastifyReply) => {
+    try {
+      await request.jwtVerify();
+    } catch {
+      return reply.status(401).send({
+        success: false,
+        error: { code: ERROR_CODES.UNAUTHORIZED, message: 'Authentication required' },
+      });
+    }
+
+    const { sub: userId } = request.user as any;
+    const body = (request.body || {}) as { confirm?: boolean };
+    if (body.confirm !== true) {
+      return reply.status(400).send({
+        success: false,
+        error: {
+          code: ERROR_CODES.VALIDATION_ERROR,
+          message: 'Provide { confirm: true } to delete your account',
+        },
+      });
+    }
+
+    const user = await findUserById(userId);
+    if (!user || user.deleted_at) {
+      return reply.status(404).send({
+        success: false,
+        error: { code: ERROR_CODES.NOT_FOUND, message: 'Account not found' },
+      });
+    }
+
+    let chatMediaUrls: string[] = [];
+    try {
+      await transaction(async (q) => {
+        // Collect chat media files for MinIO cleanup after commit
+        const mediaResult = await q(
+          `SELECT cm.url, cm.thumbnail_url
+           FROM ${TABLES.CHAT_MEDIA} cm
+           JOIN ${TABLES.MESSAGES} msg ON msg.id = cm.message_id
+           JOIN ${TABLES.MATCHES} m ON m.id = msg.match_id
+           WHERE m.user_a_id = $1 OR m.user_b_id = $1`,
+          [userId],
+        );
+        for (const row of mediaResult.rows) {
+          if (row.url) chatMediaUrls.push(row.url);
+          if (row.thumbnail_url) chatMediaUrls.push(row.thumbnail_url);
+        }
+
+        // Matches vanish — messages + chat_media and reservations cascade
+        await q(`DELETE FROM ${TABLES.MATCHES} WHERE user_a_id = $1 OR user_b_id = $1`, [userId]);
+
+        // User-owned records
+        await q(`DELETE FROM ${TABLES.PROFILE_PHOTOS} WHERE user_id = $1`, [userId]);
+        await q(`DELETE FROM ${TABLES.USER_PREFERENCES} WHERE user_id = $1`, [userId]);
+        await q(`DELETE FROM ${TABLES.USER_INTERESTS} WHERE user_id = $1`, [userId]);
+        await q(`DELETE FROM ${TABLES.KYC_DOCUMENTS} WHERE user_id = $1`, [userId]);
+        await q(`DELETE FROM ${TABLES.PUSH_TOKENS} WHERE user_id = $1`, [userId]);
+        await q(`DELETE FROM ${TABLES.SUBSCRIPTION_LEDGER} WHERE user_id = $1`, [userId]);
+        await q(`DELETE FROM ${TABLES.WINDOW_PARTICIPANTS} WHERE user_id = $1`, [userId]);
+        await q(`DELETE FROM ${TABLES.DUO_CREWS} WHERE creator_id = $1 OR invitee_id = $1`, [userId]);
+        await q(`DELETE FROM ${TABLES.USER_INTERACTIONS} WHERE actor_id = $1 OR target_id = $1`, [userId]);
+        await q(`DELETE FROM ${TABLES.VIBE_CHECKS} WHERE user_a_id = $1 OR user_b_id = $1`, [userId]);
+        // transactions + audit_log: retained by design
+
+        // Tombstone the user row — scrub all PII
+        await q(
+          `UPDATE ${TABLES.USERS} SET
+             deleted_at = NOW(),
+             is_active = FALSE,
+             is_banned = FALSE,
+             phone = NULL,
+             email = NULL,
+             password_hash = NULL,
+             auth_provider = NULL,
+             auth_provider_id = NULL,
+             display_name = NULL,
+             date_of_birth = NULL,
+             gender = NULL,
+             pronouns = NULL,
+             bio = NULL,
+             occupation = NULL,
+             education = NULL,
+             latitude = NULL,
+             longitude = NULL,
+             h3_index = NULL,
+             location_updated_at = NULL,
+             city = NULL,
+             county = NULL,
+             region = NULL,
+             country = NULL,
+             pose_photo_url = NULL,
+             dating_category = NULL,
+             about_answers = NULL,
+             phone_verified = FALSE,
+             email_verified = FALSE,
+             kyc_status = 'unverified',
+             liveness_status = 'unverified',
+             is_verified = FALSE
+           WHERE id = $1`,
+          [userId],
+        );
+
+        // Audit trail of the deletion itself
+        await q(
+          `INSERT INTO ${TABLES.AUDIT_LOG} (user_id, action, entity_type, entity_id)
+           VALUES ($1, 'account.deleted', 'user', $1)`,
+          [userId],
+        );
+      });
+
+      // ── Post-commit best-effort cleanup (non-critical) ──
+      await deleteAllUserPhotos(userId).catch((err: Error) => {
+        console.error(`[DeleteAccount] Failed to delete MinIO photos for ${userId}:`, err.message);
+      });
+      for (const url of chatMediaUrls) {
+        const key = chatMediaKeyFromUrl(url);
+        if (!key) continue;
+        await deleteChatFile(key).catch((err: Error) => {
+          console.error(`[DeleteAccount] Failed to delete chat file ${key}:`, err.message);
+        });
+        // Plain /uploads/ webp files also have a thumbnail
+        if (url.startsWith('/uploads/') && key.endsWith('.webp')) {
+          const thumbKey = key.replace('.webp', '_thumb.webp');
+          await deleteChatFile(thumbKey).catch(() => {});
+        }
+      }
+
+      await eventBus.sendUserEvent({ type: 'user.deleted', payload: { userId } }).catch((err: Error) => {
+        console.error('[DeleteAccount] Failed to publish user.deleted event:', err.message);
+      });
+
+      return reply.send({ success: true, data: { deleted: true } });
+    } catch (err: any) {
+      console.error(`[DeleteAccount] Failed for user ${userId}:`, err?.message || err);
+      return reply.status(500).send({
+        success: false,
+        error: { code: ERROR_CODES.INTERNAL_ERROR, message: 'Failed to delete account' },
       });
     }
   });
