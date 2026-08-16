@@ -426,7 +426,12 @@ export async function matchRoutes(app: FastifyInstance) {
               pp.thumbnail_url as thumbnail_url
        FROM ${TABLES.USER_INTERACTIONS} ui
        JOIN ${TABLES.USERS} u ON u.id = ui.actor_id
-       LEFT JOIN ${TABLES.PROFILE_PHOTOS} pp ON pp.user_id = u.id AND pp.is_primary = TRUE
+       LEFT JOIN LATERAL (
+         SELECT url, thumbnail_url
+         FROM ${TABLES.PROFILE_PHOTOS}
+         WHERE user_id = u.id AND is_primary = TRUE
+         LIMIT 1
+       ) pp ON TRUE
        WHERE ui.target_id = $1
         AND ui.action IN ('like', 'super_like')
         AND ui.is_mutual = FALSE

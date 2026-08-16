@@ -293,9 +293,10 @@ export const ChatScreen: React.FC<{ navigation: any; route: any }> = ({ navigati
     try {
       const res = await api.sendMessage(matchId, text);
       if (res.success && res.data) {
-        setMessages((prev) => prev.map((m) =>
-          m.id === tempId ? { ...m, id: res.data!.id } : m,
-        ));
+        // If the real id already arrived (socket echo / reconnect sync), drop the temp
+        setMessages((prev) => prev.some((m) => m.id === res.data!.id)
+          ? prev.filter((m) => m.id !== tempId)
+          : prev.map((m) => (m.id === tempId ? { ...m, id: res.data!.id } : m)));
       }
     } catch {
       // Keep the message
@@ -335,18 +336,20 @@ export const ChatScreen: React.FC<{ navigation: any; route: any }> = ({ navigati
     try {
       const res = await api.sendMediaMessage(matchId, uri, mediaType, undefined, applyViewOnce, durationSecs);
       if (res.success && res.data) {
-        // Replace temp with confirmed message
-        setMessages((prev) => prev.map((m) =>
-          m.id === tempId ? {
-            id: res.data.id,
-            matchId: res.data.matchId,
-            senderId: res.data.senderId,
-            content: res.data.content,
-            createdAt: res.data.createdAt,
-            readAt: null,
-            media: res.data.media,
-          } : m,
-        ));
+        // Replace temp with confirmed message; drop the temp if the real id already arrived
+        setMessages((prev) => prev.some((m) => m.id === res.data.id)
+          ? prev.filter((m) => m.id !== tempId)
+          : prev.map((m) =>
+            m.id === tempId ? {
+              id: res.data.id,
+              matchId: res.data.matchId,
+              senderId: res.data.senderId,
+              content: res.data.content,
+              createdAt: res.data.createdAt,
+              readAt: null,
+              media: res.data.media,
+            } : m,
+          ));
       }
     } catch (err: any) {
       // Remove failed temp message and show error
