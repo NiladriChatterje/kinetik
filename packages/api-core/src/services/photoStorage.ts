@@ -137,7 +137,7 @@ export async function savePhoto(
   // ── Generate thumbnail ──────────────────────────────────
   const thumbKey = `${userId}/${photoId}_thumb.webp`;
   const thumbBuffer = await sharp(fileBuffer)
-    .resize(THUMB_SIZE, THUMB_SIZE, { fit: 'cover', position: 'centre' })
+    .resize(THUMB_SIZE, THUMB_SIZE, { fit: 'inside' })
     .webp({ quality: 75, effort: 4 })
     .toBuffer();
 

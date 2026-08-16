@@ -733,6 +733,7 @@ const styles = StyleSheet.create({
     height: SCREEN_HEIGHT * 0.55,
     overflow: 'hidden',
     position: 'relative',
+    backgroundColor: colors.surfaceHighlight,
   },
   photoWrapper: {
     width: '100%',
@@ -741,7 +742,7 @@ const styles = StyleSheet.create({
   cardImage: {
     width: '100%',
     height: '100%',
-    resizeMode: 'cover',
+    resizeMode: 'contain',
   },
   noPhoto: {
     justifyContent: 'center',
