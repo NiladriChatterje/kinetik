@@ -12,6 +12,7 @@ import { FlashWindowHandler } from './handlers/flashWindow';
 import { VibeCheckHandler } from './handlers/vibeCheck';
 import { PresenceHandler } from './handlers/presence';
 import { ChatHandler } from './handlers/chat';
+import { MatchEngine } from './services/matchEngine';
 
 const PORT = parseInt(process.env.PORT || '3002', 10);
 const JWT_SECRET = process.env.JWT_SECRET || 'super-secret-jwt-key-change-in-production-2024';
@@ -41,6 +42,10 @@ const eventBusClient = new Redis({
   enableOfflineQueue: false,
 });
 
+// eventBusClient is in subscriber mode — publishing (match.found from the
+// in-process match engine) needs its own connection
+const eventBusPub = eventBusClient.duplicate();
+
 // ioredis emits 'error' on connection failures — without a listener an
 // unhandled 'error' event crashes the process (and Docker restarts it in a
 // loop). Log instead; retryStrategy keeps reconnecting.
@@ -48,6 +53,7 @@ for (const [label, client] of [
   ['main', pubClient],
   ['main-sub', subClient],
   ['event-bus', eventBusClient],
+  ['event-bus-pub', eventBusPub],
 ] as const) {
   client.on('error', (err) => {
     console.error(`[Redis:${label}] connection error:`, err.message);
@@ -140,6 +146,10 @@ io.on('connection', (socket) => {
   });
 });
 
+// ─── In-process match engine (ported from match-engine-py) ─
+// Purely spatial random matching for flash windows — see services/matchEngine.ts
+const matchEngine = new MatchEngine(pubClient, eventBusPub);
+
 // ─── Start Event Bus Subscriber (replaces Kafka consumer) ─
 async function startEventBusSubscriber() {
   // Subscribe to event bus channels
@@ -157,6 +167,12 @@ async function startEventBusSubscriber() {
       switch (channel) {
         case EVENT_BUS_CHANNELS.WINDOW_EVENTS:
           flashWindowNsp.emit('window:event', event);
+
+          // A user joined a flash window — attempt a spatial match now.
+          // Per-user Redis NX locks make this safe across instances.
+          if (event.type === 'window.joined' && event.payload?.windowId && event.payload?.userId) {
+            matchEngine.onWindowJoined(event.payload.windowId, event.payload.userId);
+          }
           break;
 
         case EVENT_BUS_CHANNELS.MATCH_EVENTS:
@@ -237,6 +253,7 @@ async function bootstrap() {
       waitForRedisReady(pubClient, 'main'),
       waitForRedisReady(subClient, 'main-sub'),
       waitForRedisReady(eventBusClient, 'event-bus'),
+      waitForRedisReady(eventBusPub, 'event-bus-pub'),
     ]);
 
     io.adapter(createAdapter(pubClient, subClient));
@@ -263,7 +280,9 @@ async function bootstrap() {
 // Graceful shutdown
 process.on('SIGTERM', async () => {
   console.log('SIGTERM received. Shutting down...');
+  matchEngine.stop();
   await eventBusClient.quit();
+  await eventBusPub.quit();
   io.close();
   pubClient.quit();
   subClient.quit();
@@ -272,7 +291,9 @@ process.on('SIGTERM', async () => {
 
 process.on('SIGINT', async () => {
   console.log('SIGINT received. Shutting down...');
+  matchEngine.stop();
   await eventBusClient.quit();
+  await eventBusPub.quit();
   io.close();
   pubClient.quit();
   subClient.quit();

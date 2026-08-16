@@ -378,69 +378,6 @@ services:
           memory: 256M
     logging: *default-logging
 
-  # ─── Match Engine (Python / H3 spatial matching) ───────────
-  match-engine:
-    build:
-      context: packages/match-engine-py
-      dockerfile: Dockerfile
-    container_name: kinetik-match-engine
-    restart: unless-stopped
-    ports:
-      - "${MATCH_ENGINE_PORT:-3003}:3003"
-    environment:
-      ENVIRONMENT: ${ENVIRONMENT:-development}
-      PORT: 3003
-      HOST: "0.0.0.0"
-      REDIS_HOST: redis
-      REDIS_PORT: 6379
-      REDIS_PASSWORD: ${REDIS_PASSWORD:-kinetik_redis_2024}
-      REDIS_EVENTS_HOST: redis-events
-      REDIS_EVENTS_PORT: 6379
-      REDIS_EVENTS_PASSWORD: ${REDIS_EVENTS_PASSWORD:-kinetik_events_2024}
-      DATABASE_URL: postgresql://${POSTGRES_USER:-kinetik}:${POSTGRES_PASSWORD:-kinetik_dev_2024}@postgres:5432/${POSTGRES_DB:-kinetik}
-    depends_on:
-      redis:
-        condition: service_healthy
-      redis-events:
-        condition: service_healthy
-    deploy:
-      resources:
-        limits:
-          cpus: "1.5"
-          memory: 1G
-    logging: *default-logging
-
-  # ─── Match Engine Celery Worker ──────────────────────────
-  match-engine-worker:
-    build:
-      context: packages/match-engine-py
-      dockerfile: Dockerfile
-    container_name: kinetik-match-engine-worker
-    restart: unless-stopped
-    entrypoint: ["/bin/bash", "entrypoint-celery.sh"]
-    environment:
-      ENVIRONMENT: ${ENVIRONMENT:-development}
-      REDIS_HOST: redis
-      REDIS_PORT: 6379
-      REDIS_PASSWORD: ${REDIS_PASSWORD:-kinetik_redis_2024}
-      REDIS_EVENTS_HOST: redis-events
-      REDIS_EVENTS_PORT: 6379
-      REDIS_EVENTS_PASSWORD: ${REDIS_EVENTS_PASSWORD:-kinetik_events_2024}
-      DATABASE_URL: postgresql://${POSTGRES_USER:-kinetik}:${POSTGRES_PASSWORD:-kinetik_dev_2024}@postgres:5432/${POSTGRES_DB:-kinetik}
-      CELERY_CONCURRENCY: ${CELERY_CONCURRENCY:-2}
-      CELERY_LOG_LEVEL: info
-    depends_on:
-      redis:
-        condition: service_healthy
-      match-engine:
-        condition: service_started
-    deploy:
-      resources:
-        limits:
-          cpus: "1.0"
-          memory: 1G
-    logging: *default-logging
-
 volumes:
   postgres-data:
   redis-data:

@@ -19,14 +19,15 @@ Each part of the app gets a free home. "Sleeps" means the free host pauses the s
 | Photo / media storage | **Cloudflare R2** | ✅ | Never |
 | Voice & video calls | **LiveKit Cloud** (Build plan) | ✅ | Never |
 | api-core (the main server) | **Render** free web service | ✅ | After 15 min → ping keeps it awake |
-| realtime (chat sockets) | **Koyeb** free account #1 | ✅ | After 1 h → ping keeps it awake |
-| match-engine (Python matching) | **Koyeb** free account #2 | ✅ | After 1 h → ping keeps it awake |
+| realtime (chat sockets + flash-window matching) | **Koyeb** free account | ✅ | After 1 h → ping keeps it awake |
 | pose-service (selfie check) | **Not deployed** — optional, see §9 | ✅ | — |
 | Push notifications | Expo Push | ✅ | Never |
 | Address lookup (geocoding) | Geoapify (3,000/day) | ✅ | Never |
 | Uptime pings + error logs | UptimeRobot, Sentry, Better Stack | ✅ | Never |
 
-**Accounts you'll create:** Neon, Upstash, Cloudflare, LiveKit, Render (1), Koyeb (2 — one per service), UptimeRobot. All free, none ask for a card.
+**Accounts you'll create:** Neon, Upstash, Cloudflare, LiveKit, Render (1), Koyeb (1), UptimeRobot. All free, none ask for a card.
+
+> The Python match-engine was retired — flash-window matching now runs inside the realtime service, so there's no separate matching service to host at all.
 
 ---
 
@@ -41,25 +42,7 @@ Upstash only accepts encrypted connections. Add **one line** — `tls: {},` — 
 1. `packages/api-core/src/services/redis.ts`
 2. `packages/api-core/src/services/eventBus.ts` (inside `getPublisher()`)
 3. `packages/api-core/src/index.ts` (the Redis passed to the rate limiter)
-4. `packages/realtime/src/index.ts` — **two spots**: the `pubClient` and the `eventBusClient`
-
-Python side (match-engine):
-
-5. `packages/match-engine-py/src/services/redis_client.py` — change `redis://` to `rediss://` (the extra "s" turns on encryption)
-6. `packages/match-engine-py/src/services/event_bus.py` — add `ssl=True` to the `AsyncRedis(...)` call
-
-### 2b. Run matching jobs inside the main process (drop the Celery worker)
-
-The free plan has no room for a separate background worker. In `packages/match-engine-py/src/main.py`, in the event handler, change:
-
-```python
-# BEFORE:
-find_match.apply_async(args=[uid, wid])
-# AFTER:
-await asyncio.to_thread(find_match.apply, args=[uid, wid])
-```
-
-Same behavior at small scale — and you simply don't deploy the worker.
+4. `packages/realtime/src/index.ts` — **two spots**: the `pubClient` and the `eventBusClient` (the `eventBusPub` and `subClient` are duplicates and inherit it)
 
 That's everything. All other "changes" are just filling in web addresses and passwords (environment variables, §12).
 
@@ -163,20 +146,13 @@ Free: 512 MB RAM, 750 hours/month — exactly enough to keep **one** service awa
 
 ---
 
-## 8. Chat server (realtime) + matching (match-engine) → Koyeb ×2
+## 8. Chat server (realtime, includes matching) → Koyeb
 
-Free per account: 512 MB RAM, one web service, no card. So: **two Koyeb accounts** (different emails).
+Free: 512 MB RAM, one web service, no card. One account is enough — flash-window matching runs inside this service.
 
-**Account #1 — realtime:**
 - Build: `npm install && npm run build -w packages/shared && npm run build -w packages/realtime`
 - Run: `node packages/realtime/dist/index.js` · Port: `3002`
 - Variables: §12. **`JWT_SECRET` must be exactly the same as api-core's** — otherwise every chat connection is rejected.
-
-**Account #2 — match-engine:**
-- Build method: Dockerfile → `packages/match-engine-py/Dockerfile` · Port: `3003`
-- Variables: §12, plus `PORT=3003`, `ENVIRONMENT=production`.
-- If the Docker build fails over folder paths, build natively instead: build `cd packages/match-engine-py && pip install -r requirements-lock.txt`, run `cd packages/match-engine-py && python -m src.main`.
-- The Celery worker is **not deployed** — §2b folded it into this service.
 
 ---
 
@@ -258,20 +234,12 @@ EXPO_ACCESS_TOKEN=                       # optional
 POSE_SERVICE_URL=                        # leave empty
 ```
 
-### realtime (Koyeb #1)
+### realtime (Koyeb)
 ```
 JWT_SECRET=<same as api-core>
 DATABASE_URL=<same as api-core>
 REDIS_HOST / REDIS_PORT / REDIS_PASSWORD            = same as api-core
 REDIS_EVENTS_HOST / REDIS_EVENTS_PORT / REDIS_EVENTS_PASSWORD = same as api-core
-```
-
-### match-engine (Koyeb #2)
-```
-ENVIRONMENT=production
-PORT=3003
-DATABASE_URL=<same as api-core>
-REDIS_* and REDIS_EVENTS_*              = same as api-core
 ```
 
 ---
@@ -284,21 +252,19 @@ Free: 50 monitors, checks every 5 minutes. These pings double as health checks:
 |---|---|
 | api-core | `https://<api-core>.onrender.com/health` |
 | realtime | `https://<realtime>.koyeb.app/socket.io/?EIO=4&transport=polling` |
-| match-engine | `https://<match>.koyeb.app/health` |
 
 ---
 
 ## 14. Deployment checklist
 
-- [ ] Code tweaks (§2): 5 Node TLS lines, 2 Python TLS tweaks, 1 Celery line
+- [ ] Code tweaks (§2): 5 Node TLS lines
 - [ ] Neon: project → **pooled** `DATABASE_URL` → run migrations
 - [ ] Upstash: `kinetik-cache` + `kinetik-events` → **claim both** → copy hosts/tokens
 - [ ] Cloudflare R2: bucket → API token → public access → CORS
 - [ ] LiveKit Cloud: project → host + key + secret
 - [ ] Render: deploy api-core → env vars → note the URL
-- [ ] Koyeb #1: deploy realtime → env vars → note the URL
-- [ ] Koyeb #2: deploy match-engine → env vars → note the URL
-- [ ] UptimeRobot: 3 monitors (§13) — this is what keeps everything awake
+- [ ] Koyeb: deploy realtime → env vars → note the URL
+- [ ] UptimeRobot: 2 monitors (§13) — this is what keeps everything awake
 - [ ] Mobile: `apiUrl`/`wsUrl` in `app.json` → `eas build` → APK to GitHub Releases
 - [ ] Test the loop: signup (code `123456`) → onboarding → photo upload → like → match → chat → call
 
@@ -336,5 +302,5 @@ The repo's `docker-compose.yml` runs the entire stack unchanged, so upgrading is
 4. **`JWT_SECRET` must be byte-identical** on api-core and realtime.
 5. **The login code is hardcoded `123456`** — change it before you pay for SMS.
 6. **`MINIO_ENDPOINT` must NOT include `https://`** — the code prepends the scheme itself; doubling it breaks uploads.
-7. **A sleeping match-engine misses match events** (they're fire-and-forget) — the UptimeRobot ping is what prevents this.
+7. **A sleeping realtime service misses window-join events** (they're fire-and-forget), which delays flash-window matching — the UptimeRobot ping is what prevents this.
 8. **Back up Neon weekly** — free tiers have no backups. A free GitHub Actions cron running `pg_dump` → upload to R2 covers it.
