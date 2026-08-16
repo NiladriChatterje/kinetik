@@ -581,7 +581,8 @@ export const MatchScreen: React.FC<{ navigation: any; route?: any }> = ({ naviga
   return (
     <SafeAreaView style={styles.container}>
       <View style={styles.header}>
-        <Text style={styles.headerTitle}>Discover</Text>          <TouchableOpacity onPress={() => navigation.navigate('Likes')}>
+        <Text style={styles.headerTitle}>Discover</Text>
+          <TouchableOpacity onPress={() => navigation.navigate('Likes')}>
             <View style={styles.likesBadge}>
               <Ionicons name="heart-outline" size={22} color={colors.textPrimary} />
               {unreadLikeCount > 0 && (
