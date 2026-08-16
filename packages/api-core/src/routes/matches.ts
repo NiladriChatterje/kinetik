@@ -340,7 +340,19 @@ export async function matchRoutes(app: FastifyInstance) {
             );
             const swiperPhotoUrl = swiperPhotoResult.rows[0]?.photo_url || '';
 
-            // Publish `match.created` event via Redis event bus
+            // Auto-send an opening line as the first message. Insert it
+            // BEFORE publishing match.created so that the moment either
+            // side receives match:new, the conversation (and its unread
+            // state) already exists server-side — clients refetch on
+            // match:new and must not race a not-yet-written message.
+            await sendOpeningLineAsMessage(match.id, userId, targetUserId);
+
+            // Publish `match.created` event via Redis event bus.
+            // initiatorId = the user who completed the match (the one who
+            // liked back / swiped last). The realtime service passes it
+            // through so the client shows the "It's a Match!" modal only to
+            // this user — the other side learns about the match via the
+            // chat badge (the opening line counts as an unseen message).
             await eventBus.publish(EVENT_BUS_CHANNELS.MATCH_EVENTS, {
               type: 'match.created',
               payload: {
@@ -351,14 +363,12 @@ export async function matchRoutes(app: FastifyInstance) {
                 userAPhotoUrl: swiperPhotoUrl,
                 userBName: partnerName,
                 userBPhotoUrl: partnerPhotoUrl,
+                initiatorId: userId,
                 timestamp: new Date().toISOString(),
               },
             }).catch((err) => {
               console.error('[EventBus] Failed to publish match.created:', err);
             });
-
-            // Auto-send an opening line as the first message
-            await sendOpeningLineAsMessage(match.id, userId, targetUserId);
 
             // Send new message notification instead of match notification
             await notificationEvents.newMessage(targetUserId, swiperName, 'You have a new match! Say hi');
@@ -542,10 +552,17 @@ export async function matchRoutes(app: FastifyInstance) {
       const responderName = responderResult.rows[0]?.display_name || 'Someone';
       const responderPhotoUrl = responderResult.rows[0]?.photo_url || '';
 
-      // Publish `match.created` event via Redis event bus
+      // Auto-send an opening line as the first message. Insert it BEFORE
+      // publishing match.created so the conversation and its unread state
+      // already exist when either side receives match:new (see /swipe).
+      await sendOpeningLineAsMessage(match.id, userId, targetUserId);
+
+      // Publish `match.created` event via Redis event bus.
       // The realtime service uses:
       //   - userAId (original liker) → sees userBName as their partner's name
       //   - userBId (responder)       → sees userAName as their partner's name
+      // initiatorId = the responder (the one who liked back) — the only user
+      // who should get the "It's a Match!" modal.
       await eventBus.publish(EVENT_BUS_CHANNELS.MATCH_EVENTS, {
         type: 'match.created',
         payload: {
@@ -556,14 +573,12 @@ export async function matchRoutes(app: FastifyInstance) {
           userAPhotoUrl: partnerPhotoUrl,  // original liker's photo — shown to responder
           userBName: responderName,        // responder's name — shown to original liker
           userBPhotoUrl: responderPhotoUrl,// responder's photo — shown to original liker
+          initiatorId: userId,
           timestamp: new Date().toISOString(),
         },
       }).catch((err) => {
         console.error('[EventBus] Failed to publish match.created:', err);
       });
-
-      // Auto-send an opening line as the first message
-      await sendOpeningLineAsMessage(match.id, userId, targetUserId);
 
       // Notify both users via new message notification
       await notificationEvents.newMessage(userId, partnerName, 'You have a new match! Say hi');

@@ -168,6 +168,7 @@ async function startEventBusSubscriber() {
               userAId, userBId, matchId,
               userAName, userBName,
               userAPhotoUrl, userBPhotoUrl,
+              initiatorId,
             } = event.payload;
             const timestamp = event.payload.timestamp || new Date().toISOString();
 
@@ -176,6 +177,7 @@ async function startEventBusSubscriber() {
               partnerId: userBId,
               partnerName: userBName || 'Someone',
               partnerPhotoUrl: userBPhotoUrl || '',
+              initiatorId,
               timestamp,
             };
             const payloadForB = {
@@ -183,6 +185,7 @@ async function startEventBusSubscriber() {
               partnerId: userAId,
               partnerName: userAName || 'Someone',
               partnerPhotoUrl: userAPhotoUrl || '',
+              initiatorId,
               timestamp,
             };
 

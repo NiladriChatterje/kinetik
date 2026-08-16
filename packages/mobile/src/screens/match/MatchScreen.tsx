@@ -366,14 +366,24 @@ export const MatchScreen: React.FC<{ navigation: any; route?: any }> = ({ naviga
           prev.filter((p, i) => i < currentIndexRef.current || p.userId !== data.partnerId),
         );
       }
-      // Show the match popup
-      setMatchPopup({
-        visible: true,
-        matchId: data.matchId,
-        partnerId: data.partnerId || '',
-        partnerName: data.partnerName || 'Someone',
-        partnerPhotoUrl: data.partnerPhotoUrl || undefined,
-      });
+      // The animated MatchPopup is only for the user who completed the match
+      // (the one who liked back / swiped last — `initiatorId`). The other
+      // side — the user whose profile was liked back — gets no modal; the
+      // chat badge signals the new conversation instead. If `initiatorId` is
+      // missing (pre-update server), fall back to the old show-to-both
+      // behavior. Read the id via getState() so this mount-time closure never
+      // goes stale.
+      const myUserId = useAuthStore.getState().user?.id;
+      const isMatchInitiator = !data.initiatorId || data.initiatorId === myUserId;
+      if (isMatchInitiator) {
+        setMatchPopup({
+          visible: true,
+          matchId: data.matchId,
+          partnerId: data.partnerId || '',
+          partnerName: data.partnerName || 'Someone',
+          partnerPhotoUrl: data.partnerPhotoUrl || undefined,
+        });
+      }
       // Fetch profiles again to refresh
       fetchProfiles();
       fetchUnreadLikeCount();

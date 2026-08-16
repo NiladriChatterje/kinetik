@@ -13,6 +13,12 @@ let chatsSocketHandlers: {
   onMatchNew: (data: any) => void;
 } | null = null;
 
+// Bookkeeping for the chat badge: the badge counts DISTINCT conversations
+// (users) with unseen messages, so track which matchIds have already been
+// counted by the live socket handler. Rebuilt from server truth by
+// fetchUnreadChatCount, cleared by resetUnreadChatCount/logout.
+let countedUnreadMatchIds = new Set<string>();
+
 interface User {
   id: string;
   phone?: string;
@@ -378,16 +384,24 @@ export const useAuthStore = create<AuthState>((set, get) => ({
       }
     };
 
-    // Real-time incoming message -> unread badge count
+    // Real-time incoming message -> unread badge count. Counts DISTINCT
+    // conversations with unseen messages ("how many users"), not messages:
+    // a conversation already counted is not counted again until the badge is
+    // reset or re-synced from the server.
     const onChatMessage = (data: any) => {
       if (!data || data.senderId === get().user?.id) return;
-      const current = get().unreadChatCount;
-      set({ unreadChatCount: current + 1 });
+      if (countedUnreadMatchIds.has(data.matchId)) return;
+      countedUnreadMatchIds.add(data.matchId);
+      set({ unreadChatCount: countedUnreadMatchIds.size });
     };
 
-    // A new match opens a new chat room — join it so its messages arrive here
+    // A new match opens a new chat room — join it so its messages arrive
+    // here, and re-sync the badge from the server: a fresh match ships an
+    // opening-line message from the other side, which may have been
+    // broadcast before this client joined the new room.
     const onMatchNew = (data: any) => {
       if (data?.matchId) socket.emit('chat:join', { matchId: data.matchId });
+      get().fetchUnreadChatCount();
     };
 
     socket.on('connect', joinAllRooms);
@@ -416,23 +430,29 @@ export const useAuthStore = create<AuthState>((set, get) => ({
     try {
       const res = await api.getConversations();
       if (res.success && res.data?.conversations) {
-        const total = res.data.conversations.reduce(
-          (sum: number, conv: any) => sum + (conv.unreadCount || 0),
-          0,
+        // Badge = number of distinct conversations (users) with at least one
+        // unseen message — not the total count of unseen messages.
+        const unreadConvs = res.data.conversations.filter(
+          (conv: any) => (conv.unreadCount || 0) > 0,
         );
-        set({ unreadChatCount: total });
+        countedUnreadMatchIds = new Set(unreadConvs.map((conv: any) => conv.matchId));
+        set({ unreadChatCount: unreadConvs.length });
       }
     } catch {
       // Silently fail
     }
   },
 
-  resetUnreadChatCount: () => set({ unreadChatCount: 0 }),
+  resetUnreadChatCount: () => {
+    countedUnreadMatchIds.clear();
+    set({ unreadChatCount: 0 });
+  },
 
   logout: () => {
     get().disconnectLikesSocket();
     get().disconnectChatsSocket();
     closeCallSocket();
+    countedUnreadMatchIds.clear();
     api.setToken(null);
     set({
       user: null, token: null, isAuthenticated: false,
@@ -450,6 +470,7 @@ export const useAuthStore = create<AuthState>((set, get) => ({
         get().disconnectLikesSocket();
         get().disconnectChatsSocket();
         closeCallSocket();
+        countedUnreadMatchIds.clear();
         api.setToken(null);
         set({
           user: null, token: null, isAuthenticated: false,
