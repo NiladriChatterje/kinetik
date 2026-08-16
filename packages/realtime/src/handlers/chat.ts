@@ -163,6 +163,19 @@ export class ChatHandler {
       return;
     }
 
+    // A scheduled date was fixed for a match — surface it to everyone in the
+    // room so an open DM shows the pinned banner live on both ends
+    if (payload.type === 'date:set') {
+      if (payload.matchId) {
+        this.emitToLocalRoom(`match:${payload.matchId}`, 'date:set', {
+          matchId: payload.matchId,
+          dateScheduled: payload.dateScheduled || null,
+          setByUserId: payload.setByUserId,
+        });
+      }
+      return;
+    }
+
     if (payload.matchId) {
       this.broadcastMessage(payload.matchId, payload);
     }

@@ -51,6 +51,53 @@ interface Message {
 const SCREEN_WIDTH = Dimensions.get('window').width;
 const SCREEN_HEIGHT = Dimensions.get('window').height;
 
+// ─── Fix-a-Date helpers ──────────────────────────────────
+// The scheduled date is stored as a plain 'YYYY-MM-DD' (the sender's local
+// calendar day) so BOTH users see the same day regardless of timezone — the
+// string is never round-tripped through a Date that could shift a day.
+function toDateStr(d: Date): string {
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+}
+
+function todayDateStr(): string {
+  return toDateStr(new Date());
+}
+
+// 'YYYY-MM-DD' → 'Fri, Aug 21' (built from the string's parts — no drift)
+function formatScheduledDate(dateStr: string): string {
+  const [y, m, d] = dateStr.split('-').map(Number);
+  if (!y || !m || !d) return dateStr;
+  return new Date(y, m - 1, d).toLocaleDateString(undefined, {
+    weekday: 'short',
+    month: 'short',
+    day: 'numeric',
+  });
+}
+
+// Picker options — today plus the next 13 days
+const DATE_OPTIONS: { date: string; top: string; day: number }[] = (() => {
+  const now = new Date();
+  const out: { date: string; top: string; day: number }[] = [];
+  for (let i = 0; i < 14; i++) {
+    const d = new Date(now.getFullYear(), now.getMonth(), now.getDate() + i);
+    out.push({
+      date: toDateStr(d),
+      top:
+        i === 0
+          ? 'Today'
+          : i === 1
+            ? 'Tomorrow'
+            : d.toLocaleDateString(undefined, { weekday: 'short' }),
+      day: d.getDate(),
+    });
+  }
+  return out;
+})();
+
+// Rose accent used for the pinned-date banner + picker (matches the app's
+// existing like/badge accent — the theme itself is monochrome)
+const ROSE = '#FF6B6B';
+
 export const ChatScreen: React.FC<{ navigation: any; route: any }> = ({ navigation, route }) => {
   const { matchId, partnerName: pName, partnerId: pId, partnerPhotoUrl: pPhoto } = route.params || {};
   const [messages, setMessages] = useState<Message[]>([]);
@@ -65,6 +112,12 @@ export const ChatScreen: React.FC<{ navigation: any; route: any }> = ({ navigati
   const [recordingDuration, setRecordingDuration] = useState(0);
   const [previewPhotoUrl, setPreviewPhotoUrl] = useState<string | null>(null);
   const [playingAudioId, setPlayingAudioId] = useState<string | null>(null);
+
+  // ─── Fix-a-Date State ────────────────────────────────
+  const [scheduledDate, setScheduledDate] = useState<string | null>(null); // 'YYYY-MM-DD'
+  const [showDatePicker, setShowDatePicker] = useState(false);
+  const [selectedDate, setSelectedDate] = useState<string | null>(null);
+  const [settingDate, setSettingDate] = useState(false);
 
   // ─── View-Once Media State ────────────────────────────
   const [viewOnce, setViewOnce] = useState(false); // Toggle in media picker
@@ -100,6 +153,20 @@ export const ChatScreen: React.FC<{ navigation: any; route: any }> = ({ navigati
   const isRecordingActiveRef = useRef(false);       // native session actually capturing
 
   const partnerName = pName || 'Stranger';
+
+  // ─── Load the pinned scheduled date (if any) ────────────
+  // Fetched on mount and on every socket (re)connect so a date fixed by the
+  // partner shows up even if this DM was opened before they set it.
+  const syncScheduledDate = useCallback(async () => {
+    try {
+      const res = await api.getMatchDetail(matchId);
+      if (res.success && res.data?.dateScheduled) {
+        setScheduledDate(res.data.dateScheduled);
+      }
+    } catch {
+      // Silent — retried on the next (re)connect
+    }
+  }, [matchId]);
 
   // ─── Fetch & merge message history ─────────────────────
   // Merges server history with what's already in state (live-arrived
@@ -137,6 +204,7 @@ export const ChatScreen: React.FC<{ navigation: any; route: any }> = ({ navigati
       // Re-sync history on every (re)connect — heals any message missed
       // while the socket was down or a broadcast was dropped
       syncMessages();
+      syncScheduledDate();
     };
 
     // Incoming message — from partner OR our own broadcast.
@@ -227,11 +295,18 @@ export const ChatScreen: React.FC<{ navigation: any; route: any }> = ({ navigati
       setSocketConnected(false);
     };
 
+    // A date was fixed (by either side) — update the pinned banner live
+    const onDateSet = (data: any) => {
+      if (data?.matchId !== matchId) return;
+      setScheduledDate(data.dateScheduled || null);
+    };
+
     socket.on('connect', onConnect);
     socket.on('chat:message', onChatMessage);
     socket.on('chat:read', onChatRead);
     socket.on('chat:typing', onChatTyping);
     socket.on('media:viewed', onMediaViewed);
+    socket.on('date:set', onDateSet);
     socket.on('disconnect', onDisconnect);
     // The shared socket is usually already connected when this screen mounts,
     // so 'connect' won't fire — run the join/read/sync sequence now
@@ -247,10 +322,11 @@ export const ChatScreen: React.FC<{ navigation: any; route: any }> = ({ navigati
       socket.off('chat:read', onChatRead);
       socket.off('chat:typing', onChatTyping);
       socket.off('media:viewed', onMediaViewed);
+      socket.off('date:set', onDateSet);
       socket.off('disconnect', onDisconnect);
       socketRef.current = null;
     };
-  }, [matchId, syncMessages]);
+  }, [matchId, syncMessages, syncScheduledDate]);
 
   // ─── Fetch message history ─────────────────────────
   useEffect(() => {
@@ -260,6 +336,11 @@ export const ChatScreen: React.FC<{ navigation: any; route: any }> = ({ navigati
       setLoading(false);
     })();
   }, [syncMessages]);
+
+  // ─── Fetch the pinned scheduled date on mount ───────
+  useEffect(() => {
+    syncScheduledDate();
+  }, [syncScheduledDate]);
 
   // ─── Scroll to bottom on new messages ──────────────
   useEffect(() => {
@@ -849,6 +930,25 @@ export const ChatScreen: React.FC<{ navigation: any; route: any }> = ({ navigati
     }
   };
 
+  // ─── Fix a date ────────────────────────────────────
+  const handleFixDate = async () => {
+    if (!selectedDate || settingDate) return;
+    setSettingDate(true);
+    try {
+      const res = await api.setMatchDate(matchId, selectedDate);
+      if (res.success && res.data?.dateScheduled) {
+        setScheduledDate(res.data.dateScheduled);
+        setShowDatePicker(false);
+      } else {
+        Alert.alert('Could not fix date', res.error?.message || 'Please try again.');
+      }
+    } catch (err: any) {
+      Alert.alert('Error', err.message || 'Could not fix the date. Please try again.');
+    } finally {
+      setSettingDate(false);
+    }
+  };
+
   // ─── Render media content for a message ────────────
   const renderMediaContent = (item: Message, isMine: boolean) => {
     if (!item.media) return null;
@@ -1082,6 +1182,18 @@ export const ChatScreen: React.FC<{ navigation: any; route: any }> = ({ navigati
           </Text>
         </View>
 
+        {/* Fix a date — opens the picker; the pinned date shows below the header */}
+        <TouchableOpacity
+          style={styles.callBtn}
+          onPress={() => {
+            setSelectedDate(scheduledDate || null);
+            setShowDatePicker(true);
+          }}
+          activeOpacity={0.7}
+        >
+          <Ionicons name="calendar-outline" size={20} color={colors.textPrimary} />
+        </TouchableOpacity>
+
         {/* 1:1 voice/video call (private date call) */}
         <TouchableOpacity
           style={styles.callBtn}
@@ -1099,6 +1211,17 @@ export const ChatScreen: React.FC<{ navigation: any; route: any }> = ({ navigati
           <Ionicons name="call" size={20} color={colors.textPrimary} />
         </TouchableOpacity>
       </View>
+
+      {/* Pinned scheduled date — sticky under the header, visible on both
+          ends. Hidden once the date has passed ("expired"). */}
+      {scheduledDate && scheduledDate >= todayDateStr() && (
+        <View style={styles.dateBanner}>
+          <Ionicons name="rose" size={15} color={ROSE} />
+          <Text style={styles.dateBannerText}>
+            Date fixed for {formatScheduledDate(scheduledDate)}
+          </Text>
+        </View>
+      )}
 
       {/* Messages */}
       <KeyboardAvoidingView
@@ -1388,6 +1511,67 @@ export const ChatScreen: React.FC<{ navigation: any; route: any }> = ({ navigati
             </TouchableOpacity>
           </View>
         </TouchableOpacity>
+      </Modal>
+
+      {/* ─── Fix-a-Date Picker Modal ────────────────────── */}
+      <Modal
+        visible={showDatePicker}
+        transparent
+        animationType="fade"
+        statusBarTranslucent
+        onRequestClose={() => setShowDatePicker(false)}
+      >
+        <View style={styles.datePickerOverlay}>
+          <View style={styles.datePickerCard}>
+            <View style={styles.datePickerHeader}>
+              <Ionicons name="rose" size={20} color={ROSE} />
+              <Text style={styles.datePickerTitle}>Fix a date</Text>
+            </View>
+            <Text style={styles.datePickerSubtitle}>
+              Pick a day for your date with {partnerName}
+            </Text>
+
+            <View style={styles.dateOptionsGrid}>
+              {DATE_OPTIONS.map((opt) => {
+                const selected = selectedDate === opt.date;
+                return (
+                  <TouchableOpacity
+                    key={opt.date}
+                    style={[styles.dateOption, selected && styles.dateOptionActive]}
+                    onPress={() => setSelectedDate(opt.date)}
+                    activeOpacity={0.7}
+                  >
+                    <Text
+                      style={[styles.dateOptionTop, selected && styles.dateOptionTextActive]}
+                      numberOfLines={1}
+                    >
+                      {opt.top}
+                    </Text>
+                    <Text style={[styles.dateOptionDay, selected && styles.dateOptionTextActive]}>
+                      {opt.day}
+                    </Text>
+                  </TouchableOpacity>
+                );
+              })}
+            </View>
+
+            <TouchableOpacity
+              style={[
+                styles.dateConfirmBtn,
+                (!selectedDate || settingDate) && styles.dateConfirmBtnDisabled,
+              ]}
+              onPress={handleFixDate}
+              disabled={!selectedDate || settingDate}
+              activeOpacity={0.7}
+            >
+              {settingDate ? (
+                <ActivityIndicator size="small" color={colors.textInverse} />
+              ) : (
+                <Text style={styles.dateConfirmText}>Confirm Date</Text>
+              )}
+            </TouchableOpacity>
+          </View>
+        </View>
       </Modal>
     </SafeAreaView>
   );
@@ -1936,4 +2120,81 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   mediaCancelText: { ...typography.button, color: colors.textPrimary },
+
+  // ─── Fix-a-Date banner + picker ──────────────────────
+  dateBanner: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: spacing.sm,
+    paddingVertical: spacing.sm,
+    backgroundColor: '#FFF1F1',
+    borderBottomWidth: 1,
+    borderBottomColor: colors.surfaceHighlight,
+  },
+  dateBannerText: {
+    ...typography.body2,
+    color: colors.textPrimary,
+    fontWeight: '600',
+  },
+  datePickerOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0,0,0,0.5)',
+    justifyContent: 'center',
+    alignItems: 'center',
+    padding: spacing.xxl,
+  },
+  datePickerCard: {
+    width: '100%',
+    maxWidth: 380,
+    backgroundColor: colors.background,
+    borderRadius: radius.lg,
+    padding: spacing.xl,
+  },
+  datePickerHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.sm,
+    marginBottom: spacing.xs,
+  },
+  datePickerTitle: { ...typography.h3, color: colors.textPrimary },
+  datePickerSubtitle: {
+    ...typography.body2,
+    color: colors.textSecondary,
+    marginBottom: spacing.lg,
+  },
+  dateOptionsGrid: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: spacing.sm,
+    marginBottom: spacing.xl,
+  },
+  dateOption: {
+    width: 44,
+    alignItems: 'center',
+    paddingVertical: spacing.sm,
+    borderRadius: radius.md,
+    backgroundColor: colors.surfaceHighlight,
+  },
+  dateOptionActive: { backgroundColor: ROSE },
+  dateOptionTop: {
+    ...typography.caption,
+    fontSize: 9,
+    color: colors.textMuted,
+    marginBottom: 2,
+  },
+  dateOptionDay: {
+    ...typography.body1,
+    color: colors.textPrimary,
+    fontWeight: '700',
+  },
+  dateOptionTextActive: { color: '#fff' },
+  dateConfirmBtn: {
+    backgroundColor: colors.textPrimary,
+    borderRadius: radius.full,
+    paddingVertical: spacing.md,
+    alignItems: 'center',
+  },
+  dateConfirmBtnDisabled: { opacity: 0.4 },
+  dateConfirmText: { ...typography.button, color: colors.textInverse },
 });

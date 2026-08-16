@@ -1224,6 +1224,70 @@ export async function matchRoutes(app: FastifyInstance) {
     });
   });
 
+  // ─── Fix a Date ──────────────────────────────────────
+  // Stores a date both users have agreed on for their meet-up (the DM
+  // "fix a date" flow). The date is a plain YYYY-MM-DD (the sender's local
+  // calendar day) so both ends display the same day regardless of timezone.
+  // The row is kept after the date passes — the client treats a date before
+  // "today" as expired and stops showing the pinned banner.
+  app.put('/:id/date', async (request: FastifyRequest<{ Params: { id: string } }>, reply: FastifyReply) => {
+    const { sub: userId } = request.user as any;
+    const { id: matchId } = request.params;
+    const { date } = request.body as { date?: string };
+
+    // Validate YYYY-MM-DD format AND that it is a real calendar date
+    // (e.g. 2026-02-31 is rejected even though it matches the regex)
+    if (!date || !/^\d{4}-\d{2}-\d{2}$/.test(date)) {
+      return reply.status(400).send({
+        success: false,
+        error: { code: ERROR_CODES.VALIDATION_ERROR, message: 'date (YYYY-MM-DD) is required' },
+      });
+    }
+    const [y, m, d] = date.split('-').map(Number);
+    const parsed = new Date(Date.UTC(y, m - 1, d));
+    if (
+      parsed.getUTCFullYear() !== y ||
+      parsed.getUTCMonth() !== m - 1 ||
+      parsed.getUTCDate() !== d
+    ) {
+      return reply.status(400).send({
+        success: false,
+        error: { code: ERROR_CODES.VALIDATION_ERROR, message: 'date is not a valid calendar date' },
+      });
+    }
+
+    // Verify the user is part of this active match
+    const matchCheck = await query(
+      `SELECT id FROM ${TABLES.MATCHES}
+       WHERE id = $1 AND (user_a_id = $2 OR user_b_id = $2) AND is_active = TRUE`,
+      [matchId, userId],
+    );
+    if (!matchCheck.rows[0]) {
+      return reply.status(404).send({
+        success: false,
+        error: { code: ERROR_CODES.NOT_FOUND, message: 'Match not found or inactive' },
+      });
+    }
+
+    const result = await query(
+      `UPDATE ${TABLES.MATCHES} SET date_scheduled = $1::date
+       WHERE id = $2
+       RETURNING to_char(date_scheduled, 'YYYY-MM-DD') as date_scheduled`,
+      [date, matchId],
+    );
+    const dateScheduled = result.rows[0]?.date_scheduled || null;
+
+    // Live-update the partner's open DM via the chat room
+    publishChatMessage(REDIS_KEYS.CHAT_MESSAGES_CHANNEL, {
+      type: 'date:set',
+      matchId,
+      dateScheduled,
+      setByUserId: userId,
+    });
+
+    return reply.send({ success: true, data: { dateScheduled } });
+  });
+
   // ─── Existing: Get Match Detail ──────────────────────
   app.get('/:id', async (request: FastifyRequest<{ Params: { id: string } }>, reply: FastifyReply) => {
     const { id } = request.params;
@@ -1249,14 +1313,25 @@ export async function matchRoutes(app: FastifyInstance) {
       [id, userId],
     );
 
-    if (!result.rows[0]) {
+    const row = result.rows[0];
+    if (!row) {
       return reply.status(404).send({
         success: false,
         error: { code: ERROR_CODES.NOT_FOUND, message: 'Match not found' },
       });
     }
 
-    return reply.send({ success: true, data: result.rows[0] });
+    // Expose the scheduled date as a clean YYYY-MM-DD (it is stored at
+    // midnight UTC; slicing the ISO keeps the calendar day exact)
+    return reply.send({
+      success: true,
+      data: {
+        ...row,
+        dateScheduled: row.date_scheduled
+          ? new Date(row.date_scheduled).toISOString().slice(0, 10)
+          : null,
+      },
+    });
   });
 }
 

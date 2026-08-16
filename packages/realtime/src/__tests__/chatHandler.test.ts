@@ -914,6 +914,27 @@ describe('ChatHandler', () => {
       });
     });
 
+    it('should forward date:set events from CHAT_MESSAGES_CHANNEL to the match room', () => {
+      const { socket } = simulateConnection(nsp);
+      socket.rooms.add('match:match-d456');
+
+      const messageHandler = getMessageHandler(subClient);
+      const dateEvent = {
+        type: 'date:set',
+        matchId: 'match-d456',
+        dateScheduled: '2026-08-21',
+        setByUserId: 'user-123',
+      };
+
+      messageHandler(REDIS_KEYS.CHAT_MESSAGES_CHANNEL, JSON.stringify(dateEvent));
+
+      expect(socket.emit).toHaveBeenCalledWith('date:set', {
+        matchId: 'match-d456',
+        dateScheduled: '2026-08-21',
+        setByUserId: 'user-123',
+      });
+    });
+
     it('should exclude the sender from typing events on CHAT_TYPING_CHANNEL', () => {
       const { socket: sender } = simulateConnection(nsp);
       const receiver = simulateSecondConnection(nsp, 'user-456');

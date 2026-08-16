@@ -308,6 +308,19 @@ class ApiClient {
     return this.request('/api/v1/matches');
   }
 
+  /** Full detail for one match, including the pinned scheduled date (dateScheduled: 'YYYY-MM-DD'). */
+  async getMatchDetail(matchId: string) {
+    return this.request<{ dateScheduled: string | null }>(`/api/v1/matches/${matchId}`);
+  }
+
+  /** Fix a date with the matched user. `date` is the sender's local 'YYYY-MM-DD'. */
+  async setMatchDate(matchId: string, date: string) {
+    return this.request<{ dateScheduled: string | null }>(`/api/v1/matches/${matchId}/date`, {
+      method: 'PUT',
+      body: JSON.stringify({ date }),
+    });
+  }
+
   // ─── Fans ───────────────────────────────────────────
   async getFans() {
     return this.request('/api/v1/fans');
