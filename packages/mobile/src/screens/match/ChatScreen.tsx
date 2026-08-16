@@ -89,6 +89,14 @@ export const ChatScreen: React.FC<{ navigation: any; route: any }> = ({ navigati
   const recordingTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const lastCacheUriRef = useRef<string | null>(null);
   const playerRef = useRef<AudioPlayer | null>(null);
+  // Recording lifecycle guards. startRecording (onPressIn) has several awaits
+  // before record() fires; without these, a release during that window let
+  // stopRecording run first and the pending start then began a recording that
+  // nothing would ever stop — mic stuck on, and the orphaned session's
+  // unfinalized file could get picked up and sent as an unplayable voice note.
+  const micPressActiveRef = useRef(false);          // mic button currently held
+  const startTaskRef = useRef<Promise<void> | null>(null); // in-flight startRecording
+  const isRecordingActiveRef = useRef(false);       // native session actually capturing
 
   const partnerName = pName || 'Stranger';
 
@@ -425,49 +433,85 @@ export const ChatScreen: React.FC<{ navigation: any; route: any }> = ({ navigati
 
   // ─── Audio Recording ──────────────────────────────
   const startRecording = async () => {
-    try {
-      const { granted } = await requestRecordingPermissionsAsync();
-      if (!granted) {
-        Alert.alert('Permission needed', 'Allow microphone access to record voice.');
-        return;
-      }
+    micPressActiveRef.current = true;
+    // A start is already in flight or a session is live — never stack sessions
+    if (startTaskRef.current || isRecordingActiveRef.current) return;
 
-      // Clean up previous cached voice file
-      if (lastCacheUriRef.current) {
-        FileSystem.deleteAsync(lastCacheUriRef.current).catch(() => {});
-        lastCacheUriRef.current = null;
-      }
-
-      // Dismiss keyboard and close picker when starting recording
-      Keyboard.dismiss();
-      setShowMediaPicker(false);
-
-      await setAudioModeAsync({ allowsRecording: true });
-
-      const recorder = audioRecorderRef.current;
-
-      // Release any previous session before preparing a new one
+    const task = (async () => {
       try {
-        await recorder.stop();
-      } catch {
-        // Ignore — stop() throws if no session is active
+        const { granted } = await requestRecordingPermissionsAsync();
+        if (!granted) {
+          Alert.alert('Permission needed', 'Allow microphone access to record voice.');
+          return;
+        }
+        // Finger already lifted (e.g. while the permission dialog was up) —
+        // abort before touching the recorder
+        if (!micPressActiveRef.current) return;
+
+        // Clean up previous cached voice file
+        if (lastCacheUriRef.current) {
+          FileSystem.deleteAsync(lastCacheUriRef.current).catch(() => {});
+          lastCacheUriRef.current = null;
+        }
+
+        // Dismiss keyboard and close picker when starting recording
+        Keyboard.dismiss();
+        setShowMediaPicker(false);
+
+        await setAudioModeAsync({ allowsRecording: true, playsInSilentMode: true });
+
+        const recorder = audioRecorderRef.current;
+
+        // Release any previous session before preparing a new one
+        try {
+          await recorder.stop();
+        } catch {
+          // Ignore — stop() throws if no session is active
+        }
+
+        await recorder.prepareToRecordAsync();
+
+        // Last checkpoint: if the press ended during the awaits above, do NOT
+        // begin capture — this was the race that left the mic recording forever
+        if (!micPressActiveRef.current) {
+          setAudioModeAsync({ allowsRecording: false, playsInSilentMode: true }).catch(() => {});
+          return;
+        }
+
+        recorder.record();
+        isRecordingActiveRef.current = true;
+        setIsRecording(true);
+        setRecordingDuration(0);
+
+        recordingTimerRef.current = setInterval(() => {
+          setRecordingDuration((prev) => prev + 1);
+        }, 1000);
+      } catch (err: any) {
+        console.error('[ChatAudio] Recording error:', err);
+        Alert.alert('Recording Error', err.message || 'Could not start recording.');
       }
+    })();
 
-      await recorder.prepareToRecordAsync();
-      recorder.record();
-      setIsRecording(true);
-      setRecordingDuration(0);
-
-      recordingTimerRef.current = setInterval(() => {
-        setRecordingDuration((prev) => prev + 1);
-      }, 1000);
-    } catch (err: any) {
-      console.error('[ChatAudio] Recording error:', err);
-      Alert.alert('Recording Error', err.message || 'Could not start recording.');
+    startTaskRef.current = task;
+    try {
+      await task;
+    } finally {
+      startTaskRef.current = null;
     }
   };
 
   const stopRecording = async () => {
+    micPressActiveRef.current = false;
+
+    // If a start is still in flight, let it settle first — stopping mid-start
+    // is what used to orphan the native session
+    if (startTaskRef.current) {
+      try { await startTaskRef.current; } catch {}
+    }
+    // Start aborted (quick tap / permission denied) — nothing is recording
+    if (!isRecordingActiveRef.current) return;
+    isRecordingActiveRef.current = false;
+
     try {
       if (recordingTimerRef.current) {
         clearInterval(recordingTimerRef.current);
@@ -484,7 +528,8 @@ export const ChatScreen: React.FC<{ navigation: any; route: any }> = ({ navigati
       // Return the audio session to playback mode. startRecording set
       // allowsRecording: true; leaving it set keeps the mic/earpiece routing
       // active so the recorded note plays back silent or via the earpiece.
-      setAudioModeAsync({ allowsRecording: false }).catch(() => {});
+      // playsInSilentMode keeps playback audible with the iOS silent switch on.
+      setAudioModeAsync({ allowsRecording: false, playsInSilentMode: true }).catch(() => {});
 
       // Ignore very short taps (< 1 second) — likely accidental
       if (duration < 1) return;
@@ -600,6 +645,11 @@ export const ChatScreen: React.FC<{ navigation: any; route: any }> = ({ navigati
   };
 
   const cancelRecording = async () => {
+    micPressActiveRef.current = false;
+    if (startTaskRef.current) {
+      try { await startTaskRef.current; } catch {}
+    }
+    isRecordingActiveRef.current = false;
     if (recordingTimerRef.current) {
       clearInterval(recordingTimerRef.current);
       recordingTimerRef.current = null;
@@ -609,7 +659,7 @@ export const ChatScreen: React.FC<{ navigation: any; route: any }> = ({ navigati
       await recorder.stop();
     } catch {}
     // Return the audio session to playback mode (same as in stopRecording)
-    setAudioModeAsync({ allowsRecording: false }).catch(() => {});
+    setAudioModeAsync({ allowsRecording: false, playsInSilentMode: true }).catch(() => {});
     setIsRecording(false);
     setRecordingDuration(0);
   };
@@ -637,6 +687,10 @@ export const ChatScreen: React.FC<{ navigation: any; route: any }> = ({ navigati
     discardPlayer();
 
     try {
+      // Ensure the session is in playback mode — a stale recording mode routes
+      // playback to the earpiece / mutes it under the iOS silent switch
+      await setAudioModeAsync({ allowsRecording: false, playsInSilentMode: true }).catch(() => {});
+
       // Append auth token as query param — native media players (AVPlayer,
       // ExoPlayer) cannot send custom HTTP headers, so we pass the JWT
       // token directly in the URL. The server extracts and verifies it.
@@ -675,6 +729,15 @@ export const ChatScreen: React.FC<{ navigation: any; route: any }> = ({ navigati
       if (recordingTimerRef.current) {
         clearInterval(recordingTimerRef.current);
         recordingTimerRef.current = null;
+      }
+      // Leaving the screen mid-recording must not keep the mic capturing
+      if (isRecordingActiveRef.current) {
+        isRecordingActiveRef.current = false;
+        micPressActiveRef.current = false;
+        try {
+          audioRecorderRef.current.stop();
+        } catch {}
+        setAudioModeAsync({ allowsRecording: false, playsInSilentMode: true }).catch(() => {});
       }
     };
   }, []);
