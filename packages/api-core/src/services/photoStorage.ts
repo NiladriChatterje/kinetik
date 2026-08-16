@@ -103,6 +103,7 @@ export async function savePhoto(
   userId: string,
   fileBuffer: Buffer,
   mimeType: string,
+  opts: { lossless?: boolean } = {},
 ): Promise<SavedPhoto> {
   // Validate
   if (!ALLOWED_MIME_TYPES.has(mimeType)) {
@@ -121,8 +122,14 @@ export async function savePhoto(
   // KYC face matching). Lossless WebP is still smaller than the raw JPEG/PNG/
   // HEIC upload in most cases, and metadata is stripped in the process.
   // `effort` (0–6) trades encode time for compression ratio — 6 = best ratio.
+  // Chat images pass { lossless: false } — lossless effort-6 on a
+  // full-resolution camera photo can take minutes, blowing past nginx's 60s
+  // proxy_read_timeout (502). Lossless stays the default for profile photos,
+  // which feed pose-verification / KYC face matching.
   const fullKey = `${userId}/${photoId}.webp`;
-  const fullBuffer = await sharp(fileBuffer).webp({ lossless: true, effort: 6 }).toBuffer();
+  const fullBuffer = await sharp(fileBuffer)
+    .webp(opts.lossless === false ? { quality: 82, effort: 4 } : { lossless: true, effort: 6 })
+    .toBuffer();
 
   await client.send(
     new PutObjectCommand({

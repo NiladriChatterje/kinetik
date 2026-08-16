@@ -888,7 +888,7 @@ export async function matchRoutes(app: FastifyInstance) {
     let thumbnailUrl: string | null = null;
 
     if (mediaType === 'image') {
-      const saved = await savePhoto(userId, fileBuffer, mimeType);
+      const saved = await savePhoto(userId, fileBuffer, mimeType, { lossless: false });
       url = saved.url;
       thumbnailUrl = saved.thumbnailUrl;
     } else {

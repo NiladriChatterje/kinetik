@@ -635,9 +635,12 @@ class ApiClient {
     //
     // The caller (ChatScreen) now writes audio recordings to the FileSystem cache
     // directory first, so they are accessible to FileInputStream (no sandbox issue).
+    // Chat images are compressed to WebP client-side before upload. The server
+    // sniffs the actual bytes (sharp) — this header only gates validation, and
+    // WebP is on its allowlist either way.
     const mimeType =
       mediaType === 'image'
-        ? 'image/jpeg'
+        ? 'image/webp'
         : mediaType === 'audio'
           ? 'audio/mp4'
           : mediaType === 'video'

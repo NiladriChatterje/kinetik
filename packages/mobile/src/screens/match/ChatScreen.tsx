@@ -15,6 +15,7 @@ import * as ImagePicker from 'expo-image-picker';
 import * as DocumentPicker from 'expo-document-picker';
 import { Socket } from 'socket.io-client';
 import { api } from '../../services/api';
+import { compressPhoto } from '../../services/photoService';
 import { getChatSocket } from '../../services/callSocket';
 import { useAuthStore } from '../../store/authStore';
 import { resolveUrl } from '../../config';
@@ -342,7 +343,19 @@ export const ChatScreen: React.FC<{ navigation: any; route: any }> = ({ navigati
     }]);
 
     try {
-      const res = await api.sendMediaMessage(matchId, uri, mediaType, undefined, applyViewOnce, durationSecs);
+      // Compress images client-side (resize to 1200px + WebP) — same pipeline
+      // as profile photos. Full-resolution camera photos previously uploaded
+      // as-is, tripping the gateway's 10MB body limit / 60s timeout (502).
+      let uploadUri = uri;
+      if (mediaType === 'image') {
+        try {
+          uploadUri = (await compressPhoto(uri)).uri;
+        } catch (err) {
+          console.warn('[ChatMedia] Compression failed — sending original:', err);
+        }
+      }
+
+      const res = await api.sendMediaMessage(matchId, uploadUri, mediaType, undefined, applyViewOnce, durationSecs);
       if (res.success && res.data) {
         // Replace temp with confirmed message; drop the temp if the real id already arrived
         setMessages((prev) => prev.some((m) => m.id === res.data.id)
@@ -1305,9 +1318,32 @@ export const ChatScreen: React.FC<{ navigation: any; route: any }> = ({ navigati
         >
           <View style={styles.mediaPickerSheet}>
             <View style={styles.mediaPickerHandle} />
-            <Text style={styles.mediaPickerTitle}>Send Media</Text>
+            <Text style={styles.mediaPickerTitle}>Share</Text>
 
-            {/* View-Once Toggle */}
+            <View style={styles.mediaPickerOptions}>
+              <TouchableOpacity style={styles.mediaOption} onPress={pickFromGallery} activeOpacity={0.6}>
+                <View style={styles.mediaOptionIcon}>
+                  <Ionicons name="images-outline" size={24} color={colors.textPrimary} />
+                </View>
+                <Text style={styles.mediaOptionLabel}>Gallery</Text>
+              </TouchableOpacity>
+
+              <TouchableOpacity style={styles.mediaOption} onPress={takePhoto} activeOpacity={0.6}>
+                <View style={styles.mediaOptionIcon}>
+                  <Ionicons name="camera-outline" size={24} color={colors.textPrimary} />
+                </View>
+                <Text style={styles.mediaOptionLabel}>Camera</Text>
+              </TouchableOpacity>
+
+              <TouchableOpacity style={styles.mediaOption} onPress={pickDocument} activeOpacity={0.6}>
+                <View style={styles.mediaOptionIcon}>
+                  <Ionicons name="document-outline" size={24} color={colors.textPrimary} />
+                </View>
+                <Text style={styles.mediaOptionLabel}>Document</Text>
+              </TouchableOpacity>
+            </View>
+
+            {/* View-Once Toggle — applies to photos only */}
             <TouchableOpacity
               style={[styles.viewOnceToggle, viewOnce && styles.viewOnceToggleActive]}
               onPress={() => setViewOnce(!viewOnce)}
@@ -1320,11 +1356,9 @@ export const ChatScreen: React.FC<{ navigation: any; route: any }> = ({ navigati
                   color={viewOnce ? colors.primary : colors.textSecondary}
                 />
                 <View style={styles.viewOnceToggleTextWrap}>
-                  <Text style={[styles.viewOnceToggleLabel, viewOnce && { color: colors.primary }]}>
-                    View once
-                  </Text>
+                  <Text style={styles.viewOnceToggleLabel}>View once</Text>
                   <Text style={styles.viewOnceToggleDesc}>
-                    Media will disappear after viewing
+                    Photo disappears after it's opened
                   </Text>
                 </View>
               </View>
@@ -1334,29 +1368,6 @@ export const ChatScreen: React.FC<{ navigation: any; route: any }> = ({ navigati
                 color={viewOnce ? colors.primary : colors.textMuted}
               />
             </TouchableOpacity>
-
-            <View style={styles.mediaPickerOptions}>
-              <TouchableOpacity style={styles.mediaOption} onPress={pickFromGallery}>
-                <View style={[styles.mediaOptionIcon, { backgroundColor: '#4ECDC4' }]}>
-                  <Ionicons name="images-outline" size={24} color="#fff" />
-                </View>
-                <Text style={styles.mediaOptionLabel}>Gallery</Text>
-              </TouchableOpacity>
-
-              <TouchableOpacity style={styles.mediaOption} onPress={takePhoto}>
-                <View style={[styles.mediaOptionIcon, { backgroundColor: '#1E90FF' }]}>
-                  <Ionicons name="camera-outline" size={24} color="#fff" />
-                </View>
-                <Text style={styles.mediaOptionLabel}>Camera</Text>
-              </TouchableOpacity>
-
-              <TouchableOpacity style={styles.mediaOption} onPress={pickDocument}>
-                <View style={[styles.mediaOptionIcon, { backgroundColor: '#FF6B6B' }]}>
-                  <Ionicons name="document-outline" size={24} color="#fff" />
-                </View>
-                <Text style={styles.mediaOptionLabel}>Document</Text>
-              </TouchableOpacity>
-            </View>
 
             <TouchableOpacity
               style={styles.mediaCancelBtn}
@@ -1854,16 +1865,17 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    backgroundColor: colors.surfaceHighlight,
+    backgroundColor: colors.surface,
+    borderWidth: 1,
+    borderColor: colors.cardBorder,
     borderRadius: radius.md,
     paddingHorizontal: spacing.md,
     paddingVertical: spacing.sm + 2,
     marginBottom: spacing.lg,
   },
   viewOnceToggleActive: {
-    borderWidth: 1.5,
     borderColor: colors.primary,
-    backgroundColor: 'rgba(99,102,241,0.08)',
+    backgroundColor: colors.surfaceLight,
   },
   viewOnceToggleLeft: {
     flexDirection: 'row',
@@ -1886,18 +1898,29 @@ const styles = StyleSheet.create({
   },
   mediaPickerOptions: {
     flexDirection: 'row',
-    justifyContent: 'space-around',
-    marginBottom: spacing.xxl,
+    gap: spacing.md,
+    marginBottom: spacing.lg,
   },
-  mediaOption: { alignItems: 'center', gap: spacing.sm },
+  // Monotone tiles — outline icons on neutral surfaces, no color fills
+  mediaOption: {
+    flex: 1,
+    alignItems: 'center',
+    gap: spacing.sm,
+    backgroundColor: colors.surface,
+    borderWidth: 1,
+    borderColor: colors.cardBorder,
+    borderRadius: radius.lg,
+    paddingVertical: spacing.lg,
+  },
   mediaOptionIcon: {
-    width: 64,
-    height: 64,
-    borderRadius: 32,
+    width: 52,
+    height: 52,
+    borderRadius: 26,
+    backgroundColor: colors.surfaceHighlight,
     justifyContent: 'center',
     alignItems: 'center',
   },
-  mediaOptionLabel: { ...typography.body2, color: colors.textSecondary },
+  mediaOptionLabel: { ...typography.body2, color: colors.textPrimary, fontWeight: '500' },
   mediaCancelBtn: {
     paddingVertical: spacing.md,
     borderRadius: radius.full,
