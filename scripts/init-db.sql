@@ -166,6 +166,10 @@ CREATE INDEX idx_matches_active ON matches(is_active);
 -- Partial index for the user_b side of the feed's matched-profile exclusion
 -- (user_a side is served by idx_matches_users); from migration 009
 CREATE INDEX idx_matches_user_b_active ON matches(user_b_id) WHERE is_active = TRUE;
+-- One active match per user pair, order-insensitive; from migration 011
+CREATE UNIQUE INDEX uniq_matches_active_pair
+    ON matches (LEAST(user_a_id, user_b_id), GREATEST(user_a_id, user_b_id))
+    WHERE is_active = TRUE;
 
 -- ─── Chat Messages (from migration 004) ────────────────────
 CREATE TABLE messages (

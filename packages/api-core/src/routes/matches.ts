@@ -304,74 +304,78 @@ export async function matchRoutes(app: FastifyInstance) {
       );
 
       if (mutualCheck.rows.length > 0) {
-        // Mutual like! Create a match
-        const matchResult = await query(
-          `INSERT INTO ${TABLES.MATCHES} (user_a_id, user_b_id, is_active)
-           VALUES ($1, $2, TRUE) RETURNING *`,
-          [userId, targetUserId],
-        );
-        const match = matchResult.rows[0];
+        // Mutual like! Create a match (or reuse the active one if a racing
+        // request / the Likes-screen respond flow already created it)
+        const { match, created } = await getOrCreateActiveMatch(userId, targetUserId);
 
-        // Mark both interactions as mutual
-        await query(
-          `UPDATE ${TABLES.USER_INTERACTIONS} SET is_mutual = TRUE, responded_at = NOW()
-           WHERE (actor_id = $1 AND target_id = $2) OR (actor_id = $2 AND target_id = $1)`,
-          [userId, targetUserId],
-        );
+        if (match) {
+          // Mark both interactions as mutual
+          await query(
+            `UPDATE ${TABLES.USER_INTERACTIONS} SET is_mutual = TRUE, responded_at = NOW()
+             WHERE (actor_id = $1 AND target_id = $2) OR (actor_id = $2 AND target_id = $1)`,
+            [userId, targetUserId],
+          );
 
-        // Get partner details for notification
-        const partnerResult = await query(
-          `SELECT u.display_name, pp.url as photo_url
-           FROM ${TABLES.USERS} u
-           LEFT JOIN ${TABLES.PROFILE_PHOTOS} pp ON pp.user_id = u.id AND pp.is_primary = TRUE
-           WHERE u.id = $1`,
-          [targetUserId],
-        );
-        const partnerName = partnerResult.rows[0]?.display_name || 'Someone';
-        const partnerPhotoUrl = partnerResult.rows[0]?.photo_url || '';
+          // Get partner details for the response / notification
+          const partnerResult = await query(
+            `SELECT u.display_name, pp.url as photo_url
+             FROM ${TABLES.USERS} u
+             LEFT JOIN ${TABLES.PROFILE_PHOTOS} pp ON pp.user_id = u.id AND pp.is_primary = TRUE
+             WHERE u.id = $1`,
+            [targetUserId],
+          );
+          const partnerName = partnerResult.rows[0]?.display_name || 'Someone';
+          const partnerPhotoUrl = partnerResult.rows[0]?.photo_url || '';
 
-        // Also get swiper's photo URL for the match event
-        const swiperPhotoResult = await query(
-          `SELECT pp.url as photo_url
-           FROM ${TABLES.PROFILE_PHOTOS} pp
-           WHERE pp.user_id = $1 AND pp.is_primary = TRUE`,
-          [userId],
-        );
-        const swiperPhotoUrl = swiperPhotoResult.rows[0]?.photo_url || '';
+          // Side effects only for a freshly created match — a reused match
+          // already had its event, opening line, and notification sent
+          if (created) {
+            // Also get swiper's photo URL for the match event
+            const swiperPhotoResult = await query(
+              `SELECT pp.url as photo_url
+               FROM ${TABLES.PROFILE_PHOTOS} pp
+               WHERE pp.user_id = $1 AND pp.is_primary = TRUE`,
+              [userId],
+            );
+            const swiperPhotoUrl = swiperPhotoResult.rows[0]?.photo_url || '';
 
-        // Publish `match.created` event via Redis event bus
-        await eventBus.publish(EVENT_BUS_CHANNELS.MATCH_EVENTS, {
-          type: 'match.created',
-          payload: {
-            userAId: userId,
-            userBId: targetUserId,
-            matchId: match.id,
-            userAName: swiperName,
-            userAPhotoUrl: swiperPhotoUrl,
-            userBName: partnerName,
-            userBPhotoUrl: partnerPhotoUrl,
-            timestamp: new Date().toISOString(),
-          },
-        }).catch((err) => {
-          console.error('[EventBus] Failed to publish match.created:', err);
-        });
+            // Publish `match.created` event via Redis event bus
+            await eventBus.publish(EVENT_BUS_CHANNELS.MATCH_EVENTS, {
+              type: 'match.created',
+              payload: {
+                userAId: userId,
+                userBId: targetUserId,
+                matchId: match.id,
+                userAName: swiperName,
+                userAPhotoUrl: swiperPhotoUrl,
+                userBName: partnerName,
+                userBPhotoUrl: partnerPhotoUrl,
+                timestamp: new Date().toISOString(),
+              },
+            }).catch((err) => {
+              console.error('[EventBus] Failed to publish match.created:', err);
+            });
 
-        // Auto-send an opening line as the first message
-        await sendOpeningLineAsMessage(match.id, userId, targetUserId);
+            // Auto-send an opening line as the first message
+            await sendOpeningLineAsMessage(match.id, userId, targetUserId);
 
-        // Send new message notification instead of match notification
-        await notificationEvents.newMessage(targetUserId, swiperName, 'You have a new match! Say hi');
+            // Send new message notification instead of match notification
+            await notificationEvents.newMessage(targetUserId, swiperName, 'You have a new match! Say hi');
+          }
 
-        return reply.status(201).send({
-          success: true,
-          data: {
-            matched: true,
-            isSuperLike,
-            matchId: match.id,
-            partnerName,
-            partnerId: targetUserId,
-          },
-        });
+          return reply.status(201).send({
+            success: true,
+            data: {
+              matched: true,
+              isSuperLike,
+              matchId: match.id,
+              partnerName,
+              partnerId: targetUserId,
+            },
+          });
+        }
+        // No active match row could be created or found (pair unmatched in a
+        // concurrent request) — fall through and treat this as a plain like.
       }
 
       // Publish `like.created` event via Redis event bus
@@ -497,13 +501,13 @@ export async function matchRoutes(app: FastifyInstance) {
       return reply.send({ success: true, data: { matched: false } });
     }
 
-    // Like back — create match
-    const matchResult = await query(
-      `INSERT INTO ${TABLES.MATCHES} (user_a_id, user_b_id, is_active)
-       VALUES ($1, $2, TRUE) RETURNING *`,
-      [targetUserId, userId],
-    );
-    const match = matchResult.rows[0];
+    // Like back — create match (or reuse the active one if a racing /swipe
+    // from the other side already created it)
+    const { match, created } = await getOrCreateActiveMatch(targetUserId, userId);
+    if (!match) {
+      // Active match vanished in a concurrent unmatch — nothing to link to
+      return reply.send({ success: true, data: { matched: false } });
+    }
 
     // Mark both interactions as mutual
     await query(
@@ -523,43 +527,47 @@ export async function matchRoutes(app: FastifyInstance) {
     const partnerName = partnerResult.rows[0]?.display_name || 'Someone';
     const partnerPhotoUrl = partnerResult.rows[0]?.photo_url || '';
 
-    // Get the responder's (current user's) name and photo for the match event
-    const responderResult = await query(
-      `SELECT u.display_name, pp.url as photo_url
-       FROM ${TABLES.USERS} u
-       LEFT JOIN ${TABLES.PROFILE_PHOTOS} pp ON pp.user_id = u.id AND pp.is_primary = TRUE
-       WHERE u.id = $1`,
-      [userId],
-    );
-    const responderName = responderResult.rows[0]?.display_name || 'Someone';
-    const responderPhotoUrl = responderResult.rows[0]?.photo_url || '';
+    // Side effects only for a freshly created match — a reused match already
+    // had its event, opening line, and notifications sent
+    if (created) {
+      // Get the responder's (current user's) name and photo for the match event
+      const responderResult = await query(
+        `SELECT u.display_name, pp.url as photo_url
+         FROM ${TABLES.USERS} u
+         LEFT JOIN ${TABLES.PROFILE_PHOTOS} pp ON pp.user_id = u.id AND pp.is_primary = TRUE
+         WHERE u.id = $1`,
+        [userId],
+      );
+      const responderName = responderResult.rows[0]?.display_name || 'Someone';
+      const responderPhotoUrl = responderResult.rows[0]?.photo_url || '';
 
-    // Publish `match.created` event via Redis event bus
-    // The realtime service uses:
-    //   - userAId (original liker) → sees userBName as their partner's name
-    //   - userBId (responder)       → sees userAName as their partner's name
-    await eventBus.publish(EVENT_BUS_CHANNELS.MATCH_EVENTS, {
-      type: 'match.created',
-      payload: {
-        userAId: targetUserId,
-        userBId: userId,
-        matchId: match.id,
-        userAName: partnerName,          // original liker's name — shown to responder
-        userAPhotoUrl: partnerPhotoUrl,  // original liker's photo — shown to responder
-        userBName: responderName,        // responder's name — shown to original liker
-        userBPhotoUrl: responderPhotoUrl,// responder's photo — shown to original liker
-        timestamp: new Date().toISOString(),
-      },
-    }).catch((err) => {
-      console.error('[EventBus] Failed to publish match.created:', err);
-    });
+      // Publish `match.created` event via Redis event bus
+      // The realtime service uses:
+      //   - userAId (original liker) → sees userBName as their partner's name
+      //   - userBId (responder)       → sees userAName as their partner's name
+      await eventBus.publish(EVENT_BUS_CHANNELS.MATCH_EVENTS, {
+        type: 'match.created',
+        payload: {
+          userAId: targetUserId,
+          userBId: userId,
+          matchId: match.id,
+          userAName: partnerName,          // original liker's name — shown to responder
+          userAPhotoUrl: partnerPhotoUrl,  // original liker's photo — shown to responder
+          userBName: responderName,        // responder's name — shown to original liker
+          userBPhotoUrl: responderPhotoUrl,// responder's photo — shown to original liker
+          timestamp: new Date().toISOString(),
+        },
+      }).catch((err) => {
+        console.error('[EventBus] Failed to publish match.created:', err);
+      });
 
-    // Auto-send an opening line as the first message
-    await sendOpeningLineAsMessage(match.id, userId, targetUserId);
+      // Auto-send an opening line as the first message
+      await sendOpeningLineAsMessage(match.id, userId, targetUserId);
 
-    // Notify both users via new message notification
-    await notificationEvents.newMessage(userId, partnerName, 'You have a new match! Say hi');
-    await notificationEvents.newMessage(targetUserId, responderName, 'You have a new match! Say hi');
+      // Notify both users via new message notification
+      await notificationEvents.newMessage(userId, partnerName, 'You have a new match! Say hi');
+      await notificationEvents.newMessage(targetUserId, responderName, 'You have a new match! Say hi');
+    }
 
     return reply.status(201).send({
       success: true,
@@ -1234,6 +1242,36 @@ export async function matchRoutes(app: FastifyInstance) {
 
     return reply.send({ success: true, data: result.rows[0] });
   });
+}
+
+// ─── Helper: Get-or-create the active match for a pair ────
+// Insert an active match, or return the existing one. Backed by the
+// uniq_matches_active_pair partial unique index (order-insensitive on the
+// pair, active rows only), so two racing mutual-like requests can no longer
+// create duplicate active matches.
+async function getOrCreateActiveMatch(
+  userAId: string,
+  userBId: string,
+): Promise<{ match: any | null; created: boolean }> {
+  const inserted = await query(
+    `INSERT INTO ${TABLES.MATCHES} (user_a_id, user_b_id, is_active)
+     VALUES ($1, $2, TRUE)
+     ON CONFLICT ((LEAST(user_a_id, user_b_id)), (GREATEST(user_a_id, user_b_id)))
+     WHERE is_active = TRUE
+     DO NOTHING
+     RETURNING *`,
+    [userAId, userBId],
+  );
+  if (inserted.rows[0]) {
+    return { match: inserted.rows[0], created: true };
+  }
+  const existing = await query(
+    `SELECT * FROM ${TABLES.MATCHES}
+     WHERE is_active = TRUE
+       AND ((user_a_id = $1 AND user_b_id = $2) OR (user_a_id = $2 AND user_b_id = $1))`,
+    [userAId, userBId],
+  );
+  return { match: existing.rows[0] ?? null, created: false };
 }
 
 // ─── Helper: Auto-send opening line on match ─────────────

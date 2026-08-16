@@ -305,6 +305,9 @@ export const MatchScreen: React.FC<{ navigation: any; route?: any }> = ({ naviga
   // Profile tapped on the Explore grid — kept until swiped so a concurrent
   // profile fetch can't knock it off the top of the deck
   const pendingFocusRef = useRef<SwipeProfile | null>(null);
+  // Users swiped or matched this session — never re-shown, even if a stale
+  // in-flight fetch (issued before the match/swipe was recorded) returns them
+  const removedIdsRef = useRef<Set<string>>(new Set());
   const [loading, setLoading] = useState(true);
   const [swiping, setSwiping] = useState(false);
   const [superLikesRemaining, setSuperLikesRemaining] = useState(5); // default: free tier daily limit
@@ -326,7 +329,9 @@ export const MatchScreen: React.FC<{ navigation: any; route?: any }> = ({ naviga
       setLoading(true);
       const res = await api.getSwipeProfiles();
       if (res.success && res.data) {
-        const list: SwipeProfile[] = res.data.profiles || [];
+        const list: SwipeProfile[] = (res.data.profiles || []).filter(
+          (p: SwipeProfile) => !removedIdsRef.current.has(p.userId),
+        );
         const fp = pendingFocusRef.current;
         setProfiles(fp ? [fp, ...list.filter((p) => p.userId !== fp.userId)] : list);
         setCurrentIndex(0);
@@ -349,6 +354,18 @@ export const MatchScreen: React.FC<{ navigation: any; route?: any }> = ({ naviga
 
     const onMatchNew = (data: any) => {
       console.log('[MatchScreen] New match:', data.matchId, 'with', data.partnerName);
+      // The matched partner must never reappear in the deck — drop them from
+      // the unswiped tail now and from every future fetch (covers matches made
+      // on the Likes screen while this deck was already loaded)
+      if (data.partnerId) {
+        removedIdsRef.current.add(data.partnerId);
+        if (pendingFocusRef.current?.userId === data.partnerId) {
+          pendingFocusRef.current = null;
+        }
+        setProfiles((prev) =>
+          prev.filter((p, i) => i < currentIndexRef.current || p.userId !== data.partnerId),
+        );
+      }
       // Show the match popup
       setMatchPopup({
         visible: true,
@@ -441,6 +458,7 @@ export const MatchScreen: React.FC<{ navigation: any; route?: any }> = ({ naviga
       toast.showError(err.message || 'Super Like failed');
     }
 
+    removedIdsRef.current.add(profile.userId);
     if (pendingFocusRef.current?.userId === profile.userId) {
       pendingFocusRef.current = null;
     }
@@ -451,7 +469,17 @@ export const MatchScreen: React.FC<{ navigation: any; route?: any }> = ({ naviga
     if (nextIndex >= profiles.length - 3) {
       const res = await api.getSwipeProfiles().catch(() => null);
       if (res?.success && res.data?.profiles) {
-        setProfiles((prev) => [...prev, ...res.data!.profiles]);
+        // Dedupe against the deck and drop already-swiped/matched users —
+        // the fetch may have been issued before those were recorded
+        setProfiles((prev) => {
+          const seen = new Set(prev.map((p) => p.userId));
+          return [
+            ...prev,
+            ...res.data!.profiles.filter(
+              (p: SwipeProfile) => !seen.has(p.userId) && !removedIdsRef.current.has(p.userId),
+            ),
+          ];
+        });
       }
     }
   };
@@ -474,6 +502,10 @@ export const MatchScreen: React.FC<{ navigation: any; route?: any }> = ({ naviga
         if (!data.matched && direction === 'right') {
           toast.showSuccess('Like Sent!', 'They\'ll see you in their likes.');
         }
+      } else if (res.error?.code === 'ALREADY_MATCHED') {
+        // Stale card — the interaction/match already exists on the server
+        // (e.g. matched via the Likes screen). Skip past it silently.
+        shouldAdvance = true;
       } else {
         // API returned an error — don't advance, show feedback
         if (res.error?.code === 'SWIPE_LIMIT_REACHED') {
@@ -498,6 +530,7 @@ export const MatchScreen: React.FC<{ navigation: any; route?: any }> = ({ naviga
       return;
     }
 
+    removedIdsRef.current.add(profile.userId);
     if (pendingFocusRef.current?.userId === profile.userId) {
       pendingFocusRef.current = null;
     }
@@ -509,7 +542,17 @@ export const MatchScreen: React.FC<{ navigation: any; route?: any }> = ({ naviga
     if (nextIndex >= profiles.length - 3) {
       const res = await api.getSwipeProfiles().catch(() => null);
       if (res?.success && res.data?.profiles) {
-        setProfiles((prev) => [...prev, ...res.data!.profiles]);
+        // Dedupe against the deck and drop already-swiped/matched users —
+        // the fetch may have been issued before those were recorded
+        setProfiles((prev) => {
+          const seen = new Set(prev.map((p) => p.userId));
+          return [
+            ...prev,
+            ...res.data!.profiles.filter(
+              (p: SwipeProfile) => !seen.has(p.userId) && !removedIdsRef.current.has(p.userId),
+            ),
+          ];
+        });
       }
     }
   };
