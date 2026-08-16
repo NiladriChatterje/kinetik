@@ -375,6 +375,20 @@ class ApiClient {
     }>('/api/v1/payments/subscription/status');
   }
 
+  async getSubscriptionHistory() {
+    return this.request<{
+      payments: {
+        paymentId: string | null;
+        amount: number | null;
+        currency: string;
+        status: string;
+        description: string;
+        paidAt: string;
+      }[];
+      monthsPaid: number;
+    }>('/api/v1/payments/subscription/history');
+  }
+
   /**
    * Cancels the recurring Razorpay subscription. The user keeps Premium until
    * the end of the current billing cycle, then it stops renewing.

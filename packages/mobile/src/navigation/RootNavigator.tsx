@@ -93,7 +93,6 @@ import { CallScreen } from '../screens/match/CallScreen';
 import { IncomingCallOverlay } from '../components/call/IncomingCallOverlay';
 
 // Wallet
-import { TokenVaultScreen } from '../screens/wallet/TokenVaultScreen';
 import { ProfileLedgerScreen } from '../screens/wallet/ProfileLedgerScreen';
 import { SubscriptionCheckoutScreen } from '../screens/wallet/SubscriptionCheckoutScreen';
 
@@ -108,7 +107,6 @@ export type RootStackParamList = {
   Onboarding: undefined;
   Main: undefined;
   NotificationPreferences: undefined;
-  TokenVault: undefined;
   LockStatus: { matchId: string; partnerName: string };
   CalendarSync: { matchId: string };
   VenueSelector: { matchId: string };
@@ -281,7 +279,6 @@ export function RootNavigator() {
         <RootStack.Screen name="Chat" component={ChatScreen} />
         <RootStack.Screen name="Call" component={CallScreen} />
         {/* Screens navigated from Profile */}
-        <RootStack.Screen name="TokenVault" component={TokenVaultScreen} />
         <RootStack.Screen name="DuoWingman" component={DuoWingmanScreen} />
         {/* Existing root overlay screens */}
         <RootStack.Screen name="LockStatus" component={LockStatusScreen} />

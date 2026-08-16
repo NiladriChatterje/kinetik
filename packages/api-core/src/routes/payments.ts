@@ -321,6 +321,39 @@ export async function paymentRoutes(app: FastifyInstance) {
     });
   });
 
+  // ─── Subscription Billing History ─────────────────────
+  // Recurring charges recorded for this user (first payment + webhook
+  // renewals), newest first — powers the history list on the checkout screen.
+  app.get('/subscription/history', async (request: FastifyRequest, reply: FastifyReply) => {
+    const { sub: userId } = request.user as any;
+
+    const result = await query(
+      `SELECT razorpay_payment_id, amount, currency, status, description, created_at
+       FROM ${TABLES.TRANSACTIONS}
+       WHERE user_id = $1 AND razorpay_subscription_id IS NOT NULL
+       ORDER BY created_at DESC
+       LIMIT 36`,
+      [userId],
+    );
+
+    const payments = result.rows.map((row: any) => ({
+      paymentId: row.razorpay_payment_id,
+      amount: row.amount !== null ? Number(row.amount) : null,
+      currency: row.currency || 'INR',
+      status: row.status,
+      description: row.description || 'Kinetik Premium',
+      paidAt: row.created_at,
+    }));
+
+    return reply.send({
+      success: true,
+      data: {
+        payments,
+        monthsPaid: payments.filter((p) => p.status === 'completed').length,
+      },
+    });
+  });
+
   // ─── Cancel Subscription ─────────────────────────────
   // Cancels the Razorpay subscription at the end of the current billing cycle
   // (the user keeps Premium until the date they already paid for, then it

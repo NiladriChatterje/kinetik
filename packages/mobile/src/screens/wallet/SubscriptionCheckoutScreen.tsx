@@ -17,6 +17,15 @@ interface SubscriptionStatus {
   subscriptionId: string | null;
 }
 
+interface SubscriptionPayment {
+  paymentId: string | null;
+  amount: number | null;
+  currency: string;
+  status: string;
+  description: string;
+  paidAt: string;
+}
+
 const FEATURES = [
   { icon: 'infinite-outline' as const, label: 'Unlimited daily swipes' },
   { icon: 'heart-outline' as const, label: '25 Super Likes every day' },
@@ -37,15 +46,22 @@ export const SubscriptionCheckoutScreen: React.FC = () => {
   const toast = useToast();
 
   const [status, setStatus] = useState<SubscriptionStatus | null>(null);
+  const [history, setHistory] = useState<{ payments: SubscriptionPayment[]; monthsPaid: number } | null>(null);
   const [loading, setLoading] = useState(true);
   const [subscribing, setSubscribing] = useState(false);
   const [cancelling, setCancelling] = useState(false);
 
   const fetchStatus = useCallback(async () => {
     try {
-      const res = await api.getSubscriptionStatus();
+      const [res, hist] = await Promise.all([
+        api.getSubscriptionStatus(),
+        api.getSubscriptionHistory(),
+      ]);
       if (res.success && res.data) {
         setStatus(res.data as SubscriptionStatus);
+      }
+      if (hist.success && hist.data) {
+        setHistory(hist.data);
       }
     } catch {
       // Leave status null — the screen falls back to the "not subscribed" state
@@ -240,6 +256,41 @@ export const SubscriptionCheckoutScreen: React.FC = () => {
                 style={styles.cancelBtn}
               />
             )}
+
+            {/* Reassurance: deleting the account never leaves a running mandate */}
+            <View style={styles.assuranceBox}>
+              <Ionicons name="shield-checkmark" size={20} color={colors.success} />
+              <Text style={styles.assuranceText}>
+                If you ever delete your Kinetik account, your subscription and payment mandate
+                are cancelled automatically — you will never be charged after leaving.
+              </Text>
+            </View>
+
+            {/* Billing history */}
+            {history && history.payments.length > 0 && (
+              <>
+                <Text style={styles.sectionTitle}>Billing history</Text>
+                <Text style={styles.historySummary}>
+                  {history.monthsPaid} month{history.monthsPaid === 1 ? '' : 's'} of Premium paid
+                </Text>
+                {history.payments.map((p, i) => (
+                  <View key={p.paymentId || `${p.paidAt}-${i}`} style={styles.historyRow}>
+                    <Ionicons
+                      name={p.status === 'completed' ? 'checkmark-circle-outline' : 'time-outline'}
+                      size={18}
+                      color={p.status === 'completed' ? colors.success : colors.warning}
+                    />
+                    <View style={styles.historyInfo}>
+                      <Text style={styles.historyDesc} numberOfLines={1}>{p.description}</Text>
+                      <Text style={styles.historyDate}>{formatDate(p.paidAt)}</Text>
+                    </View>
+                    <Text style={styles.historyAmount}>
+                      {p.amount !== null ? `₹${p.amount}` : '—'}
+                    </Text>
+                  </View>
+                ))}
+              </>
+            )}
           </>
         )}
       </ScrollView>
@@ -285,4 +336,29 @@ const styles = StyleSheet.create({
   disclaimer: { ...typography.caption, color: colors.textMuted, marginTop: spacing.md, lineHeight: 18 },
   subscribeBtn: { marginTop: spacing.xxl },
   cancelBtn: { marginTop: spacing.md },
+  assuranceBox: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.md,
+    marginTop: spacing.lg,
+    padding: spacing.md,
+    borderRadius: radius.md,
+    backgroundColor: colors.surfaceHighlight,
+    borderWidth: 1,
+    borderColor: colors.success,
+  },
+  assuranceText: { ...typography.caption, color: colors.textSecondary, flex: 1, lineHeight: 18 },
+  historySummary: { ...typography.body2, color: colors.textSecondary, marginBottom: spacing.md },
+  historyRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.md,
+    paddingVertical: spacing.sm,
+    borderBottomWidth: StyleSheet.hairlineWidth,
+    borderBottomColor: colors.cardBorder,
+  },
+  historyInfo: { flex: 1 },
+  historyDesc: { ...typography.body2, color: colors.textPrimary },
+  historyDate: { ...typography.caption, color: colors.textMuted },
+  historyAmount: { ...typography.body2, color: colors.textPrimary, fontWeight: '600' },
 });

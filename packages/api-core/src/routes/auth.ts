@@ -2,8 +2,9 @@ import { FastifyInstance, FastifyRequest, FastifyReply } from 'fastify';
 import bcrypt from 'bcrypt';
 import { z } from 'zod';
 import { ERROR_CODES, transaction, TABLES } from '@kinetik/shared';
-import { createUser, findUserByPhone, findUserByEmail, findUserById, createSubscription, updateUser } from '../services/database';
+import { createUser, findUserByPhone, findUserByEmail, findUserById, createSubscription, updateUser, getSubscription } from '../services/database';
 import { deleteAllUserPhotos, deleteChatFile } from '../services/photoStorage';
+import { isRazorpayConfigured, fetchSubscription, cancelPremiumSubscription } from '../services/razorpay';
 import { eventBus } from '../services/eventBus';
 import { sendOtpSms } from '../services/sms';
 
@@ -334,11 +335,12 @@ export async function authRoutes(app: FastifyInstance) {
   // ─── Delete Account ───────────────────────────────────
   // Permanently deletes the user's account and ALL associated records
   // (profile, photos, preferences, interests, KYC, push tokens, subscription,
-  // likes, duo crews, matches, chats and chat media files).
+  // transactions, likes, duo crews, matches, chats and chat media files),
+  // and cancels any active Razorpay subscription/mandate immediately.
   //
   // Design:
   //   - The users row is soft-deleted (PII scrubbed, deleted_at set) purely so
-  //     retained records (transactions, audit_log) keep a valid reference — the
+  //     retained records (audit_log) keep a valid reference — the
   //     account no longer exists from the app's perspective: phone/email are
   //     NULLed so the number can be re-registered, and is_active is FALSE so no
   //     profile query returns it.
@@ -377,6 +379,29 @@ export async function authRoutes(app: FastifyInstance) {
       });
     }
 
+    // The account is about to cease to exist — its recurring Razorpay
+    // subscription/mandate MUST stop charging. Cancel immediately (not at
+    // cycle end). If Razorpay can't be reached, abort the deletion so the
+    // user retries rather than leaving a live mandate on a dead account.
+    const ledger = await getSubscription(userId);
+    if (ledger?.razorpay_subscription_id && isRazorpayConfigured()) {
+      try {
+        const current = await fetchSubscription(ledger.razorpay_subscription_id);
+        if (!['cancelled', 'halted', 'completed', 'expired'].includes(current.status)) {
+          await cancelPremiumSubscription(ledger.razorpay_subscription_id, false);
+        }
+      } catch (err: any) {
+        console.error(`[DeleteAccount] Failed to cancel subscription for ${userId}:`, err?.message || err);
+        return reply.status(502).send({
+          success: false,
+          error: {
+            code: ERROR_CODES.PAYMENT_FAILED,
+            message: 'Could not cancel your subscription. Please try again.',
+          },
+        });
+      }
+    }
+
     let chatMediaUrls: string[] = [];
     try {
       await transaction(async (q) => {
@@ -406,7 +431,8 @@ export async function authRoutes(app: FastifyInstance) {
         await q(`DELETE FROM ${TABLES.SUBSCRIPTION_LEDGER} WHERE user_id = $1`, [userId]);
         await q(`DELETE FROM ${TABLES.DUO_CREWS} WHERE creator_id = $1 OR invitee_id = $1`, [userId]);
         await q(`DELETE FROM ${TABLES.USER_INTERACTIONS} WHERE actor_id = $1 OR target_id = $1`, [userId]);
-        // transactions + audit_log: retained by design
+        await q(`DELETE FROM ${TABLES.TRANSACTIONS} WHERE user_id = $1`, [userId]);
+        // audit_log: retained by design
 
         // Tombstone the user row — scrub all PII
         await q(
