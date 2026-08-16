@@ -6,7 +6,7 @@ import { Card } from '../../components/common/Card';
 import { colors, typography, spacing } from '../../theme';
 
 const TOKENS = [
-  { icon: 'flash-outline' as const, name: 'Fast Passes', count: 3, desc: 'Skip visual blur in Vibe Checks' },
+  { icon: 'flash-outline' as const, name: 'Fast Passes', count: 3, desc: 'Boost your profile visibility' },
   { icon: 'umbrella-outline' as const, name: 'Rain Checks', count: 1, desc: 'Save a profile for 24 hours' },
   { icon: 'heart-outline' as const, name: 'Super Likes', count: 5, desc: 'Stand out from the queue' },
 ];

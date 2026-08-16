@@ -32,14 +32,15 @@ export function errorHandler(
     });
   }
 
-  // Validation errors
-  if (error.validation) {
+  // Validation errors (FastifyError only — AppError has no validation field)
+  const validation = (error as FastifyError).validation;
+  if (validation) {
     return reply.status(400).send({
       success: false,
       error: {
         code: ERROR_CODES.VALIDATION_ERROR,
         message: 'Validation failed',
-        details: error.validation,
+        details: validation,
       },
     });
   }

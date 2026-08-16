@@ -39,9 +39,7 @@ interface ProfileData {
 }
 
 interface ProfileStats {
-  vibeChecks: number;
   matches: number;
-  lockRate: number;
   dates: number;
 }
 
@@ -49,12 +47,10 @@ interface ProfileStats {
 const METRIC_DEFS: {
   key: keyof ProfileStats;
   label: string;
-  icon: 'mic-outline' | 'heart-outline' | 'lock-closed-outline' | 'calendar-outline';
+  icon: 'heart-outline' | 'calendar-outline';
   suffix?: string;
 }[] = [
-  { key: 'vibeChecks', label: 'Vibe Checks', icon: 'mic-outline' },
   { key: 'matches', label: 'Matches', icon: 'heart-outline' },
-  { key: 'lockRate', label: 'Lock Rate', icon: 'lock-closed-outline', suffix: '%' },
   { key: 'dates', label: 'Dates', icon: 'calendar-outline' },
 ];
 

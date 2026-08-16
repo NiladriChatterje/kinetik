@@ -12,7 +12,6 @@ CREATE TYPE gender_identity AS ENUM ('male', 'female', 'non_binary', 'other', 'p
 CREATE TYPE match_status AS ENUM ('pending', 'matched', 'passed', 'expired');
 CREATE TYPE subscription_tier AS ENUM ('free', 'premium', 'infinite');
 CREATE TYPE verification_status AS ENUM ('unverified', 'pending', 'verified', 'rejected');
-CREATE TYPE window_status AS ENUM ('scheduled', 'active', 'closed');
 
 -- ─── Users Table ──────────────────────────────────────────
 CREATE TABLE users (
@@ -123,7 +122,6 @@ CREATE TABLE user_preferences (
 
     -- Notifications
     push_enabled        BOOLEAN DEFAULT TRUE,
-    flash_window_reminder BOOLEAN DEFAULT TRUE,
 
     created_at          TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     updated_at          TIMESTAMPTZ NOT NULL DEFAULT NOW()
@@ -144,71 +142,9 @@ CREATE TABLE user_interests (
     PRIMARY KEY (user_id, interest_id)
 );
 
--- ─── Flash Windows ────────────────────────────────────────
-CREATE TABLE flash_windows (
-    id              UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
-    city            VARCHAR(100) NOT NULL,
-    region          VARCHAR(100),
-    country         VARCHAR(100),
-    starts_at       TIMESTAMPTZ NOT NULL,
-    ends_at         TIMESTAMPTZ NOT NULL,
-    status          window_status DEFAULT 'scheduled',
-    max_participants INT DEFAULT 5000,
-    participant_count INT DEFAULT 0,
-    created_at      TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-
-    -- H3 cells covered by this window
-    h3_cells        TEXT[] DEFAULT '{}'
-);
-
-CREATE INDEX idx_flash_windows_city ON flash_windows(city);
-CREATE INDEX idx_flash_windows_status ON flash_windows(status, starts_at);
-
--- ─── Window Participants ──────────────────────────────────
-CREATE TABLE window_participants (
-    window_id       UUID NOT NULL REFERENCES flash_windows(id) ON DELETE CASCADE,
-    user_id         UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
-    joined_at       TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-    is_active       BOOLEAN DEFAULT TRUE,
-    matched_with    UUID REFERENCES users(id),
-    PRIMARY KEY (window_id, user_id)
-);
-
-CREATE INDEX idx_window_participants_active ON window_participants(window_id, is_active);
-
--- ─── Vibe Check Sessions (Audio Calls) ───────────────────
-CREATE TABLE vibe_checks (
-    id                  UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
-    window_id           UUID NOT NULL REFERENCES flash_windows(id),
-    user_a_id           UUID NOT NULL REFERENCES users(id),
-    user_b_id           UUID NOT NULL REFERENCES users(id),
-    status              match_status DEFAULT 'pending',
-
-    -- Timeline
-    started_at          TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-    call_duration_seconds INT DEFAULT 180,
-
-    -- Results
-    user_a_decision     BOOLEAN,       -- true = lock it in
-    user_b_decision     BOOLEAN,
-    decision_deadline   TIMESTAMPTZ,
-    mutual_lock         BOOLEAN DEFAULT FALSE,
-
-    -- Media metadata
-    livekit_room_name   VARCHAR(255),
-    livekit_token_a     TEXT,
-    livekit_token_b     TEXT,
-
-    created_at          TIMESTAMPTZ NOT NULL DEFAULT NOW()
-);
-
-CREATE INDEX idx_vibe_checks_window ON vibe_checks(window_id);
-CREATE INDEX idx_vibe_checks_users ON vibe_checks(user_a_id, user_b_id);
-
 -- ─── Matches ──────────────────────────────────────────────
 CREATE TABLE matches (
     id              UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
-    vibe_check_id   UUID UNIQUE REFERENCES vibe_checks(id),
     user_a_id       UUID NOT NULL REFERENCES users(id),
     user_b_id       UUID NOT NULL REFERENCES users(id),
     matched_at      TIMESTAMPTZ NOT NULL DEFAULT NOW(),

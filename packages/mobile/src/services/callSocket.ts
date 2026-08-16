@@ -9,7 +9,7 @@ import { api } from './api';
  * connect — so a persistent socket here receives incoming-call invites no
  * matter which screen the user is on.
  *
- * Unlike the vibe socket (which must stay alive across two screens), this one
+ * Unlike the shared chat socket (which must stay alive across screens), this one
  * lives for the whole authenticated session and is only torn down on logout.
  */
 export const CALL_EVENTS = {

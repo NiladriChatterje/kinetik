@@ -4,7 +4,6 @@ export type GenderIdentity = 'male' | 'female' | 'non_binary' | 'other' | 'prefe
 export type MatchStatus = 'pending' | 'matched' | 'passed' | 'expired';
 export type SubscriptionTier = 'free' | 'premium' | 'infinite';
 export type VerificationStatus = 'unverified' | 'pending' | 'verified' | 'rejected';
-export type WindowStatus = 'scheduled' | 'active' | 'closed';
 export type OnboardingStep = 'splash' | 'identity' | 'about' | 'location' | 'photos' | 'pose' | 'kyc' | 'complete';
 export type InteractionAction = 'like' | 'pass' | 'super_like';
 export type AuthProvider = 'phone' | 'google' | 'apple';
@@ -117,63 +116,10 @@ export interface UserPreferences {
   commStyleDeep: number;
 }
 
-// ─── Flash Window Types ───────────────────────────────────
-
-export interface FlashWindow {
-  id: string;
-  city: string;
-  region?: string;
-  country?: string;
-  startsAt: string;
-  endsAt: string;
-  status: WindowStatus;
-  maxParticipants: number;
-  participantCount: number;
-  h3Cells: string[];
-}
-
-export interface WindowParticipant {
-  windowId: string;
-  userId: string;
-  joinedAt: string;
-  isActive: boolean;
-  matchedWith?: string;
-}
-
-// ─── Vibe Check Types ─────────────────────────────────────
-
-export interface VibeCheck {
-  id: string;
-  windowId: string;
-  userAId: string;
-  userBId: string;
-  status: MatchStatus;
-  startedAt: string;
-  callDurationSeconds: number;
-  userADecision?: boolean;
-  userBDecision?: boolean;
-  decisionDeadline?: string;
-  mutualLock: boolean;
-  livekitRoomName?: string;
-}
-
-export interface VibeCheckState {
-  phase: 'connecting' | 'silhouette' | 'blurred' | 'revealed' | 'decision';
-  timeRemaining: number;        // seconds remaining in current phase
-  partnerName?: string;
-  partnerAge?: number;
-  partnerSilhouette?: string;   // base64 silhouette SVG
-  partnerBlurHash?: string;     // blur hash for progressive reveal
-  isAudioMuted: boolean;
-  decision?: 'lock' | 'pass' | null;
-  partnerDecision?: 'lock' | 'pass' | null;
-}
-
 // ─── Match Types ──────────────────────────────────────────
 
 export interface Match {
   id: string;
-  vibeCheckId: string;
   userAId: string;
   userBId: string;
   matchedAt: string;
@@ -280,7 +226,6 @@ export interface PushToken {
 
 export interface NotificationPreferences {
   pushEnabled: boolean;
-  flashWindowReminder: boolean;
 }
 
 export interface PushNotificationMessage {
@@ -295,8 +240,6 @@ export interface PushNotificationMessage {
 
 export enum NotificationType {
   MATCH_FOUND = 'match.found',
-  VIBE_CHECK = 'vibe.check',
-  FLASH_WINDOW = 'flash.window',
   NEW_MESSAGE = 'new.message',
   NEW_LIKE = 'new.like',
   DUO_INVITE = 'duo.invite',
@@ -311,30 +254,8 @@ export enum WsEvent {
   DISCONNECT = 'disconnect',
   ERROR = 'error',
 
-  // Flash Window
-  WINDOW_STATUS = 'window:status',
-  WINDOW_JOIN = 'window:join',
-  WINDOW_LEAVE = 'window:leave',
-  WINDOW_COUNTDOWN = 'window:countdown',
-  WINDOW_QUEUE_SIZE = 'window:queue_size',
-
   // Matching
-  MATCH_FOUND = 'match:found',
-  MATCH_CANCELLED = 'match:cancelled',
   MATCH_NEW = 'match:new',
-
-  // Vibe Check
-  VIBE_START = 'vibe:start',
-  VIBE_STATE = 'vibe:state',
-  VIBE_PHASE_CHANGE = 'vibe:phase_change',
-  VIBE_AUDIO_TOGGLE = 'vibe:audio_toggle',
-  VIBE_DECISION = 'vibe:decision',
-  VIBE_PARTNER_DECISION = 'vibe:partner_decision',
-  VIBE_END = 'vibe:end',
-
-  // Post-Match
-  MATCH_SUCCESS = 'match:success',
-  MATCH_EXPIRED = 'match:expired',
 
   // Likes (real-time)
   LIKES_NEW = 'likes:new',

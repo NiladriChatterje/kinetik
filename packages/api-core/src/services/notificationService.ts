@@ -174,47 +174,11 @@ async function sendToTokens(
  * Meant to be called from Kafka consumers or directly from route handlers.
  */
 export const notificationEvents = {
-  async matchFound(userId: string, partnerName: string): Promise<void> {
-    await sendPushNotification(userId, 'match.found', {
-      title: 'New Match!',
-      body: `You matched with ${partnerName}! Say hello and plan your date.`,
-      data: { type: 'match.found', screen: 'LockStatus' },
-    });
-  },
-
-  async vibeCheckStart(userId: string, partnerName: string, vibeId: string): Promise<void> {
-    await sendPushNotification(userId, 'vibe.check', {
-      title: 'Vibe Check Time!',
-      body: `${partnerName} is ready to vibe. Join the call!`,
-      data: { type: 'vibe.check', screen: 'VibeCheck', vibeId },
-      priority: 'high',
-    });
-  },
-
-  async flashWindowReminder(userId: string, city: string, minutesUntilStart: number): Promise<void> {
-    // Check if the user wants flash window reminders
-    const prefsResult = await query<{ flash_window_reminder: boolean }>(
-      `SELECT flash_window_reminder FROM ${TABLES.USER_PREFERENCES} WHERE user_id = $1`,
-      [userId],
-    );
-
-    // Check if user wants flash window reminders (default to true)
-    if (prefsResult.rows[0]?.flash_window_reminder === false) {
-      return;
-    }
-
-    await sendPushNotification(userId, 'flash.window', {
-      title: `Flash Window in ${minutesUntilStart} min`,
-      body: `The next flash window in ${city} is about to start. Get ready!`,
-      data: { type: 'flash.window', screen: 'FlashCountdown' },
-    });
-  },
-
   async newMessage(userId: string, senderName: string, messagePreview: string): Promise<void> {
     await sendPushNotification(userId, 'new.message', {
       title: senderName,
       body: messagePreview,
-      data: { type: 'new.message', screen: 'ActiveRadar' },
+      data: { type: 'new.message', screen: 'Chat' },
       sound: 'default',
     });
   },

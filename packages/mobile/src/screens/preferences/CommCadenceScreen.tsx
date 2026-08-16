@@ -56,7 +56,7 @@ export const CommCadenceScreen: React.FC<{ navigation: any }> = ({ navigation })
           <Card style={styles.doneCard}>
             <Ionicons name="checkmark-circle-outline" size={64} color={colors.textPrimary} />
             <Text style={styles.doneText}>Profile Complete!</Text>
-            <Text style={styles.doneDesc}>You're ready to join the next flash window</Text>
+            <Text style={styles.doneDesc}>You're all set — time to start matching</Text>
             <Button title="Enter Kinetik" onPress={handleFinish} fullWidth />
           </Card>
         )}

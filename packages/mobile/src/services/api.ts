@@ -259,9 +259,7 @@ class ApiClient {
   /** Real activity metrics for the profile page (server-counted, Redis-cached). */
   async getProfileStats() {
     return this.request<{
-      vibeChecks: number;
       matches: number;
-      lockRate: number;
       dates: number;
     }>('/api/v1/users/profile/stats');
   }
@@ -303,19 +301,6 @@ class ApiClient {
       method: 'POST',
       body: JSON.stringify({ step, data }),
     });
-  }
-
-  // ─── Windows ────────────────────────────────────────
-  async getActiveWindows() {
-    return this.request('/api/v1/windows/active');
-  }
-
-  async joinWindow(windowId: string) {
-    return this.request(`/api/v1/windows/${windowId}/join`, { method: 'POST' });
-  }
-
-  async leaveWindow(windowId: string) {
-    return this.request(`/api/v1/windows/${windowId}/leave`, { method: 'POST' });
   }
 
   // ─── Matches ────────────────────────────────────────
@@ -428,10 +413,10 @@ class ApiClient {
   }
 
   async getNotificationPreferences() {
-    return this.request<{ pushEnabled: boolean; flashWindowReminder: boolean }>('/api/v1/notifications/preferences');
+    return this.request<{ pushEnabled: boolean }>('/api/v1/notifications/preferences');
   }
 
-  async updateNotificationPreferences(data: { pushEnabled?: boolean; flashWindowReminder?: boolean }) {
+  async updateNotificationPreferences(data: { pushEnabled?: boolean }) {
     return this.request('/api/v1/notifications/preferences', {
       method: 'PUT',
       body: JSON.stringify(data),

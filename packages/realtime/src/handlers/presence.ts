@@ -7,7 +7,6 @@ interface PresenceData {
   status: 'online' | 'away' | 'busy' | 'offline';
   lastSeen: number;
   currentWindow?: string;
-  inVibeCheck?: boolean;
 }
 
 export class PresenceHandler {

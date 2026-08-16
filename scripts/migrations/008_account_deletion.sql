@@ -15,22 +15,29 @@
 -- ─── users: tombstone column ─────────────────────────────
 ALTER TABLE users ADD COLUMN IF NOT EXISTS deleted_at TIMESTAMPTZ;
 
--- ─── window_participants.matched_with → SET NULL ─────────
-ALTER TABLE window_participants
-    DROP CONSTRAINT IF EXISTS window_participants_matched_with_fkey,
-    ADD CONSTRAINT window_participants_matched_with_fkey
-        FOREIGN KEY (matched_with) REFERENCES users(id) ON DELETE SET NULL;
+-- ─── window_participants / vibe_checks (legacy) ──────────
+-- These tables are dropped by migration 010; fresh installs never create
+-- them, so the FK fixes only apply when the tables still exist.
+DO $$
+BEGIN
+    IF to_regclass('window_participants') IS NOT NULL THEN
+        ALTER TABLE window_participants
+            DROP CONSTRAINT IF EXISTS window_participants_matched_with_fkey,
+            ADD CONSTRAINT window_participants_matched_with_fkey
+                FOREIGN KEY (matched_with) REFERENCES users(id) ON DELETE SET NULL;
+    END IF;
 
--- ─── vibe_checks → CASCADE (both participants) ───────────
-ALTER TABLE vibe_checks
-    DROP CONSTRAINT IF EXISTS vibe_checks_user_a_id_fkey,
-    ADD CONSTRAINT vibe_checks_user_a_id_fkey
-        FOREIGN KEY (user_a_id) REFERENCES users(id) ON DELETE CASCADE;
-
-ALTER TABLE vibe_checks
-    DROP CONSTRAINT IF EXISTS vibe_checks_user_b_id_fkey,
-    ADD CONSTRAINT vibe_checks_user_b_id_fkey
-        FOREIGN KEY (user_b_id) REFERENCES users(id) ON DELETE CASCADE;
+    IF to_regclass('vibe_checks') IS NOT NULL THEN
+        ALTER TABLE vibe_checks
+            DROP CONSTRAINT IF EXISTS vibe_checks_user_a_id_fkey,
+            ADD CONSTRAINT vibe_checks_user_a_id_fkey
+                FOREIGN KEY (user_a_id) REFERENCES users(id) ON DELETE CASCADE;
+        ALTER TABLE vibe_checks
+            DROP CONSTRAINT IF EXISTS vibe_checks_user_b_id_fkey,
+            ADD CONSTRAINT vibe_checks_user_b_id_fkey
+                FOREIGN KEY (user_b_id) REFERENCES users(id) ON DELETE CASCADE;
+    END IF;
+END $$;
 
 -- ─── matches → CASCADE (match + chat vanish with the user) ─
 ALTER TABLE matches

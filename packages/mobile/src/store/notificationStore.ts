@@ -8,7 +8,6 @@ import { api } from '../services/api';
 interface NotificationState {
   expoPushToken: string | null;
   pushEnabled: boolean;
-  flashWindowReminder: boolean;
   isLoading: boolean;
   isInitialized: boolean;
   lastNotification: Notification | null;
@@ -19,7 +18,6 @@ interface NotificationState {
   registerForPushNotifications: () => Promise<string | null>;
   refreshPreferences: () => Promise<void>;
   updatePushEnabled: (enabled: boolean) => Promise<void>;
-  updateFlashWindowReminder: (enabled: boolean) => Promise<void>;
   setLastNotification: (notification: Notification | null) => void;
   setLastNotificationResponse: (response: NotificationResponse | null) => void;
   cleanup: () => void;
@@ -28,7 +26,6 @@ interface NotificationState {
 export const useNotificationStore = create<NotificationState>((set, get) => ({
   expoPushToken: null,
   pushEnabled: true,
-  flashWindowReminder: true,
   isLoading: true,
   isInitialized: false,
   lastNotification: null,
@@ -57,14 +54,6 @@ export const useNotificationStore = create<NotificationState>((set, get) => ({
             importance: Notifications.AndroidImportance.HIGH,
             vibrationPattern: [0, 250, 250, 250],
             lightColor: '#000000',
-          });
-
-          await Notifications.setNotificationChannelAsync('vibe', {
-            name: 'Vibe Check',
-            importance: Notifications.AndroidImportance.HIGH,
-            vibrationPattern: [0, 250, 250, 250],
-            lightColor: '#000000',
-            sound: 'default',
           });
         } catch {
           console.warn('[notifications] Failed to set up Android channels');
@@ -154,10 +143,7 @@ export const useNotificationStore = create<NotificationState>((set, get) => ({
     try {
       const response = await api.getNotificationPreferences();
       if (response.success && response.data) {
-        set({
-          pushEnabled: response.data.pushEnabled,
-          flashWindowReminder: response.data.flashWindowReminder,
-        });
+        set({ pushEnabled: response.data.pushEnabled });
       }
     } catch (error) {
       console.error('[notifications] Failed to load preferences:', error);
@@ -175,16 +161,6 @@ export const useNotificationStore = create<NotificationState>((set, get) => ({
     }
   },
 
-  updateFlashWindowReminder: async (enabled: boolean) => {
-    try {
-      const response = await api.updateNotificationPreferences({ flashWindowReminder: enabled });
-      if (response.success) {
-        set({ flashWindowReminder: enabled });
-      }
-    } catch (error) {
-      console.error('[notifications] Failed to update flash window preference:', error);
-    }
-  },
 
   setLastNotification: (notification) => set({ lastNotification: notification }),
   setLastNotificationResponse: (response) => set({ lastNotificationResponse: response }),

@@ -19,7 +19,7 @@ Each part of the app gets a free home. "Sleeps" means the free host pauses the s
 | Photo / media storage | **Cloudflare R2** | ✅ | Never |
 | Voice & video calls | **LiveKit Cloud** (Build plan) | ✅ | Never |
 | api-core (the main server) | **Render** free web service | ✅ | After 15 min → ping keeps it awake |
-| realtime (chat sockets + flash-window matching) | **Koyeb** free account | ✅ | After 1 h → ping keeps it awake |
+| realtime (chat sockets) | **Koyeb** free account | ✅ | After 1 h → ping keeps it awake |
 | pose-service (selfie check) | **Not deployed** — optional, see §9 | ✅ | — |
 | Push notifications | Expo Push | ✅ | Never |
 | Address lookup (geocoding) | Geoapify (3,000/day) | ✅ | Never |
@@ -27,7 +27,7 @@ Each part of the app gets a free home. "Sleeps" means the free host pauses the s
 
 **Accounts you'll create:** Neon, Upstash, Cloudflare, LiveKit, Render (1), Koyeb (1), UptimeRobot. All free, none ask for a card.
 
-> The Python match-engine was retired — flash-window matching now runs inside the realtime service, so there's no separate matching service to host at all.
+> The Python match-engine and the flash-window feature were both retired — matching happens through swipes/likes in api-core, so there's no separate matching service to host at all.
 
 ---
 
@@ -146,9 +146,9 @@ Free: 512 MB RAM, 750 hours/month — exactly enough to keep **one** service awa
 
 ---
 
-## 8. Chat server (realtime, includes matching) → Koyeb
+## 8. Chat server (realtime) → Koyeb
 
-Free: 512 MB RAM, one web service, no card. One account is enough — flash-window matching runs inside this service.
+Free: 512 MB RAM, one web service, no card. One account is enough.
 
 - Build: `npm install && npm run build -w packages/shared && npm run build -w packages/realtime`
 - Run: `node packages/realtime/dist/index.js` · Port: `3002`
@@ -302,5 +302,5 @@ The repo's `docker-compose.yml` runs the entire stack unchanged, so upgrading is
 4. **`JWT_SECRET` must be byte-identical** on api-core and realtime.
 5. **The login code is hardcoded `123456`** — change it before you pay for SMS.
 6. **`MINIO_ENDPOINT` must NOT include `https://`** — the code prepends the scheme itself; doubling it breaks uploads.
-7. **A sleeping realtime service misses window-join events** (they're fire-and-forget), which delays flash-window matching — the UptimeRobot ping is what prevents this.
+7. **A sleeping realtime service misses live events** (chat broadcasts and match pop-ups are fire-and-forget) — the UptimeRobot ping is what prevents this.
 8. **Back up Neon weekly** — free tiers have no backups. A free GitHub Actions cron running `pg_dump` → upload to R2 covers it.

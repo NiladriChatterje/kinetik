@@ -9,7 +9,6 @@ import Redis from 'ioredis';
 import { authRoutes } from './routes/auth';
 import { userRoutes } from './routes/users';
 import { onboardingRoutes } from './routes/onboarding';
-import { windowRoutes } from './routes/windows';
 import { matchRoutes } from './routes/matches';
 import { callRoutes } from './routes/calls';
 import { paymentRoutes } from './routes/payments';
@@ -25,7 +24,6 @@ import { errorHandler } from './middleware/errorHandler';
 import { eventBus } from './services/eventBus';
 import { initializeRedis } from './services/redis';
 import { initializeDatabase } from './services/database';
-import { startLocationPoller } from './services/locationPoller';
 
 const PORT = parseInt(process.env.PORT || '3001', 10);
 const JWT_SECRET = process.env.JWT_SECRET || 'super-secret-jwt-key-change-in-production-2024';
@@ -108,7 +106,6 @@ async function bootstrap() {
   await app.register(authRoutes, { prefix: API_ROUTES.AUTH_PREFIX });
   await app.register(userRoutes, { prefix: API_ROUTES.USERS_PREFIX });
   await app.register(onboardingRoutes, { prefix: '/api/v1/onboarding' });
-  await app.register(windowRoutes, { prefix: API_ROUTES.WINDOWS_PREFIX });
   await app.register(matchRoutes, { prefix: API_ROUTES.MATCHES_PREFIX });
   await app.register(callRoutes, { prefix: API_ROUTES.MATCHES_PREFIX });
   await app.register(fanRoutes, { prefix: '/api/v1/fans' });
@@ -120,9 +117,6 @@ async function bootstrap() {
   await app.register(photoRoutes, { prefix: '/api/v1/users/photos' });
   await app.register(poseVerificationRoutes, { prefix: '/api/v1/users/pose-verification' });
   await app.register(kycRoutes, { prefix: '/api/v1/kyc' });
-
-  // ─── Start Location Poller (Geoapify every 3 min → Redis pub/sub) ─
-  startLocationPoller();
 
   // ─── Start ───────────────────────────────────────────
   try {

@@ -37,10 +37,6 @@ export const colors = {
   info: '#666666',
 
   // Match Engine
-  vibeActive: '#000000',
-  vibeConnecting: '#666666',
-  vibeConnected: '#333333',
-  vibeLock: '#000000',
 
   // Gradients
   gradientStart: '#000000',

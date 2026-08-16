@@ -100,18 +100,4 @@ export const eventBus = {
   async sendPaymentEvent(event: { type: string; payload: Record<string, unknown> }): Promise<void> {
     await this.publish(EVENT_BUS_CHANNELS.PAYMENT_EVENTS, event);
   },
-
-  /**
-   * Publish a window-related event.
-   */
-  async sendWindowEvent(event: { type: string; payload: Record<string, unknown> }): Promise<void> {
-    await this.publish(EVENT_BUS_CHANNELS.WINDOW_EVENTS, event);
-  },
-
-  /**
-   * Publish a vibe check event.
-   */
-  async sendVibeEvent(event: { type: string; payload: Record<string, unknown> }): Promise<void> {
-    await this.publish(EVENT_BUS_CHANNELS.VIBE_EVENTS, event);
-  },
 };

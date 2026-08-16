@@ -132,18 +132,7 @@ export async function userRoutes(app: FastifyInstance) {
       console.warn('[users] Stats cache read failed, computing fresh:', error?.message || error);
     }
 
-    const [vibeResult, matchResult, dateResult] = await Promise.all([
-      // Completed vibe checks + how many the user "locked it in"
-      query(
-        `SELECT COUNT(*) AS total,
-                COUNT(*) FILTER (
-                  WHERE (user_a_id = $1 AND user_a_decision = TRUE)
-                     OR (user_b_id = $1 AND user_b_decision = TRUE)
-                ) AS locked
-         FROM ${TABLES.VIBE_CHECKS}
-         WHERE (user_a_id = $1 OR user_b_id = $1) AND status <> 'pending'`,
-        [userId],
-      ),
+    const [matchResult, dateResult] = await Promise.all([
       query(
         `SELECT COUNT(*) AS count
          FROM ${TABLES.MATCHES}
@@ -158,12 +147,8 @@ export async function userRoutes(app: FastifyInstance) {
       ),
     ]);
 
-    const totalChecks = parseInt(vibeResult.rows[0]?.total ?? '0', 10);
-    const lockedChecks = parseInt(vibeResult.rows[0]?.locked ?? '0', 10);
     const data = {
-      vibeChecks: totalChecks,
       matches: parseInt(matchResult.rows[0]?.count ?? '0', 10),
-      lockRate: totalChecks > 0 ? Math.round((lockedChecks / totalChecks) * 100) : 0,
       dates: parseInt(dateResult.rows[0]?.count ?? '0', 10),
     };
 

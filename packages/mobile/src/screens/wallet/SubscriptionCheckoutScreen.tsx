@@ -21,7 +21,7 @@ const FEATURES = [
   { icon: 'infinite-outline' as const, label: 'Unlimited daily swipes' },
   { icon: 'flash-outline' as const, label: 'Fast Passes & Rain Checks every month' },
   { icon: 'eye-off-outline' as const, label: 'See who liked you — no blur' },
-  { icon: 'shield-checkmark-outline' as const, label: 'Priority in Flash Windows' },
+  { icon: 'shield-checkmark-outline' as const, label: 'Priority profile placement' },
 ];
 
 const PAYMENT_METHODS = ['Credit / Debit Card', 'UPI Autopay (recurring mandate)'];

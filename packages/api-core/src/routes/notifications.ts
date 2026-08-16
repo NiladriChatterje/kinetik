@@ -11,7 +11,6 @@ const RegisterTokenSchema = z.object({
 
 const UpdateNotificationPrefsSchema = z.object({
   pushEnabled: z.boolean().optional(),
-  flashWindowReminder: z.boolean().optional(),
 });
 
 export async function notificationRoutes(app: FastifyInstance) {
@@ -75,7 +74,7 @@ export async function notificationRoutes(app: FastifyInstance) {
     const { sub: userId } = request.user as any;
 
     const result = await query(
-      `SELECT push_enabled, flash_window_reminder FROM ${TABLES.USER_PREFERENCES} WHERE user_id = $1`,
+      `SELECT push_enabled FROM ${TABLES.USER_PREFERENCES} WHERE user_id = $1`,
       [userId],
     );
 
@@ -85,7 +84,6 @@ export async function notificationRoutes(app: FastifyInstance) {
       success: true,
       data: {
         pushEnabled: prefs?.push_enabled ?? true,
-        flashWindowReminder: prefs?.flash_window_reminder ?? true,
       },
     });
   });
@@ -114,10 +112,6 @@ export async function notificationRoutes(app: FastifyInstance) {
     if (data.pushEnabled !== undefined) {
       updateFields.push(`push_enabled = $${paramIndex++}`);
       updateValues.push(data.pushEnabled);
-    }
-    if (data.flashWindowReminder !== undefined) {
-      updateFields.push(`flash_window_reminder = $${paramIndex++}`);
-      updateValues.push(data.flashWindowReminder);
     }
 
     if (updateFields.length === 0) {

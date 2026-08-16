@@ -18,9 +18,7 @@ type NotificationSetting = {
 export const NotificationPreferencesScreen: React.FC = () => {
   const {
     pushEnabled,
-    flashWindowReminder,
     updatePushEnabled,
-    updateFlashWindowReminder,
     expoPushToken,
   } = useNotificationStore();
 
@@ -31,13 +29,6 @@ export const NotificationPreferencesScreen: React.FC = () => {
     [updatePushEnabled],
   );
 
-  const handleFlashWindowToggle = useCallback(
-    (value: boolean) => {
-      updateFlashWindowReminder(value);
-    },
-    [updateFlashWindowReminder],
-  );
-
   const settings: NotificationSetting[] = [
     {
       key: 'pushEnabled',
@@ -46,14 +37,6 @@ export const NotificationPreferencesScreen: React.FC = () => {
       description: 'Receive notifications when the app is closed. Disable this to stop all notifications.',
       value: pushEnabled,
       onChange: handlePushToggle,
-    },
-    {
-      key: 'flashWindow',
-      icon: 'flash-outline',
-      title: 'Flash Window Reminders',
-      description: 'Get notified before a Flash Window is about to start in your area.',
-      value: flashWindowReminder,
-      onChange: handleFlashWindowToggle,
     },
   ];
 
@@ -92,7 +75,7 @@ export const NotificationPreferencesScreen: React.FC = () => {
         <Card style={styles.infoCard}>
           <Ionicons name="information-circle-outline" size={20} color={colors.textMuted} style={styles.infoIcon} />
           <Text style={styles.infoText}>
-            Notifications are delivered through Expo's push notification service. Messages, vibe checks, and other
+            Notifications are delivered through Expo's push notification service. Messages, likes, and other
             time-sensitive alerts will still arrive even when Kinetik is running in the background.
           </Text>
         </Card>

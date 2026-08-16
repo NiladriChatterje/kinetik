@@ -71,11 +71,6 @@ import { ValueMatrixScreen } from '../screens/preferences/ValueMatrixScreen';
 import { PriorityWeightingScreen } from '../screens/preferences/PriorityWeightingScreen';
 import { CommCadenceScreen } from '../screens/preferences/CommCadenceScreen';
 
-// Engine
-import { VibeCheckScreen } from '../screens/engine/VibeCheckScreen';
-import { UnmaskingScreen } from '../screens/engine/UnmaskingScreen';
-import { CommitmentGateScreen } from '../screens/engine/CommitmentGateScreen';
-
 // Scheduling
 import { LockStatusScreen } from '../screens/scheduling/LockStatusScreen';
 import { CalendarSyncScreen } from '../screens/scheduling/CalendarSyncScreen';
@@ -114,10 +109,7 @@ export type RootStackParamList = {
   Main: undefined;
   NotificationPreferences: undefined;
   TokenVault: undefined;
-  VibeCheck: { vibeId: string; partnerId?: string; partnerName?: string };
-  Unmasking: { vibeId: string };
-  Commitment: { vibeId: string; matched?: boolean };
-  LockStatus: { vibeId: string; partnerName: string };
+  LockStatus: { matchId: string; partnerName: string };
   CalendarSync: { matchId: string };
   VenueSelector: { matchId: string };
   ReservationLocker: { matchId: string; venueId: string };
@@ -292,9 +284,6 @@ export function RootNavigator() {
         <RootStack.Screen name="TokenVault" component={TokenVaultScreen} />
         <RootStack.Screen name="DuoWingman" component={DuoWingmanScreen} />
         {/* Existing root overlay screens */}
-        <RootStack.Screen name="VibeCheck" component={VibeCheckScreen} />
-        <RootStack.Screen name="Unmasking" component={UnmaskingScreen} />
-        <RootStack.Screen name="Commitment" component={CommitmentGateScreen} />
         <RootStack.Screen name="LockStatus" component={LockStatusScreen} />
         <RootStack.Screen name="CalendarSync" component={CalendarSyncScreen} />
         <RootStack.Screen name="VenueSelector" component={VenueSelectorScreen} />

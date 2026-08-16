@@ -102,7 +102,7 @@ export async function matchRoutes(app: FastifyInstance) {
           SELECT actor_id FROM ${TABLES.USER_INTERACTIONS} WHERE target_id = $1
           UNION
           -- Active matches are the source of truth for "already matched" —
-          -- covers matches created without swipe interactions (e.g. vibe check)
+          -- covers matches however they were created
           SELECT user_b_id FROM ${TABLES.MATCHES} WHERE user_a_id = $1 AND is_active = TRUE
           UNION
           SELECT user_a_id FROM ${TABLES.MATCHES} WHERE user_b_id = $1 AND is_active = TRUE
@@ -306,8 +306,8 @@ export async function matchRoutes(app: FastifyInstance) {
       if (mutualCheck.rows.length > 0) {
         // Mutual like! Create a match
         const matchResult = await query(
-          `INSERT INTO ${TABLES.MATCHES} (user_a_id, user_b_id, is_active, vibe_check_id)
-           VALUES ($1, $2, TRUE, NULL) RETURNING *`,
+          `INSERT INTO ${TABLES.MATCHES} (user_a_id, user_b_id, is_active)
+           VALUES ($1, $2, TRUE) RETURNING *`,
           [userId, targetUserId],
         );
         const match = matchResult.rows[0];
@@ -499,8 +499,8 @@ export async function matchRoutes(app: FastifyInstance) {
 
     // Like back — create match
     const matchResult = await query(
-      `INSERT INTO ${TABLES.MATCHES} (user_a_id, user_b_id, is_active, vibe_check_id)
-       VALUES ($1, $2, TRUE, NULL) RETURNING *`,
+      `INSERT INTO ${TABLES.MATCHES} (user_a_id, user_b_id, is_active)
+       VALUES ($1, $2, TRUE) RETURNING *`,
       [targetUserId, userId],
     );
     const match = matchResult.rows[0];
@@ -794,11 +794,8 @@ export async function matchRoutes(app: FastifyInstance) {
       `SELECT m.*,
               u.display_name as partner_name,
               pp.url as partner_photo_url,
-              pp.thumbnail_url as partner_thumbnail_url,
-              vc.started_at as vibe_started_at,
-              vc.call_duration_seconds
+              pp.thumbnail_url as partner_thumbnail_url
        FROM ${TABLES.MATCHES} m
-       LEFT JOIN ${TABLES.VIBE_CHECKS} vc ON m.vibe_check_id = vc.id
        JOIN ${TABLES.USERS} u ON u.id = CASE WHEN m.user_a_id = $1 THEN m.user_b_id ELSE m.user_a_id END
        LEFT JOIN ${TABLES.PROFILE_PHOTOS} pp ON pp.user_id = u.id AND pp.is_primary = TRUE
        WHERE (m.user_a_id = $1 OR m.user_b_id = $1) AND m.is_active = TRUE
@@ -1215,15 +1212,11 @@ export async function matchRoutes(app: FastifyInstance) {
               u.date_of_birth as partner_dob,
               u.occupation as partner_occupation,
               pp.url as partner_photo_url,
-              vc.created_at as vibe_created_at,
-              vc.started_at as vibe_started_at,
-              vc.call_duration_seconds,
               v.name as venue_name,
               v.address as venue_address,
               v.category as venue_category,
               v.image_url as venue_image_url
        FROM ${TABLES.MATCHES} m
-       LEFT JOIN ${TABLES.VIBE_CHECKS} vc ON m.vibe_check_id = vc.id
        LEFT JOIN ${TABLES.RESERVATIONS} r ON r.match_id = m.id
        LEFT JOIN ${TABLES.VENUES} v ON r.venue_id = v.id
        JOIN ${TABLES.USERS} u ON u.id = CASE WHEN m.user_a_id = $1 THEN m.user_b_id ELSE m.user_a_id END

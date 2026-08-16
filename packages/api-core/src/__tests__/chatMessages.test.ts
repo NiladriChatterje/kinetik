@@ -26,7 +26,6 @@ vi.mock('../services/database', () => ({
     INTERESTS: 'interests',
     SUBSCRIPTION_LEDGER: 'subscription_ledger',
     PUSH_TOKENS: 'push_tokens',
-    VIBE_CHECKS: 'vibe_checks',
     RESERVATIONS: 'reservations',
     VENUES: 'venues',
   },
@@ -40,8 +39,6 @@ vi.mock('../services/eventBus', () => ({
     sendUserEvent: vi.fn().mockResolvedValue(undefined),
     sendMatchEvent: vi.fn().mockResolvedValue(undefined),
     sendPaymentEvent: vi.fn().mockResolvedValue(undefined),
-    sendWindowEvent: vi.fn().mockResolvedValue(undefined),
-    sendVibeEvent: vi.fn().mockResolvedValue(undefined),
   },
 }));
 
@@ -97,7 +94,7 @@ describe('Chat Message API - Send Message', () => {
 
   describe('input validation', () => {
     it('should reject empty content', () => {
-      const content = '';
+      const content: string = '';
 
       const isValid = !!content && content.trim().length > 0;
       expect(isValid).toBe(false);

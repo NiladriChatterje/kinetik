@@ -9,7 +9,7 @@ import { colors, typography, spacing } from '../../theme';
 interface Props { navigation: any; route: any; }
 
 export const LockStatusScreen: React.FC<Props> = ({ navigation, route }) => {
-  const { vibeId } = route.params || {};
+  const { matchId } = route.params || {};
   const scaleAnim = useRef(new Animated.Value(0)).current;
 
   useEffect(() => {
@@ -32,7 +32,7 @@ export const LockStatusScreen: React.FC<Props> = ({ navigation, route }) => {
         </View>
       </Animated.View>
       <View style={styles.actions}>
-        <Button title="Schedule Your Date" onPress={() => navigation.navigate('CalendarSync', { matchId: vibeId })} fullWidth size="lg" icon={<Ionicons name="calendar-outline" size={20} color={colors.textPrimary} />} />
+        <Button title="Schedule Your Date" onPress={() => navigation.navigate('CalendarSync', { matchId })} fullWidth size="lg" icon={<Ionicons name="calendar-outline" size={20} color={colors.textPrimary} />} />
         <Button title="Keep Exploring" onPress={() => navigation.navigate('Main')} variant="ghost" fullWidth />
       </View>
     </SafeAreaView>

@@ -334,8 +334,7 @@ export async function authRoutes(app: FastifyInstance) {
   // ─── Delete Account ───────────────────────────────────
   // Permanently deletes the user's account and ALL associated records
   // (profile, photos, preferences, interests, KYC, push tokens, subscription,
-  // window participation, likes, duo crews, vibe checks, matches, chats and
-  // chat media files).
+  // likes, duo crews, matches, chats and chat media files).
   //
   // Design:
   //   - The users row is soft-deleted (PII scrubbed, deleted_at set) purely so
@@ -405,10 +404,8 @@ export async function authRoutes(app: FastifyInstance) {
         await q(`DELETE FROM ${TABLES.KYC_DOCUMENTS} WHERE user_id = $1`, [userId]);
         await q(`DELETE FROM ${TABLES.PUSH_TOKENS} WHERE user_id = $1`, [userId]);
         await q(`DELETE FROM ${TABLES.SUBSCRIPTION_LEDGER} WHERE user_id = $1`, [userId]);
-        await q(`DELETE FROM ${TABLES.WINDOW_PARTICIPANTS} WHERE user_id = $1`, [userId]);
         await q(`DELETE FROM ${TABLES.DUO_CREWS} WHERE creator_id = $1 OR invitee_id = $1`, [userId]);
         await q(`DELETE FROM ${TABLES.USER_INTERACTIONS} WHERE actor_id = $1 OR target_id = $1`, [userId]);
-        await q(`DELETE FROM ${TABLES.VIBE_CHECKS} WHERE user_a_id = $1 OR user_b_id = $1`, [userId]);
         // transactions + audit_log: retained by design
 
         // Tombstone the user row — scrub all PII

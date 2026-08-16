@@ -1,11 +1,3 @@
-// ─── Vibe Check Constants ─────────────────────────────────
-
-export const VIBE_CHECK_DURATION_SECONDS = 180;        // 3 minutes
-export const VIBE_CHECK_SILHOUETTE_PHASE_SECONDS = 60;  // 0:00 - 1:00
-export const VIBE_CHECK_BLUR_PHASE_SECONDS = 60;        // 1:00 - 2:00
-export const VIBE_CHECK_REVEAL_PHASE_SECONDS = 60;      // 2:00 - 3:00
-export const VIBE_CHECK_DECISION_TIMEOUT_SECONDS = 15;  // Decision window
-
 // ─── Swipe / Interaction Limits ───────────────────────────
 
 export const PREMIUM_SWIPE_LIMIT_DAILY = 99999;
@@ -19,8 +11,6 @@ export const INFINITE_MONTHLY_COST_INR = 999;
 
 // ─── H3 Geospatial ────────────────────────────────────────
 
-export const H3_DEFAULT_RESOLUTION = 7;
-export const H3_SEARCH_RING_RADIUS = 1;   // k-ring radius
 export const H3_HIGH_DENSITY_THRESHOLD = 5000;  // users in 5km radius
 
 // ─── Redis Keys ───────────────────────────────────────────
@@ -32,37 +22,17 @@ export const REDIS_KEYS = {
   USER_SWIPE_COUNT: (userId: string) => `user:${userId}:swipes:daily`,
   USER_SUPERLIKE_COUNT: (userId: string) => `user:${userId}:superlikes:daily`,
 
-  // H3 Queue
-  H3_QUEUE: (h3Index: string) => `queue:${h3Index}`,
-  H3_QUEUE_LOCK: (h3Index: string) => `queue:${h3Index}:lock`,
-
-  // Flash window
-  WINDOW_STATE: (windowId: string) => `window:${windowId}:state`,
-  WINDOW_PARTICIPANTS: (windowId: string) => `window:${windowId}:participants`,
-  WINDOW_ACTIVE: 'windows:active',
-
-  // Match
-  MATCH_POOL: (windowId: string) => `match:${windowId}:pool`,
-  MATCH_IN_PROGRESS: (userId: string) => `match:${userId}:in_progress`,
-
   // New likes counter (for unread badge)
   USER_UNREAD_LIKES: (userId: string) => `user:${userId}:likes:unread`,
-
-  // Vibe check
-  VIBE_CHECK: (vibeId: string) => `vibe:${vibeId}`,
-  VIBE_CHECK_USER: (userId: string) => `vibe:${userId}:active`,
 
   // Subscription limits
   SUBSCRIPTION: (userId: string) => `sub:${userId}`,
 
-  // Profile metrics cache (vibe checks, matches, lock rate, dates)
+  // Profile metrics cache (matches, dates)
   USER_STATS: (userId: string) => `user:${userId}:stats`,
 
   // Rate limiting
   RATE_LIMIT: (key: string) => `ratelimit:${key}`,
-
-  // Location / area (pub/sub channel for match-engine)
-  LOCATION_UPDATES_CHANNEL: 'location:updates',
 
   // Likes (pub/sub channel for cross-instance real-time like delivery)
   LIKES_EVENTS_CHANNEL: 'likes:events',
@@ -89,8 +59,6 @@ export const REDIS_KEYS = {
 export const EVENT_BUS_CHANNELS = {
   USER_EVENTS: 'event:user',
   MATCH_EVENTS: 'event:match',
-  VIBE_EVENTS: 'event:vibe',
-  WINDOW_EVENTS: 'event:window',
   PAYMENT_EVENTS: 'event:payment',
 } as const;
 
@@ -114,12 +82,6 @@ export const API_ROUTES = {
   // Onboarding
   ONBOARDING_STATUS: '/api/v1/onboarding/status',
   ONBOARDING_STEP: (step: string) => `/api/v1/onboarding/${step}`,
-
-  // Flash Windows
-  WINDOWS_PREFIX: '/api/v1/windows',
-  WINDOWS_ACTIVE: '/api/v1/windows/active',
-  WINDOWS_JOIN: (id: string) => `/api/v1/windows/${id}/join`,
-  WINDOWS_LEAVE: (id: string) => `/api/v1/windows/${id}/leave`,
 
   // Matches
   MATCHES_PREFIX: '/api/v1/matches',
@@ -168,8 +130,6 @@ export const API_ROUTES = {
 
 export const NOTIFICATION_TYPE_LABELS: Record<string, string> = {
   'match.found': 'New Match',
-  'vibe.check': 'Vibe Check',
-  'flash.window': 'Flash Window',
   'new.message': 'Messages',
   'new.like': 'New Like',
   'duo.invite': 'Duo Invites',
@@ -199,10 +159,7 @@ export const ERROR_CODES = {
   RATE_LIMITED: 'RATE_LIMITED',
 
   // Matching
-  NO_MATCH_FOUND: 'NO_MATCH_FOUND',
-  MATCH_TIMEOUT: 'MATCH_TIMEOUT',
   ALREADY_MATCHED: 'ALREADY_MATCHED',
-  NOT_IN_WINDOW: 'NOT_IN_WINDOW',
 
   // Payment
   PAYMENT_FAILED: 'PAYMENT_FAILED',
@@ -238,8 +195,6 @@ export const ONBOARDING_STEPS: readonly string[] = [
 // ─── WebSocket Namespaces ─────────────────────────────────
 
 export const WS_NAMESPACES = {
-  FLASH_WINDOW: '/flash-window',
-  VIBE_CHECK: '/vibe-check',
   PRESENCE: '/presence',
   CHAT: '/chat',
 } as const;
