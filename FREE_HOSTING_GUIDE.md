@@ -1,347 +1,214 @@
-# Kinetik — Free Forever Hosting Guide (v2)
+# Kinetik — Free Forever Hosting Guide
 
-> **Last updated:** August 12, 2026
-> **Goal:** Every platform in the Kinetik stack deployed and **running**, 100% free, **forever** — no 7-day trials, no 30-day expirations, no expiring credits, no credit card, no surprise bills. You only pay later if *you* decide to upgrade.
+> **Last updated:** August 16, 2026
+> **Goal:** run the entire app online, **100% free, forever** — no trials, no credit card, no surprise bills.
 >
-> **This version is written for your situation:** no credit card available, no always-on machine at home, free subdomains only. It uses only free tiers that stay free forever and requires **no card anywhere**.
+> Written for: no credit card, no always-on computer at home, free subdomains only.
 
 ---
 
-## What changed vs. the old guide (v1)
+## 1. The big picture
 
-The old guide was written when some things were still possible. In 2026 they are not — and the new guide fixes all of them:
+Each part of the app gets a free home. "Sleeps" means the free host pauses the service when nobody uses it — a free pinging service (UptimeRobot) visits it every 5 minutes so it never actually sleeps.
 
-| Old advice | 2026 reality |
-|---|---|
-| Hugging Face Spaces for the Python pose-service (Docker, no sleep) | ❌ **Hugging Face now charges for Docker/Gradio Spaces** — free accounts can no longer deploy them. Gone. |
-| Render free PostgreSQL as a backup option | ❌ **Render free Postgres expires after 30 days and is then permanently deleted** (14-day grace, then wiped). Never use it. |
-| AWS t2.micro / GCP trial as fallbacks | ❌ 12-month / 90-day trials — excluded by your rules anyway. |
-| "Render can host both Node services" | ⚠️ Render free = **750 instance-hours/month per workspace** ≈ enough to keep exactly **one** service awake 24/7. |
-| Koyeb as a sleep-free host | ⚠️ Koyeb free now sleeps after **1 hour** idle — fixable with keep-alive pings. |
-| LiveKit self-hosted on a VM | ✅ LiveKit Cloud **Build plan** is free forever (no card): 50 GB/month + 5,000 WebRTC minutes. Use it. |
+| What | Runs on | Free forever? | Sleeps? |
+|---|---|---|---|
+| Database (PostgreSQL) | **Neon** | ✅ | Naps after 5 min, wakes in ~0.3 s (our app pings it anyway) |
+| Redis — cache + chat plumbing | **Upstash** database #1 | ✅ | Never |
+| Redis — internal event messages | **Upstash** database #2 | ✅ | Never |
+| Photo / media storage | **Cloudflare R2** | ✅ | Never |
+| Voice & video calls | **LiveKit Cloud** (Build plan) | ✅ | Never |
+| api-core (the main server) | **Render** free web service | ✅ | After 15 min → ping keeps it awake |
+| realtime (chat sockets) | **Koyeb** free account #1 | ✅ | After 1 h → ping keeps it awake |
+| match-engine (Python matching) | **Koyeb** free account #2 | ✅ | After 1 h → ping keeps it awake |
+| pose-service (selfie check) | **Not deployed** — optional, see §9 | ✅ | — |
+| Push notifications | Expo Push | ✅ | Never |
+| Address lookup (geocoding) | Geoapify (3,000/day) | ✅ | Never |
+| Uptime pings + error logs | UptimeRobot, Sentry, Better Stack | ✅ | Never |
 
-**The honest bottom line for no-card, no-machine, cloud-only:**
-- ✅ **api-core**, **realtime**, **match-engine** — can all run free forever (details below).
-- ✅ **Postgres, Redis ×2, object storage, LiveKit, push, monitoring** — all free forever managed services.
-- ⚠️ **pose-service** (Python + OpenCV + MediaPipe, needs ~1 GB RAM) — has **no** free-forever cloud home on a no-card tier. **Good news: it's optional** — the API already degrades gracefully when it's down, so the app runs fine without it (§10).
-- ⚠️ The **Celery worker** has no free home either — a **one-line tweak** folds its job back into the match-engine process (§9), so nothing is lost.
-
----
-
-## 1. The Plan at a Glance
-
-| Component | Where it runs | Free forever? | Card? | Sleeps? |
-|---|---|---|---|---|
-| PostgreSQL | **Neon** (free plan) | ✅ | ❌ | Scales to zero (~350 ms resume) |
-| Redis (cache + Socket.IO adapter) | **Upstash** DB #1 | ✅ | ❌ | Serverless — no sleep |
-| Redis (event bus) | **Upstash** DB #2 | ✅ | ❌ | Serverless — no sleep |
-| Object storage (photos/KYC/chat media) | **Cloudflare R2** | ✅ | ❌ | Never |
-| WebRTC SFU (calls) | **LiveKit Cloud** Build plan | ✅ | ❌ | Never |
-| api-core (Fastify REST API) | **Render** free web service | ✅ | ❌ | Sleeps after 15 min → keep-alive pings |
-| realtime (Socket.IO) | **Koyeb** free web service | ✅ | ❌ | Sleeps after 1 h → keep-alive pings |
-| match-engine (Python/H3) | **Koyeb** (2nd free account) | ✅ | ❌ | Sleeps → keep-alive pings |
-| match-engine Celery worker | Folded into match-engine (1-line tweak) | ✅ | ❌ | n/a |
-| pose-service | **Not deployed** — optional (§10) | ✅ | ❌ | n/a |
-| Push notifications | Expo Push (free) | ✅ | ❌ | Never |
-| Geocoding | Geoapify (3,000 credits/day) | ✅ | ❌ | Never |
-| Uptime/monitoring | UptimeRobot + Sentry + Better Stack | ✅ | ❌ | Never |
-
-**You will need 3 free accounts total:** Render (1), Koyeb (2 — one per service, see §8–9).
+**Accounts you'll create:** Neon, Upstash, Cloudflare, LiveKit, Render (1), Koyeb (2 — one per service), UptimeRobot. All free, none ask for a card.
 
 ---
 
-## 2. Step 0 — One-time code tweaks (≈10 minutes, do this first)
+## 2. Code changes you must make first (~10 minutes, one time)
 
-The stack was written for self-hosted infra (plaintext Redis, Celery, MinIO). Three tiny tweaks make it work on managed free tiers. Everything below is already in this repo — the file paths are exact.
+**No new SDKs or libraries need to be installed.** The app already speaks the right "languages": Neon is plain PostgreSQL, Upstash is plain Redis, R2 is storage the app's existing S3 client understands, and the LiveKit / Expo / Razorpay SDKs are already in the code. The only edits are tiny settings tweaks:
 
-### 2a. Managed Redis requires TLS (Upstash/Aiven)
+### 2a. Tell Redis connections to use encryption (TLS)
 
-Upstash's `redis://` endpoint is TLS-only, and ioredis won't negotiate TLS unless you ask it to. Add **one line** to each ioredis constructor:
+Upstash only accepts encrypted connections. Add **one line** — `tls: {},` — inside the `new Redis({...})` settings in these 4 files (5 spots):
 
-**`packages/api-core/src/services/redis.ts`** (rate-limit + cache client):
-```ts
-redisClient = new Redis({
-  host: process.env.REDIS_HOST || 'localhost',
-  port: parseInt(process.env.REDIS_PORT || '6379', 10),
-  password: process.env.REDIS_PASSWORD,
-  tls: {},                       // ← ADD THIS (Upstash/Aiven)
-  retryStrategy: (times) => { ... },
-  ...
-});
-```
+1. `packages/api-core/src/services/redis.ts`
+2. `packages/api-core/src/services/eventBus.ts` (inside `getPublisher()`)
+3. `packages/api-core/src/index.ts` (the Redis passed to the rate limiter)
+4. `packages/realtime/src/index.ts` — **two spots**: the `pubClient` and the `eventBusClient`
 
-**`packages/api-core/src/services/eventBus.ts`** — same one line inside the `new Redis({...})` in `getPublisher()`.
+Python side (match-engine):
 
-**`packages/api-core/src/index.ts`** — same one line inside the `new Redis({...})` passed to the rate-limit plugin.
+5. `packages/match-engine-py/src/services/redis_client.py` — change `redis://` to `rediss://` (the extra "s" turns on encryption)
+6. `packages/match-engine-py/src/services/event_bus.py` — add `ssl=True` to the `AsyncRedis(...)` call
 
-**`packages/realtime/src/index.ts`** — same one line in the `pubClient` constructor (`subClient = pubClient.duplicate()` inherits it) **and** in the `eventBusClient` constructor.
+### 2b. Run matching jobs inside the main process (drop the Celery worker)
 
-Python side (only if you run the match-engine against Upstash):
-- **`packages/match-engine-py/src/services/redis_client.py`** — `connect()` uses `aioredis.from_url(f"redis://{host}:{port}", ...)`. Change the scheme to `rediss://` (redis-py 8.x supports it) so TLS is on.
-- **`packages/match-engine-py/src/services/event_bus.py`** — `AsyncRedis(host=..., port=..., password=...)`: add `ssl=True`.
-
-> Skip 2a if you'd rather use **Aiven Redis** (free 250 MB, always-on managed instance) — Aiven is also TLS-only, so the same tweak applies.
-
-### 2b. (Recommended) Run match jobs in-process — drop the Celery worker
-
-**`packages/match-engine-py/src/main.py`**, inside the event-bus handler:
+The free plan has no room for a separate background worker. In `packages/match-engine-py/src/main.py`, in the event handler, change:
 
 ```python
 # BEFORE:
 find_match.apply_async(args=[uid, wid])
-
-# AFTER (runs the job in this process — no Celery worker container needed):
+# AFTER:
 await asyncio.to_thread(find_match.apply, args=[uid, wid])
 ```
 
-`asyncio` is already imported in that file. Matching now runs off the event loop on a worker thread — identical behavior at MVP scale, and you **delete the Celery worker from your deployment** entirely.
+Same behavior at small scale — and you simply don't deploy the worker.
 
-### 2c. (Only if you ever deploy pose-service) R2 photo fetching
-
-`packages/pose-service/src/main.py` → `_resolve_photo_url()` builds `http://{minio_endpoint}/{bucket}/{key}` — that's MinIO-only. Against R2 (HTTPS + `r2.dev` public URLs) it needs the scheme and the public bucket URL. Since we're not deploying pose-service on the free plan (§10), this is parked until you self-host it.
+That's everything. All other "changes" are just filling in web addresses and passwords (environment variables, §12).
 
 ---
 
-## 3. Step 1 — PostgreSQL → **Neon** (free forever)
+## 3. Database → Neon
 
-| | Neon free plan |
-|---|---|
-| Storage | 500 MB |
-| Compute | 100 CU-hours/month (scales to zero after 5 min idle, ~350 ms resume) |
-| Card? | **No** |
-| Forever? | **Yes** — no expiry, data never deleted |
+Free: 500 MB storage, no expiry, no card.
 
-1. Sign up at [neon.tech](https://neon.tech) (GitHub/Google login, no card).
-2. **New project** → pick a region close to your users → **Create**.
-3. Copy the connection string. **Use the pooled one** (`-pooler` in the hostname): the app's pg pool opens up to 20 connections, and Neon free tier is much happier behind its PgBouncer:
+1. Sign up at [neon.tech](https://neon.tech) → **New project** → pick a region near your users.
+2. Copy the connection string — **use the one with `-pooler` in the address** (it handles many connections better):
    ```
    postgresql://kinetik_user:PASSWORD@ep-XXXX-pooler.us-east-2.aws.neon.tech/kinetik?sslmode=require
    ```
-   That exact string becomes `DATABASE_URL` everywhere.
-
-**Run the migrations** (from this repo, once):
-```bash
-export DATABASE_URL="postgresql://kinetik_user:PASSWORD@ep-XXXX-pooler.us-east-2.aws.neon.tech/kinetik?sslmode=require"
-
-# Option A — you have Docker (works on Windows too, reuses the repo's own runner):
-DB_HOST=ep-XXXX-pooler.us-east-2.aws.neon.tech DB_PORT=5432 \
-DB_USER=kinetik_user DB_PASSWORD=PASSWORD DB_NAME=kinetik \
-docker compose up migration-runner
-
-# Option B — you have psql installed:
-psql "$DATABASE_URL" -f scripts/init-db.sql
-for f in scripts/migrations/*.sql; do psql "$DATABASE_URL" -1 -f "$f"; done
-```
-
-> 💡 Neon stays warm automatically: api-core's location poller queries the DB every 3 minutes, so the compute never hits the 5-minute idle threshold.
+   This exact string is your `DATABASE_URL` everywhere.
+3. Create the tables (once). Either with Docker:
+   ```bash
+   DB_HOST=ep-XXXX-pooler.us-east-2.aws.neon.tech DB_PORT=5432 \
+   DB_USER=kinetik_user DB_PASSWORD=PASSWORD DB_NAME=kinetik \
+   docker compose up migration-runner
+   ```
+   or with psql:
+   ```bash
+   psql "$DATABASE_URL" -f scripts/init-db.sql
+   for f in scripts/migrations/*.sql; do psql "$DATABASE_URL" -1 -f "$f"; done
+   ```
 
 ---
 
-## 4. Step 2 — Redis ×2 → **Upstash** (free forever)
+## 4. Redis ×2 → Upstash
 
-| | Upstash free plan (per database) |
-|---|---|
-| Storage | 256 MB |
-| Commands | ~500k/month (~16k/day guideline) |
-| Databases | Up to 10 free |
-| Card? | **No** |
+Free: 256 MB and ~500k commands/month **per database**, up to 10 databases, no card.
 
-Create **two** databases (this is deliberate — the stack uses one Redis for caching/Socket.IO and a **separate** one for the event bus):
+Create **two** databases (the app deliberately uses two — one for caching/chat, one for internal events):
 
-1. **`kinetik-cache`** → the main Redis (`REDIS_*` env vars).
-2. **`kinetik-events`** → the event bus (`REDIS_EVENTS_*` env vars).
+1. `kinetik-cache` → fills the `REDIS_*` variables
+2. `kinetik-events` → fills the `REDIS_EVENTS_*` variables
 
-For each, open the dashboard → **Connect** → copy the TCP details (host, port 6379, password token — the token goes in `REDIS_PASSWORD`). You've already added `tls: {}` in §2a, so plain host/port/password env vars just work.
+For each: dashboard → **Connect** → copy host, port `6379`, and the password token.
 
-```
-REDIS_HOST=deep-lynx-12345.upstash.io
-REDIS_PORT=6379
-REDIS_PASSWORD=<token>
-
-REDIS_EVENTS_HOST=kind-swan-67890.upstash.io
-REDIS_EVENTS_PORT=6379
-REDIS_EVENTS_PASSWORD=<token>
-```
-
-> ⚠️ **Budget check:** the Socket.IO adapter + rate limiter + location poller will burn a few hundred commands a day at MVP scale — fine. If you start hitting the monthly cap, raise the location-poll TTLs or move Redis to your future paid VPS. Also: **claim** each database into your free account (unclaimed dbs are deleted after 3 days).
+> ⚠️ **Claim both databases** into your account — unclaimed ones are deleted after 3 days.
 
 ---
 
-## 5. Step 3 — Object storage → **Cloudflare R2** (free forever)
+## 5. Photo storage → Cloudflare R2
 
-| | Cloudflare R2 free |
-|---|---|
-| Storage | 10 GB-month |
-| Egress | **$0 forever** (no download fees — huge for a photo app) |
-| Operations | 1M writes + 10M reads/month |
-| Card? | **No** |
+Free: 10 GB storage, downloads cost nothing ever, no card.
 
-1. [dash.cloudflare.com](https://dash.cloudflare.com) → **R2** → **Create bucket** → name it `kinetik-photos`.
-2. **R2 → Manage R2 API Tokens → Create API token** (Object Read & Write on that bucket) → copy Access Key ID + Secret.
-3. **Settings → Public access → Create public bucket** (the `*.r2.dev` URL is your public CDN).
-4. Add a CORS rule allowing `GET` from `*` (mobile doesn't need it, web preview does).
+1. [dash.cloudflare.com](https://dash.cloudflare.com) → **R2** → **Create bucket** named `kinetik-photos`.
+2. **Manage R2 API Tokens → Create API token** (Read & Write on that bucket) → copy the Access Key ID + Secret.
+3. Bucket **Settings → Public access → Create public bucket** — the `pub-xxxx.r2.dev` address is where photos are served from.
+4. Add a CORS rule allowing `GET` from `*`.
 
-Because there's no nginx `/uploads/` proxy in the cloud setup, `MINIO_PUBLIC_URL` must be the absolute public bucket URL:
+Environment variables (⚠️ note: `MINIO_ENDPOINT` is **just the host, no `https://` in front** — the app adds that itself):
 
 ```
-MINIO_ENDPOINT=https://<account-id>.r2.cloudflarestorage.com
+MINIO_ENDPOINT=<account-id>.r2.cloudflarestorage.com
 MINIO_ACCESS_KEY=<r2-access-key-id>
 MINIO_SECRET_KEY=<r2-secret>
 MINIO_BUCKET=kinetik-photos
 MINIO_USE_SSL=true
-MINIO_PUBLIC_URL=https://pub-<hash>.r2.dev
+MINIO_PUBLIC_URL=https://pub-<hash>.r2.dev/
 ```
-
-Photo URLs are stored in the DB as `https://pub-<hash>.r2.dev/...` — the mobile app's `resolveUrl()` passes absolute URLs through unchanged. Encrypted chat media is served by api-core's own proxy endpoint, so it stays private regardless.
 
 ---
 
-## 6. Step 4 — WebRTC (calls) → **LiveKit Cloud** (free forever)
+## 6. Calls → LiveKit Cloud
 
-| | LiveKit Cloud "Build" plan |
-|---|---|
-| Bandwidth | 50 GB downstream/month (upstream free) |
-| Call minutes | 5,000 WebRTC minutes/month |
-| Card? | **No** |
+Free "Build" plan: 50 GB traffic + 5,000 call minutes per month, no card.
 
-1. Sign up at [livekit.io](https://livekit.io) → create a project (Build plan).
-2. **Settings → Keys** → copy the **host** (`wss://<project>.livekit.cloud`), API key, and API secret.
+1. Sign up at [livekit.io](https://livekit.io) → create a project.
+2. **Settings → Keys** → copy the host, API key, and API secret:
+   ```
+   LIVEKIT_HOST=wss://<project>.livekit.cloud
+   LIVEKIT_API_KEY=APIxxx
+   LIVEKIT_API_SECRET=<secret>
+   LIVEKIT_PUBLIC_URL=wss://<project>.livekit.cloud
+   ```
 
-```
-LIVEKIT_HOST=wss://<project>.livekit.cloud
-LIVEKIT_API_KEY=APIxxx
-LIVEKIT_API_SECRET=<secret>
-LIVEKIT_PUBLIC_URL=wss://<project>.livekit.cloud
-```
+> Don't try to self-host LiveKit on a free tier — calls need network features only a real server has. The free cloud plan is the right answer.
 
-> Don't self-host LiveKit on a free tier — it needs UDP port ranges + TURN, which requires a real VM. The free Build plan is the right call and needs no card.
-
-> **Self-hosting LiveKit instead (e.g. the $5–6 VPS ladder)?** The compose file ships the embedded TURN server — just set `LIVEKIT_TURN_ENABLED=true`, `LIVEKIT_TURN_DOMAIN=turn.<yourdomain>`, `LIVEKIT_TURN_TLS_PORT=443` (unless you have a load balancer in front), and drop a **CA-signed** `turn.crt`/`turn.key` (self-signed won't work) into `config/certs/`. Clients then get `wss://` + TURN automatically. The Build plan above already includes all of this for free.
-
-> **Dev on a physical iPhone over plain `ws://` (LAN)?** iOS ATS would block cleartext WebSockets — `app.json` ships `NSAppTransportSecurity → NSAllowsLocalNetworking: true`, which exempts only local-network connections (RFC1918 IPs) and keeps ATS strict for everything else, so it's App-Store-safe. In production the app always talks `wss://`, which needs no exception.
-
-> **Testing calls over LAN with docker?** Set `LIVEKIT_RTC_NODE_IP=<your machine's LAN IP>` in your `.env` and `docker compose up -d livekit` — without it the LiveKit container advertises its internal docker IP, so the call *connects* but no video/audio flows. Everything else stays `ws://` + TURN off, which is exactly right for LAN dev.
+> **Testing calls on your own Wi-Fi with Docker?** Set `LIVEKIT_RTC_NODE_IP=<your PC's LAN IP>` in `.env`, or calls will connect but stay silent/black.
 
 ---
 
-## 7. Step 5 — api-core → **Render** (free forever)
+## 7. Main server (api-core) → Render
 
-| | Render free web service |
-|---|---|
-| Resources | 512 MB RAM, 1 vCPU |
-| Hours | 750 instance-hours/month (**≈ one always-awake service**) |
-| Sleep | After 15 min idle → keep-alive pings prevent it |
-| Card? | **No** |
+Free: 512 MB RAM, 750 hours/month — exactly enough to keep **one** service awake all month.
 
-> ⚠️ **The 750-hour rule:** one keep-alive'd service uses ~744 h/month, so it *just* fits. **Do not put a second service in this workspace** — it would blow the pool and suspend everything mid-month. Extra services go on Koyeb (§8–9).
+> ⚠️ **One service per Render account.** A second one would eat the shared hours and take both down mid-month. Extra services go on Koyeb.
 
-**Deploy:**
-1. Push this repo to GitHub (public or private — free tier works either way).
-2. Render → **New → Web Service** → connect the repo → **Root directory: `/`**.
+1. Push this repo to GitHub.
+2. Render → **New → Web Service** → connect the repo → root directory `/`.
 3. Settings:
-   - **Runtime:** Node
-   - **Build command:**
-     ```
-     npm install && npm run build -w packages/shared && npm run build -w packages/api-core
-     ```
-   - **Start command:**
-     ```
-     node packages/api-core/dist/index.js
-     ```
-   - **Instance type:** Free
-   - **Health check path:** `/health`
-4. Add the **full env var list from §14** (note: Render injects `PORT` itself — don't set it).
-5. Deploy. Your public URL is `https://<service-name>.onrender.com` (HTTPS included, free).
-
-**Wire the mobile app later in §12** using this URL as `apiUrl`.
+   - Runtime: **Node**
+   - Build command: `npm install && npm run build -w packages/shared && npm run build -w packages/api-core`
+   - Start command: `node packages/api-core/dist/index.js`
+   - Instance type: **Free** · Health check path: `/health`
+4. Add the api-core variables from §12 (don't set `PORT` — Render sets it).
+5. Deploy → your address is `https://<name>.onrender.com`.
 
 ---
 
-## 8. Step 6 — realtime → **Koyeb** (free forever)
+## 8. Chat server (realtime) + matching (match-engine) → Koyeb ×2
 
-| | Koyeb free web service |
-|---|---|
-| Resources | 512 MB RAM, 0.1 vCPU, 2 GB disk |
-| Bandwidth | 100 GB/month |
-| Sleep | After **1 hour** idle → keep-alive pings prevent it |
-| Card? | **No** |
+Free per account: 512 MB RAM, one web service, no card. So: **two Koyeb accounts** (different emails).
 
-1. Sign up at [koyeb.com](https://koyeb.com) (free account, no card).
-2. **Create App** → deploy from your GitHub repo.
-3. Service settings:
-   - **Build command:**
-     ```
-     npm install && npm run build -w packages/shared && npm run build -w packages/realtime
-     ```
-   - **Run command:**
-     ```
-     node packages/realtime/dist/index.js
-     ```
-   - **Port:** `3002`
-   - **Public domain:** it'll get `https://<app>.koyeb.app` with HTTPS (or set your own later).
-4. Env vars: **`JWT_SECRET` must be identical to api-core's** (it validates the same tokens), plus the Redis vars from §14.
-5. Deploy.
+**Account #1 — realtime:**
+- Build: `npm install && npm run build -w packages/shared && npm run build -w packages/realtime`
+- Run: `node packages/realtime/dist/index.js` · Port: `3002`
+- Variables: §12. **`JWT_SECRET` must be exactly the same as api-core's** — otherwise every chat connection is rejected.
 
-WebSocket + long-polling both work through Koyeb. Keep it warm with an UptimeRobot ping to `https://<app>.koyeb.app/socket.io/?EIO=4&transport=polling` (§13).
+**Account #2 — match-engine:**
+- Build method: Dockerfile → `packages/match-engine-py/Dockerfile` · Port: `3003`
+- Variables: §12, plus `PORT=3003`, `ENVIRONMENT=production`.
+- If the Docker build fails over folder paths, build natively instead: build `cd packages/match-engine-py && pip install -r requirements-lock.txt`, run `cd packages/match-engine-py && python -m src.main`.
+- The Celery worker is **not deployed** — §2b folded it into this service.
 
 ---
 
-## 9. Step 7 — match-engine → **Koyeb (2nd free account)** + worker tweak
+## 9. pose-service (selfie verification) — skip it, on purpose
 
-The match-engine (Python + H3, subscribes to the event bus and computes flash-window matches) is a separate always-on process. Koyeb free allows **one** service per account, so use a **second Koyeb account** (different email).
+It needs ~1 GB of memory; every no-card free tier tops out at 512 MB. The app is built to work without it: onboarding never blocks on it, users simply stay "pending" instead of "verified". Only the opt-in KYC face check truly needs it.
 
-1. New Koyeb account → **Create App** → deploy the same repo.
-2. Service settings:
-   - **Build method:** Dockerfile → path `packages/match-engine-py/Dockerfile`
-   - **Run command:** (empty — use the Dockerfile's default `CMD`)
-   - **Port:** `3003`
-   - > ⚠️ If your platform builds with **repo-root** as the Docker context instead of the Dockerfile's folder, the Dockerfile's `COPY src/ ./src/` will fail. Fall back to a native build instead: build command `cd packages/match-engine-py && pip install -r requirements-lock.txt`, run command `cd packages/match-engine-py && python -m src.main`.
-3. Env vars: `DATABASE_URL`, `REDIS_*`, `REDIS_EVENTS_*` (§14), `PORT=3003`, `ENVIRONMENT=production`.
-4. Deploy. Keep it awake with an UptimeRobot ping to `https://<app>.koyeb.app/health` (§13).
-
-**The Celery worker** — apply the §2b tweak (`find_match.apply` in-process) and simply **don't deploy the worker**. Matching runs inside the match-engine process. Reintroduce a real worker when you move to a paid VM.
-
-> Note: the event bus is **fire-and-forget pub/sub** — if the match-engine is asleep when an event fires, that event is missed (matches process on the next window). Keep-alive pings make this a non-issue in practice. This is the one accepted trade-off of the free plan.
+- **Now:** leave `POSE_SERVICE_URL` empty (not `localhost` — empty, so the app fails fast and moves on).
+- **Later:** either run the check on the phone itself (MediaPipe works on-device, free forever) or self-host the service on a future $5 server and just set `POSE_SERVICE_URL` — no other code changes.
 
 ---
 
-## 10. Step 8 — pose-service: the honest section
+## 10. Third-party freebies
 
-**Why there's no free home:** it needs OpenCV + MediaPipe (≈1 GB RAM minimum at runtime, huge wheels) — every no-card free tier tops out at 512 MB, and Hugging Face (the old answer) now charges for Docker Spaces.
-
-**Why that's OK — it's optional by design:**
-- `packages/api-core/src/routes/poseVerification.ts` calls the pose-service inside a `try/catch` with a timeout and **never blocks onboarding**: `"User can proceed with onboarding regardless of the result."` Users just get `pending` instead of `verified`.
-- Only the KYC "verify face on ID" endpoint (`/api/v1/kyc/verify-face`) hard-requires it — and KYC is a per-user opt-in feature.
-
-**Your free-forever options, in order of preference:**
-1. **Ship without it now** (zero cost, zero changes). Verification stays `pending` until you decide otherwise.
-2. **Move liveness to the phone** (recommended when you want real verification): MediaPipe runs natively on-device — `PoseVerificationScreen.tsx` already captures the selfie; the check can run in the app and report back. No hosting at all, works forever, free.
-3. **Self-host it later** on your future $5 VPS (or home machine) and set `POSE_SERVICE_URL` — zero code changes needed on the API side.
-
-Don't leave `POSE_SERVICE_URL` pointing at `http://localhost:3004` — leave it unset so the calls fail fast (and gracefully) rather than hanging.
-
----
-
-## 11. Step 9 — Third-party APIs (all free, no card)
-
-| Need | Service | Free tier | Env vars |
+| Need | Service | Free tier | Variables |
 |---|---|---|---|
-| Push notifications | **Expo Push** | Free (send as many as your volume allows; works via `expo-server-sdk`) | `EXPO_ACCESS_TOKEN` *(optional)* |
-| Reverse geocoding | **Geoapify** | 3,000 credits/day (the location poller uses ~1/user/3min) | `GEOAPIFY_API` |
-| SMS OTP | **Deferred** — see note | — | `SMS_DISABLED=true` |
-| Payments | **Razorpay** | Test mode keys are free & unlimited | `RAZORPAY_KEY_ID`, `RAZORPAY_KEY_SECRET` |
-| Errors | **Sentry** | 5k errors/month | — |
-| Logs | **Better Stack** | 100k logs/month | — |
+| Push notifications | Expo Push | free | `EXPO_ACCESS_TOKEN` (optional) |
+| Address lookup | Geoapify | 3,000/day | `GEOAPIFY_API` |
+| SMS login codes | deferred | — | `SMS_DISABLED=true` |
+| Payments | Razorpay | test keys free forever | `RAZORPAY_KEY_ID`, `RAZORPAY_KEY_SECRET` (+ see `PAYMENT_INTEGRATION.md`) |
+| Error alerts | Sentry | 5k errors/month | — |
+| Log storage | Better Stack | 100k logs/month | — |
 
-**SMS OTP note (read this):** `generateOtp()` in `packages/api-core/src/routes/auth.ts` currently returns `'123456'` for everyone — SMS is effectively stubbed. Set `SMS_DISABLED=true` so the app logs OTPs instead of trying Twilio. When you launch for real: Twilio's $15 trial credit is *not* forever, so plan on a pay-as-you-go SMS provider (Twilio ~$0.0079/SMS, or an India-focused provider like Fast2SMS/MSG91 with small free credits). That's a per-message cost, not a hosting cost — and it's optional today.
+**SMS note:** the login code is currently hardcoded to `123456` for everyone (`generateOtp()` in `routes/auth.ts`). Keep `SMS_DISABLED=true` until launch; real SMS always costs per message (~₹0.2–0.7), on any provider.
 
-**Payments note:** Razorpay test keys work forever for development. Live mode requires business KYC and takes a ~2% per-transaction fee — normal for any payment provider, not a hosting cost.
+**Payments note:** Razorpay test keys are free forever. Going live needs business KYC and costs ~2% per transaction — a payment fee, not a hosting fee.
 
 ---
 
-## 12. Step 10 — Mobile app: URLs + distribution
+## 11. The mobile app
 
-**Point the app at your free URLs** — edit `packages/mobile/app.json` → `expo.extra`:
+Point it at your new addresses — `packages/mobile/app.json` → `expo.extra`:
 
 ```json
 "extra": {
@@ -350,37 +217,20 @@ Don't leave `POSE_SERVICE_URL` pointing at `http://localhost:3004` — leave it 
 }
 ```
 
-`config.ts` reads both; `resolveUrl()` passes absolute R2 URLs through untouched.
-
-**Build & distribute (all free):**
-- **Build:** Expo EAS Build free tier (30 builds/month) — `eas build -p android --profile preview`.
-- **Android:** publish the APK as a **GitHub Release** — free, permanent links, no expiry. (Google Play is a **one-time $25** fee when you're ready — not a subscription, but not zero either.)
-- **iOS:** TestFlight is free but requires an **Apple Developer account ($99/year)** — the one genuinely unavoidable cost in the entire stack. Skip iOS until you decide it's worth it.
+Build & share (free):
+- **Build:** Expo EAS free tier (30 builds/month): `eas build -p android --profile preview`
+- **Android:** attach the APK to a **GitHub Release** — free permanent download link. (Google Play is a one-time $25 when you're ready.)
+- **iOS:** needs the $99/year Apple Developer account — the one unavoidable cost. Skip until it's worth it.
 
 ---
 
-## 13. Step 11 — Keep-alive & monitoring (UptimeRobot)
-
-Free tier: 50 monitors, 5-minute checks. These do double duty — **health checks** and **anti-sleep pings**:
-
-| Monitor | Type | URL / host | Why |
-|---|---|---|---|
-| api-core | HTTP(S) | `https://<api-core>.onrender.com/health` | keeps Render awake + health |
-| realtime | HTTP(S) | `https://<realtime>.koyeb.app/socket.io/?EIO=4&transport=polling` | keeps Koyeb awake + Socket.IO sanity (expect `0{` in body) |
-| match-engine | HTTP(S) | `https://<match>.koyeb.app/health` | keeps Koyeb awake + health |
-| Neon DB | TCP | `ep-XXXX-pooler.us-east-2.aws.neon.tech:5432` | optional belt-and-braces (api-core's poller already keeps it warm) |
-| LiveKit | TCP | `<project>.livekit.cloud:443` | sanity only |
-
----
-
-## 14. Full environment variable reference
+## 12. All environment variables in one place
 
 ### api-core (Render)
-
 ```
 NODE_ENV=production
-DATABASE_URL=postgresql://kinetik_user:PASSWORD@ep-XXXX-pooler.us-east-2.aws.neon.tech/kinetik?sslmode=require
-JWT_SECRET=<long-random-string>          # ⚠️ MUST match realtime exactly
+DATABASE_URL=postgresql://kinetik_user:PASSWORD@ep-XXXX-pooler.../kinetik?sslmode=require
+JWT_SECRET=<long-random-string>          # ⚠️ must match realtime exactly
 JWT_EXPIRES_IN=7d
 MESSAGE_ENCRYPTION_KEY=<random-32+-chars>
 REDIS_HOST=<cache>.upstash.io
@@ -393,100 +243,98 @@ LIVEKIT_HOST=wss://<project>.livekit.cloud
 LIVEKIT_API_KEY=APIxxx
 LIVEKIT_API_SECRET=<secret>
 LIVEKIT_PUBLIC_URL=wss://<project>.livekit.cloud
-MINIO_ENDPOINT=https://<account-id>.r2.cloudflarestorage.com
+MINIO_ENDPOINT=<account-id>.r2.cloudflarestorage.com   # no https:// prefix
 MINIO_ACCESS_KEY=<r2-access-key-id>
 MINIO_SECRET_KEY=<r2-secret>
 MINIO_BUCKET=kinetik-photos
 MINIO_USE_SSL=true
-MINIO_PUBLIC_URL=https://pub-<hash>.r2.dev
+MINIO_PUBLIC_URL=https://pub-<hash>.r2.dev/
 GEOAPIFY_API=<geoapify-key>
 RAZORPAY_KEY_ID=rzp_test_xxxx
 RAZORPAY_KEY_SECRET=<razorpay-test-secret>
+RAZORPAY_WEBHOOK_SECRET=                 # set when you add the webhook (PAYMENT_INTEGRATION.md)
 SMS_DISABLED=true
-EXPO_ACCESS_TOKEN=            # optional
-POSE_SERVICE_URL=             # leave unset
+EXPO_ACCESS_TOKEN=                       # optional
+POSE_SERVICE_URL=                        # leave empty
 ```
 
-### realtime (Koyeb)
-
+### realtime (Koyeb #1)
 ```
-JWT_SECRET=<long-random-string>          # ⚠️ MUST match api-core exactly
-DATABASE_URL=postgresql://kinetik_user:PASSWORD@ep-XXXX-pooler.us-east-2.aws.neon.tech/kinetik?sslmode=require
-REDIS_HOST=<cache>.upstash.io
-REDIS_PORT=6379
-REDIS_PASSWORD=<token>
-REDIS_EVENTS_HOST=<events>.upstash.io
-REDIS_EVENTS_PORT=6379
-REDIS_EVENTS_PASSWORD=<token>
+JWT_SECRET=<same as api-core>
+DATABASE_URL=<same as api-core>
+REDIS_HOST / REDIS_PORT / REDIS_PASSWORD            = same as api-core
+REDIS_EVENTS_HOST / REDIS_EVENTS_PORT / REDIS_EVENTS_PASSWORD = same as api-core
 ```
 
 ### match-engine (Koyeb #2)
-
 ```
 ENVIRONMENT=production
-DATABASE_URL=postgresql://kinetik_user:PASSWORD@ep-XXXX-pooler.us-east-2.aws.neon.tech/kinetik?sslmode=require
-REDIS_HOST=<cache>.upstash.io
-REDIS_PORT=6379
-REDIS_PASSWORD=<token>
-REDIS_EVENTS_HOST=<events>.upstash.io
-REDIS_EVENTS_PORT=6379
-REDIS_EVENTS_PASSWORD=<token>
+PORT=3003
+DATABASE_URL=<same as api-core>
+REDIS_* and REDIS_EVENTS_*              = same as api-core
 ```
 
 ---
 
-## 15. End-to-end deployment checklist
+## 13. Keep everything awake — UptimeRobot
 
-- [ ] **Code tweaks (§2):** TLS lines in 5 Node spots; `rediss://`/`ssl=True` in 2 Python spots; Celery in-process tweak
-- [ ] **Neon:** create project → copy **pooled** `DATABASE_URL` → run migrations
-- [ ] **Upstash:** create `kinetik-cache` + `kinetik-events` → claim both → copy host/token
-- [ ] **Cloudflare R2:** bucket `kinetik-photos` → API token → public access (`*.r2.dev`) → CORS
-- [ ] **LiveKit Cloud:** project → copy host + key + secret
-- [ ] **Render (api-core):** deploy → set env vars → note `.onrender.com` URL
-- [ ] **Koyeb #1 (realtime):** deploy → set env vars → note `.koyeb.app` URL
-- [ ] **Koyeb #2 (match-engine):** deploy via Dockerfile → set env vars → note URL
-- [ ] **UptimeRobot:** add 3–5 monitors (§13) — this is what keeps everything awake
-- [ ] **Mobile:** set `apiUrl`/`wsUrl` in `app.json` → `eas build` → upload APK to GitHub Releases
-- [ ] **Verify:** signup (OTP `123456` in dev) → onboarding → photo upload (check R2) → like/matcher → chat → call (LiveKit)
+Free: 50 monitors, checks every 5 minutes. These pings double as health checks:
+
+| Monitor | URL |
+|---|---|
+| api-core | `https://<api-core>.onrender.com/health` |
+| realtime | `https://<realtime>.koyeb.app/socket.io/?EIO=4&transport=polling` |
+| match-engine | `https://<match>.koyeb.app/health` |
 
 ---
 
-## 16. Scaling up later (your "switch to a better plan" path)
+## 14. Deployment checklist
 
-Nothing here is a dead end — every service above can run on the repo's existing `docker-compose.yml` unchanged. The ladder:
+- [ ] Code tweaks (§2): 5 Node TLS lines, 2 Python TLS tweaks, 1 Celery line
+- [ ] Neon: project → **pooled** `DATABASE_URL` → run migrations
+- [ ] Upstash: `kinetik-cache` + `kinetik-events` → **claim both** → copy hosts/tokens
+- [ ] Cloudflare R2: bucket → API token → public access → CORS
+- [ ] LiveKit Cloud: project → host + key + secret
+- [ ] Render: deploy api-core → env vars → note the URL
+- [ ] Koyeb #1: deploy realtime → env vars → note the URL
+- [ ] Koyeb #2: deploy match-engine → env vars → note the URL
+- [ ] UptimeRobot: 3 monitors (§13) — this is what keeps everything awake
+- [ ] Mobile: `apiUrl`/`wsUrl` in `app.json` → `eas build` → APK to GitHub Releases
+- [ ] Test the loop: signup (code `123456`) → onboarding → photo upload → like → match → chat → call
 
-| When | Move | Cost |
+---
+
+## 15. Growing out of free (nothing is a dead end)
+
+The repo's `docker-compose.yml` runs the entire stack unchanged, so upgrading is just moving:
+
+| When | Move to | Cost |
 |---|---|---|
-| You want no sleep, ever, no card | Old PC / Raspberry Pi 5 at home + **Cloudflare Tunnel** (free) → `docker compose up -d` → tunnel exposes nginx on 8080 | $0 forever |
-| You get a card for signup verification | **Oracle Cloud Always Free** ARM VM (4 OCPU/24 GB — runs the whole compose file) | $0 forever |
-| You're ready to pay for polish | **Hetzner / DigitalOcean $5–6 VPS** + docker compose (this repo ships everything: postgres, redis, redis-events, minio, nginx, livekit, all 4 services) | ~$5–6/mo |
-| You outgrow it all | Same compose file, bigger box | your choice |
-
-The repo's `docker-compose.yml` is the one truth — Render/Koyeb/Neon/Upstash/R2/LiveKit are just its free-tier mirror image.
+| Want zero sleep, still no card | Old PC / Raspberry Pi at home + free Cloudflare Tunnel | $0 |
+| Get a card (just for signup) | Oracle Cloud "Always Free" ARM server — runs everything | $0 |
+| Ready to pay a little | Hetzner / DigitalOcean $5–6 server + `docker compose up` | ~$5–6/mo |
 
 ---
 
-## 17. What still can't be free forever (honest list)
+## 16. What genuinely can't be free
 
-| Item | Why | Workaround today |
+| Item | Why | Today's workaround |
 |---|---|---|
-| iOS distribution | Apple Developer $99/year | Ship Android APKs via GitHub Releases; skip iOS |
-| Custom domain | ~$8–12/year | Free `*.onrender.com` / `*.koyeb.app` subdomains (HTTPS included) |
-| SMS at scale | Per-message fees | OTP currently logs `123456` (`SMS_DISABLED=true`) — add a provider when you launch |
-| Live payments | Razorpay ~2%/transaction | Test keys are free & unlimited |
-| pose verification | Needs ~1 GB RAM container | Optional by design; go client-side later (§10) |
+| iOS app | Apple charges $99/year | Android APK via GitHub Releases |
+| Custom domain | ~$10/year | free `.onrender.com` / `.koyeb.app` addresses |
+| Real SMS | per-message fees | login code stays `123456` in dev |
+| Live payments | ~2% per transaction | test keys free forever |
+| Selfie verification hosting | needs 1 GB RAM | optional by design (§9) |
 
 ---
 
-## 18. Appendix — gotchas discovered while wiring the real code
+## 17. Gotchas (learned the hard way)
 
-1. **Render 750 h/month = one awake service per workspace.** A second service in the same workspace will suspend everything when hours run out.
-2. **Neon free ≈ 10–20 connections.** Always use the `-pooler` hostname in `DATABASE_URL`; the app opens a 20-connection pool.
-3. **Upstash is TLS-only on TCP.** No `tls: {}` → ioredis silently retries forever. (The code change in §2a is mandatory.)
-4. **OTP is hardcoded `123456`** (`generateOtp()` in `routes/auth.ts`) — don't burn SMS credits until you change that.
-5. **JWT_SECRET must be byte-identical** across api-core and realtime, or every Socket.IO connection is rejected.
-6. **KYC "verify face" (502s if pose-service is down)** — the only endpoint that hard-depends on it; KYC is opt-in.
-7. **Don't self-host LiveKit on free tiers** — UDP ranges + TURN need a real VM; LiveKit Cloud Build plan is free and cardless.
-8. **Event bus is pub/sub, not Kafka** — a sleeping match-engine misses events. Keep-alive pings every 5 min prevent that in practice.
-9. **Photos must be served from R2 (`*.r2.dev`), not `/uploads/`** — there's no nginx in the cloud path. `MINIO_PUBLIC_URL` must be absolute.
-10. **Back up Neon weekly.** Free tiers don't ship backups. A GitHub Actions cron (`pg_dump` → upload to R2 via `rclone`) costs nothing and runs forever.
+1. **Render = one awake service per account.** Two services will suspend each other mid-month.
+2. **Always use Neon's `-pooler` address** — the app opens up to 20 connections; the plain address can't handle it.
+3. **Upstash needs the TLS tweak (§2a)** — without it, Redis silently retries forever and nothing works.
+4. **`JWT_SECRET` must be byte-identical** on api-core and realtime.
+5. **The login code is hardcoded `123456`** — change it before you pay for SMS.
+6. **`MINIO_ENDPOINT` must NOT include `https://`** — the code prepends the scheme itself; doubling it breaks uploads.
+7. **A sleeping match-engine misses match events** (they're fire-and-forget) — the UptimeRobot ping is what prevents this.
+8. **Back up Neon weekly** — free tiers have no backups. A free GitHub Actions cron running `pg_dump` → upload to R2 covers it.
