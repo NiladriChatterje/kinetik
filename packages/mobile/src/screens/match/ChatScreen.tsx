@@ -598,29 +598,28 @@ export const ChatScreen: React.FC<{ navigation: any; route: any }> = ({ navigati
       // ─── Platform-specific file copy ─────────────────────────
       // On Android 10+, FileSystem.uploadAsync uses FileInputStream
       // which cannot read files created by expo-audio in the sandbox.
-      // We work around this by reading via fetch (which uses Android's
-      // ContentResolver) and writing a copy to the app's cache dir.
+      // We work around this by reading the file through the native
+      // filesystem and writing a copy to the app's cache dir.
       //
-      // On iOS, fetch() does NOT support file:// URIs (it throws a
-      // TypeError). But iOS has no sandbox read restriction — the
-      // expo-audio file is directly accessible to NSURLSession, so
+      // NOTE: this used to read the file via fetch(), but fetch does NOT
+      // support file:// URIs on Android — instead of the audio bytes it
+      // resolves with an error body ("File not found"), so the uploaded
+      // "voice note" was 14 bytes of that text and could never play.
+      // readAsStringAsync reads the file directly (same native IO the
+      // rest of this module uses).
+      //
+      // On iOS, there is no sandbox read restriction — the expo-audio
+      // file is directly accessible to NSURLSession, so
       // FileSystem.uploadAsync works with the original URI directly.
       let uploadUri: string;
 
       if (Platform.OS === 'android') {
         try {
-          console.log('[ChatAudio] Android: copying via fetch to cache...');
-          const response = await fetch(uploadSourceUri);
-          const arrayBuffer = await response.arrayBuffer();
-          console.log('[ChatAudio] Fetched ArrayBuffer size:', arrayBuffer.byteLength, 'bytes');
-
-          // Convert ArrayBuffer to base64 (Hermes-compatible)
-          const bytes = new Uint8Array(arrayBuffer);
-          const chars = new Array(bytes.length);
-          for (let i = 0; i < bytes.length; i++) {
-            chars[i] = String.fromCharCode(bytes[i]);
-          }
-          const base64Content = btoa(chars.join(''));
+          console.log('[ChatAudio] Android: copying audio to cache...');
+          const base64Content = await FileSystem.readAsStringAsync(uploadSourceUri, {
+            encoding: FileSystem.EncodingType.Base64,
+          });
+          if (!base64Content) throw new Error('Read produced empty content');
 
           const cacheDir = FileSystem.cacheDirectory;
           if (!cacheDir) throw new Error('cacheDirectory is null');
@@ -633,7 +632,7 @@ export const ChatScreen: React.FC<{ navigation: any; route: any }> = ({ navigati
           uploadUri = cacheUri;
           lastCacheUriRef.current = cacheUri;
         } catch (err) {
-          console.warn('[ChatAudio] Android: fetch copy failed, falling back to source URI:', err);
+          console.warn('[ChatAudio] Android: cache copy failed, falling back to source URI:', err);
           uploadUri = uploadSourceUri;
         }
       } else {
@@ -716,6 +715,15 @@ export const ChatScreen: React.FC<{ navigation: any; route: any }> = ({ navigati
 
       const player = createAudioPlayer(audioUrl);
       player.addListener('playbackStatusUpdate', (status: any) => {
+        // Surface load/playback failures instead of leaving the bubble
+        // stuck in a silent "playing" state (AudioStatus.error — emitted
+        // e.g. when the media can't be fetched or decoded)
+        if (status.error) {
+          setPlayingAudioId(null);
+          discardPlayer();
+          Alert.alert('Playback Error', status.error);
+          return;
+        }
         if (status.didJustFinish) {
           setPlayingAudioId(null);
           discardPlayer();
