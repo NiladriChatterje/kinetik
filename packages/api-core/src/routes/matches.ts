@@ -41,7 +41,7 @@ export async function matchRoutes(app: FastifyInstance) {
 
     // Get user's preferences for filtering
     const prefsResult = await query(
-      `SELECT age_min, age_max, max_distance_km, preferred_genders
+      `SELECT age_min, age_max, max_distance_km
        FROM ${TABLES.USER_PREFERENCES} WHERE user_id = $1`,
       [userId],
     );
@@ -49,11 +49,10 @@ export async function matchRoutes(app: FastifyInstance) {
     const ageMin = prefs.age_min ?? 18;
     const ageMax = prefs.age_max ?? 60;
     const maxDistance = prefs.max_distance_km ?? 50;
-    const genders = prefs.preferred_genders ?? [];
 
     // Get the user's own H3 for distance filtering
     const userResult = await query(
-      `SELECT h3_index, date_of_birth FROM ${TABLES.USERS} WHERE id = $1`,
+      `SELECT h3_index, date_of_birth, gender FROM ${TABLES.USERS} WHERE id = $1`,
       [userId],
     );
     const userRow = userResult.rows[0];
@@ -66,12 +65,14 @@ export async function matchRoutes(app: FastifyInstance) {
     const minBirthDate = new Date(now.getFullYear() - ageMax, now.getMonth(), now.getDate()).toISOString().split('T')[0];
     const maxBirthDate = new Date(now.getFullYear() - ageMin, now.getMonth(), now.getDate()).toISOString().split('T')[0];
 
-    // Build gender filter
+    // Build gender filter — the viewer's own gender decides who they see:
+    // male → female profiles only, female → male profiles only,
+    // any other gender (non_binary / other / prefer_not_to_say) → everyone.
     let genderFilter = '';
     const genderParams: any[] = [userId, minBirthDate, maxBirthDate];
-    if (genders.length > 0) {
+    if (userRow.gender === 'male' || userRow.gender === 'female') {
       genderFilter = `AND u.gender = ANY($${genderParams.length + 1})`;
-      genderParams.push(genders);
+      genderParams.push([userRow.gender === 'male' ? 'female' : 'male']);
     }
 
     // Get profiles excluding already-interacted users and self
