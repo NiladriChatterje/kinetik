@@ -11,7 +11,7 @@ import { getChatSocket } from '../../services/callSocket';
 import { useToast } from '../../hooks/useToast';
 import { useAuthStore } from '../../store/authStore';
 import { resolveUrl } from '../../config';
-import { colors, typography, spacing, radius } from '../../theme';
+import { colors, typography, spacing } from '../../theme';
 
 interface Conversation {
   matchId: string;
@@ -231,12 +231,6 @@ export const ChatListScreen: React.FC<{ navigation: any }> = ({ navigation }) =>
           <Ionicons name="chatbubbles-outline" size={64} color={colors.textMuted} />
           <Text style={styles.emptyTitle}>No Conversations</Text>
           <Text style={styles.emptySubtitle}>Match with someone to start chatting</Text>
-          <TouchableOpacity
-            style={styles.discoverBtn}
-            onPress={() => canGoBack ? navigation.goBack() : navigation.navigate('Match')}
-          >
-            <Text style={styles.discoverBtnText}>Discover People</Text>
-          </TouchableOpacity>
         </View>
       ) : (
         <FlatList
@@ -264,14 +258,6 @@ const styles = StyleSheet.create({
   centered: { flex: 1, justifyContent: 'center', alignItems: 'center', padding: spacing.xxl },
   emptyTitle: { ...typography.h2, color: colors.textPrimary, marginTop: spacing.lg },
   emptySubtitle: { ...typography.body1, color: colors.textMuted, marginTop: spacing.sm, textAlign: 'center' },
-  discoverBtn: {
-    marginTop: spacing.xl,
-    paddingHorizontal: spacing.xxl,
-    paddingVertical: spacing.md,
-    backgroundColor: colors.primary,
-    borderRadius: radius.full,
-  },
-  discoverBtnText: { ...typography.button, color: colors.textPrimary },
   list: { padding: spacing.xxl },
   conversationCard: {
     flexDirection: 'row',
