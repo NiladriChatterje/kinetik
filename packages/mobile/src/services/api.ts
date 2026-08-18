@@ -321,6 +321,19 @@ class ApiClient {
     });
   }
 
+  /** Fetch the collaborative date planner data for a match. */
+  async getMatchPlanner(matchId: string) {
+    return this.request<{ plannerData: any | null }>(`/api/v1/matches/${matchId}/planner`);
+  }
+
+  /** Save the collaborative date planner data for a match. */
+  async updateMatchPlanner(matchId: string, plannerData: any) {
+    return this.request<{ plannerData: any }>(`/api/v1/matches/${matchId}/planner`, {
+      method: 'PUT',
+      body: JSON.stringify({ plannerData }),
+    });
+  }
+
   // ─── Fans ───────────────────────────────────────────
   async getFans() {
     return this.request('/api/v1/fans');

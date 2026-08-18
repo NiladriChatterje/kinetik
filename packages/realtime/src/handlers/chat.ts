@@ -176,6 +176,18 @@ export class ChatHandler {
       return;
     }
 
+    // Date planner data was updated — sync the planner to the partner's open DM
+    if (payload.type === 'planner:update') {
+      if (payload.matchId) {
+        this.emitToLocalRoom(`match:${payload.matchId}`, 'planner:update', {
+          matchId: payload.matchId,
+          plannerData: payload.plannerData || null,
+          updatedByUserId: payload.updatedByUserId,
+        });
+      }
+      return;
+    }
+
     if (payload.matchId) {
       this.broadcastMessage(payload.matchId, payload);
     }

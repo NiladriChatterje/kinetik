@@ -1224,6 +1224,79 @@ export async function matchRoutes(app: FastifyInstance) {
     });
   });
 
+  // ─── Get Date Planner Data ─────────────────────────────
+  // Returns the collaborative planner data (activities, todos, notes) for
+  // a match. Both users share the same planner — changes are synced live
+  // via the planner:update socket event.
+  app.get('/:id/planner', async (request: FastifyRequest<{ Params: { id: string } }>, reply: FastifyReply) => {
+    const { id: matchId } = request.params;
+    const { sub: userId } = request.user as any;
+
+    const matchCheck = await query(
+      `SELECT id FROM ${TABLES.MATCHES}
+       WHERE id = $1 AND (user_a_id = $2 OR user_b_id = $2) AND is_active = TRUE`,
+      [matchId, userId],
+    );
+    if (!matchCheck.rows[0]) {
+      return reply.status(404).send({
+        success: false,
+        error: { code: ERROR_CODES.NOT_FOUND, message: 'Match not found or inactive' },
+      });
+    }
+
+    const result = await query(
+      `SELECT planner_data FROM ${TABLES.MATCHES} WHERE id = $1`,
+      [matchId],
+    );
+    const plannerData = result.rows[0]?.planner_data || null;
+
+    return reply.send({ success: true, data: { plannerData } });
+  });
+
+  // ─── Update Date Planner Data ──────────────────────────
+  // Saves the collaborative planner data and notifies the partner via
+  // the planner:update socket event so their open DM reflects changes
+  // in real time.
+  app.put('/:id/planner', async (request: FastifyRequest<{ Params: { id: string } }>, reply: FastifyReply) => {
+    const { sub: userId } = request.user as any;
+    const { id: matchId } = request.params;
+    const { plannerData } = request.body as { plannerData?: any };
+
+    if (!plannerData || typeof plannerData !== 'object') {
+      return reply.status(400).send({
+        success: false,
+        error: { code: ERROR_CODES.VALIDATION_ERROR, message: 'plannerData object is required' },
+      });
+    }
+
+    const matchCheck = await query(
+      `SELECT id FROM ${TABLES.MATCHES}
+       WHERE id = $1 AND (user_a_id = $2 OR user_b_id = $2) AND is_active = TRUE`,
+      [matchId, userId],
+    );
+    if (!matchCheck.rows[0]) {
+      return reply.status(404).send({
+        success: false,
+        error: { code: ERROR_CODES.NOT_FOUND, message: 'Match not found or inactive' },
+      });
+    }
+
+    await query(
+      `UPDATE ${TABLES.MATCHES} SET planner_data = $1 WHERE id = $2`,
+      [JSON.stringify(plannerData), matchId],
+    );
+
+    // Notify the partner in real time
+    publishChatMessage(REDIS_KEYS.CHAT_MESSAGES_CHANNEL, {
+      type: 'planner:update',
+      matchId,
+      plannerData,
+      updatedByUserId: userId,
+    });
+
+    return reply.send({ success: true, data: { plannerData } });
+  });
+
   // ─── Fix a Date ──────────────────────────────────────
   // Stores a date both users have agreed on for their meet-up (the DM
   // "fix a date" flow). The date is a plain YYYY-MM-DD (the sender's local

@@ -182,6 +182,22 @@ export interface Transaction {
   metadata?: Record<string, unknown>;
 }
 
+// ─── Date Planner Types ─────────────────────────────────
+
+export interface PlannerTodo {
+  id: string;
+  text: string;
+  done: boolean;
+  addedBy: string;
+}
+
+export interface DatePlannerData {
+  date: string | null; // 'YYYY-MM-DD'
+  activities: string[]; // selected activity IDs
+  todos: PlannerTodo[];
+  notes: string;
+}
+
 // ─── Chat Media Types ────────────────────────────────────
 
 export type ChatMediaType = 'image' | 'video' | 'audio' | 'file';
