@@ -18,6 +18,12 @@ export async function poseVerificationRoutes(app: FastifyInstance) {
   // ─── Submit Pose Verification Selfie ────────────────────
   // The selfie is uploaded, compared against existing profile photos for
   // face matching, and then DISCARDED (not saved to MinIO).
+  //
+  // Bypass: set POSE_VERIFICATION_BYPASS=true to skip the face-match call
+  // entirely (for development / staging). The user is marked verified immediately.
+  // Remove this flag before production deployment.
+  const BYPASS = process.env.POSE_VERIFICATION_BYPASS === 'true';
+
   app.post('/', async (request: FastifyRequest, reply: FastifyReply) => {
     const { sub: userId } = request.user as any;
 
@@ -63,7 +69,29 @@ export async function poseVerificationRoutes(app: FastifyInstance) {
       `[pose-verification] User ${userId} has ${profilePhotoUrls.length} profile photo(s)`,
     );
 
-    // ─── 3. Send selfie + profile photos to pose-service for face matching ─
+    // ─── 3. Bypass mode ───────────────────────────────────
+    // When POSE_VERIFICATION_BYPASS=true, skip the pose-service call entirely
+    // and mark the user as verified immediately. Used for dev / staging.
+    // Remove this flag before production deployment.
+    if (BYPASS) {
+      await query(
+        `UPDATE ${TABLES.USERS} SET is_verified = TRUE, liveness_status = 'verified' WHERE id = $1`,
+        [userId],
+      );
+      console.log(`[pose-verification] BYPASS — User ${userId} auto-verified (dev mode)`);
+      return reply.status(201).send({
+        success: true,
+        data: {
+          status: 'verified',
+          match: true,
+          confidence: 1.0,
+          faceMatchScores: [],
+          message: 'Face verified successfully! (bypass mode)',
+        },
+      });
+    }
+
+    // ─── 4. Send selfie + profile photos to pose-service for face matching ─
     const poseServiceUrl = process.env.POSE_SERVICE_URL || 'http://localhost:3004';
 
     // Encode selfie as base64 to send alongside photo URLs
@@ -117,7 +145,7 @@ export async function poseVerificationRoutes(app: FastifyInstance) {
       console.error(`[pose-verification] Failed to call pose-service: ${err.message}`);
     }
 
-    // ─── 4. Update user verification status ────────────────
+    // ─── 5. Update user verification status ────────────────
     // Set is_verified = TRUE if face match succeeded (match=true and
     // at least 2 profile photos had detectable faces).
     // User can proceed with onboarding regardless of the result.
@@ -145,7 +173,7 @@ export async function poseVerificationRoutes(app: FastifyInstance) {
       );
     }
 
-    // ─── 5. Return success — user can proceed regardless ────
+    // ─── 6. Return success — user can proceed regardless ────
     return reply.status(201).send({
       success: true,
       data: {

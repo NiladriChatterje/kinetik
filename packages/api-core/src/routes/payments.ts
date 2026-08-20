@@ -1,6 +1,6 @@
 import { FastifyInstance, FastifyRequest, FastifyReply } from 'fastify';
 import { z } from 'zod';
-import { ERROR_CODES, PREMIUM_SWIPE_LIMIT_DAILY, PREMIUM_MONTHLY_COST_INR } from '@kinetik/shared';
+import { ERROR_CODES, PREMIUM_SWIPE_LIMIT_DAILY, PREMIUM_MONTHLY_COST_INR, getPricingForPhone } from '@kinetik/shared';
 import { query, TABLES, getSubscription } from '../services/database';
 import { eventBus } from '../services/eventBus';
 import { getRedis } from '../services/redis';
@@ -135,10 +135,35 @@ export async function paymentRoutes(app: FastifyInstance) {
     });
   });
 
+  // ─── Get Pricing (user's local currency) ──────────────
+  // Returns the subscription price in the user's detected currency based
+  // on their phone number country code.
+  app.get('/pricing', async (request: FastifyRequest, reply: FastifyReply) => {
+    const { sub: userId } = request.user as any;
+
+    // Fetch user's phone number to detect country
+    const userResult = await query(`SELECT phone FROM ${TABLES.USERS} WHERE id = $1`, [userId]);
+    const phone = userResult.rows[0]?.phone;
+
+    const pricing = getPricingForPhone(phone || '');
+
+    return reply.send({
+      success: true,
+      data: {
+        currency: pricing.currency,
+        symbol: pricing.symbol,
+        amount: pricing.amountMajor,
+        amountMinor: pricing.amountMinor,
+        label: pricing.label,
+      },
+    });
+  });
+
   // ─── Create Subscription (Razorpay recurring plan) ────
-  // Creates a Razorpay subscription for the ₹100/month premium plan. The
-  // client then opens the Razorpay Checkout with the returned subscription_id
-  // so the user can pay by card or set up a UPI Autopay mandate.
+  // Creates a Razorpay subscription for the premium plan in the user's
+  // local currency. The client then opens the Razorpay Checkout with the
+  // returned subscription_id so the user can pay by card or set up a
+  // UPI Autopay mandate.
   app.post('/subscription', async (request: FastifyRequest, reply: FastifyReply) => {
     const { sub: userId } = request.user as any;
 
@@ -153,7 +178,12 @@ export async function paymentRoutes(app: FastifyInstance) {
     }
 
     try {
-      const subscription = await createPremiumSubscription(userId);
+      // Fetch user's phone to detect currency
+      const userResult = await query(`SELECT phone FROM ${TABLES.USERS} WHERE id = $1`, [userId]);
+      const phone = userResult.rows[0]?.phone;
+      const pricing = getPricingForPhone(phone || '');
+
+      const subscription = await createPremiumSubscription(userId, phone);
 
       // Remember the subscription on the ledger so /subscription/verify can
       // confirm it actually belongs to this user, and status shows 'pending'.
@@ -169,8 +199,9 @@ export async function paymentRoutes(app: FastifyInstance) {
         data: {
           subscriptionId: subscription.id,
           razorpayKeyId: process.env.RAZORPAY_KEY_ID,
-          amount: PREMIUM_MONTHLY_COST_INR,
-          currency: 'INR',
+          amount: pricing.amountMajor,
+          currency: pricing.currency,
+          label: pricing.label,
           period: 'monthly',
         },
       });
@@ -279,7 +310,7 @@ export async function paymentRoutes(app: FastifyInstance) {
       `INSERT INTO ${TABLES.TRANSACTIONS}
          (user_id, razorpay_payment_id, razorpay_subscription_id, amount, currency, status, description)
        VALUES ($1, $2, $3, $4, 'INR', 'completed', $5)`,
-      [userId, razorpayPaymentId, razorpaySubscriptionId, PREMIUM_MONTHLY_COST_INR, 'Kinetik Premium — ₹100/month'],
+      [userId, razorpayPaymentId, razorpaySubscriptionId, PREMIUM_MONTHLY_COST_INR, 'Kinetik Premium — ₹250/month'],
     );
 
     // Clear Redis swipe cache so the new allowance applies immediately

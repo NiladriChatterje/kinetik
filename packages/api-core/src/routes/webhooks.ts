@@ -109,8 +109,7 @@ export async function webhookRoutes(app: FastifyInstance) {
                  SELECT 1 FROM ${TABLES.TRANSACTIONS} WHERE razorpay_payment_id = $2
                )`,
               [userId, payment.id, subscription.id,
-               payment.amount ? payment.amount / 100 : null, payment.currency || 'INR',
-               'Kinetik Premium — ₹100/month'],
+               payment.amount ? payment.amount / 100 : null, payment.currency || 'INR',                'Kinetik Premium — ₹250/month'],
             );
           }
 

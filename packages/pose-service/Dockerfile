@@ -24,8 +24,9 @@ WORKDIR /app
 COPY --from=builder /root/.local /root/.local
 ENV PATH=/root/.local/bin:$PATH
 
-# Copy application source
+# Copy application source + model files
 COPY src/ ./src/
+COPY models/ ./models/
 
 # Expose port
 EXPOSE 3004

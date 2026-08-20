@@ -206,6 +206,9 @@ services:
       MINIO_BUCKET: ${MINIO_BUCKET:-kinetik-photos}
       MINIO_PUBLIC_URL: /uploads/
       POSE_SERVICE_URL: http://pose-service:3004
+      # Set to "true" to bypass face-match verification in dev/staging.
+      # REMOVE this before production deployment.
+      POSE_VERIFICATION_BYPASS: ${POSE_VERIFICATION_BYPASS:-false}
     depends_on:
       postgres:
         condition: service_healthy

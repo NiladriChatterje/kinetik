@@ -13,7 +13,9 @@ import { api } from '../../services/api';
 import { colors, typography, spacing, radius } from '../../theme';
 
 const { width: SCREEN_WIDTH } = Dimensions.get('window');
-const CAMERA_SIZE = Math.min(SCREEN_WIDTH - spacing.xxl * 2, 320);
+/** 9:16 portrait camera — fills width, height = width × 16/9 */
+const CAMERA_WIDTH = SCREEN_WIDTH - spacing.xxl * 2;
+const CAMERA_HEIGHT = Math.round(CAMERA_WIDTH * (16 / 9));
 
 type Phase = 'camera' | 'preview' | 'uploading' | 'success';
 
@@ -228,9 +230,10 @@ export const PoseVerificationScreen: React.FC<{ navigation: any }> = ({ navigati
         <Text style={styles.subtitle}>Take a clear selfie for liveness verification</Text>
 
         <View style={styles.cameraContainer}>
+          {/* Mirror the front-camera preview so it behaves like a mirror */}
           <CameraView
             ref={cameraRef}
-            style={styles.camera}
+            style={[styles.camera, { transform: [{ scaleX: -1 }] }]}
             facing="front"
           />
 
@@ -271,8 +274,8 @@ const styles = StyleSheet.create({
 
   // Camera placeholder (permission denied)
   cameraPlaceholder: {
-    width: CAMERA_SIZE,
-    height: CAMERA_SIZE,
+    width: CAMERA_WIDTH,
+    height: CAMERA_HEIGHT,
     borderRadius: radius.xl,
     backgroundColor: colors.surfaceHighlight,
     alignItems: 'center',
@@ -281,10 +284,10 @@ const styles = StyleSheet.create({
   },
   placeholderText: { ...typography.body2, color: colors.textMuted, marginTop: spacing.md },
 
-  // Camera
+  // Camera (9:16 portrait)
   cameraContainer: {
-    width: CAMERA_SIZE,
-    height: CAMERA_SIZE,
+    width: CAMERA_WIDTH,
+    height: CAMERA_HEIGHT,
     borderRadius: radius.xl,
     overflow: 'hidden',
     marginBottom: spacing.xxl,
@@ -307,13 +310,13 @@ const styles = StyleSheet.create({
   },
   poseText: { ...typography.h3, color: colors.textInverse },
 
-  // Face guide corners
+  // Face guide corners — centered in the 9:16 frame
   faceGuide: {
     position: 'absolute',
-    top: '15%',
-    left: '15%',
-    right: '15%',
-    bottom: '20%',
+    top: '18%',
+    left: '18%',
+    right: '18%',
+    bottom: '25%',
   },
   corner: {
     position: 'absolute',

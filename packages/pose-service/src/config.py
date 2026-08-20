@@ -20,6 +20,9 @@ class Settings(BaseSettings):
     # api-core internal URL (for callbacks if needed)
     api_core_url: str = "http://localhost:3001"
 
+    # MediaPipe model path (relative to package root or absolute)
+    face_landmarker_model: str = "models/face_landmarker.task"
+
     # Verification thresholds
     min_face_confidence: float = 0.5       # Minimum face detection confidence
     min_face_count: int = 1                # Exactly 1 face expected

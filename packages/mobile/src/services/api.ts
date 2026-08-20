@@ -349,6 +349,17 @@ class ApiClient {
   }
 
   // ─── Payments ───────────────────────────────────────
+  /** Get the subscription price in the user's local currency. */
+  async getPricing() {
+    return this.request<{
+      currency: string;
+      symbol: string;
+      amount: number;
+      amountMinor: number;
+      label: string;
+    }>('/api/v1/payments/pricing');
+  }
+
   async createPaymentOrder(amount: number, description?: string) {
     return this.request('/api/v1/payments/create-order', {
       method: 'POST',
@@ -357,7 +368,7 @@ class ApiClient {
   }
 
   /**
-   * Creates a recurring Razorpay subscription (₹100/month premium plan).
+   * Creates a recurring Razorpay subscription (₹250/month premium plan).
    * Returns the subscription_id + razorpayKeyId needed to open the Checkout.
    */
   async createRazorpaySubscription() {

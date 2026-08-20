@@ -1,7 +1,7 @@
 import Razorpay from 'razorpay';
 import { createHmac, timingSafeEqual } from 'crypto';
 import { validateWebhookSignature } from 'razorpay/dist/utils/razorpay-utils';
-import { PREMIUM_MONTHLY_COST_INR } from '@kinetik/shared';
+import { PREMIUM_MONTHLY_COST_INR, getPricingForPhone, type CurrencyConfig } from '@kinetik/shared';
 
 // ─── Razorpay SDK Instance ────────────────────────────────
 // Constructed lazily so the server can still boot without credentials
@@ -29,21 +29,27 @@ export function isRazorpayConfigured(): boolean {
 }
 
 // ─── Premium Plan ─────────────────────────────────────────
-// Plans are reusable templates (amount + billing period). We create the
-// ₹100/month plan once and cache its id in memory. To pin an existing plan
-// across restarts (recommended in production), set RAZORPAY_PLAN_ID in env.
+// Plans are reusable templates (amount + billing period). Each currency gets
+// its own plan cached in memory. To pin an existing plan across restarts
+// (recommended in production), set RAZORPAY_PLAN_ID in env (INR only).
 
 const PREMIUM_PLAN_PERIOD = 'monthly';
 const PREMIUM_SUBSCRIPTION_TOTAL_COUNT = 12; // 1 year of monthly billing cycles
 
-let cachedPlanId: string | null = null;
+/** Cache plan IDs per currency to avoid recreating on every request. */
+const cachedPlanIds: Record<string, string> = {};
 
-export async function getOrCreatePremiumPlan(): Promise<string> {
-  if (process.env.RAZORPAY_PLAN_ID) {
+/**
+ * Get or create a Razorpay plan for the given currency.
+ * When RAZORPAY_PLAN_ID is set, it's used for INR only (legacy single-currency).
+ */
+export async function getOrCreatePremiumPlan(currency: string = 'INR', amountMinor: number = PREMIUM_MONTHLY_COST_INR * 100): Promise<string> {
+  // Legacy: if a single plan ID is pinned via env, use it for INR
+  if (currency === 'INR' && process.env.RAZORPAY_PLAN_ID) {
     return process.env.RAZORPAY_PLAN_ID;
   }
-  if (cachedPlanId) {
-    return cachedPlanId;
+  if (cachedPlanIds[currency]) {
+    return cachedPlanIds[currency];
   }
 
   const razorpay = getRazorpay();
@@ -52,14 +58,14 @@ export async function getOrCreatePremiumPlan(): Promise<string> {
     interval: 1,
     item: {
       name: 'Kinetik Premium',
-      description: 'Kinetik Premium — ₹100/month',
-      amount: PREMIUM_MONTHLY_COST_INR * 100, // paise
-      currency: 'INR',
+      description: `Kinetik Premium — ${currency} ${(amountMinor / 100).toFixed(2)}/month`,
+      amount: amountMinor,
+      currency,
     },
-    notes: { tier: 'premium' },
+    notes: { tier: 'premium', currency },
   });
 
-  cachedPlanId = plan.id;
+  cachedPlanIds[currency] = plan.id;
   return plan.id;
 }
 
@@ -68,15 +74,20 @@ export async function getOrCreatePremiumPlan(): Promise<string> {
 /**
  * Creates a recurring Razorpay subscription for the premium plan.
  * `notes.user_id` is how we correlate webhook events back to the account.
+ * When phone is provided, the price is auto-detected from the user's country.
  */
-export async function createPremiumSubscription(userId: string) {
-  const planId = await getOrCreatePremiumPlan();
+export async function createPremiumSubscription(userId: string, phone?: string) {
+  const pricing = phone ? getPricingForPhone(phone) : undefined;
+  const currency = pricing?.currency ?? 'INR';
+  const amountMinor = pricing?.amountMinor ?? (PREMIUM_MONTHLY_COST_INR * 100);
+
+  const planId = await getOrCreatePremiumPlan(currency, amountMinor);
   const razorpay = getRazorpay();
   return razorpay.subscriptions.create({
     plan_id: planId,
     total_count: PREMIUM_SUBSCRIPTION_TOTAL_COUNT,
     customer_notify: 1, // Razorpay sends payment reminders / debit alerts
-    notes: { user_id: userId },
+    notes: { user_id: userId, currency },
   });
 }
 

@@ -6,7 +6,7 @@ export const SUPER_LIKE_LIMIT_DAILY_PREMIUM = 25;
 
 // ─── Token & Premium ────────────────────────────────────
 
-export const PREMIUM_MONTHLY_COST_INR = 100;
+export const PREMIUM_MONTHLY_COST_INR = 250;
 export const INFINITE_MONTHLY_COST_INR = 999;
 
 // ─── H3 Geospatial ────────────────────────────────────────

@@ -17,3 +17,6 @@ __pycache__/
 .venv/
 
 nul
+
+# Pose service models (downloaded at build time)
+packages/pose-service/models/*.task

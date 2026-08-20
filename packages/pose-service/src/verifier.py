@@ -1,17 +1,17 @@
 """
-Pose Verifier — MediaPipe face detection + head pose estimation + face comparison.
+Pose Verifier — MediaPipe Tasks API face detection + liveness + face comparison.
 
 Pipeline (liveness check):
   1. Decode image bytes → OpenCV matrix
-  2. Detect face(s) via MediaPipe FaceDetection
-  3. Extract 468 landmarks via MediaPipe FaceMesh
+  2. Detect face via FaceLandmarker (Tasks API)
+  3. Extract 478 landmarks
   4. Estimate head pose (yaw/pitch/roll) via OpenCV solvePnP
   5. Run liveness heuristics (face size, blur, edge density)
   6. Return structured verification result
 
 Face comparison (photo match):
-  1. Detect and align face in selfie
-  2. Detect and align face in each profile photo
+  1. Detect and extract landmarks in selfie
+  2. Detect and extract landmarks in each profile photo
   3. Compute normalized landmark feature vector per face
   4. Cosine similarity between selfie vector and each profile photo vector
   5. Return match verdict averaging best N scores
@@ -20,6 +20,7 @@ Face comparison (photo match):
 import io
 import logging
 import math
+import os
 from dataclasses import dataclass, field
 from enum import Enum
 
@@ -29,9 +30,10 @@ import numpy as np
 
 logger = logging.getLogger("kinetik.pose_service.verifier")
 
-# ─── MediaPipe static image mode model paths ─────────────────────
-# Using the Tasks API (newer) approach with the legacy solutions
-# for broader compatibility in Docker.
+# ─── Model paths ─────────────────────────────────────────────────
+# The .task model files live alongside the package or in a configurable directory.
+_MODELS_DIR = os.path.join(os.path.dirname(__file__), "..", "models")
+_FACE_LANDMARKER_PATH = os.path.join(_MODELS_DIR, "face_landmarker.task")
 
 # 3D model points for head pose estimation (canonical generic face model,
 # units are millimetres, y-up). Eye corners sit left/right of the nose (±x),
@@ -71,24 +73,28 @@ class VerificationResult:
 
 
 class PoseVerifier:
-    """Stateless pose verifier using MediaPipe + OpenCV."""
+    """Stateless pose verifier using MediaPipe Tasks API + OpenCV."""
 
-    def __init__(self):
-        # ─── Face Detection ──────────────────────────────────
-        self._face_detection = mp.solutions.face_detection.FaceDetection(
-            model_selection=1,       # 1 = full-range model (works better for selfies)
-            min_detection_confidence=0.5,
+    def __init__(self, model_path: str | None = None):
+        resolved_path = model_path or _FACE_LANDMARKER_PATH
+        if not os.path.exists(resolved_path):
+            raise FileNotFoundError(
+                f"Face landmarker model not found at {resolved_path}. "
+                "Download from: https://storage.googleapis.com/mediapipe-models/face_landmarker/face_landmarker/float16/latest/face_landmarker.task"
+            )
+
+        base_options = mp.tasks.BaseOptions(model_asset_path=resolved_path)
+        options = mp.tasks.vision.FaceLandmarkerOptions(
+            base_options=base_options,
+            num_faces=1,
+            min_face_detection_confidence=0.5,
+            min_face_presence_confidence=0.5,
+            output_face_blendshapes=False,
+            output_facial_transformation_matrixes=False,  # We compute pose via solvePnP
         )
+        self._landmarker = mp.tasks.vision.FaceLandmarker.create_from_options(options)
 
-        # ─── Face Mesh (landmarks) ──────────────────────────
-        self._face_mesh = mp.solutions.face_mesh.FaceMesh(
-            static_image_mode=True,
-            max_num_faces=1,
-            refine_landmarks=True,
-            min_detection_confidence=0.5,
-        )
-
-        logger.info("PoseVerifier initialised (MediaPipe FaceDetection + FaceMesh)")
+        logger.info("PoseVerifier initialised (MediaPipe Tasks API — FaceLandmarker)")
 
     def verify(self, image_bytes: bytes) -> VerificationResult:
         """Run the full verification pipeline on a raw image."""
@@ -127,35 +133,31 @@ class PoseVerifier:
         if blur_score < 50:
             rejection_reasons.append(f"Image too blurry (score={blur_score:.1f}, min=50)")
 
-        # ─── 3. Face detection ──────────────────────────────
+        # ─── 3. Face detection via FaceLandmarker ────────────
         rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
-        detection_result = self._face_detection.process(rgb)
+        mp_image = mp.Image(image_format=mp.ImageFormat.SRGB, data=rgb)
+        result = self._landmarker.detect(mp_image)
 
-        if detection_result.detections:
-            face_count = len(detection_result.detections)
+        if result.face_landmarks:
+            face_count = len(result.face_landmarks)
             face_detected = True
             logger.info("Detected %d face(s)", face_count)
 
             if face_count > 1:
                 rejection_reasons.append(f"Multiple faces detected ({face_count}, expected 1)")
-        else:
-            rejection_reasons.append("No face detected in image")
 
-        # ─── 4. Face mesh landmarks ─────────────────────────
-        mesh_result = self._face_mesh.process(rgb)
-
-        if mesh_result.multi_face_landmarks and face_detected:
-            landmarks = mesh_result.multi_face_landmarks[0]
+            # ─── 4. Head pose estimation via solvePnP ────────
+            # Use the first face's landmarks
+            face_landmarks = result.face_landmarks[0]
 
             # Extract 2D landmark points for the 6 reference landmarks
             points_2d = []
             for idx in LANDMARK_INDICES:
-                lm = landmarks.landmark[idx]
+                lm = face_landmarks[idx]
                 points_2d.append([lm.x * w, lm.y * h])
 
             points_2d = np.array(points_2d, dtype=np.float64)
 
-            # ─── 5. Head pose estimation via solvePnP ───────
             # Camera matrix (approximate for selfie camera)
             focal_length = w
             center = (w / 2, h / 2)
@@ -188,7 +190,6 @@ class PoseVerifier:
 
                 # The y-up model against y-down image coordinates puts a
                 # frontal face's pitch/roll near ±180° — fold back around 0
-                # so the frontal pose reads ~0° and thresholds apply cleanly
                 if head_pitch > 90:
                     head_pitch -= 180
                 elif head_pitch < -90:
@@ -215,9 +216,9 @@ class PoseVerifier:
             else:
                 rejection_reasons.append("Could not estimate head pose")
 
-            # ─── 6. Liveness heuristics ─────────────────────
+            # ─── 5. Liveness heuristics ─────────────────────
             liveness_score = self._compute_liveness_score(
-                frame, gray, landmarks, w, h, blur_score,
+                frame, gray, face_landmarks, w, h, blur_score,
             )
             logger.info("Liveness score: %.2f", liveness_score)
 
@@ -225,8 +226,10 @@ class PoseVerifier:
                 rejection_reasons.append(
                     f"Liveness score too low ({liveness_score:.2f}, min=0.3)"
                 )
+        else:
+            rejection_reasons.append("No face detected in image")
 
-        # ─── 8. Determine final status ──────────────────────
+        # ─── 6. Determine final status ──────────────────────
         if not face_detected:
             status = VerificationStatus.REJECTED
             confidence = 0.0
@@ -252,9 +255,9 @@ class PoseVerifier:
     # ─── Face Descriptor ─────────────────────────────────────
 
     @staticmethod
-    def _compute_face_descriptor(landmarks) -> np.ndarray:
+    def _compute_face_descriptor(face_landmarks) -> np.ndarray:
         """
-        Compute a normalized feature vector from FaceMesh landmarks.
+        Compute a normalised feature vector from FaceLandmarker landmarks.
 
         The descriptor consists of normalised inter-landmark distances.
         Uses a subset of key facial landmarks (eyes, nose, mouth, jaw)
@@ -283,20 +286,20 @@ class PoseVerifier:
         ]
 
         # Get inter-ocular distance (outer eye corners: landmarks 33 and 263)
-        left_eye_outer = np.array([landmarks.landmark[33].x, landmarks.landmark[33].y, landmarks.landmark[33].z])
-        right_eye_outer = np.array([landmarks.landmark[263].x, landmarks.landmark[263].y, landmarks.landmark[263].z])
+        left_eye_outer = np.array([face_landmarks[33].x, face_landmarks[33].y, face_landmarks[33].z])
+        right_eye_outer = np.array([face_landmarks[263].x, face_landmarks[263].y, face_landmarks[263].z])
         inter_ocular = np.linalg.norm(left_eye_outer - right_eye_outer)
 
         if inter_ocular < 0.001:
             inter_ocular = 0.1  # Fallback to avoid division by zero
 
         # Get nose tip as reference point for centering
-        nose_tip = np.array([landmarks.landmark[1].x, landmarks.landmark[1].y, landmarks.landmark[1].z])
+        nose_tip = np.array([face_landmarks[1].x, face_landmarks[1].y, face_landmarks[1].z])
 
         # Build descriptor: normalised offset of each key landmark from nose tip
         descriptor_components = []
         for idx in KEY_INDICES:
-            lm = landmarks.landmark[idx]
+            lm = face_landmarks[idx]
             pt = np.array([lm.x, lm.y, lm.z])
             offset = (pt - nose_tip) / inter_ocular
             descriptor_components.extend([offset[0], offset[1], offset[2]])
@@ -436,14 +439,15 @@ class PoseVerifier:
         if w < 100 or h < 100:
             return None, False
 
-        # Run face mesh to get landmarks
-        mesh_result = self._face_mesh.process(rgb)
+        # Run FaceLandmarker to get landmarks
+        mp_image = mp.Image(image_format=mp.ImageFormat.SRGB, data=rgb)
+        result = self._landmarker.detect(mp_image)
 
-        if not mesh_result.multi_face_landmarks:
+        if not result.face_landmarks:
             return None, False
 
-        landmarks = mesh_result.multi_face_landmarks[0]
-        descriptor = self._compute_face_descriptor(landmarks)
+        face_landmarks = result.face_landmarks[0]
+        descriptor = self._compute_face_descriptor(face_landmarks)
 
         return descriptor, True
 
@@ -451,7 +455,7 @@ class PoseVerifier:
         self,
         frame: np.ndarray,
         gray: np.ndarray,
-        landmarks,
+        face_landmarks,
         w: int,
         h: int,
         blur_score: float,
@@ -461,9 +465,8 @@ class PoseVerifier:
         checks = 0
 
         # Check 1: Face occupies reasonable portion of image
-        # Use the bounding box from landmarks
-        xs = [lm.x for lm in landmarks.landmark]
-        ys = [lm.y for lm in landmarks.landmark]
+        xs = [lm.x for lm in face_landmarks]
+        ys = [lm.y for lm in face_landmarks]
         face_w = (max(xs) - min(xs)) * w
         face_h = (max(ys) - min(ys)) * h
         face_area_ratio = (face_w * face_h) / (w * h)
@@ -499,15 +502,12 @@ class PoseVerifier:
             score += 0.1
 
         # Check 4: Symmetry check — real faces are roughly symmetric.
-        # Compare left and right halves of the FACE region only; using the
-        # whole frame lets an asymmetric background sink the score
         top, bottom = int(min(ys) * h), int(max(ys) * h)
         left, right = int(min(xs) * w), int(max(xs) * w)
         face_center_x = int(np.mean(xs) * w)
         if bottom > top and left < face_center_x < right:
             left_half = gray[top:bottom, left:face_center_x]
             right_half = cv2.flip(gray[top:bottom, face_center_x:right], 1)
-            # Resize to match
             min_w = min(left_half.shape[1], right_half.shape[1])
             if min_w > 10:
                 diff = cv2.absdiff(

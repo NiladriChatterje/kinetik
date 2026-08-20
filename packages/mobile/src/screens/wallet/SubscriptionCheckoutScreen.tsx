@@ -10,6 +10,14 @@ import { useAuthStore } from '../../store/authStore';
 import { api } from '../../services/api';
 import { colors, typography, spacing, radius } from '../../theme';
 
+interface PricingInfo {
+  currency: string;
+  symbol: string;
+  amount: number;
+  amountMinor: number;
+  label: string;
+}
+
 interface SubscriptionStatus {
   tier: string;
   autoRenew: boolean;
@@ -46,6 +54,7 @@ export const SubscriptionCheckoutScreen: React.FC = () => {
   const toast = useToast();
 
   const [status, setStatus] = useState<SubscriptionStatus | null>(null);
+  const [pricing, setPricing] = useState<PricingInfo | null>(null);
   const [history, setHistory] = useState<{ payments: SubscriptionPayment[]; monthsPaid: number } | null>(null);
   const [loading, setLoading] = useState(true);
   const [subscribing, setSubscribing] = useState(false);
@@ -53,15 +62,19 @@ export const SubscriptionCheckoutScreen: React.FC = () => {
 
   const fetchStatus = useCallback(async () => {
     try {
-      const [res, hist] = await Promise.all([
+      const [res, hist, priceRes] = await Promise.all([
         api.getSubscriptionStatus(),
         api.getSubscriptionHistory(),
+        api.getPricing(),
       ]);
       if (res.success && res.data) {
         setStatus(res.data as SubscriptionStatus);
       }
       if (hist.success && hist.data) {
         setHistory(hist.data);
+      }
+      if (priceRes.success && priceRes.data) {
+        setPricing(priceRes.data as PricingInfo);
       }
     } catch {
       // Leave status null — the screen falls back to the "not subscribed" state
@@ -125,7 +138,8 @@ export const SubscriptionCheckoutScreen: React.FC = () => {
         key: razorpayKeyId,
         subscription_id: subscriptionId,
         name: 'Kinetik',
-        description: 'Kinetik Premium — ₹100/month',
+        description: `Kinetik Premium — ${pricing?.label ?? '₹250/month'}`,
+        currency: pricing?.currency ?? 'INR',
         prefill: {
           name: authUser?.displayName || '',
           email: authUser?.email || '',
@@ -194,8 +208,7 @@ export const SubscriptionCheckoutScreen: React.FC = () => {
                 <Text style={styles.planBadgeText}>PREMIUM</Text>
               </View>
               <View style={styles.priceRow}>
-                <Text style={styles.price}>₹{100}</Text>
-                <Text style={styles.pricePeriod}>/ month</Text>
+                <Text style={styles.price}>{pricing?.label ?? '₹250/month'}</Text>
               </View>
               <Text style={styles.planNote}>Recurring — cancel any time from Razorpay</Text>
 
@@ -233,12 +246,12 @@ export const SubscriptionCheckoutScreen: React.FC = () => {
               </View>
             ))}
             <Text style={styles.disclaimer}>
-              Subscriptions are billed by Razorpay. Cards are charged ₹100 each month; UPI users
+              Subscriptions are billed by Razorpay in {pricing?.currency ?? 'INR'}. Cards are charged {pricing?.label ?? '₹250'} each month; UPI users
               approve a recurring mandate. Razorpay sends payment reminders before every charge.
             </Text>
 
             <Button
-              title={isPremium && !isAutoRenew ? 'Renew subscription' : 'Subscribe for ₹100/month'}
+              title={isPremium && !isAutoRenew ? 'Renew subscription' : `Subscribe for ${pricing?.label ?? '₹250/month'}`}
               onPress={handleSubscribe}
               loading={subscribing}
               disabled={isPremium && isAutoRenew}

@@ -12,6 +12,7 @@ Entry point that:
 import asyncio
 import base64
 import logging
+import os
 import urllib.request
 from contextlib import asynccontextmanager
 from datetime import datetime, timezone
@@ -98,8 +99,9 @@ async def lifespan(app: FastAPI):
     )
     logger.info("PostgreSQL pool created")
 
-    # 2. Pose Verifier (loads MediaPipe models)
-    verifier = PoseVerifier()
+    # 2. Pose Verifier (loads MediaPipe model)
+    model_path = os.path.join(os.path.dirname(__file__), "..", settings.face_landmarker_model)
+    verifier = PoseVerifier(model_path=model_path)
     logger.info("PoseVerifier initialised")
 
     yield
