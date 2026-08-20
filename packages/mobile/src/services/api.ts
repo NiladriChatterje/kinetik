@@ -655,6 +655,13 @@ class ApiClient {
     return this.request<{ conversations: any[] }>('/api/v1/matches/conversations');
   }
 
+  /** Unmatch a user: deletes all messages, media, and deactivates the match. */
+  async unmatchUser(matchId: string) {
+    return this.request<{ unmatched: boolean }>(`/api/v1/matches/conversations/${matchId}`, {
+      method: 'DELETE',
+    });
+  }
+
   async getMessages(matchId: string) {
     return this.request<{ messages: any[] }>(`/api/v1/matches/conversations/${matchId}/messages`);
   }

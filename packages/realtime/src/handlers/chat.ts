@@ -188,6 +188,18 @@ export class ChatHandler {
       return;
     }
 
+    // Match was unmatched — notify all sockets in the room so the partner's
+    // ChatScreen can pop back to the conversation list
+    if (payload.type === 'match:unmatched') {
+      if (payload.matchId) {
+        this.emitToLocalRoom(`match:${payload.matchId}`, 'match:unmatched', {
+          matchId: payload.matchId,
+          unmatchedByUserId: payload.unmatchedByUserId,
+        });
+      }
+      return;
+    }
+
     if (payload.matchId) {
       this.broadcastMessage(payload.matchId, payload);
     }

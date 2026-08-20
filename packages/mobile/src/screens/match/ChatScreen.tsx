@@ -405,6 +405,12 @@ export const ChatScreen: React.FC<{ navigation: any; route: any }> = ({ navigati
       }
     };
 
+    // Partner unmatched — pop back to the chat list
+    const onMatchUnmatched = (data: any) => {
+      if (data?.matchId !== matchId) return;
+      navigation.goBack();
+    };
+
     socket.on('connect', onConnect);
     socket.on('chat:message', onChatMessage);
     socket.on('chat:read', onChatRead);
@@ -412,6 +418,7 @@ export const ChatScreen: React.FC<{ navigation: any; route: any }> = ({ navigati
     socket.on('media:viewed', onMediaViewed);
     socket.on('date:set', onDateSet);
     socket.on('planner:update', onPlannerUpdate);
+    socket.on('match:unmatched', onMatchUnmatched);
     socket.on('disconnect', onDisconnect);
     // The shared socket is usually already connected when this screen mounts,
     // so 'connect' won't fire — run the join/read/sync sequence now
@@ -429,6 +436,7 @@ export const ChatScreen: React.FC<{ navigation: any; route: any }> = ({ navigati
       socket.off('media:viewed', onMediaViewed);
       socket.off('date:set', onDateSet);
       socket.off('planner:update', onPlannerUpdate);
+      socket.off('match:unmatched', onMatchUnmatched);
       socket.off('disconnect', onDisconnect);
       socketRef.current = null;
     };
@@ -1320,6 +1328,35 @@ export const ChatScreen: React.FC<{ navigation: any; route: any }> = ({ navigati
           activeOpacity={0.7}
         >
           <Ionicons name="call" size={20} color={colors.textPrimary} />
+        </TouchableOpacity>
+
+        {/* Unmatch menu */}
+        <TouchableOpacity
+          style={styles.callBtn}
+          onPress={() => {
+            Alert.alert(
+              `Unmatch ${partnerName}?`,
+              'This will permanently delete all messages and media exchanged. This cannot be undone.',
+              [
+                { text: 'Cancel', style: 'cancel' },
+                {
+                  text: 'Unmatch',
+                  style: 'destructive',
+                  onPress: async () => {
+                    try {
+                      await api.unmatchUser(matchId);
+                      navigation.goBack();
+                    } catch {
+                      Alert.alert('Error', 'Failed to unmatch. Please try again.');
+                    }
+                  },
+                },
+              ],
+            );
+          }}
+          activeOpacity={0.7}
+        >
+          <Ionicons name="ellipsis-vertical" size={20} color={colors.textPrimary} />
         </TouchableOpacity>
       </View>
 

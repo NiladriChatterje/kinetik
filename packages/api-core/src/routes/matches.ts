@@ -6,6 +6,7 @@ import {
 } from '@kinetik/shared';
 import { v4 as uuidv4 } from 'uuid';
 import { query, TABLES } from '../services/database';
+import { transaction } from '@kinetik/shared';
 import { notificationEvents } from '../services/notificationService';
 import { eventBus } from '../services/eventBus';
 import { getRedis, publishChatMessage } from '../services/redis';
@@ -13,6 +14,19 @@ import { savePhoto, saveChatFile, saveEncryptedChatFile, getEncryptedChatFileBuf
 
 const MESSAGE_ENCRYPTION_KEY = process.env.MESSAGE_ENCRYPTION_KEY || '';
 const redis = getRedis();
+
+/** Extract a MinIO storage key from a chat media URL. */
+function chatMediaKeyFromUrl(url: string): string | null {
+  if (url.startsWith('/api/v1/matches/media/')) {
+    const path = url.split('/api/v1/matches/media/')[1];
+    return path ? path.split('?')[0] : null;
+  }
+  if (url.startsWith('/uploads/')) {
+    const key = url.replace('/uploads/', '');
+    return key || null;
+  }
+  return null;
+}
 
 export async function matchRoutes(app: FastifyInstance) {
   app.addHook('preHandler', async (request: FastifyRequest, reply: FastifyReply) => {
@@ -685,6 +699,75 @@ export async function matchRoutes(app: FastifyInstance) {
     }));
 
     return reply.send({ success: true, data: { conversations } });
+  });
+
+  // ─── Unmatch (Delete Conversation) ──────────────────
+  // Permanently deletes all messages, media files, and deactivates the match.
+  // Both users lose access to the conversation. Media files are removed
+  // from MinIO storage to free space and protect privacy.
+  app.delete('/conversations/:id', async (request: FastifyRequest<{ Params: { id: string } }>, reply: FastifyReply) => {
+    const { id: matchId } = request.params;
+    const { sub: userId } = request.user as any;
+
+    // Verify the user is part of this active match
+    const matchCheck = await query(
+      `SELECT id, user_a_id, user_b_id FROM ${TABLES.MATCHES}
+       WHERE id = $1 AND (user_a_id = $2 OR user_b_id = $2) AND is_active = TRUE`,
+      [matchId, userId],
+    );
+    if (!matchCheck.rows[0]) {
+      return reply.status(404).send({
+        success: false,
+        error: { code: ERROR_CODES.NOT_FOUND, message: 'Match not found or inactive' },
+      });
+    }
+
+    const partnerId = matchCheck.rows[0].user_a_id === userId
+      ? matchCheck.rows[0].user_b_id
+      : matchCheck.rows[0].user_a_id;
+
+    // Collect chat media URLs for MinIO cleanup, then delete all records
+    // in a single transaction so the DB is always consistent.
+    let chatMediaUrls: string[] = [];
+
+    await transaction(async (q) => {
+      // Collect media file keys before deleting records
+      const mediaResult = await q(
+        `SELECT cm.url, cm.thumbnail_url FROM ${TABLES.CHAT_MEDIA} cm
+         WHERE cm.message_id IN (SELECT id FROM ${TABLES.MESSAGES} WHERE match_id = $1)`,
+        [matchId],
+      );
+      for (const row of mediaResult.rows) {
+        if (row.url) chatMediaUrls.push(row.url);
+        if (row.thumbnail_url) chatMediaUrls.push(row.thumbnail_url);
+      }
+
+      // Delete chat media records, messages, then deactivate the match
+      await q(`DELETE FROM ${TABLES.CHAT_MEDIA} WHERE message_id IN (SELECT id FROM ${TABLES.MESSAGES} WHERE match_id = $1)`, [matchId]);
+      await q(`DELETE FROM ${TABLES.MESSAGES} WHERE match_id = $1`, [matchId]);
+      await q(`UPDATE ${TABLES.MATCHES} SET is_active = FALSE WHERE id = $1`, [matchId]);
+    });
+
+    // Best-effort: delete media files from MinIO (non-critical if it fails)
+    for (const url of chatMediaUrls) {
+      const key = chatMediaKeyFromUrl(url);
+      if (!key) continue;
+      await deleteChatFile(key).catch(() => {});
+      // Also delete thumbnails for /uploads/ webp files
+      if (url.startsWith('/uploads/') && key.endsWith('.webp')) {
+        const thumbKey = key.replace('.webp', '_thumb.webp');
+        await deleteChatFile(thumbKey).catch(() => {});
+      }
+    }
+
+    // Publish unmatch event so partner's realtime client removes the conversation
+    publishChatMessage(REDIS_KEYS.CHAT_MESSAGES_CHANNEL, {
+      type: 'match:unmatched',
+      matchId,
+      unmatchedByUserId: userId,
+    });
+
+    return reply.send({ success: true, data: { unmatched: true } });
   });
 
   // ─── Get Messages for a Conversation ─────────────────
