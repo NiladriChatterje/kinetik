@@ -1,6 +1,9 @@
 // ─── Swipe / Interaction Limits ───────────────────────────
 
+export const FREE_SWIPE_LIMIT_DAILY = 30;
 export const PREMIUM_SWIPE_LIMIT_DAILY = 99999;
+export const FREE_CHAT_LIMIT = 3;        // Max active matches for free users
+export const PREMIUM_CHAT_LIMIT = 99999;  // Effectively unlimited for premium
 export const SUPER_LIKE_LIMIT_DAILY_FREE = 5;
 export const SUPER_LIKE_LIMIT_DAILY_PREMIUM = 25;
 
@@ -155,6 +158,7 @@ export const ERROR_CODES = {
 
   // Limits
   SWIPE_LIMIT_REACHED: 'SWIPE_LIMIT_REACHED',
+  CHAT_LIMIT_REACHED: 'CHAT_LIMIT_REACHED',
   SUPER_LIKE_LIMIT_REACHED: 'SUPER_LIKE_LIMIT_REACHED',
   RATE_LIMITED: 'RATE_LIMITED',
 

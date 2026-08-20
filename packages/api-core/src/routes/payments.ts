@@ -1,6 +1,6 @@
 import { FastifyInstance, FastifyRequest, FastifyReply } from 'fastify';
 import { z } from 'zod';
-import { ERROR_CODES, PREMIUM_SWIPE_LIMIT_DAILY, PREMIUM_MONTHLY_COST_INR, getPricingForPhone } from '@kinetik/shared';
+import { ERROR_CODES, FREE_SWIPE_LIMIT_DAILY, FREE_CHAT_LIMIT, PREMIUM_SWIPE_LIMIT_DAILY, PREMIUM_MONTHLY_COST_INR, getPricingForPhone } from '@kinetik/shared';
 import { query, TABLES, getSubscription } from '../services/database';
 import { eventBus } from '../services/eventBus';
 import { getRedis } from '../services/redis';
@@ -132,6 +132,48 @@ export async function paymentRoutes(app: FastifyInstance) {
     return reply.send({
       success: true,
       data: { verified: true, paymentId: razorpayPaymentId },
+    });
+  });
+
+  // ─── Get Usage Limits ───────────────────────────────
+  // Returns the user's current usage against free plan limits.
+  app.get('/limits', async (request: FastifyRequest, reply: FastifyReply) => {
+    const { sub: userId } = request.user as any;
+
+    const subResult = await query(
+      `SELECT tier FROM ${TABLES.SUBSCRIPTION_LEDGER} WHERE user_id = $1`,
+      [userId],
+    );
+    const tier = subResult.rows[0]?.tier || 'free';
+    const isPremium = tier !== 'free';
+
+    // Active matches count
+    const matchCountResult = await query(
+      `SELECT COUNT(*)::int as cnt FROM ${TABLES.MATCHES}
+       WHERE is_active = TRUE AND (user_a_id = $1 OR user_b_id = $1)`,
+      [userId],
+    );
+    const activeChats = matchCountResult.rows[0]?.cnt ?? 0;
+
+    // Today's swipe count from Redis
+    const redis = getRedis();
+    const swipeKey = `user:${userId}:swipes:daily`;
+    const swipeCountRaw = await redis.get(swipeKey);
+    const swipesUsed = swipeCountRaw ? parseInt(swipeCountRaw, 10) : 0;
+
+    return reply.send({
+      success: true,
+      data: {
+        tier,
+        swipes: {
+          used: swipesUsed,
+          limit: isPremium ? PREMIUM_SWIPE_LIMIT_DAILY : FREE_SWIPE_LIMIT_DAILY,
+        },
+        chats: {
+          used: activeChats,
+          limit: isPremium ? PREMIUM_SWIPE_LIMIT_DAILY : FREE_CHAT_LIMIT,
+        },
+      },
     });
   });
 

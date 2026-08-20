@@ -1,8 +1,8 @@
 import { FastifyInstance, FastifyRequest, FastifyReply } from 'fastify';
 import {
-  ERROR_CODES, REDIS_KEYS, SUPER_LIKE_LIMIT_DAILY_FREE,
-  SUPER_LIKE_LIMIT_DAILY_PREMIUM, EVENT_BUS_CHANNELS,
-  encryptMessage, decryptMessage, getOpeningLine, ChatMediaType,
+  ERROR_CODES, REDIS_KEYS, FREE_SWIPE_LIMIT_DAILY, FREE_CHAT_LIMIT,
+  PREMIUM_CHAT_LIMIT, SUPER_LIKE_LIMIT_DAILY_FREE, SUPER_LIKE_LIMIT_DAILY_PREMIUM,
+  EVENT_BUS_CHANNELS, encryptMessage, decryptMessage, getOpeningLine, ChatMediaType,
 } from '@kinetik/shared';
 import { v4 as uuidv4 } from 'uuid';
 import { query, TABLES } from '../services/database';
@@ -222,16 +222,16 @@ export async function matchRoutes(app: FastifyInstance) {
       });
     }
 
-    // Load the user's entitlement. swipe_allowance is 50 for free accounts and
-    // PREMIUM_SWIPE_LIMIT_DAILY (effectively unlimited) once a paid subscription
-    // is active — the payments/webhook flows set it on activation.
+    // Load the user's entitlement. swipe_allowance is FREE_SWIPE_LIMIT_DAILY (30)
+    // for free accounts and PREMIUM_SWIPE_LIMIT_DAILY (unlimited) once a paid
+    // subscription is active — the payments/webhook flows set it on activation.
     const subResult = await query(
       `SELECT tier, swipe_allowance FROM ${TABLES.SUBSCRIPTION_LEDGER} WHERE user_id = $1`,
       [userId],
     );
     const sub = subResult.rows[0];
     const tier = sub?.tier || 'free';
-    const swipeAllowance = sub?.swipe_allowance ?? 50;
+    const swipeAllowance = sub?.swipe_allowance ?? FREE_SWIPE_LIMIT_DAILY;
 
     // Daily swipe limit — only right swipes (like / super_like) count; passing
     // left is always free. Atomic INCR-then-compare avoids double-spend races.
@@ -305,7 +305,27 @@ export async function matchRoutes(app: FastifyInstance) {
       );
 
       if (mutualCheck.rows.length > 0) {
-        // Mutual like! Create a match (or reuse the active one if a racing
+        // Mutual like! Check chat limit before creating a match.
+        const chatCheck = await checkChatLimit(userId);
+        if (!chatCheck.allowed) {
+          // Still record the interaction as mutual (so the like shows up in likes list)
+          // but don't create a new match — the user must upgrade to unlock more chats.
+          await query(
+            `UPDATE ${TABLES.USER_INTERACTIONS} SET is_mutual = TRUE, responded_at = NOW()
+             WHERE actor_id = $1 AND target_id = $2`,
+            [targetUserId, userId],
+          );
+          return reply.status(429).send({
+            success: false,
+            error: {
+              code: ERROR_CODES.CHAT_LIMIT_REACHED,
+              message: `You've reached the ${chatCheck.limit} chat limit. Upgrade to Premium for unlimited matches.`,
+              details: { activeChats: chatCheck.activeCount, limit: chatCheck.limit },
+            },
+          });
+        }
+
+        // Create a match (or reuse the active one if a racing
         // request / the Likes-screen respond flow already created it)
         const { match, created } = await getOrCreateActiveMatch(userId, targetUserId);
 
@@ -512,7 +532,26 @@ export async function matchRoutes(app: FastifyInstance) {
       return reply.send({ success: true, data: { matched: false } });
     }
 
-    // Like back — create match (or reuse the active one if a racing /swipe
+    // Like back — check chat limit before creating a match.
+    const chatCheck = await checkChatLimit(userId);
+    if (!chatCheck.allowed) {
+      // Mark as responded (so the like shows up as responded)
+      await query(
+        `UPDATE ${TABLES.USER_INTERACTIONS} SET responded_at = NOW()
+         WHERE actor_id = $1 AND target_id = $2`,
+        [targetUserId, userId],
+      );
+      return reply.status(429).send({
+        success: false,
+        error: {
+          code: ERROR_CODES.CHAT_LIMIT_REACHED,
+          message: `You've reached the ${chatCheck.limit} chat limit. Upgrade to Premium for unlimited matches.`,
+          details: { activeChats: chatCheck.activeCount, limit: chatCheck.limit },
+        },
+      });
+    }
+
+    // Create match (or reuse the active one if a racing /swipe
     // from the other side already created it)
     const { match, created } = await getOrCreateActiveMatch(targetUserId, userId);
     if (!match) {
@@ -1413,6 +1452,37 @@ export async function matchRoutes(app: FastifyInstance) {
 // uniq_matches_active_pair partial unique index (order-insensitive on the
 // pair, active rows only), so two racing mutual-like requests can no longer
 // create duplicate active matches.
+/**
+ * Check if a user has hit their active match (chat) limit.
+ * Free users are limited to FREE_CHAT_LIMIT (3) active matches.
+ * Premium users have unlimited matches.
+ * Returns { allowed: boolean, activeCount: number, limit: number }.
+ */
+async function checkChatLimit(userId: string): Promise<{ allowed: boolean; activeCount: number; limit: number }> {
+  const subResult = await query(
+    `SELECT tier FROM ${TABLES.SUBSCRIPTION_LEDGER} WHERE user_id = $1`,
+    [userId],
+  );
+  const tier = subResult.rows[0]?.tier || 'free';
+
+  if (tier !== 'free') {
+    return { allowed: true, activeCount: 0, limit: PREMIUM_CHAT_LIMIT };
+  }
+
+  const countResult = await query(
+    `SELECT COUNT(*)::int as cnt FROM ${TABLES.MATCHES}
+     WHERE is_active = TRUE AND (user_a_id = $1 OR user_b_id = $1)`,
+    [userId],
+  );
+  const activeCount = countResult.rows[0]?.cnt ?? 0;
+
+  return {
+    allowed: activeCount < FREE_CHAT_LIMIT,
+    activeCount,
+    limit: FREE_CHAT_LIMIT,
+  };
+}
+
 async function getOrCreateActiveMatch(
   userAId: string,
   userBId: string,

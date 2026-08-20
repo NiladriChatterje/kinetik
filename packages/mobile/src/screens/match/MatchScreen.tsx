@@ -12,6 +12,7 @@ import { colors, typography, spacing, radius } from '../../theme';
 import { getPresenceSocket } from '../../services/presenceSocket';
 import { resolveUrl } from '../../config';
 import { MatchPopup } from '../../components/common/MatchPopup';
+import { PaywallModal, PaywallReason } from '../../components/common/PaywallModal';
 
 const SCREEN_WIDTH = Dimensions.get('window').width;
 const SCREEN_HEIGHT = Dimensions.get('window').height;
@@ -324,6 +325,14 @@ export const MatchScreen: React.FC<{ navigation: any; route?: any }> = ({ naviga
     partnerPhotoUrl?: string;
   }>({ visible: false, matchId: '', partnerId: '', partnerName: '' });
 
+  // Paywall modal state
+  const [paywall, setPaywall] = useState<{
+    visible: boolean;
+    reason: PaywallReason;
+    used: number;
+    limit: number;
+  }>({ visible: false, reason: 'swipe_limit', used: 0, limit: 0 });
+
   const fetchProfiles = useCallback(async () => {
     try {
       setLoading(true);
@@ -455,14 +464,13 @@ export const MatchScreen: React.FC<{ navigation: any; route?: any }> = ({ naviga
           toast.showSuccess('Super Like Sent!', 'They\'ll know you\'re interested.');
         }
       } else if (res.error?.code === 'SWIPE_LIMIT_REACHED') {
-        Alert.alert(
-          'Daily swipe limit reached',
-          "You've used all your free swipes for today. Go Premium for unlimited swipes.",
-          [
-            { text: 'Not now', style: 'cancel' },
-            { text: 'Go Premium', onPress: () => navigation.navigate('SubscriptionCheckout') },
-          ],
-        );
+        const details = (res.error as any)?.details;
+        setPaywall({
+          visible: true,
+          reason: 'swipe_limit',
+          used: details?.used ?? 30,
+          limit: details?.limit ?? 30,
+        });
       }
     } catch (err: any) {
       toast.showError(err.message || 'Super Like failed');
@@ -519,14 +527,13 @@ export const MatchScreen: React.FC<{ navigation: any; route?: any }> = ({ naviga
       } else {
         // API returned an error — don't advance, show feedback
         if (res.error?.code === 'SWIPE_LIMIT_REACHED') {
-          Alert.alert(
-            'Daily swipe limit reached',
-            "You've used all your free swipes for today. Go Premium for unlimited swipes.",
-            [
-              { text: 'Not now', style: 'cancel' },
-              { text: 'Go Premium', onPress: () => navigation.navigate('SubscriptionCheckout') },
-            ],
-          );
+          const details = (res.error as any)?.details;
+          setPaywall({
+            visible: true,
+            reason: 'swipe_limit',
+            used: details?.used ?? 30,
+            limit: details?.limit ?? 30,
+          });
         } else {
           toast.showError(res.error?.message || 'Swipe failed — please try again');
         }
@@ -578,19 +585,32 @@ export const MatchScreen: React.FC<{ navigation: any; route?: any }> = ({ naviga
           <Text style={styles.loadingText}>Finding profiles near you...</Text>
         </View>
 
-        {/* Match Popup overlay */}
-        <MatchPopup
-          visible={matchPopup.visible}
-          partnerName={matchPopup.partnerName}
-          partnerPhotoUrl={matchPopup.partnerPhotoUrl}
-          onKeepSwiping={handleKeepSwiping}
-          onSayHello={handleSayHello}
-        />
-      </SafeAreaView>
-    );
-  }
+      {/* Match Popup overlay */}
+      <MatchPopup
+        visible={matchPopup.visible}
+        partnerName={matchPopup.partnerName}
+        partnerPhotoUrl={matchPopup.partnerPhotoUrl}
+        onKeepSwiping={handleKeepSwiping}
+        onSayHello={handleSayHello}
+      />
 
-  const currentProfile = profiles[currentIndex];
+      {/* Paywall modal */}
+      <PaywallModal
+        visible={paywall.visible}
+        reason={paywall.reason}
+        used={paywall.used}
+        limit={paywall.limit}
+        onDismiss={() => setPaywall((prev) => ({ ...prev, visible: false }))}
+        onUpgrade={() => {
+          setPaywall((prev) => ({ ...prev, visible: false }));
+          navigation.navigate('SubscriptionCheckout');
+        }}
+      />
+    </SafeAreaView>
+  );
+}
+
+const currentProfile = profiles[currentIndex];
 
   if (!currentProfile) {
     return (
@@ -617,19 +637,30 @@ export const MatchScreen: React.FC<{ navigation: any; route?: any }> = ({ naviga
           <TouchableOpacity style={styles.refreshBtn} onPress={fetchProfiles}>
             <Text style={styles.refreshBtnText}>Refresh</Text>
           </TouchableOpacity>
-        </View>
+        </View>      {/* Match Popup overlay */}
+      <MatchPopup
+        visible={matchPopup.visible}
+        partnerName={matchPopup.partnerName}
+        partnerPhotoUrl={matchPopup.partnerPhotoUrl}
+        onKeepSwiping={handleKeepSwiping}
+        onSayHello={handleSayHello}
+      />
 
-        {/* Match Popup overlay */}
-        <MatchPopup
-          visible={matchPopup.visible}
-          partnerName={matchPopup.partnerName}
-          partnerPhotoUrl={matchPopup.partnerPhotoUrl}
-          onKeepSwiping={handleKeepSwiping}
-          onSayHello={handleSayHello}
-        />
-      </SafeAreaView>
-    );
-  }
+      {/* Paywall modal */}
+      <PaywallModal
+        visible={paywall.visible}
+        reason={paywall.reason}
+        used={paywall.used}
+        limit={paywall.limit}
+        onDismiss={() => setPaywall((prev) => ({ ...prev, visible: false }))}
+        onUpgrade={() => {
+          setPaywall((prev) => ({ ...prev, visible: false }));
+          navigation.navigate('SubscriptionCheckout');
+        }}
+      />
+    </SafeAreaView>
+  );
+}
 
   return (
     <SafeAreaView style={styles.container}>
@@ -710,6 +741,19 @@ export const MatchScreen: React.FC<{ navigation: any; route?: any }> = ({ naviga
         partnerPhotoUrl={matchPopup.partnerPhotoUrl}
         onKeepSwiping={handleKeepSwiping}
         onSayHello={handleSayHello}
+      />
+
+      {/* Paywall modal */}
+      <PaywallModal
+        visible={paywall.visible}
+        reason={paywall.reason}
+        used={paywall.used}
+        limit={paywall.limit}
+        onDismiss={() => setPaywall((prev) => ({ ...prev, visible: false }))}
+        onUpgrade={() => {
+          setPaywall((prev) => ({ ...prev, visible: false }));
+          navigation.navigate('SubscriptionCheckout');
+        }}
       />
     </SafeAreaView>
   );

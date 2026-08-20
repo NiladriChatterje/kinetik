@@ -11,6 +11,7 @@ import { useToast } from '../../hooks/useToast';
 import { useAuthStore } from '../../store/authStore';
 import { resolveUrl } from '../../config';
 import { colors, typography, spacing, radius } from '../../theme';
+import { PaywallModal, PaywallReason } from '../../components/common/PaywallModal';
 
 interface IncomingLike {
   likedAt: string;
@@ -29,6 +30,14 @@ export const LikeListScreen: React.FC<{ navigation: any }> = ({ navigation }) =>
   const [loading, setLoading] = useState(true);
   const [responding, setResponding] = useState<string | null>(null);
   const toast = useToast();
+
+  // Paywall modal state
+  const [paywall, setPaywall] = useState<{
+    visible: boolean;
+    reason: PaywallReason;
+    used: number;
+    limit: number;
+  }>({ visible: false, reason: 'chat_limit', used: 0, limit: 0 });
 
   const fetchLikes = useCallback(async () => {
     try {
@@ -80,6 +89,14 @@ export const LikeListScreen: React.FC<{ navigation: any }> = ({ navigation }) =>
         // MatchPopup — no extra dialog here.
         // Remove from list
         setLikes((prev) => prev.filter((l) => l.userId !== targetUserId));
+      } else if (res.error?.code === 'CHAT_LIMIT_REACHED') {
+        const details = (res.error as any)?.details;
+        setPaywall({
+          visible: true,
+          reason: 'chat_limit',
+          used: details?.activeChats ?? 3,
+          limit: details?.limit ?? 3,
+        });
       }
     } catch (err: any) {
       toast.showError(err.message || 'Failed to respond');
@@ -206,6 +223,19 @@ export const LikeListScreen: React.FC<{ navigation: any }> = ({ navigation }) =>
           showsVerticalScrollIndicator={false}
         />
       )}
+
+      {/* Paywall modal */}
+      <PaywallModal
+        visible={paywall.visible}
+        reason={paywall.reason}
+        used={paywall.used}
+        limit={paywall.limit}
+        onDismiss={() => setPaywall((prev) => ({ ...prev, visible: false }))}
+        onUpgrade={() => {
+          setPaywall((prev) => ({ ...prev, visible: false }));
+          navigation.navigate('SubscriptionCheckout');
+        }}
+      />
     </SafeAreaView>
   );
 };

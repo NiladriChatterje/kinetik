@@ -349,6 +349,15 @@ class ApiClient {
   }
 
   // ─── Payments ───────────────────────────────────────
+  /** Get the user's current usage against free plan limits. */
+  async getLimits() {
+    return this.request<{
+      tier: string;
+      swipes: { used: number; limit: number };
+      chats: { used: number; limit: number };
+    }>('/api/v1/payments/limits');
+  }
+
   /** Get the subscription price in the user's local currency. */
   async getPricing() {
     return this.request<{
