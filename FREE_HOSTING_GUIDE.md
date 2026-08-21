@@ -1,6 +1,6 @@
 # Kinetik — Free Forever Hosting Guide
 
-> **Last updated:** August 16, 2026
+> **Last updated:** August 22, 2026
 > **Goal:** run the entire app online, **100% free, forever** — no trials, no credit card, no surprise bills.
 >
 > Written for: no credit card, no always-on computer at home, free subdomains only.
@@ -14,8 +14,7 @@ Each part of the app gets a free home. "Sleeps" means the free host pauses the s
 | What | Runs on | Free forever? | Sleeps? |
 |---|---|---|---|
 | Database (PostgreSQL) | **Neon** | ✅ | Naps after 5 min, wakes in ~0.3 s (our app pings it anyway) |
-| Redis — cache + chat plumbing | **Upstash** database #1 | ✅ | Never |
-| Redis — internal event messages | **Upstash** database #2 | ✅ | Never |
+| Redis — cache + chat plumbing + internal events | **Aiven for Valkey** (one instance, both roles) | ✅ | Only if fully idle — normal traffic + pings keep it on |
 | Photo / media storage | **Cloudflare R2** | ✅ | Never |
 | Voice & video calls | **LiveKit Cloud** (Build plan) | ✅ | Never |
 | api-core (the main server) | **Render** free web service | ✅ | After 15 min → ping keeps it awake |
@@ -25,7 +24,7 @@ Each part of the app gets a free home. "Sleeps" means the free host pauses the s
 | Address lookup (geocoding) | Geoapify (3,000/day) | ✅ | Never |
 | Uptime pings + error logs | UptimeRobot, Sentry, Better Stack | ✅ | Never |
 
-**Accounts you'll create:** Neon, Upstash, Cloudflare, LiveKit, Render (1), Koyeb (1), UptimeRobot. All free, none ask for a card.
+**Accounts you'll create:** Neon, Aiven, Cloudflare, LiveKit, Render (1), Koyeb (1), UptimeRobot. All free, none ask for a card.
 
 > The Python match-engine and the flash-window feature were both retired — matching happens through swipes/likes in api-core, so there's no separate matching service to host at all.
 
@@ -33,11 +32,11 @@ Each part of the app gets a free home. "Sleeps" means the free host pauses the s
 
 ## 2. Code changes you must make first (~10 minutes, one time)
 
-**No new SDKs or libraries need to be installed.** The app already speaks the right "languages": Neon is plain PostgreSQL, Upstash is plain Redis, R2 is storage the app's existing S3 client understands, and the LiveKit / Expo / Razorpay SDKs are already in the code. The only edits are tiny settings tweaks:
+**No new SDKs or libraries need to be installed.** The app already speaks the right "languages": Neon is plain PostgreSQL, Aiven's Valkey is plain Redis protocol, R2 is storage the app's existing S3 client understands, and the LiveKit / Expo / Razorpay SDKs are already in the code. The only edits are tiny settings tweaks:
 
 ### 2a. Tell Redis connections to use encryption (TLS)
 
-Upstash only accepts encrypted connections. Add **one line** — `tls: {},` — inside the `new Redis({...})` settings in these 4 files (5 spots):
+Aiven (and the Upstash fallback) only accept encrypted connections. Add **one line** — `tls: {},` — inside the `new Redis({...})` settings in these 4 files (5 spots):
 
 1. `packages/api-core/src/services/redis.ts`
 2. `packages/api-core/src/services/eventBus.ts` (inside `getPublisher()`)
@@ -72,18 +71,41 @@ Free: 500 MB storage, no expiry, no card.
 
 ---
 
-## 4. Redis ×2 → Upstash
+## 4. Redis → Aiven for Valkey
 
-Free: 256 MB and ~500k commands/month **per database**, up to 10 databases, no card.
+Free: **1 GB RAM, single node, no card, no time limit — and no monthly command quota.**
+That last part is why Aiven is the primary choice: quota-metered Redis (like Upstash's
+500k commands/month) was the app's tightest free-tier ceiling — rate limiting, chat
+pub/sub, and presence all burn commands constantly. Valkey is the Linux Foundation fork
+of Redis with the identical protocol; the app's ioredis clients and the Socket.IO adapter
+work unchanged.
 
-Create **two** databases (the app deliberately uses two — one for caching/chat, one for internal events):
+The app uses two *logical* Redis roles (cache/chat + internal events). On Aiven, **point
+both at the same instance** — the split exists for quota isolation, not correctness:
+cache keys and event-bus channels have distinct names and never collide.
 
-1. `kinetik-cache` → fills the `REDIS_*` variables
-2. `kinetik-events` → fills the `REDIS_EVENTS_*` variables
+1. Sign up at [aiven.io](https://aiven.io) → **Create service → Valkey** → plan **Free** →
+   pick the region closest to your Render region (this is a single-region server, so
+   cross-region latency would tax every request).
+2. From the service's **Overview → Connection information**, copy:
+   - **Host** (`valkey-xxxx-yyyy.aivencloud.com`)
+   - **Port** — ⚠️ Aiven assigns a custom port (e.g. `12691`), **not** `6379`
+   - **Password** (the `default` user's password — password-only auth works)
+3. Fill **both** variable sets with the same values (§12): `REDIS_*` **and** `REDIS_EVENTS_*`.
 
-For each: dashboard → **Connect** → copy host, port `6379`, and the password token.
+> ⚠️ Aiven powers off free services that go **fully idle**. Real app traffic plus the
+> UptimeRobot-driven health checks (§13) count as activity, so this doesn't bite a live
+> deployment — but if you pause the project for weeks, expect to power it back on from
+> the dashboard (one click; cache/pub-sub data is disposable anyway).
 
-> ⚠️ **Claim both databases** into your account — unclaimed ones are deleted after 3 days.
+### Fallback: Upstash
+
+If Aiven ever drops the free plan: [Upstash](https://upstash.com) — 256 MB and ~500k
+commands/month **per database**, up to 10 databases, no card. Create **two** databases
+(`kinetik-cache` → `REDIS_*`, `kinetik-events` → `REDIS_EVENTS_*`) to spread the quota,
+copy host / port `6379` / password token from each dashboard's **Connect** tab, and
+**claim both databases** — unclaimed ones are deleted after 3 days. Know the ceiling:
+the command quota supports roughly 50–100 daily active users before running dry mid-month.
 
 ---
 
@@ -212,12 +234,12 @@ DATABASE_URL=postgresql://kinetik_user:PASSWORD@ep-XXXX-pooler.../kinetik?sslmod
 JWT_SECRET=<long-random-string>          # ⚠️ must match realtime exactly
 JWT_EXPIRES_IN=7d
 MESSAGE_ENCRYPTION_KEY=<random-32+-chars>
-REDIS_HOST=<cache>.upstash.io
-REDIS_PORT=6379
-REDIS_PASSWORD=<token>
-REDIS_EVENTS_HOST=<events>.upstash.io
-REDIS_EVENTS_PORT=6379
-REDIS_EVENTS_PASSWORD=<token>
+REDIS_HOST=valkey-xxxx-yyyy.aivencloud.com   # Aiven Valkey (both roles, same instance)
+REDIS_PORT=<aiven-port>                      # custom port from the Aiven console, NOT 6379
+REDIS_PASSWORD=<aiven-password>
+REDIS_EVENTS_HOST=<same as REDIS_HOST>
+REDIS_EVENTS_PORT=<same as REDIS_PORT>
+REDIS_EVENTS_PASSWORD=<same as REDIS_PASSWORD>
 LIVEKIT_HOST=wss://<project>.livekit.cloud
 LIVEKIT_API_KEY=APIxxx
 LIVEKIT_API_SECRET=<secret>
@@ -262,7 +284,7 @@ Free: 50 monitors, checks every 5 minutes. These pings double as health checks:
 
 - [ ] Code tweaks (§2): 5 Node TLS lines
 - [ ] Neon: project → **pooled** `DATABASE_URL` → run migrations
-- [ ] Upstash: `kinetik-cache` + `kinetik-events` → **claim both** → copy hosts/tokens
+- [ ] Aiven: free Valkey service → copy host + custom port + password (fills both `REDIS_*` and `REDIS_EVENTS_*`)
 - [ ] Cloudflare R2: bucket → API token → public access → CORS
 - [ ] LiveKit Cloud: project → host + key + secret
 - [ ] Render: deploy api-core → env vars → note the URL
@@ -301,7 +323,7 @@ The repo's `docker-compose.yml` runs the entire stack unchanged, so upgrading is
 
 1. **Render = one awake service per account.** Two services will suspend each other mid-month.
 2. **Always use Neon's `-pooler` address** — the app opens up to 20 connections; the plain address can't handle it.
-3. **Upstash needs the TLS tweak (§2a)** — without it, Redis silently retries forever and nothing works.
+3. **Hosted Redis needs the TLS tweak (§2a)** — Aiven and Upstash both refuse plain connections; without it, Redis silently retries forever and nothing works. And Aiven's port is a **custom one from the console, not 6379** — the #1 copy-paste mistake.
 4. **`JWT_SECRET` must be byte-identical** on api-core and realtime.
 5. **The login code is hardcoded `123456`** — change it before you pay for SMS.
 6. **`MINIO_ENDPOINT` must NOT include `https://`** — the code prepends the scheme itself; doubling it breaks uploads.
