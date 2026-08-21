@@ -205,10 +205,8 @@ services:
       MINIO_SECRET_KEY: ${MINIO_ROOT_PASSWORD:-minioadmin}
       MINIO_BUCKET: ${MINIO_BUCKET:-kinetik-photos}
       MINIO_PUBLIC_URL: /uploads/
+      # KYC document face matching only — selfie verification runs on-device
       POSE_SERVICE_URL: http://pose-service:3004
-      # Set to "true" to bypass face-match verification in dev/staging.
-      # REMOVE this before production deployment.
-      POSE_VERIFICATION_BYPASS: ${POSE_VERIFICATION_BYPASS:-false}
     depends_on:
       postgres:
         condition: service_healthy
@@ -350,7 +348,8 @@ services:
           memory: 32M
     logging: *default-logging
 
-  # ─── Pose Verification Service (Python / MediaPipe) ────────
+  # ─── Face Service (Python / MediaPipe) — KYC document matching ──
+  # Selfie pose/liveness verification runs on-device in the mobile app.
   pose-service:
     build:
       context: packages/pose-service
@@ -363,14 +362,11 @@ services:
       ENVIRONMENT: ${ENVIRONMENT:-development}
       PORT: 3004
       HOST: "0.0.0.0"
-      DATABASE_URL: postgresql://${POSTGRES_USER:-kinetik}:${POSTGRES_PASSWORD:-kinetik_dev_2024}@postgres:5432/${POSTGRES_DB:-kinetik}
       MINIO_ENDPOINT: minio:9000
-      MINIO_ACCESS_KEY: ${MINIO_ROOT_USER:-minioadmin}
-      MINIO_SECRET_KEY: ${MINIO_ROOT_PASSWORD:-minioadmin}
       MINIO_BUCKET: ${MINIO_BUCKET:-kinetik-photos}
       MINIO_PUBLIC_URL: /uploads/
     depends_on:
-      postgres:
+      minio:
         condition: service_healthy
     deploy:
       resources:

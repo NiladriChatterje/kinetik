@@ -52,9 +52,6 @@ CREATE TABLE users (
     region          VARCHAR(100),
     country         VARCHAR(100),
 
-    -- Pose verification selfie URL (from migration 003)
-    pose_photo_url  TEXT,
-
     -- Dating category (required during onboarding)
     dating_category VARCHAR(20) CHECK (dating_category IN ('casual', 'serious', 'intimacy')),
 

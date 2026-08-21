@@ -1,4 +1,4 @@
-import React, { useState, useRef, useCallback } from 'react';
+import React, { useState, useRef, useCallback, useEffect } from 'react';
 import {
   View, Text, StyleSheet, TouchableOpacity,
   Image, ActivityIndicator, Dimensions,
@@ -10,6 +10,8 @@ import * as ImageManipulator from 'expo-image-manipulator';
 import { Button } from '../../components/common/Button';
 import { useToast } from '../../hooks/useToast';
 import { api } from '../../services/api';
+import { resolveUrl } from '../../config';
+import { embedProfilePhotos, verifySelfie } from '../../services/faceVerification';
 import { colors, typography, spacing, radius } from '../../theme';
 
 const { width: SCREEN_WIDTH } = Dimensions.get('window');
@@ -26,6 +28,25 @@ export const PoseVerificationScreen: React.FC<{ navigation: any }> = ({ navigati
   const [capturedUri, setCapturedUri] = useState<string | null>(null);
   const cameraRef = useRef<any>(null);
   const toast = useToast();
+
+  // Profile photo face embeddings, precomputed on-device while the user
+  // lines up their selfie. null = still loading (or failed — treated as empty).
+  const profileEmbeddingsRef = useRef<Promise<Float32Array[]> | null>(null);
+
+  useEffect(() => {
+    profileEmbeddingsRef.current = (async () => {
+      try {
+        const photosRes = await api.getPhotos();
+        const urls: string[] = Array.isArray(photosRes.data)
+          ? (photosRes.data as any[]).map((p) => resolveUrl(p.url)).filter(Boolean)
+          : [];
+        return await embedProfilePhotos(urls);
+      } catch (err) {
+        console.warn('[pose] Failed to prepare profile embeddings:', err);
+        return [];
+      }
+    })();
+  }, []);
 
   /**
    * Capture a selfie from the front camera, compress it, and move to preview.
@@ -59,36 +80,47 @@ export const PoseVerificationScreen: React.FC<{ navigation: any }> = ({ navigati
   }, [toast]);
 
   /**
-   * Upload the captured selfie to the backend for face matching
-   * against the user's existing profile photos.
+   * Verify the captured selfie on-device against the user's profile photos
+   * (face detection + MobileFaceNet embeddings), then self-report the result
+   * to the backend. The selfie never leaves the device.
    */
   const handleConfirm = useCallback(async () => {
     if (!capturedUri) return;
 
     setPhase('uploading');
+    let isVerified = false;
     try {
-      const result = await api.submitPoseVerification(capturedUri);
-      if (result?.match) {
-        setVerified(true);
+      const profileEmbeddings = (await profileEmbeddingsRef.current) ?? [];
+      const result = await verifySelfie(capturedUri, profileEmbeddings);
+      isVerified = result.verified;
+
+      if (result.verified) {
         toast.showSuccess(
           'Face Verified!',
           'Your selfie matches your profile photos.',
         );
       } else {
+        console.log('[pose] Not verified:', result.rejectionReasons.join('; '));
         toast.showSuccess(
           'Selfie Submitted',
           'You can continue with onboarding.',
         );
       }
-      setPhase('success');
+
+      // Self-report the on-device result (fire-and-forget on failure)
+      api
+        .reportPoseVerification({ verified: result.verified, confidence: result.confidence })
+        .catch((err) => console.warn('[pose] Failed to report verification:', err));
     } catch (err: any) {
-      // Even if verification fails, allow the user to proceed
+      // Verification errors never block onboarding
+      console.warn('[pose] On-device verification failed:', err?.message || err);
       toast.showSuccess(
         'Selfie Submitted',
         'You can continue with onboarding.',
       );
-      setPhase('success');
     }
+    setVerified(isVerified);
+    setPhase('success');
   }, [capturedUri, toast]);
 
   /**
@@ -183,7 +215,7 @@ export const PoseVerificationScreen: React.FC<{ navigation: any }> = ({ navigati
             )}
             <View style={styles.uploadOverlay}>
               <ActivityIndicator size="large" color={colors.textInverse} />
-              <Text style={styles.uploadingText}>Uploading...</Text>
+              <Text style={styles.uploadingText}>Verifying...</Text>
             </View>
           </View>
         </View>

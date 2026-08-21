@@ -460,7 +460,6 @@ export async function authRoutes(app: FastifyInstance) {
              county = NULL,
              region = NULL,
              country = NULL,
-             pose_photo_url = NULL,
              dating_category = NULL,
              about_answers = NULL,
              phone_verified = FALSE,

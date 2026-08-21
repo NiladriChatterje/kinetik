@@ -68,7 +68,8 @@
       ],
       "expo-audio",
       "@livekit/react-native-expo-plugin",
-      "expo-asset"
+      "expo-asset",
+      "react-native-fast-tflite"
     ],
     "web": {
       "bundler": "metro",

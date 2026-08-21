@@ -156,12 +156,15 @@ Free: 512 MB RAM, one web service, no card. One account is enough.
 
 ---
 
-## 9. pose-service (selfie verification) — skip it, on purpose
+## 9. pose-service (KYC document face match) — skip it, on purpose
 
-It needs ~1 GB of memory; every no-card free tier tops out at 512 MB. The app is built to work without it: onboarding never blocks on it, users simply stay "pending" instead of "verified". Only the opt-in KYC face check truly needs it.
+Selfie verification now runs **entirely on the phone** (ML Kit + MobileFaceNet — see
+POSE_VERIFICATION_ONDEVICE.md), so this service is only needed for the opt-in KYC
+document face check. It needs ~1 GB of memory; every no-card free tier tops out at 512 MB.
+The app is built to work without it: onboarding never blocks on it.
 
-- **Now:** leave `POSE_SERVICE_URL` empty (not `localhost` — empty, so the app fails fast and moves on).
-- **Later:** either run the check on the phone itself (MediaPipe works on-device, free forever) or self-host the service on a future $5 server and just set `POSE_SERVICE_URL` — no other code changes.
+- **Now:** leave `POSE_SERVICE_URL` empty (not `localhost` — empty, so the app fails fast and moves on). Only the KYC document check is affected.
+- **Later:** self-host the service on a future $5 server and just set `POSE_SERVICE_URL` — no other code changes.
 
 ---
 

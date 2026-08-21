@@ -627,7 +627,6 @@ class ApiClient {
     return response.data!;
   }
 
-  // ─── Pose Verification ──────────────────────────────────
   // ─── Match / Swipe ────────────────────────────────────
   async getSwipeProfiles() {
     return this.request<{ profiles: any[] }>('/api/v1/matches/profiles');
@@ -744,44 +743,17 @@ class ApiClient {
     });
   }
 
-  // ─── Pose Verification ──────────────────────────────────
-  async submitPoseVerification(uri: string): Promise<{
-    status: string;
-    match: boolean;
-    confidence: number;
-    faceMatchScores: number[];
-    message: string;
-  }> {
-    const token = this.getToken();
-    const url = `${API_URL}/api/v1/users/pose-verification`;
-
-    const result = await Promise.race([
-      FileSystem.uploadAsync(url, uri, {
-        httpMethod: 'POST',
-        uploadType: FileSystem.FileSystemUploadType.MULTIPART,
-        fieldName: 'photo',
-        mimeType: 'image/jpeg',
-        headers: {
-          ...(token ? { Authorization: `Bearer ${token}` } : {}),
-        },
-      }),
-      new Promise<never>((_, reject) =>
-        setTimeout(() => reject(new Error('Upload timed out. Please try again.')), 60000),
-      ),
-    ]);
-
-    let body: any;
-    try {
-      body = this.parseUploadBody(result.body, result.status);
-    } catch (e: any) {
-      throw new Error(e?.message || `Upload failed (HTTP ${result.status})`);
-    }
-
-    if (result.status >= 200 && result.status < 300) {
-      return body?.data;
-    }
-
-    throw new Error(body?.error?.message || `Upload failed (HTTP ${result.status})`);
+  // ─── Pose Verification (on-device, self-reported) ───────
+  /**
+   * Report the result of the on-device face verification. The face matching
+   * itself runs on the device (see services/faceVerification.ts) — the server
+   * only records the outcome.
+   */
+  async reportPoseVerification(payload: { verified: boolean; confidence?: number }) {
+    return this.request<{ status: string }>('/api/v1/users/pose-verification', {
+      method: 'POST',
+      body: JSON.stringify(payload),
+    });
   }
 }
 
