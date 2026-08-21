@@ -1,6 +1,9 @@
 import * as SecureStore from 'expo-secure-store';
 import * as FileSystem from 'expo-file-system/legacy';
 import { API_URL, WS_URL } from '../config';
+// Deferred-use circular import (proximity.ts calls api.getAreaDetails at
+// runtime, never at module init) — safe under Metro.
+import { rankByProximity } from '../utils/proximity';
 
 interface ApiResponse<T = any> {
   success: boolean;
@@ -629,7 +632,13 @@ class ApiClient {
 
   // ─── Match / Swipe ────────────────────────────────────
   async getSwipeProfiles() {
-    return this.request<{ profiles: any[] }>('/api/v1/matches/profiles');
+    const res = await this.request<{ profiles: any[] }>('/api/v1/matches/profiles');
+    // Nearest-first, computed on-device from coarse cell centers.
+    // Falls back to server order when location is unavailable.
+    if (res.success && res.data?.profiles?.length) {
+      res.data.profiles = await rankByProximity(res.data.profiles);
+    }
+    return res;
   }
 
   async swipe(targetUserId: string, action: 'like' | 'pass' | 'super_like') {

@@ -3,6 +3,7 @@ import {
   ERROR_CODES, REDIS_KEYS, FREE_SWIPE_LIMIT_DAILY, FREE_CHAT_LIMIT,
   PREMIUM_CHAT_LIMIT, SUPER_LIKE_LIMIT_DAILY_FREE, SUPER_LIKE_LIMIT_DAILY_PREMIUM,
   EVENT_BUS_CHANNELS, encryptMessage, decryptMessage, getOpeningLine, ChatMediaType,
+  h3ToGeo,
 } from '@kinetik/shared';
 import { v4 as uuidv4 } from 'uuid';
 import { query, TABLES } from '../services/database';
@@ -176,7 +177,20 @@ export async function matchRoutes(app: FastifyInstance) {
         ? Math.floor((now.getTime() - new Date(row.date_of_birth).getTime()) / 31557600000)
         : 0;
 
+      // Coarse location = center of the user's res-7 H3 cell (~5 km² hexagon).
+      // The client sorts the deck nearest-first from this; exact coordinates
+      // never leave the server.
+      let approxLocation: { latitude: number; longitude: number } | undefined;
+      if (row.h3_index) {
+        try {
+          approxLocation = h3ToGeo(row.h3_index);
+        } catch {
+          // Malformed cell — profile simply has no distance
+        }
+      }
+
       return {
+        approxLocation,
         userId: row.id,
         displayName: row.display_name,
         age,

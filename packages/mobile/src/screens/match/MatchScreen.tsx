@@ -29,6 +29,10 @@ interface SwipeProfile {
   pronouns?: string;
   photos: { id: string; url: string; thumbnailUrl?: string; isPrimary: boolean }[];
   interests: { id: string; name: string; emoji: string; category: string }[];
+  /** Coarse H3 cell-center from the server; used for on-device ranking */
+  approxLocation?: { latitude: number; longitude: number };
+  /** Computed on-device by rankByProximity (utils/proximity.ts) */
+  distanceKm?: number;
   aboutAnswers?: {
     nature?: string[];
     hobbies?: string[];
@@ -240,6 +244,12 @@ function SwipeCard({
             <View style={styles.detailChip}>
               <Ionicons name="school-outline" size={14} color={colors.textSecondary} />
               <Text style={styles.detailText}>{profile.education}</Text>
+            </View>
+          ) : null}
+          {profile.distanceKm != null ? (
+            <View style={styles.detailChip}>
+              <Ionicons name="location-outline" size={14} color={colors.textSecondary} />
+              <Text style={styles.detailText}>~{profile.distanceKm} km away</Text>
             </View>
           ) : null}
         </View>
