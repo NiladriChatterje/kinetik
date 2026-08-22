@@ -213,7 +213,7 @@ export const PoseVerificationScreen: React.FC<{ navigation: any }> = ({ navigati
 
           <View style={styles.cameraContainer}>
             {capturedUri && (
-              <Image source={{ uri: capturedUri }} style={styles.capturedImage} />
+              <Image source={{ uri: capturedUri }} style={[styles.capturedImage, styles.mirrored]} />
             )}
             <View style={styles.uploadOverlay}>
               <ActivityIndicator size="large" color={colors.textInverse} />
@@ -235,8 +235,10 @@ export const PoseVerificationScreen: React.FC<{ navigation: any }> = ({ navigati
           <Text style={styles.subtitle}>Check your selfie before submitting</Text>
 
           <View style={styles.cameraContainer}>
+            {/* Mirrored for DISPLAY only — matching the mirrored camera preview
+                the user just saw; verification runs on the true (unmirrored) file */}
             {capturedUri && (
-              <Image source={{ uri: capturedUri }} style={styles.capturedImage} />
+              <Image source={{ uri: capturedUri }} style={[styles.capturedImage, styles.mirrored]} />
             )}
           </View>
 
@@ -368,6 +370,11 @@ const styles = StyleSheet.create({
     width: '100%',
     height: '100%',
     borderRadius: radius.xl,
+  },
+  // Front-camera selfies are shown mirrored, like the live preview was —
+  // otherwise the photo looks "flipped" compared to what the user lined up
+  mirrored: {
+    transform: [{ scaleX: -1 }],
   },
 
   // Upload overlay
