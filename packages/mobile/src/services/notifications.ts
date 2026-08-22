@@ -28,10 +28,7 @@ export async function getNotificationsModule(): Promise<NotificationsModule | nu
   // ── Expo Go guard ─────────────────────────────────────────────
   // expo-constants works in all environments (including Expo Go).
   if (Constants.executionEnvironment === 'storeClient') {
-    console.log(
-      '[notifications] Expo Go detected — expo-notifications native module ' +
-        'is unavailable. Skipping all notification setup.'
-    );
+    // Expo Go: silently skip — notifications are unavailable here
     _module = null;
     return null;
   }
@@ -42,8 +39,8 @@ export async function getNotificationsModule(): Promise<NotificationsModule | nu
     const mod = require('expo-notifications');
     _module = mod as unknown as NotificationsModule;
     return _module;
-  } catch (error) {
-    console.warn('[notifications] Failed to load expo-notifications:', error);
+  } catch {
+    // Native module not available — silent fallback
     _module = null;
     return null;
   }

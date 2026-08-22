@@ -26,14 +26,10 @@ try {
     // eslint-disable-next-line @typescript-eslint/no-var-requires
     const { registerGlobals } = require('@livekit/react-native');
     registerGlobals();
-  } else {
-    console.log(
-      '[webrtc] Expo Go detected — react-native-webrtc native module unavailable. ' +
-        'Voice/video calls disabled.'
-    );
   }
-} catch (e) {
-  console.warn('[webrtc] LiveKit unavailable — voice/video calls disabled:', e);
+  // Expo Go: silently skip — Voice/video calls are unavailable here
+} catch {
+  // Native module not available — silent fallback
 }
 
 // Suppress InteractionManager deprecation warnings from third-party libraries
