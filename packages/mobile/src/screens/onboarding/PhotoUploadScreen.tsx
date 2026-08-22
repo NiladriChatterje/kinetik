@@ -124,7 +124,9 @@ export const PhotoUploadScreen: React.FC<{ navigation: any }> = ({ navigation })
               <TouchableOpacity
                 key={i}
                 style={[styles.photoSlot, photo ? styles.photoSlotFilled : undefined]}
-                onPress={photo ? () => removePhoto(photo) : i === 0 ? takePhoto : pickPhoto}
+                // Tapping a filled slot must NOT delete — removal only via the
+                // ✕ badge or long-press, so an accidental tap can't discard an upload
+                onPress={photo ? undefined : i === 0 ? takePhoto : pickPhoto}
                 onLongPress={photo ? () => removePhoto(photo) : undefined}
               >
                 {photo ? (
@@ -139,9 +141,13 @@ export const PhotoUploadScreen: React.FC<{ navigation: any }> = ({ navigation })
                       </View>
                     )}
                     {!photo.uploading && (
-                      <View style={styles.removeBadge}>
+                      <TouchableOpacity
+                        style={styles.removeBadge}
+                        onPress={() => removePhoto(photo)}
+                        hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+                      >
                         <Ionicons name="close-circle" size={20} color={colors.error} />
-                      </View>
+                      </TouchableOpacity>
                     )}
                   </View>
                 ) : (
