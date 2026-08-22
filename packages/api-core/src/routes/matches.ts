@@ -717,8 +717,13 @@ export async function matchRoutes(app: FastifyInstance) {
 
   // ─── Unmatch (Delete Conversation) ──────────────────
   // Permanently deletes all messages, media files, and deactivates the match.
-  // Both users lose access to the conversation. Media files are removed
-  // from MinIO storage to free space and protect privacy.
+  // Both users lose access to the conversation.
+  //
+  // Deletion order makes the operation atomic from the user's perspective:
+  // media files are removed from object storage FIRST, and only if every
+  // delete succeeds are the DB records removed. If storage is unreachable,
+  // nothing is deleted and the client gets a retryable 503 — S3 DeleteObject
+  // is idempotent (deleting a missing key succeeds), so retries are safe.
   app.delete('/conversations/:id', async (request: FastifyRequest<{ Params: { id: string } }>, reply: FastifyReply) => {
     const { id: matchId } = request.params;
     const { sub: userId } = request.user as any;
@@ -740,39 +745,48 @@ export async function matchRoutes(app: FastifyInstance) {
       ? matchCheck.rows[0].user_b_id
       : matchCheck.rows[0].user_a_id;
 
-    // Collect chat media URLs for MinIO cleanup, then delete all records
-    // in a single transaction so the DB is always consistent.
-    let chatMediaUrls: string[] = [];
+    // ─── 1. Collect media file keys (read-only) ─────────
+    const mediaResult = await query(
+      `SELECT cm.url, cm.thumbnail_url FROM ${TABLES.CHAT_MEDIA} cm
+       WHERE cm.message_id IN (SELECT id FROM ${TABLES.MESSAGES} WHERE match_id = $1)`,
+      [matchId],
+    );
+    const chatMediaUrls: string[] = [];
+    for (const row of mediaResult.rows) {
+      if (row.url) chatMediaUrls.push(row.url);
+      if (row.thumbnail_url) chatMediaUrls.push(row.thumbnail_url);
+    }
 
-    await transaction(async (q) => {
-      // Collect media file keys before deleting records
-      const mediaResult = await q(
-        `SELECT cm.url, cm.thumbnail_url FROM ${TABLES.CHAT_MEDIA} cm
-         WHERE cm.message_id IN (SELECT id FROM ${TABLES.MESSAGES} WHERE match_id = $1)`,
-        [matchId],
-      );
-      for (const row of mediaResult.rows) {
-        if (row.url) chatMediaUrls.push(row.url);
-        if (row.thumbnail_url) chatMediaUrls.push(row.thumbnail_url);
+    // ─── 2. Delete media files from object storage FIRST ─
+    // Any failure aborts the unmatch before a single record is touched.
+    try {
+      for (const url of chatMediaUrls) {
+        const key = chatMediaKeyFromUrl(url);
+        if (!key) continue;
+        await deleteChatFile(key);
+        // Also delete thumbnails for /uploads/ webp files
+        if (url.startsWith('/uploads/') && key.endsWith('.webp')) {
+          const thumbKey = key.replace('.webp', '_thumb.webp');
+          await deleteChatFile(thumbKey);
+        }
       }
+    } catch (err: any) {
+      console.error(`[unmatch] Storage delete failed for match ${matchId}: ${err.message}`);
+      return reply.status(503).send({
+        success: false,
+        error: {
+          code: 'STORAGE_BUSY',
+          message: 'Server is busy! Please try again in a few moments.',
+        },
+      });
+    }
 
-      // Delete chat media records, messages, then deactivate the match
+    // ─── 3. Delete records in a single transaction ───────
+    await transaction(async (q) => {
       await q(`DELETE FROM ${TABLES.CHAT_MEDIA} WHERE message_id IN (SELECT id FROM ${TABLES.MESSAGES} WHERE match_id = $1)`, [matchId]);
       await q(`DELETE FROM ${TABLES.MESSAGES} WHERE match_id = $1`, [matchId]);
       await q(`UPDATE ${TABLES.MATCHES} SET is_active = FALSE WHERE id = $1`, [matchId]);
     });
-
-    // Best-effort: delete media files from MinIO (non-critical if it fails)
-    for (const url of chatMediaUrls) {
-      const key = chatMediaKeyFromUrl(url);
-      if (!key) continue;
-      await deleteChatFile(key).catch(() => {});
-      // Also delete thumbnails for /uploads/ webp files
-      if (url.startsWith('/uploads/') && key.endsWith('.webp')) {
-        const thumbKey = key.replace('.webp', '_thumb.webp');
-        await deleteChatFile(thumbKey).catch(() => {});
-      }
-    }
 
     // Publish unmatch event so partner's realtime client removes the conversation
     publishChatMessage(REDIS_KEYS.CHAT_MESSAGES_CHANNEL, {

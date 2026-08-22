@@ -18,6 +18,7 @@ import { api } from '../../services/api';
 import { compressPhoto } from '../../services/photoService';
 import { getChatSocket } from '../../services/callSocket';
 import { useAuthStore } from '../../store/authStore';
+import { useToast } from '../../hooks/useToast';
 import { resolveUrl } from '../../config';
 import { colors, typography, spacing, radius } from '../../theme';
 
@@ -142,6 +143,7 @@ const VIBE_OPTIONS = [
 
 export const ChatScreen: React.FC<{ navigation: any; route: any }> = ({ navigation, route }) => {
   const { matchId, partnerName: pName, partnerId: pId, partnerPhotoUrl: pPhoto } = route.params || {};
+  const toast = useToast();
   const [messages, setMessages] = useState<Message[]>([]);
   const [inputText, setInputText] = useState('');
   const [loading, setLoading] = useState(true);
@@ -1344,10 +1346,19 @@ export const ChatScreen: React.FC<{ navigation: any; route: any }> = ({ navigati
                   style: 'destructive',
                   onPress: async () => {
                     try {
-                      await api.unmatchUser(matchId);
+                      const res = await api.unmatchUser(matchId);
+                      if (!res.success) {
+                        // Retryable failure (e.g. storage unreachable — nothing
+                        // was deleted server-side, safe to try again)
+                        toast.showGlass(
+                          'Server is busy!',
+                          res.error?.message || 'Try again in a few moments.',
+                        );
+                        return;
+                      }
                       navigation.goBack();
                     } catch {
-                      Alert.alert('Error', 'Failed to unmatch. Please try again.');
+                      toast.showGlass('Server is busy!', 'Try again in a few moments.');
                     }
                   },
                 },
