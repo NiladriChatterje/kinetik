@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
 import {
   View, Text, StyleSheet, ScrollView, Image, TouchableOpacity,
   ActivityIndicator, RefreshControl, Dimensions,
@@ -19,7 +19,11 @@ interface GridProfile {
   isVerified: boolean;
   photos: { id: string; url: string; thumbnailUrl?: string; isPrimary: boolean }[];
   interests: { id: string; name: string; emoji: string; category: string }[];
+  /** Attached on-device by rankByProximity */
+  distanceKm?: number;
 }
+
+const PAGE_SIZE = 24;
 
 const SCREEN_WIDTH = Dimensions.get('window').width;
 const GRID_GAP = spacing.md;
@@ -32,13 +36,18 @@ export const ExploreScreen: React.FC<{ navigation: any }> = ({ navigation }) => 
   const [profiles, setProfiles] = useState<GridProfile[]>([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
+  const [hasMore, setHasMore] = useState(true);
+  const loadingMoreRef = useRef(false);
+  const offsetRef = useRef(0);
 
   const fetchProfiles = useCallback(async (asRefresh = false) => {
     asRefresh ? setRefreshing(true) : setLoading(true);
     try {
-      const res = await api.getSwipeProfiles();
+      const res = await api.getExploreProfiles(0, PAGE_SIZE);
       if (res.success && res.data) {
         setProfiles(res.data.profiles || []);
+        offsetRef.current = (res.data.profiles || []).length;
+        setHasMore(res.data.hasMore ?? false);
       }
     } catch {
       // Keep whatever is on screen — user can pull to retry
@@ -47,6 +56,28 @@ export const ExploreScreen: React.FC<{ navigation: any }> = ({ navigation }) => 
       setRefreshing(false);
     }
   }, []);
+
+  /** Infinite scroll: append the next page, deduped against the grid. */
+  const loadMore = useCallback(async () => {
+    if (loadingMoreRef.current || !hasMore) return;
+    loadingMoreRef.current = true;
+    try {
+      const res = await api.getExploreProfiles(offsetRef.current, PAGE_SIZE);
+      if (res.success && res.data) {
+        const page: GridProfile[] = res.data.profiles || [];
+        offsetRef.current += page.length;
+        setHasMore(res.data.hasMore ?? false);
+        setProfiles((prev) => {
+          const seen = new Set(prev.map((p) => p.userId));
+          return [...prev, ...page.filter((p) => !seen.has(p.userId))];
+        });
+      }
+    } catch {
+      // Scroll again to retry
+    } finally {
+      loadingMoreRef.current = false;
+    }
+  }, [hasMore]);
 
   useEffect(() => {
     fetchProfiles();
@@ -101,6 +132,13 @@ export const ExploreScreen: React.FC<{ navigation: any }> = ({ navigation }) => 
           </View>
         )}
 
+        {profile.distanceKm != null && (
+          <View style={styles.distanceBadge}>
+            <Ionicons name="location-outline" size={11} color="#fff" />
+            <Text style={styles.photoCountText}>~{profile.distanceKm} km</Text>
+          </View>
+        )}
+
         <View style={styles.cardScrim}>
           <View style={styles.nameRow}>
             <Text style={styles.cardName} numberOfLines={1}>
@@ -131,14 +169,14 @@ export const ExploreScreen: React.FC<{ navigation: any }> = ({ navigation }) => 
       <View style={styles.header}>
         <View>
           <Text style={styles.headerTitle}>Explore</Text>
-          <Text style={styles.headerSub}>Fresh faces, picked at random</Text>
+          <Text style={styles.headerSub}>Everyone on Kinetik — nearest first</Text>
         </View>
         <TouchableOpacity
           style={styles.shuffleBtn}
           onPress={() => fetchProfiles()}
           activeOpacity={0.7}
         >
-          <Ionicons name="shuffle" size={20} color={colors.textPrimary} />
+          <Ionicons name="refresh" size={20} color={colors.textPrimary} />
         </TouchableOpacity>
       </View>
 
@@ -152,9 +190,9 @@ export const ExploreScreen: React.FC<{ navigation: any }> = ({ navigation }) => 
           <View style={styles.emptyCircle}>
             <Ionicons name="telescope-outline" size={40} color={colors.textMuted} />
           </View>
-          <Text style={styles.emptyTitle}>No one new right now</Text>
+          <Text style={styles.emptyTitle}>No one here yet</Text>
           <Text style={styles.emptySubtitle}>
-            You've seen everyone nearby. Check back soon or widen your preferences.
+            No profiles match your preferences right now. Check back soon or widen your preferences.
           </Text>
           <TouchableOpacity style={styles.refreshBtn} onPress={() => fetchProfiles()}>
             <Text style={styles.refreshBtnText}>Try Again</Text>
@@ -164,6 +202,13 @@ export const ExploreScreen: React.FC<{ navigation: any }> = ({ navigation }) => 
         <ScrollView
           contentContainerStyle={styles.gridContent}
           showsVerticalScrollIndicator={false}
+          scrollEventThrottle={250}
+          onScroll={({ nativeEvent }) => {
+            // Infinite scroll: fetch the next page when within ~1.5 screens of the end
+            const { layoutMeasurement, contentOffset, contentSize } = nativeEvent;
+            const remaining = contentSize.height - contentOffset.y - layoutMeasurement.height;
+            if (remaining < layoutMeasurement.height * 1.5) loadMore();
+          }}
           refreshControl={
             <RefreshControl
               refreshing={refreshing}
@@ -180,7 +225,11 @@ export const ExploreScreen: React.FC<{ navigation: any }> = ({ navigation }) => 
               {rightColumn.map((p, i) => renderCard(p, i % 2 === 0 ? SHORT : TALL))}
             </View>
           </View>
-          <Text style={styles.footerHint}>Tap a profile to view and decide</Text>
+          {hasMore ? (
+            <ActivityIndicator style={styles.footerHint} size="small" color={colors.textMuted} />
+          ) : (
+            <Text style={styles.footerHint}>That's everyone on Kinetik right now</Text>
+          )}
         </ScrollView>
       )}
     </SafeAreaView>
@@ -256,6 +305,18 @@ const styles = StyleSheet.create({
     borderRadius: radius.full,
   },
   photoCountText: { ...typography.caption, fontSize: 10, color: '#fff', fontWeight: '600' },
+  distanceBadge: {
+    position: 'absolute',
+    top: spacing.sm,
+    left: spacing.sm,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 3,
+    backgroundColor: 'rgba(0,0,0,0.55)',
+    paddingHorizontal: 7,
+    paddingVertical: 2,
+    borderRadius: radius.full,
+  },
   cardScrim: {
     position: 'absolute',
     left: 0,

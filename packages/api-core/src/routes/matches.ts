@@ -50,9 +50,17 @@ export async function matchRoutes(app: FastifyInstance) {
   });
 
   // ─── Get Swipe Profiles ──────────────────────────────
-  // Returns profiles the user hasn't interacted with, filtered by preferences.
+  // Two modes, same response shape:
+  //  - default (swipe deck): 20 random profiles the user hasn't interacted with
+  //  - ?scope=explore&offset=N&limit=M: paginated browse over EVERYONE eligible
+  //    (only active matches are excluded), deterministic newest-first ordering —
+  //    a cheap indexed OFFSET/LIMIT query, no ORDER BY RANDOM(). Adds hasMore.
   app.get('/profiles', async (request: FastifyRequest, reply: FastifyReply) => {
     const { sub: userId } = request.user as any;
+    const q = request.query as { scope?: string; offset?: string; limit?: string };
+    const isExplore = q.scope === 'explore';
+    const exploreOffset = Math.max(0, parseInt(q.offset || '0', 10) || 0);
+    const exploreLimit = Math.min(50, Math.max(1, parseInt(q.limit || '24', 10) || 24));
 
     // Get user's preferences for filtering
     const prefsResult = await query(
@@ -127,19 +135,51 @@ export async function matchRoutes(app: FastifyInstance) {
       LIMIT 20
     `;
 
-    // Try a 10% block sample first — ORDER BY RANDOM() over the sample instead
-    // of the whole table. If the sample can't fill 20 (small table, small
-    // remaining pool), fall back to the original full-table query, so the
-    // result is always exactly what the unsampled query would return.
-    let profilesResult = await query(
-      selectAndWhere.replace('%SOURCE%', `(SELECT * FROM ${TABLES.USERS} TABLESAMPLE SYSTEM (10))`),
-      genderParams,
-    );
-    if ((profilesResult.rowCount ?? 0) < 20) {
+    // Explore mode: paginated browse over everyone eligible. Only active
+    // matches are excluded (people you're already chatting with) — passed and
+    // liked users stay visible so the whole platform is browsable.
+    let profilesResult;
+    let hasMore = false;
+    if (isExplore) {
+      const exploreSql = `
+        SELECT
+          u.id, u.display_name, u.date_of_birth, u.bio, u.occupation,
+          u.education, u.pronouns, u.is_verified, u.about_answers,
+          u.h3_index, u.latitude, u.longitude
+        FROM ${TABLES.USERS} u
+        WHERE u.id != $1
+          AND u.is_active = TRUE
+          AND u.onboarding_complete = TRUE
+          AND u.date_of_birth >= $2
+          AND u.date_of_birth <= $3
+          ${genderFilter}
+          AND u.id NOT IN (
+            SELECT user_b_id FROM ${TABLES.MATCHES} WHERE user_a_id = $1 AND is_active = TRUE
+            UNION
+            SELECT user_a_id FROM ${TABLES.MATCHES} WHERE user_b_id = $1 AND is_active = TRUE
+          )
+        ORDER BY u.created_at DESC, u.id
+        OFFSET $${genderParams.length + 1} LIMIT $${genderParams.length + 2}
+      `;
+      // Fetch one extra row to know whether another page exists
+      profilesResult = await query(exploreSql, [...genderParams, exploreOffset, exploreLimit + 1]);
+      hasMore = (profilesResult.rowCount ?? 0) > exploreLimit;
+      profilesResult.rows = profilesResult.rows.slice(0, exploreLimit);
+    } else {
+      // Try a 10% block sample first — ORDER BY RANDOM() over the sample instead
+      // of the whole table. If the sample can't fill 20 (small table, small
+      // remaining pool), fall back to the original full-table query, so the
+      // result is always exactly what the unsampled query would return.
       profilesResult = await query(
-        selectAndWhere.replace('%SOURCE%', TABLES.USERS),
+        selectAndWhere.replace('%SOURCE%', `(SELECT * FROM ${TABLES.USERS} TABLESAMPLE SYSTEM (10))`),
         genderParams,
       );
+      if ((profilesResult.rowCount ?? 0) < 20) {
+        profilesResult = await query(
+          selectAndWhere.replace('%SOURCE%', TABLES.USERS),
+          genderParams,
+        );
+      }
     }
 
     // Fetch photos and interests for all profiles in two batched queries
@@ -215,7 +255,10 @@ export async function matchRoutes(app: FastifyInstance) {
       };
     });
 
-    return reply.send({ success: true, data: { profiles } });
+    return reply.send({
+      success: true,
+      data: isExplore ? { profiles, hasMore, offset: exploreOffset } : { profiles },
+    });
   });
 
   // ─── Swipe (Like / Pass / Super Like) ────────────────

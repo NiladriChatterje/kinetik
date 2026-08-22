@@ -631,6 +631,20 @@ class ApiClient {
   }
 
   // ─── Match / Swipe ────────────────────────────────────
+  /**
+   * Paginated browse over everyone eligible on the platform (Explore grid).
+   * Each page is ranked nearest-first on-device.
+   */
+  async getExploreProfiles(offset = 0, limit = 24) {
+    const res = await this.request<{ profiles: any[]; hasMore?: boolean; offset?: number }>(
+      `/api/v1/matches/profiles?scope=explore&offset=${offset}&limit=${limit}`,
+    );
+    if (res.success && res.data?.profiles?.length) {
+      res.data.profiles = await rankByProximity(res.data.profiles);
+    }
+    return res;
+  }
+
   async getSwipeProfiles() {
     const res = await this.request<{ profiles: any[] }>('/api/v1/matches/profiles');
     // Nearest-first, computed on-device from coarse cell centers.
