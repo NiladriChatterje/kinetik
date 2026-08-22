@@ -20,7 +20,7 @@ export function useToast() {
   }, []);
 
   /**
-   * Show a glassmorphic black toast that slides in from the bottom.
+   * Show a neutral black toast (Dynamic Island style, drops from the top).
    * Used for transient feedback like conflict errors (e.g. "Phone already exists!").
    */
   const showGlass = useCallback((title: string, message?: string) => {

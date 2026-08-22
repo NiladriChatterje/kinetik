@@ -6,7 +6,7 @@ import { SafeAreaProvider } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import * as NavigationBar from 'expo-navigation-bar';
 import Toast from 'react-native-toast-message';
-import { GlassToast } from './components/common/GlassToast';
+import { IslandToast } from './components/common/IslandToast';
 import { RootNavigator } from './navigation/RootNavigator';
 import { useAuthStore } from './store/authStore';
 import { useNotifications } from './hooks/useNotifications';
@@ -115,15 +115,18 @@ export default function App() {
             </TouchableOpacity>
           </View>
         </Animated.View>
-        {/* Toast messages — glassmorphic design, bottom-aligned */}
+        {/* Toast messages — Dynamic Island style: drops from the top to 15px
+            as a dot, then expands sideways to reveal the message. Top-aligned
+            so toasts stay visible while the keyboard is open. */}
         <Toast
-          position="bottom"
-          bottomOffset={40}
+          position="top"
+          topOffset={15}
           visibilityTime={4000}
           config={{
-            error: (props) => <GlassToast {...props} type="error" />,
-            success: (props) => <GlassToast {...props} type="success" />,
-            glass: (props) => <GlassToast {...props} type="glass" />,
+            error: (props) => <IslandToast {...props} type="error" />,
+            success: (props) => <IslandToast {...props} type="success" />,
+            info: (props) => <IslandToast {...props} type="info" />,
+            glass: (props) => <IslandToast {...props} type="glass" />,
           }}
         />
       </SafeAreaProvider>
