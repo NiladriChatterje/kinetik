@@ -219,6 +219,10 @@ export async function kycRoutes(app: FastifyInstance) {
       data: {
         kycStatus: userResult.rows[0]?.kyc_status || 'unverified',
         latestDocument: docResult.rows[0] || null,
+        // False when POSE_SERVICE_URL is explicitly set to empty (free hosting
+        // intentionally skips the face service) — the app hides the verify
+        // action instead of showing 502s. Unset env still means localhost dev.
+        faceVerificationAvailable: (process.env.POSE_SERVICE_URL ?? 'http://localhost:3004') !== '',
       },
     });
   });
@@ -228,6 +232,20 @@ export async function kycRoutes(app: FastifyInstance) {
   // against the user's profile photos to confirm identity.
   app.post('/verify-face', async (request: FastifyRequest, reply: FastifyReply) => {
     const { sub: userId } = request.user as any;
+
+    // POSE_SERVICE_URL explicitly set to empty = face service intentionally
+    // not deployed (free hosting). Fail fast with a clear "not available"
+    // instead of timing out against a host that doesn't exist.
+    const poseServiceUrl = process.env.POSE_SERVICE_URL ?? 'http://localhost:3004';
+    if (!poseServiceUrl) {
+      return reply.status(503).send({
+        success: false,
+        error: {
+          code: 'FACE_VERIFICATION_UNAVAILABLE',
+          message: 'ID face verification is not available yet.',
+        },
+      });
+    }
 
     // ─── 1. Get the latest uploaded KYC document ────────────
     const docResult = await query(
@@ -247,7 +265,6 @@ export async function kycRoutes(app: FastifyInstance) {
     }
 
     // ─── 2. Fetch the document from MinIO ──────────────────
-    const poseServiceUrl = process.env.POSE_SERVICE_URL || 'http://localhost:3004';
     const client = getS3Client();
 
     // Extract object key from document URL (e.g. /uploads/kyc/{userId}/{docId}.jpg)

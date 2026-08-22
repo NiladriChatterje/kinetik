@@ -587,6 +587,7 @@ class ApiClient {
       status: string;
       created_at: string;
     } | null;
+    faceVerificationAvailable?: boolean;
   }> {
     const response = await this.request<{
       kycStatus: string;
@@ -596,6 +597,7 @@ class ApiClient {
         status: string;
         created_at: string;
       } | null;
+      faceVerificationAvailable?: boolean;
     }>('/api/v1/kyc/status');
     if (!response.success) {
       throw new Error(response.error?.message || 'Failed to get KYC status');

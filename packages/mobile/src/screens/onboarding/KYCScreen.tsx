@@ -1,4 +1,4 @@
-import React, { useState, useCallback } from 'react';
+import React, { useState, useCallback, useEffect } from 'react';
 import {
   View, Text, StyleSheet, TouchableOpacity,
   ActivityIndicator, ScrollView, Platform,
@@ -38,7 +38,21 @@ export const KYCScreen: React.FC<{ navigation: any; route?: any }> = ({ navigati
   const [uploadError, setUploadError] = useState<string | null>(null);
   const [verifyPhase, setVerifyPhase] = useState<VerifyPhase>('idle');
   const [verifyMatchConfidence, setVerifyMatchConfidence] = useState<number>(0);
+  // False when the deployment intentionally runs without the face service —
+  // the verify action is replaced by a "coming soon" note instead of erroring.
+  const [faceVerifyAvailable, setFaceVerifyAvailable] = useState(true);
   const toast = useToast();
+
+  useEffect(() => {
+    api
+      .getKycStatus()
+      .then((s) => {
+        if (s.faceVerificationAvailable === false) setFaceVerifyAvailable(false);
+      })
+      .catch(() => {
+        // Status fetch failed — keep the action visible; verify has its own errors
+      });
+  }, []);
 
   /**
    * Open the device document picker for PDF, JPG, PNG files.
@@ -301,7 +315,15 @@ export const KYCScreen: React.FC<{ navigation: any; route?: any }> = ({ navigati
 
                 {/* Face Verification Section */}
                 <View style={styles.verifySection}>
-                  {verifyPhase === 'idle' && (
+                  {!faceVerifyAvailable ? (
+                    <View style={styles.comingSoonBox}>
+                      <Ionicons name="time-outline" size={22} color={colors.textMuted} />
+                      <Text style={styles.comingSoonText}>
+                        ID face verification is coming soon. Your document is saved —
+                        you can finish setup now and verify later from settings.
+                      </Text>
+                    </View>
+                  ) : verifyPhase === 'idle' && (
                     <Button
                       title="Verify Face on Document"
                       onPress={handleVerifyFace}
@@ -524,6 +546,17 @@ const styles = StyleSheet.create({
 
   // Face verification section
   verifySection: { marginTop: spacing.md, marginBottom: spacing.lg },
+  comingSoonBox: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.md,
+    padding: spacing.lg,
+    borderRadius: radius.md,
+    backgroundColor: colors.surfaceHighlight,
+    borderWidth: 1,
+    borderColor: colors.cardBorder,
+  },
+  comingSoonText: { ...typography.caption, color: colors.textSecondary, flex: 1, lineHeight: 17 },
   verifyingContainer: {
     alignItems: 'center',
     padding: spacing.xl,
