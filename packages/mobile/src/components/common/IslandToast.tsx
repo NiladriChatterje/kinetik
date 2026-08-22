@@ -1,10 +1,11 @@
-import React, { useEffect, useRef } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import {
   Animated,
   Text,
   StyleSheet,
   TouchableOpacity,
   Dimensions,
+  LayoutAnimation,
   View,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
@@ -49,6 +50,9 @@ const MAX_WIDTH = Math.min(Dimensions.get('window').width - 48, 340);
 export const IslandToast: React.FC<IslandToastProps> = React.memo(
   ({ type = 'glass', text1, text2, hide, onPress }) => {
     const expand = useRef(new Animated.Value(0)).current;
+    // Long messages are ellipsized to one line — the first tap expands the
+    // pill vertically to show the full text, the second tap dismisses.
+    const [expanded, setExpanded] = useState(false);
 
     const title = text1 || '';
     const message = text2 || '';
@@ -86,15 +90,34 @@ export const IslandToast: React.FC<IslandToastProps> = React.memo(
 
     const handlePress = () => {
       if (onPress) onPress();
+      if (!expanded && message) {
+        // First tap: open the pill vertically to reveal the full message
+        LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
+        setExpanded(true);
+        return;
+      }
       hide();
     };
 
     return (
       <TouchableOpacity activeOpacity={0.9} onPress={handlePress}>
-        <Animated.View style={[styles.island, { width, height, borderRadius }]}>
+        <Animated.View
+          style={[
+            styles.island,
+            expanded
+              ? { width: MAX_WIDTH, borderRadius: 18, minHeight: targetHeight }
+              : { width, height, borderRadius },
+          ]}
+        >
           {/* Inner row is laid out at full target size and revealed by the
               expanding (overflow-hidden) island — no text reflow mid-spring */}
-          <Animated.View style={[styles.inner, { width: MAX_WIDTH, opacity: contentOpacity }]}>
+          <Animated.View
+            style={[
+              styles.inner,
+              { width: MAX_WIDTH, opacity: contentOpacity },
+              expanded && styles.innerExpanded,
+            ]}
+          >
             <Ionicons name={accent.icon} size={14} color={accent.color} />
             <View style={styles.textCol}>
               {title ? (
@@ -103,7 +126,7 @@ export const IslandToast: React.FC<IslandToastProps> = React.memo(
                 </Text>
               ) : null}
               {message ? (
-                <Text style={styles.message} numberOfLines={1}>
+                <Text style={styles.message} numberOfLines={expanded ? undefined : 1}>
                   {message}
                 </Text>
               ) : null}
@@ -139,6 +162,9 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     paddingHorizontal: 14,
     gap: 6,
+  },
+  innerExpanded: {
+    paddingVertical: 10,
   },
   textCol: {
     flexShrink: 1,
