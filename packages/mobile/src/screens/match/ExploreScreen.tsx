@@ -1,11 +1,12 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react';
 import {
-  View, Text, StyleSheet, ScrollView, Image, TouchableOpacity,
+  View, Text, StyleSheet, ScrollView, TouchableOpacity,
   ActivityIndicator, RefreshControl, Dimensions,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { api } from '../../services/api';
+import { ProgressiveImage } from '../../components/common/ProgressiveImage';
 import { getPresenceSocket } from '../../services/presenceSocket';
 import { resolveUrl } from '../../config';
 import { colors, typography, spacing, radius } from '../../theme';
@@ -115,8 +116,10 @@ export const ExploreScreen: React.FC<{ navigation: any }> = ({ navigation }) => 
         onPress={() => openProfile(profile)}
       >
         {photo ? (
-          <Image
-            source={{ uri: resolveUrl(photo.thumbnailUrl || photo.url) }}
+          // Grid cards are small — the thumbnail IS the target quality; the
+          // skeleton pulse covers the load, no full-res bandwidth spent here
+          <ProgressiveImage
+            uri={resolveUrl(photo.thumbnailUrl || photo.url)}
             style={styles.cardImage}
           />
         ) : (
@@ -290,7 +293,7 @@ const styles = StyleSheet.create({
     overflow: 'hidden',
     backgroundColor: colors.surfaceHighlight,
   },
-  cardImage: { width: '100%', height: '100%', resizeMode: 'cover' },
+  cardImage: { width: '100%', height: '100%' },
   noPhoto: { justifyContent: 'center', alignItems: 'center' },
   photoCountBadge: {
     position: 'absolute',

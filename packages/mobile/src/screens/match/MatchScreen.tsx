@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';  import {
-  View, Text, StyleSheet, Image, Dimensions, TouchableOpacity,
+  View, Text, StyleSheet, Dimensions, TouchableOpacity,
   Animated, PanResponder, ActivityIndicator, Alert,
   ScrollView,
 } from 'react-native';
@@ -13,6 +13,7 @@ import { getPresenceSocket } from '../../services/presenceSocket';
 import { resolveUrl } from '../../config';
 import { MatchPopup } from '../../components/common/MatchPopup';
 import { PaywallModal, PaywallReason } from '../../components/common/PaywallModal';
+import { ProgressiveImage } from '../../components/common/ProgressiveImage';
 
 const SCREEN_WIDTH = Dimensions.get('window').width;
 const SCREEN_HEIGHT = Dimensions.get('window').height;
@@ -164,7 +165,13 @@ function SwipeCard({
             }}
             style={styles.photoWrapper}
           >
-            <Image source={{ uri: resolveUrl(currentPhoto.url) }} style={styles.cardImage} />
+            <ProgressiveImage
+              key={currentPhoto.id}
+              thumbnailUri={currentPhoto.thumbnailUrl ? resolveUrl(currentPhoto.thumbnailUrl) : undefined}
+              uri={resolveUrl(currentPhoto.url)}
+              style={styles.cardImage}
+              resizeMode="contain"
+            />
 
             {/* Left/Right tap hints */}
             {photoCount > 1 && (
@@ -717,9 +724,14 @@ const currentProfile = profiles[currentIndex];
           <View style={[styles.card, styles.nextCard]}>
             <View style={[styles.cardImageContainer, { opacity: 0.6 }]}>
               {(profiles[currentIndex + 1].photos.find(p => p.isPrimary) || profiles[currentIndex + 1].photos[0]) ? (
-                <Image
-                  source={{ uri: resolveUrl((profiles[currentIndex + 1].photos.find(p => p.isPrimary) || profiles[currentIndex + 1].photos[0])!.url) }}
+                <ProgressiveImage
+                  thumbnailUri={(() => {
+                    const p = profiles[currentIndex + 1].photos.find(ph => ph.isPrimary) || profiles[currentIndex + 1].photos[0];
+                    return p?.thumbnailUrl ? resolveUrl(p.thumbnailUrl) : undefined;
+                  })()}
+                  uri={resolveUrl((profiles[currentIndex + 1].photos.find(p => p.isPrimary) || profiles[currentIndex + 1].photos[0])!.url)}
                   style={styles.cardImage}
+                  resizeMode="contain"
                 />
               ) : null}
             </View>
@@ -879,7 +891,6 @@ const styles = StyleSheet.create({
   cardImage: {
     width: '100%',
     height: '100%',
-    resizeMode: 'contain',
   },
   noPhoto: {
     justifyContent: 'center',
