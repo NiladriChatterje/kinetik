@@ -12,6 +12,7 @@ import { useToast } from '../../hooks/useToast';
 import { api } from '../../services/api';
 import { resolveUrl } from '../../config';
 import { embedProfilePhotos, verifySelfie } from '../../services/faceVerification';
+import { hapticSuccess } from '../../utils/haptics';
 import { colors, typography, spacing, radius } from '../../theme';
 
 const { width: SCREEN_WIDTH } = Dimensions.get('window');
@@ -95,6 +96,7 @@ export const PoseVerificationScreen: React.FC<{ navigation: any }> = ({ navigati
       isVerified = result.verified;
 
       if (result.verified) {
+        hapticSuccess();
         toast.showSuccess(
           'Face Verified!',
           'Your selfie matches your profile photos.',

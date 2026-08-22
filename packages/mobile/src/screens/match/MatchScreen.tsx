@@ -14,6 +14,7 @@ import { resolveUrl } from '../../config';
 import { MatchPopup } from '../../components/common/MatchPopup';
 import { PaywallModal, PaywallReason } from '../../components/common/PaywallModal';
 import { ProgressiveImage } from '../../components/common/ProgressiveImage';
+import { hapticSuccess, hapticImpact } from '../../utils/haptics';
 
 const SCREEN_WIDTH = Dimensions.get('window').width;
 const SCREEN_HEIGHT = Dimensions.get('window').height;
@@ -405,6 +406,7 @@ export const MatchScreen: React.FC<{ navigation: any; route?: any }> = ({ naviga
       const myUserId = useAuthStore.getState().user?.id;
       const isMatchInitiator = !data.initiatorId || data.initiatorId === myUserId;
       if (isMatchInitiator) {
+        hapticSuccess();
         setMatchPopup({
           visible: true,
           matchId: data.matchId,
@@ -484,6 +486,7 @@ export const MatchScreen: React.FC<{ navigation: any; route?: any }> = ({ naviga
         }
         // On a match, the match:new socket event drives the animated MatchPopup
         if (!data.matched) {
+          hapticImpact();
           toast.showSuccess('Super Like Sent!', 'They\'ll know you\'re interested.');
         }
       } else if (res.error?.code === 'SWIPE_LIMIT_REACHED') {
