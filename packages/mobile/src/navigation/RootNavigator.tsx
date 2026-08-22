@@ -62,7 +62,10 @@ import { IdentityScreen } from '../screens/onboarding/IdentityScreen';
 import { AboutYouScreen } from '../screens/onboarding/AboutYouScreen';
 import { LocationPermissionScreen } from '../screens/onboarding/LocationPermissionScreen';
 import { PhotoUploadScreen } from '../screens/onboarding/PhotoUploadScreen';
-import { PoseVerificationScreen } from '../screens/onboarding/PoseVerificationScreen';
+// Lazy-load to defer NitroModules / react-native-fast-tflite native init
+const PoseVerificationScreen = React.lazy(
+  () => import('../screens/onboarding/PoseVerificationScreen').then(m => ({ default: m.PoseVerificationScreen })),
+);
 import { KYCScreen } from '../screens/onboarding/KYCScreen';
 
 // Preferences
@@ -171,7 +174,13 @@ const AuthNavigator = React.memo(function AuthNavigator() {
       <OnboardingStack.Screen name="About" component={AboutYouScreen} />
       <OnboardingStack.Screen name="Location" component={LocationPermissionScreen} />
       <OnboardingStack.Screen name="Photos" component={PhotoUploadScreen} />
-      <OnboardingStack.Screen name="PoseVerification" component={PoseVerificationScreen} />
+      <OnboardingStack.Screen name="PoseVerification">
+        {(props) => (
+          <React.Suspense fallback={<ActivityIndicator size="large" color="#fff" />}>  
+            <PoseVerificationScreen {...props} />
+          </React.Suspense>
+        )}
+      </OnboardingStack.Screen>
       <OnboardingStack.Screen name="KYC" component={KYCScreen} />
     </OnboardingStack.Navigator>
   );

@@ -18,11 +18,19 @@
  */
 
 import FaceDetection, { Face } from '@react-native-ml-kit/face-detection';
-import { loadTensorflowModel, TensorflowModel } from 'react-native-fast-tflite';
 import * as ImageManipulator from 'expo-image-manipulator';
 import { File } from 'expo-file-system';
 import * as LegacyFileSystem from 'expo-file-system/legacy';
 import { decode as decodeJpeg } from 'jpeg-js';
+
+// Lazy-loaded so NitroModules isn't pulled in at bundle start (fixes Expo Go crash)
+let fastTflite: typeof import('react-native-fast-tflite') | null = null;
+async function getFastTflite() {
+  if (!fastTflite) {
+    fastTflite = await import('react-native-fast-tflite');
+  }
+  return fastTflite;
+}
 
 // ─── Tunables (parity with the retired pose-service) ─────────────
 const MAX_HEAD_YAW_DEG = 30; // |rotationY| — left/right turn
@@ -43,10 +51,11 @@ export interface FaceVerificationResult {
 
 // ─── Model loading (lazy singleton) ──────────────────────────────
 
-let modelPromise: Promise<TensorflowModel> | null = null;
+let modelPromise: Promise<import('react-native-fast-tflite').TensorflowModel> | null = null;
 
-function getModel(): Promise<TensorflowModel> {
+async function getModel(): Promise<import('react-native-fast-tflite').TensorflowModel> {
   if (!modelPromise) {
+    const { loadTensorflowModel } = await getFastTflite();
     modelPromise = loadTensorflowModel(
       require('../assets/models/mobile_face_net.tflite'),
       [], // CPU — a single 112×112 inference is a few ms; delegates not worth the setup
