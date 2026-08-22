@@ -1,16 +1,16 @@
-import React, { useEffect, useRef } from 'react';
-import { LogBox, View, Text, StyleSheet, Animated, TouchableOpacity, Platform } from 'react-native';
+import React, { useEffect } from 'react';
+import { LogBox, View, Platform } from 'react-native';
 import Constants from 'expo-constants';
 import { StatusBar } from 'expo-status-bar';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
-import { Ionicons } from '@expo/vector-icons';
 import * as NavigationBar from 'expo-navigation-bar';
 import Toast from 'react-native-toast-message';
 import { IslandToast } from './components/common/IslandToast';
+import { IslandStatus } from './components/common/IslandStatus';
 import { RootNavigator } from './navigation/RootNavigator';
 import { useAuthStore } from './store/authStore';
 import { useNotifications } from './hooks/useNotifications';
-import { colors, typography, spacing, radius, animation } from './theme';
+import { colors } from './theme';
 
 // Set up WebRTC globals (RTCPeerConnection, mediaDevices, etc.) required by
 // LiveKit before any call screen is rendered.
@@ -49,8 +49,6 @@ export default function App() {
   const checkConnection = useAuthStore((s) => s.checkConnection);
   const connectionStatus = useAuthStore((s) => s.connectionStatus);
   const connectionError = useAuthStore((s) => s.connectionError);
-  const bannerAnim = useRef(new Animated.Value(0)).current;
-  const bannerVisible = useRef(false);
   const [isRetrying, setIsRetrying] = React.useState(false);
 
   // Initialize push notifications
@@ -71,50 +69,23 @@ export default function App() {
     }
   }, []);
 
-  // Animate banner in/out
-  useEffect(() => {
-    const shouldShow = connectionStatus === 'disconnected';
-    if (shouldShow && !bannerVisible.current) {
-      bannerVisible.current = true;
-      Animated.spring(bannerAnim, { toValue: 1, useNativeDriver: true, damping: 15, stiffness: 150 }).start();
-    } else if (!shouldShow && bannerVisible.current) {
-      bannerVisible.current = false;
-      Animated.timing(bannerAnim, { toValue: 0, duration: animation.quick, useNativeDriver: true }).start();
-    }
-  }, [connectionStatus]);
-
-  const bannerTranslateY = bannerAnim.interpolate({
-    inputRange: [0, 1],
-    outputRange: [-80, 0],
-  });
-
   return (
     <View style={{ flex: 1, backgroundColor: colors.background }}>
       <SafeAreaProvider>
         <StatusBar style="dark" />
         <RootNavigator />
 
-        {/* Offline banner */}
-        <Animated.View
-          style={[styles.banner, { transform: [{ translateY: bannerTranslateY }], opacity: bannerAnim }]}
-          pointerEvents={connectionStatus === 'disconnected' ? 'auto' : 'none'}
-        >
-          <View style={styles.bannerContent}>
-            <Ionicons name="cloud-offline-outline" size={18} color={colors.textInverse} />
-            <Text style={styles.bannerText}>{connectionError || 'Server unreachable'}</Text>
-            <TouchableOpacity
-              onPress={async () => {
-                setIsRetrying(true);
-                await checkConnection();
-                setIsRetrying(false);
-              }}
-              disabled={isRetrying}
-              style={[styles.bannerRetry, isRetrying && styles.bannerRetryDisabled]}
-            >
-              <Text style={styles.bannerRetryText}>{isRetrying ? 'Checking…' : 'Retry'}</Text>
-            </TouchableOpacity>
-          </View>
-        </Animated.View>
+        {/* Connection status — persistent Dynamic Island pill while offline */}
+        <IslandStatus
+          visible={connectionStatus === 'disconnected'}
+          message={connectionError || 'Server unreachable'}
+          retrying={isRetrying}
+          onRetry={async () => {
+            setIsRetrying(true);
+            await checkConnection();
+            setIsRetrying(false);
+          }}
+        />
         {/* Toast messages — Dynamic Island style: drops from the top to 15px
             as a dot, then expands sideways to reveal the message. Top-aligned
             so toasts stay visible while the keyboard is open. */}
@@ -134,41 +105,3 @@ export default function App() {
   );
 }
 
-const styles = StyleSheet.create({
-  banner: {
-    position: 'absolute',
-    top: 0,
-    left: 0,
-    right: 0,
-    zIndex: 9999,
-    backgroundColor: '#000000',
-    paddingTop: 50, // above safe area
-    paddingBottom: spacing.md,
-    paddingHorizontal: spacing.lg,
-  },
-  bannerContent: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  bannerText: {
-    ...typography.body2,
-    color: colors.textInverse,
-    flex: 1,
-    marginLeft: spacing.sm,
-  },
-  bannerRetry: {
-    marginLeft: spacing.md,
-    backgroundColor: 'rgba(255,255,255,0.15)',
-    paddingHorizontal: spacing.md,
-    paddingVertical: spacing.xs,
-    borderRadius: radius.sm,
-  },
-  bannerRetryText: {
-    ...typography.buttonSmall,
-    color: colors.textInverse,
-  },
-  bannerRetryDisabled: {
-    opacity: 0.5,
-  },
-});
