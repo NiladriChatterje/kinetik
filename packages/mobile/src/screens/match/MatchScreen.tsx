@@ -322,6 +322,9 @@ export const MatchScreen: React.FC<{ navigation: any; route?: any }> = ({ naviga
   const [loading, setLoading] = useState(true);
   const [swiping, setSwiping] = useState(false);
   const [superLikesRemaining, setSuperLikesRemaining] = useState(5); // default: free tier daily limit
+  // Lifetime swipe budget (free accounts) — shown quietly once it runs low,
+  // so the paywall never lands as a surprise. null until the first swipe reports it.
+  const [swipesRemaining, setSwipesRemaining] = useState<number | null>(null);
   const unreadLikeCount = useAuthStore((s) => s.unreadLikeCount);
   const fetchUnreadLikeCount = useAuthStore((s) => s.fetchUnreadLikeCount);
   const toast = useToast();
@@ -469,6 +472,9 @@ export const MatchScreen: React.FC<{ navigation: any; route?: any }> = ({ naviga
         if (data.superLikesRemaining !== undefined) {
           setSuperLikesRemaining(data.superLikesRemaining);
         }
+        if (typeof data.swipesRemaining === 'number') {
+          setSwipesRemaining(data.swipesRemaining);
+        }
         // On a match, the match:new socket event drives the animated MatchPopup
         if (!data.matched) {
           toast.showSuccess('Super Like Sent!', 'They\'ll know you\'re interested.');
@@ -526,6 +532,9 @@ export const MatchScreen: React.FC<{ navigation: any; route?: any }> = ({ naviga
       if (res.success && res.data) {
         shouldAdvance = true;
         const data = res.data;
+        if (typeof data.swipesRemaining === 'number') {
+          setSwipesRemaining(data.swipesRemaining);
+        }
         // On a match, the match:new socket event drives the animated MatchPopup
         if (!data.matched && direction === 'right') {
           toast.showSuccess('Like Sent!', 'They\'ll see you in their likes.');
@@ -676,6 +685,17 @@ const currentProfile = profiles[currentIndex];
     <SafeAreaView style={styles.container}>
       <View style={styles.header}>
         <Text style={styles.headerTitle}>Discover</Text>
+          {/* Quiet swipe-budget counter — appears only when the free
+              lifetime allowance runs low, so the paywall isn't a surprise */}
+          {swipesRemaining !== null && swipesRemaining <= 5 && (
+            <View style={styles.swipeBudgetPill}>
+              <Text style={styles.swipeBudgetText}>
+                {swipesRemaining === 0
+                  ? 'No swipes left'
+                  : `${swipesRemaining} swipe${swipesRemaining === 1 ? '' : 's'} left`}
+              </Text>
+            </View>
+          )}
           <TouchableOpacity onPress={() => navigation.navigate('Likes')}>
             <View style={styles.likesBadge}>
               <Ionicons name="heart-outline" size={22} color={colors.textPrimary} />
@@ -779,6 +799,15 @@ const styles = StyleSheet.create({
     paddingVertical: spacing.md,
   },
   headerTitle: { ...typography.h2, color: colors.textPrimary },
+  swipeBudgetPill: {
+    paddingHorizontal: spacing.md,
+    paddingVertical: 4,
+    borderRadius: radius.full,
+    backgroundColor: colors.surfaceHighlight,
+    borderWidth: 1,
+    borderColor: colors.cardBorder,
+  },
+  swipeBudgetText: { ...typography.caption, color: colors.textSecondary, fontWeight: '600' },
   likesBadge: {
     width: 40,
     height: 40,

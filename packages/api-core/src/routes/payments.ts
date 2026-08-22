@@ -1,9 +1,8 @@
 import { FastifyInstance, FastifyRequest, FastifyReply } from 'fastify';
 import { z } from 'zod';
-import { ERROR_CODES, FREE_SWIPE_LIMIT_DAILY, FREE_CHAT_LIMIT, PREMIUM_SWIPE_LIMIT_DAILY, PREMIUM_MONTHLY_COST_INR, getPricingForPhone } from '@kinetik/shared';
+import { ERROR_CODES, FREE_SWIPE_LIMIT, FREE_CHAT_LIMIT, PREMIUM_SWIPE_LIMIT, PREMIUM_CHAT_LIMIT, PREMIUM_MONTHLY_COST_INR, getPricingForPhone } from '@kinetik/shared';
 import { query, TABLES, getSubscription } from '../services/database';
 import { eventBus } from '../services/eventBus';
-import { getRedis } from '../services/redis';
 import {
   isRazorpayConfigured,
   createPremiumSubscription,
@@ -155,11 +154,13 @@ export async function paymentRoutes(app: FastifyInstance) {
     );
     const activeChats = matchCountResult.rows[0]?.cnt ?? 0;
 
-    // Today's swipe count from Redis
-    const redis = getRedis();
-    const swipeKey = `user:${userId}:swipes:daily`;
-    const swipeCountRaw = await redis.get(swipeKey);
-    const swipesUsed = swipeCountRaw ? parseInt(swipeCountRaw, 10) : 0;
+    // Lifetime right-swipe count from the durable interactions table
+    const swipeCountResult = await query(
+      `SELECT COUNT(*)::int AS cnt FROM ${TABLES.USER_INTERACTIONS}
+       WHERE actor_id = $1 AND action IN ('like', 'super_like')`,
+      [userId],
+    );
+    const swipesUsed = swipeCountResult.rows[0]?.cnt ?? 0;
 
     return reply.send({
       success: true,
@@ -167,11 +168,11 @@ export async function paymentRoutes(app: FastifyInstance) {
         tier,
         swipes: {
           used: swipesUsed,
-          limit: isPremium ? PREMIUM_SWIPE_LIMIT_DAILY : FREE_SWIPE_LIMIT_DAILY,
+          limit: isPremium ? PREMIUM_SWIPE_LIMIT : FREE_SWIPE_LIMIT,
         },
         chats: {
           used: activeChats,
-          limit: isPremium ? PREMIUM_SWIPE_LIMIT_DAILY : FREE_CHAT_LIMIT,
+          limit: isPremium ? PREMIUM_CHAT_LIMIT : FREE_CHAT_LIMIT,
         },
       },
     });
@@ -344,7 +345,7 @@ export async function paymentRoutes(app: FastifyInstance) {
          expires_at = $4,
          auto_renew = TRUE,
          updated_at = NOW()`,
-      [userId, PREMIUM_SWIPE_LIMIT_DAILY, razorpaySubscriptionId, expiresAt.toISOString()],
+      [userId, PREMIUM_SWIPE_LIMIT, razorpaySubscriptionId, expiresAt.toISOString()],
     );
 
     // Record the first transaction
@@ -354,10 +355,6 @@ export async function paymentRoutes(app: FastifyInstance) {
        VALUES ($1, $2, $3, $4, 'INR', 'completed', $5)`,
       [userId, razorpayPaymentId, razorpaySubscriptionId, PREMIUM_MONTHLY_COST_INR, 'Kinetik Premium — ₹250/month'],
     );
-
-    // Clear Redis swipe cache so the new allowance applies immediately
-    const redis = getRedis();
-    await redis.del(`user:${userId}:swipes:daily`);
 
     await eventBus.sendPaymentEvent({
       type: 'subscription.activated',

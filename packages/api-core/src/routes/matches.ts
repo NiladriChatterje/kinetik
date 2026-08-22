@@ -1,6 +1,6 @@
 import { FastifyInstance, FastifyRequest, FastifyReply } from 'fastify';
 import {
-  ERROR_CODES, REDIS_KEYS, FREE_SWIPE_LIMIT_DAILY, FREE_CHAT_LIMIT,
+  ERROR_CODES, REDIS_KEYS, FREE_SWIPE_LIMIT, FREE_CHAT_LIMIT,
   PREMIUM_CHAT_LIMIT, SUPER_LIKE_LIMIT_DAILY_FREE, SUPER_LIKE_LIMIT_DAILY_PREMIUM,
   EVENT_BUS_CHANNELS, encryptMessage, decryptMessage, getOpeningLine, ChatMediaType,
   h3ToGeo,
@@ -250,36 +250,40 @@ export async function matchRoutes(app: FastifyInstance) {
       });
     }
 
-    // Load the user's entitlement. swipe_allowance is FREE_SWIPE_LIMIT_DAILY (30)
-    // for free accounts and PREMIUM_SWIPE_LIMIT_DAILY (unlimited) once a paid
-    // subscription is active — the payments/webhook flows set it on activation.
+    // Load the user's entitlement. swipe_allowance is FREE_SWIPE_LIMIT (30)
+    // for free accounts and PREMIUM_SWIPE_LIMIT (effectively unlimited) once a
+    // paid subscription is active — the payments/webhook flows set it on activation.
     const subResult = await query(
       `SELECT tier, swipe_allowance FROM ${TABLES.SUBSCRIPTION_LEDGER} WHERE user_id = $1`,
       [userId],
     );
     const sub = subResult.rows[0];
     const tier = sub?.tier || 'free';
-    const swipeAllowance = sub?.swipe_allowance ?? FREE_SWIPE_LIMIT_DAILY;
+    const swipeAllowance = sub?.swipe_allowance ?? FREE_SWIPE_LIMIT;
 
-    // Daily swipe limit — only right swipes (like / super_like) count; passing
-    // left is always free. Atomic INCR-then-compare avoids double-spend races.
+    // Swipe limit — PER ACCOUNT (lifetime), not daily. Only right swipes
+    // (like / super_like) count; passing left is always free. Counted from the
+    // durable user_interactions table so a Redis restart can't reset it.
+    let swipesRemaining: number | undefined;
     if (action === 'like' || action === 'super_like') {
-      const usedCount = await redis.incr(REDIS_KEYS.USER_SWIPE_COUNT(userId));
-      if (usedCount === 1) {
-        // Fresh 24h window
-        await redis.expire(REDIS_KEYS.USER_SWIPE_COUNT(userId), 86400);
-      }
-      if (usedCount > swipeAllowance) {
-        // Revert the increment — the swipe did not land
-        await redis.decr(REDIS_KEYS.USER_SWIPE_COUNT(userId));
+      const usedResult = await query(
+        `SELECT COUNT(*)::int AS cnt FROM ${TABLES.USER_INTERACTIONS}
+         WHERE actor_id = $1 AND action IN ('like', 'super_like')`,
+        [userId],
+      );
+      const usedCount = usedResult.rows[0]?.cnt ?? 0;
+      if (usedCount >= swipeAllowance) {
         return reply.status(429).send({
           success: false,
           error: {
             code: ERROR_CODES.SWIPE_LIMIT_REACHED,
-            message: "You've reached today's swipe limit. Upgrade to Premium for unlimited swipes.",
+            message: "You've used all your free swipes. Upgrade to Premium for unlimited swipes.",
+            details: { used: usedCount, limit: swipeAllowance },
           },
         });
       }
+      // Remaining AFTER this swipe lands (recorded below)
+      swipesRemaining = Math.max(0, swipeAllowance - usedCount - 1);
     }
 
     // Check daily super like limit
@@ -292,8 +296,6 @@ export async function matchRoutes(app: FastifyInstance) {
       superLikeRemaining = Math.max(0, dailyLimit - usedCount);
 
       if (usedCount >= dailyLimit) {
-        // Undo the swipe-count increment above — this super like never landed
-        await redis.decr(REDIS_KEYS.USER_SWIPE_COUNT(userId));
         return reply.status(429).send({
           success: false,
           error: { code: ERROR_CODES.SUPER_LIKE_LIMIT_REACHED, message: 'Daily super like limit reached' },
@@ -430,6 +432,7 @@ export async function matchRoutes(app: FastifyInstance) {
               matchId: match.id,
               partnerName,
               partnerId: targetUserId,
+              swipesRemaining,
             },
           });
         }
@@ -460,6 +463,7 @@ export async function matchRoutes(app: FastifyInstance) {
           matched: false,
           isSuperLike,
           superLikesRemaining: action === 'super_like' ? superLikeRemaining - 1 : undefined,
+          swipesRemaining,
         },
       });
     }

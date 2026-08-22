@@ -28,8 +28,8 @@ const REASON_CONFIG: Record<
   swipe_limit: {
     icon: 'infinite-outline',
     title: 'Swipe limit reached',
-    description: "You've used all your free swipes for today.",
-    feature: 'Unlimited daily swipes',
+    description: "You've used all your free swipes.",
+    feature: 'Unlimited swipes',
   },
   chat_limit: {
     icon: 'chatbubbles-outline',

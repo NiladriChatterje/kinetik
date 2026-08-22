@@ -1,6 +1,6 @@
 import { FastifyInstance, FastifyRequest, FastifyReply } from 'fastify';
 import { Readable } from 'stream';
-import { FREE_SWIPE_LIMIT_DAILY } from '@kinetik/shared';
+import { FREE_SWIPE_LIMIT } from '@kinetik/shared';
 import { query, TABLES } from '../services/database';
 import { eventBus } from '../services/eventBus';
 import { getRedis } from '../services/redis';
@@ -158,7 +158,7 @@ export async function webhookRoutes(app: FastifyInstance) {
               `UPDATE ${TABLES.SUBSCRIPTION_LEDGER}
                SET tier = 'free', swipe_allowance = $2, auto_renew = FALSE, updated_at = NOW()
                WHERE user_id = $1`,
-              [cancelled.notes.user_id, FREE_SWIPE_LIMIT_DAILY],
+              [cancelled.notes.user_id, FREE_SWIPE_LIMIT],
             );
           }
           break;

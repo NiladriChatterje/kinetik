@@ -34,7 +34,7 @@
 | Super Like | ✅ Implemented | Star button, blue badge, sends highlighted notification, daily limits (5 free / 25 premium) |
 | Mutual Match Detection | ✅ Implemented | On like, checks if target already liked the actor → creates match instantly |
 | Profile Discovery | ✅ Implemented | Filters by age, gender, distance; excludes already-interacted users; random ordering |
-| Daily Swipe Limits | ✅ Implemented | 50/day free, 99999/day premium, tracked via Redis with 24h expiry |
+| Swipe Limits | ✅ Implemented | 30 right-swipes per free account (lifetime, not daily), effectively unlimited for premium; counted from user_interactions; low-budget counter shown in the deck header from 5 remaining |
 | Super Like Limits | ✅ Implemented | 5/day free, 25/day premium, tracked via Redis with 24h expiry |
 | Incoming Likes List | ✅ Implemented | `GET /matches/likes` returns who liked you with photos, bio, super-like indicator |
 | Like-Back / Discard | ✅ Implemented | `POST /matches/respond` lets you like back (creates match) or discard |
@@ -161,7 +161,7 @@
 | Token Vault | ✅ Implemented | Token balance display |
 | Profile Ledger | ✅ Implemented | Transaction history |
 | Premium Subscriptions | ✅ Implemented | Razorpay integration, ₹100 Premium monthly (cards + UPI Autopay mandate) |
-| Swipe Allowance Upgrades | ✅ Implemented | Premium = 99999 swipes/day, Infinite = unlimited |
+| Swipe Allowance Upgrades | ✅ Implemented | Premium = 99999 swipes (effectively unlimited), Infinite = unlimited |
 | Fast Passes & Rain Checks | ✅ Implemented | Token-based boosts for matching priority |
 
 ---

@@ -1,7 +1,9 @@
 // ─── Swipe / Interaction Limits ───────────────────────────
 
-export const FREE_SWIPE_LIMIT_DAILY = 30;
-export const PREMIUM_SWIPE_LIMIT_DAILY = 99999;
+// Right-swipe (like / super_like) allowance PER ACCOUNT — lifetime, not daily.
+// Once a free account has spent its 30 likes, only upgrading unlocks more.
+export const FREE_SWIPE_LIMIT = 30;
+export const PREMIUM_SWIPE_LIMIT = 99999; // Effectively unlimited
 export const FREE_CHAT_LIMIT = 3;        // Max active matches for free users
 export const PREMIUM_CHAT_LIMIT = 99999;  // Effectively unlimited for premium
 export const SUPER_LIKE_LIMIT_DAILY_FREE = 5;
@@ -22,7 +24,6 @@ export const REDIS_KEYS = {
   // User session
   USER_SESSION: (userId: string) => `user:${userId}:session`,
   USER_PRESENCE: (userId: string) => `user:${userId}:presence`,
-  USER_SWIPE_COUNT: (userId: string) => `user:${userId}:swipes:daily`,
   USER_SUPERLIKE_COUNT: (userId: string) => `user:${userId}:superlikes:daily`,
 
   // New likes counter (for unread badge)

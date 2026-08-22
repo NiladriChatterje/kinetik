@@ -1,5 +1,5 @@
 import { FastifyInstance, FastifyRequest, FastifyReply } from 'fastify';
-import { ERROR_CODES, PREMIUM_SWIPE_LIMIT_DAILY } from '@kinetik/shared';
+import { ERROR_CODES, PREMIUM_SWIPE_LIMIT } from '@kinetik/shared';
 import { query, TABLES, getSubscription } from '../services/database';
 
 export async function fanRoutes(app: FastifyInstance) {
@@ -91,7 +91,7 @@ export async function fanRoutes(app: FastifyInstance) {
       `UPDATE ${TABLES.SUBSCRIPTION_LEDGER} 
        SET tier = 'premium', swipe_allowance = $1, updated_at = NOW()
        WHERE user_id = $2`,
-      [PREMIUM_SWIPE_LIMIT_DAILY, userId],
+      [PREMIUM_SWIPE_LIMIT, userId],
     );
 
     return reply.send({
