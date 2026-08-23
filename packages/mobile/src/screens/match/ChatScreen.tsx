@@ -1407,6 +1407,10 @@ export const ChatScreen: React.FC<{ navigation: any; route: any }> = ({ navigati
             renderItem={renderMessage}
             contentContainerStyle={styles.messagesList}
             showsVerticalScrollIndicator={false}
+            removeClippedSubviews
+            maxToRenderPerBatch={12}
+            windowSize={9}
+            initialNumToRender={15}
             onContentSizeChange={() =>
               flatListRef.current?.scrollToEnd({ animated: false })
             }

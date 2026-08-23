@@ -239,6 +239,10 @@ export const ChatListScreen: React.FC<{ navigation: any }> = ({ navigation }) =>
           renderItem={renderConversation}
           contentContainerStyle={styles.list}
           showsVerticalScrollIndicator={false}
+          removeClippedSubviews
+          maxToRenderPerBatch={10}
+          windowSize={7}
+          initialNumToRender={8}
         />
       )}
     </SafeAreaView>

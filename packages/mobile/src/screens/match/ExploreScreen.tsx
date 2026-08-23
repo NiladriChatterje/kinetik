@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react';
 import {
-  View, Text, StyleSheet, ScrollView, TouchableOpacity,
+  View, Text, StyleSheet, FlatList, TouchableOpacity,
   ActivityIndicator, RefreshControl, Dimensions,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
@@ -29,9 +29,16 @@ const PAGE_SIZE = 24;
 const SCREEN_WIDTH = Dimensions.get('window').width;
 const GRID_GAP = spacing.md;
 const CARD_WIDTH = (SCREEN_WIDTH - spacing.xxl * 2 - GRID_GAP) / 2;
-// Alternating tall/short cards per column, offset between columns → staggered look
 const TALL = Math.round(CARD_WIDTH * 1.45);
 const SHORT = Math.round(CARD_WIDTH * 1.1);
+
+/** Staggered height: tall–short per column, offset between columns */
+const cardHeight = (index: number) => {
+  const mod = index % 4;
+  return mod === 0 || mod === 3 ? TALL : SHORT;
+};
+
+const COLS = 2;
 
 export const ExploreScreen: React.FC<{ navigation: any }> = ({ navigation }) => {
   const [profiles, setProfiles] = useState<GridProfile[]>([]);
@@ -84,8 +91,7 @@ export const ExploreScreen: React.FC<{ navigation: any }> = ({ navigation }) => 
     fetchProfiles();
   }, [fetchProfiles]);
 
-  // Drop a profile from the grid as soon as it becomes a match — the server
-  // excludes matched users on the next fetch; this covers the current view
+  // Drop a profile from the grid as soon as it becomes a match
   useEffect(() => {
     const socket = getPresenceSocket();
     const onMatchNew = (data: any) => {
@@ -106,18 +112,17 @@ export const ExploreScreen: React.FC<{ navigation: any }> = ({ navigation }) => 
   const primaryPhoto = (p: GridProfile) =>
     p.photos.find((ph) => ph.isPrimary) || p.photos[0];
 
-  const renderCard = (profile: GridProfile, height: number) => {
-    const photo = primaryPhoto(profile);
+  const renderItem = useCallback(({ item, index }: { item: GridProfile; index: number }) => {
+    const photo = primaryPhoto(item);
+    const height = cardHeight(index);
+
     return (
       <TouchableOpacity
-        key={profile.userId}
         style={[styles.card, { height }]}
         activeOpacity={0.85}
-        onPress={() => openProfile(profile)}
+        onPress={() => openProfile(item)}
       >
         {photo ? (
-          // Grid cards are small — the thumbnail IS the target quality; the
-          // skeleton pulse covers the load, no full-res bandwidth spent here
           <ProgressiveImage
             uri={resolveUrl(photo.thumbnailUrl || photo.url)}
             style={styles.cardImage}
@@ -128,44 +133,42 @@ export const ExploreScreen: React.FC<{ navigation: any }> = ({ navigation }) => 
           </View>
         )}
 
-        {profile.photos.length > 1 && (
+        {item.photos.length > 1 && (
           <View style={styles.photoCountBadge}>
             <Ionicons name="images-outline" size={11} color="#fff" />
-            <Text style={styles.photoCountText}>{profile.photos.length}</Text>
+            <Text style={styles.photoCountText}>{item.photos.length}</Text>
           </View>
         )}
 
-        {profile.distanceKm != null && (
+        {item.distanceKm != null && (
           <View style={styles.distanceBadge}>
             <Ionicons name="location-outline" size={11} color="#fff" />
-            <Text style={styles.photoCountText}>~{profile.distanceKm} km</Text>
+            <Text style={styles.photoCountText}>~{item.distanceKm} km</Text>
           </View>
         )}
 
         <View style={styles.cardScrim}>
           <View style={styles.nameRow}>
             <Text style={styles.cardName} numberOfLines={1}>
-              {profile.displayName}, {profile.age}
+              {item.displayName}, {item.age}
             </Text>
-            {profile.isVerified && (
+            {item.isVerified && (
               <Ionicons name="checkmark-circle" size={14} color={colors.success} />
             )}
           </View>
-          {profile.occupation ? (
-            <Text style={styles.cardSub} numberOfLines={1}>{profile.occupation}</Text>
-          ) : profile.interests.length > 0 ? (
+          {item.occupation ? (
+            <Text style={styles.cardSub} numberOfLines={1}>{item.occupation}</Text>
+          ) : item.interests.length > 0 ? (
             <Text style={styles.cardSub} numberOfLines={1}>
-              {profile.interests.slice(0, 2).map((i) => i.name).join(' · ')}
+              {item.interests.slice(0, 2).map((i) => i.name).join(' · ')}
             </Text>
           ) : null}
         </View>
       </TouchableOpacity>
     );
-  };
+  }, []);
 
-  // Distribute into two columns; opposite tall/short phase per column staggers the rows
-  const leftColumn = profiles.filter((_, i) => i % 2 === 0);
-  const rightColumn = profiles.filter((_, i) => i % 2 === 1);
+  const keyExtractor = useCallback((item: GridProfile) => item.userId, []);
 
   return (
     <SafeAreaView style={styles.container}>
@@ -202,16 +205,25 @@ export const ExploreScreen: React.FC<{ navigation: any }> = ({ navigation }) => 
           </TouchableOpacity>
         </View>
       ) : (
-        <ScrollView
+        <FlatList
+          data={profiles}
+          keyExtractor={keyExtractor}
+          renderItem={renderItem}
+          numColumns={COLS}
+          columnWrapperStyle={styles.gridRow}
           contentContainerStyle={styles.gridContent}
           showsVerticalScrollIndicator={false}
-          scrollEventThrottle={250}
-          onScroll={({ nativeEvent }) => {
-            // Infinite scroll: fetch the next page when within ~1.5 screens of the end
-            const { layoutMeasurement, contentOffset, contentSize } = nativeEvent;
-            const remaining = contentSize.height - contentOffset.y - layoutMeasurement.height;
-            if (remaining < layoutMeasurement.height * 1.5) loadMore();
-          }}
+          removeClippedSubviews
+          maxToRenderPerBatch={8}
+          windowSize={9}
+          initialNumToRender={6}
+          getItemLayout={(_, index) => ({
+            length: TALL + GRID_GAP,
+            offset: (TALL + GRID_GAP) * Math.floor(index / COLS),
+            index,
+          })}
+          onEndReached={() => loadMore()}
+          onEndReachedThreshold={1.5}
           refreshControl={
             <RefreshControl
               refreshing={refreshing}
@@ -219,21 +231,14 @@ export const ExploreScreen: React.FC<{ navigation: any }> = ({ navigation }) => 
               tintColor={colors.textPrimary}
             />
           }
-        >
-          <View style={styles.gridRow}>
-            <View style={styles.gridColumn}>
-              {leftColumn.map((p, i) => renderCard(p, i % 2 === 0 ? TALL : SHORT))}
-            </View>
-            <View style={styles.gridColumn}>
-              {rightColumn.map((p, i) => renderCard(p, i % 2 === 0 ? SHORT : TALL))}
-            </View>
-          </View>
-          {hasMore ? (
-            <ActivityIndicator style={styles.footerHint} size="small" color={colors.textMuted} />
-          ) : (
-            <Text style={styles.footerHint}>That's everyone on Kinetik right now</Text>
-          )}
-        </ScrollView>
+          ListFooterComponent={
+            hasMore ? (
+              <ActivityIndicator style={styles.footerHint} size="small" color={colors.textMuted} />
+            ) : (
+              <Text style={styles.footerHint}>That's everyone on Kinetik right now</Text>
+            )
+          }
+        />
       )}
     </SafeAreaView>
   );
@@ -285,10 +290,9 @@ const styles = StyleSheet.create({
   },
   refreshBtnText: { ...typography.button, color: colors.textInverse },
   gridContent: { paddingHorizontal: spacing.xxl, paddingBottom: spacing.xxl },
-  gridRow: { flexDirection: 'row', gap: GRID_GAP },
-  gridColumn: { flex: 1, gap: GRID_GAP },
+  gridRow: { gap: GRID_GAP },
   card: {
-    width: CARD_WIDTH,
+    flex: 1,
     borderRadius: radius.lg,
     overflow: 'hidden',
     backgroundColor: colors.surfaceHighlight,

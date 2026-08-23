@@ -221,6 +221,10 @@ export const LikeListScreen: React.FC<{ navigation: any }> = ({ navigation }) =>
           renderItem={renderLike}
           contentContainerStyle={styles.list}
           showsVerticalScrollIndicator={false}
+          removeClippedSubviews
+          maxToRenderPerBatch={10}
+          windowSize={7}
+          initialNumToRender={8}
         />
       )}
 
