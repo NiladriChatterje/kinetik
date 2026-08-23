@@ -174,7 +174,7 @@ services:
       REDIS_EVENTS_PORT: 6379
       REDIS_EVENTS_PASSWORD: ${REDIS_EVENTS_PASSWORD:-kinetik_events_2024}
       JWT_SECRET: ${JWT_SECRET:-super-secret-jwt-key-change-in-production-2024}
-      JWT_EXPIRES_IN: 7d
+      JWT_EXPIRES_IN: 15m
       RAZORPAY_KEY_ID: ${RAZORPAY_KEY_ID:-rzp_test_xxxxxxxxxxxx}
       RAZORPAY_KEY_SECRET: ${RAZORPAY_KEY_SECRET:-your_razorpay_secret}
       RAZORPAY_WEBHOOK_SECRET: ${RAZORPAY_WEBHOOK_SECRET:-}
@@ -206,7 +206,7 @@ services:
       MINIO_BUCKET: ${MINIO_BUCKET:-kinetik-photos}
       MINIO_PUBLIC_URL: /uploads/
       # KYC document face matching only — selfie verification runs on-device
-      POSE_SERVICE_URL: http://pose-service:3004
+      # POSE_SERVICE_URL: http://pose-service:3004
     depends_on:
       postgres:
         condition: service_healthy
@@ -216,8 +216,6 @@ services:
         condition: service_healthy
       migration-runner:
         condition: service_completed_successfully
-      pose-service:
-        condition: service_started
     deploy:
       resources:
         limits:
@@ -348,34 +346,36 @@ services:
           memory: 32M
     logging: *default-logging
 
-  # ─── Face Service (Python / MediaPipe) — KYC document matching ──
-  # Selfie pose/liveness verification runs on-device in the mobile app.
-  pose-service:
-    build:
-      context: packages/pose-service
-      dockerfile: Dockerfile
-    container_name: kinetik-pose-service
-    restart: unless-stopped
-    ports:
-      - "${POSE_SERVICE_PORT:-3004}:3004"
-    environment:
-      ENVIRONMENT: ${ENVIRONMENT:-development}
-      PORT: 3004
-      HOST: "0.0.0.0"
-      MINIO_ENDPOINT: minio:9000
-      MINIO_BUCKET: ${MINIO_BUCKET:-kinetik-photos}
-      MINIO_PUBLIC_URL: /uploads/
-    depends_on:
-      minio:
-        condition: service_healthy
-    deploy:
-      resources:
-        limits:
-          cpus: "1.0"
-          memory: 512M
-        reservations:
-          memory: 256M
-    logging: *default-logging
+  # ─── Pose / Face Service (Python / MediaPipe) ──────────────
+  # DISABLED — selfie pose/liveness verification runs on-device in the
+  # mobile app via TFLite.  Only uncomment this if you need server-side
+  # KYC document face matching.
+  # pose-service:
+  #   build:
+  #     context: packages/pose-service
+  #     dockerfile: Dockerfile
+  #   container_name: kinetik-pose-service
+  #   restart: unless-stopped
+  #   ports:
+  #     - "${POSE_SERVICE_PORT:-3004}:3004"
+  #   environment:
+  #     ENVIRONMENT: ${ENVIRONMENT:-development}
+  #     PORT: 3004
+  #     HOST: "0.0.0.0"
+  #     MINIO_ENDPOINT: minio:9000
+  #     MINIO_BUCKET: ${MINIO_BUCKET:-kinetik-photos}
+  #     MINIO_PUBLIC_URL: /uploads/
+  #   depends_on:
+  #     minio:
+  #       condition: service_healthy
+  #   deploy:
+  #     resources:
+  #       limits:
+  #         cpus: "1.0"
+  #         memory: 512M
+  #       reservations:
+  #         memory: 256M
+  #   logging: *default-logging
 
 volumes:
   postgres-data:
