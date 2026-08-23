@@ -1,13 +1,19 @@
-import React, { useState, useCallback, useMemo } from 'react';
+import React, { useState, useCallback, useMemo, useRef } from 'react';
 import {
   View, Text, StyleSheet, ScrollView, TextInput,
-  TouchableOpacity, Keyboard,
+  TouchableOpacity, Keyboard, Animated, LayoutAnimation, UIManager, Platform,
 } from 'react-native';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Button } from '../../components/common/Button';
 import { useToast } from '../../hooks/useToast';
 import { api } from '../../services/api';
+import { hapticLight } from '../../utils/haptics';
 import { colors, typography, spacing, radius } from '../../theme';
+
+// Enable LayoutAnimation on Android
+if (Platform.OS === 'android' && UIManager.setLayoutAnimationEnabledExperimental) {
+  UIManager.setLayoutAnimationEnabledExperimental(true);
+}
 
 // ─── Question Definitions ─────────────────────────────────
 // Each question maps to a key in the AboutAnswers JSON shape.
@@ -91,6 +97,44 @@ const emptyAnswers = (): AnswerMap => ({
   nature: [], hobbies: [], movieGenres: [], music: [], dateStyle: [],
 });
 
+// ─── Animated Chip ───────────────────────────────────────
+// Each chip runs a micro scale-spring on press for tactile feedback
+// without affecting layout width.
+const AnimatedChip: React.FC<{
+  active: boolean;
+  label: string;
+  onPress: () => void;
+}> = ({ active, label, onPress }) => {
+  const scale = useRef(new Animated.Value(1)).current;
+
+  const handlePressIn = () => {
+    Animated.spring(scale, { toValue: 0.92, useNativeDriver: true, speed: 50, bounciness: 4 }).start();
+  };
+  const handlePressOut = () => {
+    Animated.spring(scale, { toValue: 1, useNativeDriver: true, speed: 50, bounciness: 4 }).start();
+  };
+  const handlePress = () => {
+    hapticLight();
+    onPress();
+  };
+
+  return (
+    <TouchableOpacity
+      activeOpacity={1}
+      onPressIn={handlePressIn}
+      onPressOut={handlePressOut}
+      onPress={handlePress}
+    >
+      <Animated.View style={[styles.chip, active && styles.chipActive, { transform: [{ scale }] }]}>
+        <View style={[styles.check, !active && styles.checkHidden]}>
+          <View style={styles.checkGlyph} />
+        </View>
+        <Text style={[styles.chipText, active && styles.chipTextActive]}>{label}</Text>
+      </Animated.View>
+    </TouchableOpacity>
+  );
+};
+
 export const AboutYouScreen: React.FC<{ navigation: any }> = ({ navigation }) => {
   const insets = useSafeAreaInsets();
   const toast = useToast();
@@ -109,6 +153,11 @@ export const AboutYouScreen: React.FC<{ navigation: any }> = ({ navigation }) =>
   );
 
   const toggle = useCallback((key: AnswerKey, value: string) => {
+    LayoutAnimation.configureNext(LayoutAnimation.create(
+      250,
+      LayoutAnimation.Types.easeInEaseOut,
+      LayoutAnimation.Properties.opacity,
+    ));
     const current = answers[key];
     if (current.includes(value)) {
       setAnswers((prev) => ({ ...prev, [key]: prev[key].filter((v) => v !== value) }));
@@ -140,6 +189,11 @@ export const AboutYouScreen: React.FC<{ navigation: any }> = ({ navigation }) =>
       return;
     }
 
+    LayoutAnimation.configureNext(LayoutAnimation.create(
+      250,
+      LayoutAnimation.Types.easeInEaseOut,
+      LayoutAnimation.Properties.opacity,
+    ));
     setAnswers((prev) => ({ ...prev, [key]: [...prev[key], draft] }));
     setDrafts((prev) => ({ ...prev, [key]: '' }));
     // Typing is an opt-in secondary action — collapse back to the pill
@@ -229,19 +283,7 @@ export const AboutYouScreen: React.FC<{ navigation: any }> = ({ navigation }) =>
                 {allChips.map((chip) => {
                   const active = selected.includes(chip);
                   return (
-                    <TouchableOpacity
-                      key={chip}
-                      activeOpacity={0.7}
-                      style={[styles.chip, active && styles.chipActive]}
-                      onPress={() => toggle(q.key, chip)}
-                    >
-                      {active && (
-                        <View style={styles.check}>
-                          <View style={styles.checkGlyph} />
-                        </View>
-                      )}
-                      <Text style={[styles.chipText, active && styles.chipTextActive]}>{chip}</Text>
-                    </TouchableOpacity>
+                    <AnimatedChip key={chip} active={active} label={chip} onPress={() => toggle(q.key, chip)} />
                   );
                 })}
               </View>
@@ -276,7 +318,14 @@ export const AboutYouScreen: React.FC<{ navigation: any }> = ({ navigation }) =>
                 <TouchableOpacity
                   activeOpacity={0.7}
                   style={[styles.addOwnButton, selected.length >= q.max && styles.addOwnButtonDisabled]}
-                  onPress={() => setTypingOpen((prev) => ({ ...prev, [q.key]: true }))}
+                  onPress={() => {
+                    LayoutAnimation.configureNext(LayoutAnimation.create(
+                      250,
+                      LayoutAnimation.Types.easeInEaseOut,
+                      LayoutAnimation.Properties.opacity,
+                    ));
+                    setTypingOpen((prev) => ({ ...prev, [q.key]: true }));
+                  }}
                   disabled={selected.length >= q.max}
                 >
                   <Text style={styles.addOwnButtonText}>+ Add your own</Text>
@@ -423,7 +472,7 @@ const styles = StyleSheet.create({
     borderColor: colors.textPrimary,
   },
   chipText: { ...typography.body2, color: colors.textSecondary },
-  chipTextActive: { color: colors.textInverse, fontWeight: '600' },
+  chipTextActive: { color: colors.textInverse },
   check: {
     width: 14,
     height: 14,
@@ -433,6 +482,7 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     marginRight: spacing.sm,
   },
+  checkHidden: { opacity: 0 },
   checkGlyph: {
     width: 7,
     height: 4,

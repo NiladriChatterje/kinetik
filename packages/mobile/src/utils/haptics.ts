@@ -23,3 +23,8 @@ export function hapticSuccess(): void {
 export function hapticImpact(): void {
   Haptics?.impactAsync(Haptics.ImpactFeedbackStyle.Medium).catch(() => {});
 }
+
+/** Light tap — chip selection, subtle UI interactions. */
+export function hapticLight(): void {
+  Haptics?.impactAsync(Haptics.ImpactFeedbackStyle.Light).catch(() => {});
+}
