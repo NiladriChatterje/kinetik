@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { View, Text, StyleSheet, Image, TouchableOpacity, ScrollView, ActivityIndicator, Alert } from 'react-native';
+import { View, Text, StyleSheet, Image, TouchableOpacity, ScrollView, ActivityIndicator, Modal } from 'react-native';
 import * as ImagePicker from 'expo-image-picker';
 import { Ionicons } from '@expo/vector-icons';
 import { SafeAreaView } from 'react-native-safe-area-context';
@@ -46,13 +46,8 @@ export const PhotoUploadScreen: React.FC<{ navigation: any }> = ({ navigation })
     }
   };
 
-  const promptSource = () => {
-    Alert.alert('Add Photo', 'Choose a source', [
-      { text: 'Gallery', onPress: pickFromGallery },
-      { text: 'Camera', onPress: takeWithCamera },
-      { text: 'Cancel', style: 'cancel' },
-    ]);
-  };
+  const [sourceModalVisible, setSourceModalVisible] = useState(false);
+  const promptSource = () => setSourceModalVisible(true);
 
   /**
    * Full pipeline: compress → upload → add to local state.
@@ -185,6 +180,51 @@ export const PhotoUploadScreen: React.FC<{ navigation: any }> = ({ navigation })
           fullWidth
         />
       </View>
+
+      <Modal
+        visible={sourceModalVisible}
+        transparent
+        animationType="slide"
+        onRequestClose={() => setSourceModalVisible(false)}
+      >
+        <TouchableOpacity
+          style={styles.modalOverlay}
+          activeOpacity={1}
+          onPress={() => setSourceModalVisible(false)}
+        >
+          <TouchableOpacity activeOpacity={1} style={styles.modalSheet}>
+            <Text style={styles.modalTitle}>Add Photo</Text>
+            <Text style={styles.modalSubtitle}>Choose a source</Text>
+
+            <TouchableOpacity
+              style={styles.modalOption}
+              onPress={() => { setSourceModalVisible(false); pickFromGallery(); }}
+            >
+              <Ionicons name="images-outline" size={22} color={colors.textPrimary} />
+              <Text style={styles.modalOptionText}>Gallery</Text>
+            </TouchableOpacity>
+
+            <View style={styles.modalDivider} />
+
+            <TouchableOpacity
+              style={styles.modalOption}
+              onPress={() => { setSourceModalVisible(false); takeWithCamera(); }}
+            >
+              <Ionicons name="camera-outline" size={22} color={colors.textPrimary} />
+              <Text style={styles.modalOptionText}>Camera</Text>
+            </TouchableOpacity>
+
+            <View style={styles.modalDivider} />
+
+            <TouchableOpacity
+              style={styles.modalCancel}
+              onPress={() => setSourceModalVisible(false)}
+            >
+              <Text style={styles.modalCancelText}>Cancel</Text>
+            </TouchableOpacity>
+          </TouchableOpacity>
+        </TouchableOpacity>
+      </Modal>
     </SafeAreaView>
   );
 };
@@ -226,4 +266,57 @@ const styles = StyleSheet.create({
 
   footer: { position: 'absolute', bottom: 40, left: spacing.xxl, right: spacing.xxl },
   hintText: { ...typography.caption, color: colors.textMuted, textAlign: 'center', marginBottom: spacing.sm },
+
+  // ─── Source Picker Modal ──────────────────────────────
+  modalOverlay: {
+    flex: 1,
+    backgroundColor: colors.overlay,
+    justifyContent: 'flex-end',
+    paddingBottom: spacing.xxl,
+  },
+  modalSheet: {
+    marginHorizontal: spacing.lg,
+    backgroundColor: colors.background,
+    borderRadius: radius.xl,
+    paddingVertical: spacing.xl,
+    paddingHorizontal: spacing.lg,
+  },
+  modalTitle: {
+    ...typography.h3,
+    color: colors.textPrimary,
+    textAlign: 'center',
+    marginBottom: spacing.xs,
+  },
+  modalSubtitle: {
+    ...typography.caption,
+    color: colors.textMuted,
+    textAlign: 'center',
+    marginBottom: spacing.xl,
+  },
+  modalOption: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingVertical: spacing.md + 2,
+    paddingHorizontal: spacing.md,
+    gap: spacing.md,
+  },
+  modalOptionText: {
+    ...typography.body1,
+    color: colors.textPrimary,
+  },
+  modalDivider: {
+    height: StyleSheet.hairlineWidth,
+    backgroundColor: colors.inputBorder,
+    marginHorizontal: spacing.md,
+  },
+  modalCancel: {
+    marginTop: spacing.sm,
+    paddingVertical: spacing.md + 2,
+    alignItems: 'center',
+  },
+  modalCancelText: {
+    ...typography.body1,
+    color: colors.textMuted,
+    fontWeight: '500',
+  },
 });
