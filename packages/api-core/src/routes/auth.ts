@@ -71,7 +71,7 @@ const RegisterSchema = z.object({
   authProvider: z.enum(['phone', 'google', 'apple']),
   authProviderId: z.string().optional(),
   displayName: z.string().min(1).max(100).optional(),
-  age: z.number().int().min(18).max(120).optional(),
+  age: z.number().int().min(18).max(120),
 });
 
 const LoginSchema = z.object({

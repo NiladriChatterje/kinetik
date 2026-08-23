@@ -123,9 +123,8 @@ export const SplashScreen: React.FC<{ navigation: any }> = ({ navigation }) => {
           setErrorMsg(result.error || 'Wrong credential. Please try again.');
         }
       } else if (mode === 'register') {
-        const payload: { phone: string; password: string; displayName?: string; age?: number } = { phone, password };
+        const payload: { phone: string; password: string; displayName?: string; age: number } = { phone, password, age: parseInt(age, 10) };
         if (firstName) payload.displayName = firstName;
-        if (age) payload.age = parseInt(age, 10);
         const result = await register(payload);
         if (result.success) {
           toast.showSuccess('Account created', 'Please sign in.');

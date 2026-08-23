@@ -260,6 +260,16 @@ MainTabNavigator.displayName = 'MainTabNavigator';
 export function RootNavigator() {
   const { isAuthenticated, isLoading, onboardingStep } = useAuthStore();
 
+  // When the user logs out or deletes their account, reset the navigator
+  // back to the Onboarding screen so they can't swipe back into Main.
+  const wasAuthenticatedRef = React.useRef(isAuthenticated);
+  React.useEffect(() => {
+    if (wasAuthenticatedRef.current && !isAuthenticated && navigationRef.isReady()) {
+      navigationRef.resetRoot({ index: 0, routes: [{ name: 'Onboarding' }] });
+    }
+    wasAuthenticatedRef.current = isAuthenticated;
+  }, [isAuthenticated]);
+
   if (isLoading) {
     return (
       <View style={styles.loading}>
