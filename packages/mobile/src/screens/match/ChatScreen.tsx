@@ -252,7 +252,6 @@ export const ChatScreen: React.FC<{ navigation: any; route: any }> = ({ navigati
 
   // ─── Date Planner modal animations ───────────────────────
   const plannerOverlayOpacity = useRef(new Animated.Value(0)).current;
-  const plannerSheetY = useRef(new Animated.Value(1)).current;
   const plannerContentScale = useRef(new Animated.Value(1)).current;
 
   const openDatePicker = (tab?: 'activities' | 'checklist') => {
@@ -260,7 +259,6 @@ export const ChatScreen: React.FC<{ navigation: any; route: any }> = ({ navigati
     setShowDatePicker(true);
     Animated.parallel([
       Animated.timing(plannerOverlayOpacity, { toValue: 1, duration: 250, useNativeDriver: true }),
-      Animated.spring(plannerSheetY, { toValue: 0, speed: 50, bounciness: 4, useNativeDriver: true }),
       Animated.timing(plannerContentScale, { toValue: 0.85, duration: 250, useNativeDriver: true }),
     ]).start();
   };
@@ -268,7 +266,6 @@ export const ChatScreen: React.FC<{ navigation: any; route: any }> = ({ navigati
   const closeDatePicker = (cb?: () => void) => {
     Animated.parallel([
       Animated.timing(plannerOverlayOpacity, { toValue: 0, duration: 200, useNativeDriver: true }),
-      Animated.timing(plannerSheetY, { toValue: 1, duration: 200, useNativeDriver: true }),
       Animated.timing(plannerContentScale, { toValue: 1, duration: 200, useNativeDriver: true }),
     ]).start(() => {
       setShowDatePicker(false);
@@ -1844,14 +1841,19 @@ export const ChatScreen: React.FC<{ navigation: any; route: any }> = ({ navigati
       )}
 
       {/* ─── Date Planner Modal ─────────────────────────── */}
-      {showDatePicker && (
+      <Modal
+        visible={showDatePicker}
+        transparent
+        animationType="none"
+        onRequestClose={() => closeDatePicker()}
+      >
         <Animated.View style={[styles.plannerOverlay, { opacity: plannerOverlayOpacity }]}>
           <TouchableOpacity
             style={StyleSheet.absoluteFill}
             activeOpacity={1}
             onPress={() => closeDatePicker()}
           />
-          <Animated.View style={[styles.plannerCard, { transform: [{ translateY: plannerSheetY.interpolate({ inputRange: [0, 1], outputRange: [0, SCREEN_HEIGHT] }) }] }]}>
+          <Animated.View style={[styles.plannerCard, { transform: [{ scale: plannerContentScale }] }]}>
             {/* Header */}
             <View style={styles.plannerHeader}>
               <View style={styles.plannerHeaderLeft}>
@@ -2132,7 +2134,7 @@ export const ChatScreen: React.FC<{ navigation: any; route: any }> = ({ navigati
             </TouchableOpacity>
           </Animated.View>
         </Animated.View>
-      )}
+      </Modal>
     </SafeAreaView>
   );
 };
@@ -2861,19 +2863,18 @@ const styles = StyleSheet.create({
 
   // ─── Date Planner Modal ─────────────────────────────
   plannerOverlay: {
-    ...StyleSheet.absoluteFill,
+    flex: 1,
     backgroundColor: 'rgba(0,0,0,0.5)',
     justifyContent: 'flex-end',
   },
   plannerCard: {
+    height: '85%',
     backgroundColor: colors.background,
     borderTopLeftRadius: radius.xl,
     borderTopRightRadius: radius.xl,
     paddingHorizontal: spacing.xxl,
     paddingTop: spacing.lg,
     paddingBottom: spacing.xxxl,
-    maxHeight: '85%',
-    overflow: 'hidden',
   },
   plannerHeader: {
     flexDirection: 'row',
