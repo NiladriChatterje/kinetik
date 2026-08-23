@@ -297,30 +297,38 @@ class ApiClient {
 
   // ─── Auth ───────────────────────────────────────────
   async register(data: { phone?: string; email?: string; password?: string; authProvider: string; authProviderId?: string; displayName?: string; age?: number }) {
+    const { encryptAuthPayload } = await import('../crypto/encrypt');
+    const encrypted = encryptAuthPayload(data, ['phone', 'password']);
     return this.request<{ user: any; token: string; refreshToken: string }>('/api/v1/auth/register', {
       method: 'POST',
-      body: JSON.stringify(data),
+      body: JSON.stringify(encrypted),
     });
   }
 
   async login(data: { phone?: string; email?: string; password?: string }) {
+    const { encryptAuthPayload } = await import('../crypto/encrypt');
+    const encrypted = encryptAuthPayload(data, ['phone', 'password']);
     return this.request<{ user?: any; token?: string; requiresOtp?: boolean; phone?: string; userId?: string }>('/api/v1/auth/login', {
       method: 'POST',
-      body: JSON.stringify(data),
+      body: JSON.stringify(encrypted),
     });
   }
 
   async sendOtp(phone: string) {
+    const { encryptField } = await import('../crypto/encrypt');
+    const encryptedPhone = encryptField(phone) || phone;
     return this.request<{ message: string }>('/api/v1/auth/send-otp', {
       method: 'POST',
-      body: JSON.stringify({ phone }),
+      body: JSON.stringify({ phone: encryptedPhone, _encrypted: true }),
     });
   }
 
   async verifyOtp(phone: string, otp: string) {
+    const { encryptAuthPayload } = await import('../crypto/encrypt');
+    const encrypted = encryptAuthPayload({ phone, otp }, ['phone', 'otp']);
     return this.request<{ user: any; token: string; refreshToken: string }>('/api/v1/auth/verify-otp', {
       method: 'POST',
-      body: JSON.stringify({ phone, otp }),
+      body: JSON.stringify(encrypted),
     });
   }
 
