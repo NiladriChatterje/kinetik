@@ -18,6 +18,7 @@ const SEGMENT_TAB_WIDTH = (SEGMENT_WIDTH - 4) / 2;
 export const SplashScreen: React.FC<{ navigation: any }> = ({ navigation }) => {
   const [mode, setMode] = useState<'login' | 'register'>('login');
   const [phone, setPhone] = useState('');
+  const [age, setAge] = useState('');
   const [password, setPassword] = useState('');
   const [firstName, setFirstName] = useState('');
   const [lastName, setLastName] = useState('');
@@ -96,6 +97,10 @@ export const SplashScreen: React.FC<{ navigation: any }> = ({ navigation }) => {
       toast.showError('Missing name', 'Enter your first name.');
       return;
     }
+    if (mode === 'register' && (!age || parseInt(age, 10) < 18)) {
+      toast.showError('Invalid age', 'You must be at least 18.');
+      return;
+    }
 
     setLoading(true);
     try {
@@ -118,13 +123,15 @@ export const SplashScreen: React.FC<{ navigation: any }> = ({ navigation }) => {
           setErrorMsg(result.error || 'Wrong credential. Please try again.');
         }
       } else if (mode === 'register') {
-        const payload: { phone: string; password: string; displayName?: string } = { phone, password };
+        const payload: { phone: string; password: string; displayName?: string; age?: number } = { phone, password };
         if (firstName) payload.displayName = firstName;
+        if (age) payload.age = parseInt(age, 10);
         const result = await register(payload);
         if (result.success) {
           toast.showSuccess('Account created', 'Please sign in.');
           setMode('login');
           setPassword('');
+          setAge('');
           setFirstName('');
           setLastName('');
           setMiddleName('');
@@ -198,14 +205,40 @@ export const SplashScreen: React.FC<{ navigation: any }> = ({ navigation }) => {
             <Text style={styles.registerSubtext}>Create your account to get started</Text>
           )}
 
-          <Input
-            label="Phone Number"
-            value={phone}
-            onChangeText={(t) => { setPhone(t); clearError(); }}
-            placeholder="+1 555-0123"
-            keyboardType="phone-pad"
-            required
-          />
+          {mode === 'register' ? (
+            <View style={styles.row}>
+              <View style={styles.colHalf}>
+                <Input
+                  label="Phone Number"
+                  value={phone}
+                  onChangeText={(t) => { setPhone(t); clearError(); }}
+                  placeholder="+1 555-0123"
+                  keyboardType="phone-pad"
+                  required
+                />
+              </View>
+              <View style={styles.colHalf}>
+                <Input
+                  label="Age"
+                  value={age}
+                  onChangeText={setAge}
+                  placeholder="25"
+                  keyboardType="numeric"
+                  maxLength={3}
+                  required
+                />
+              </View>
+            </View>
+          ) : (
+            <Input
+              label="Phone Number"
+              value={phone}
+              onChangeText={(t) => { setPhone(t); clearError(); }}
+              placeholder="+1 555-0123"
+              keyboardType="phone-pad"
+              required
+            />
+          )}
 
           <Input
             label="Password"
@@ -381,6 +414,13 @@ const styles = StyleSheet.create({
     marginTop: spacing.md,
     marginBottom: spacing.sm,
     gap: spacing.sm,
+  },
+  row: {
+    flexDirection: 'row',
+    gap: spacing.md,
+  },
+  colHalf: {
+    flex: 1,
   },
   errorText: {
     ...typography.body2,

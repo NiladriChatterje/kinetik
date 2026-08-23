@@ -74,7 +74,7 @@ interface AuthState {
   initialize: () => Promise<void>;
   checkConnection: () => Promise<void>;
   login: (phone: string, password: string) => Promise<AuthResult>;
-  register: (data: { phone?: string; email?: string; password?: string; displayName?: string }) => Promise<AuthResult>;
+  register: (data: { phone?: string; email?: string; password?: string; displayName?: string; age?: number }) => Promise<AuthResult>;
   verifyOtp: (phone: string, otp: string) => Promise<AuthResult>;
   sendOtp: (phone: string) => Promise<AuthResult>;
   clearPendingOtp: () => void;

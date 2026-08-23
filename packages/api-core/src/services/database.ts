@@ -17,13 +17,14 @@ export async function createUser(data: {
   authProvider?: string;
   authProviderId?: string;
   displayName?: string;
+  dateOfBirth?: string;
 }) {
   try {
     const result = await query(
-      `INSERT INTO ${TABLES.USERS} (phone, email, password_hash, auth_provider, auth_provider_id, display_name)
-       VALUES ($1, $2, $3, $4, $5, $6)
+      `INSERT INTO ${TABLES.USERS} (phone, email, password_hash, auth_provider, auth_provider_id, display_name, date_of_birth)
+       VALUES ($1, $2, $3, $4, $5, $6, $7)
        RETURNING id, phone, email, display_name, created_at`,
-      [data.phone, data.email, data.passwordHash, data.authProvider, data.authProviderId, data.displayName],
+      [data.phone, data.email, data.passwordHash, data.authProvider, data.authProviderId, data.displayName, data.dateOfBirth || null],
     );
     return result.rows[0];
   } catch (error: any) {
