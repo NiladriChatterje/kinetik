@@ -157,7 +157,7 @@ export const SplashScreen: React.FC<{ navigation: any }> = ({ navigation }) => {
           <Ionicons name="flash" size={32} color={colors.textInverse} />
         </View>
         <Text style={styles.title}>Kinetik</Text>
-        <Text style={styles.tagline}>Skip the chat. Meet already.</Text>
+        <Text style={styles.tagline}>Where real connections begin</Text>
       </Animated.View>
 
       {/* Segmented control sits just below the logo, still fixed */}
@@ -291,14 +291,16 @@ const styles = StyleSheet.create({
     marginBottom: spacing.xl,
   },
   title: {
+    fontFamily: 'Cantarell-Bold',
     fontSize: 40,
     lineHeight: 46,
-    fontWeight: '800',
+    fontWeight: '700',
     letterSpacing: -1.5,
     color: colors.textPrimary,
     marginBottom: spacing.sm,
   },
   tagline: {
+    fontFamily: 'Cantarell-Regular',
     fontSize: 15,
     lineHeight: 22,
     fontWeight: '400',
