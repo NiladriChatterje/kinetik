@@ -137,18 +137,11 @@ export const IslandToast: React.FC<IslandToastProps> = React.memo(
             <Animated.View style={{ transform: [{ scale: iconScale }] }}>
               <Ionicons name={accent.icon} size={14} color={accent.color} />
             </Animated.View>
-            <View style={styles.textCol}>
-              {title ? (
-                <Text style={styles.title} numberOfLines={1}>
-                  {title}
-                </Text>
-              ) : null}
-              {message ? (
-                <Text style={styles.message} numberOfLines={expanded ? undefined : 1}>
-                  {message}
-                </Text>
-              ) : null}
-            </View>
+            <Text style={styles.textContent} numberOfLines={1}>
+              {title ? <Text style={styles.title}>{title}</Text> : null}
+              {title && message ? '  ' : null}
+              {message ? <Text style={styles.message}>{message}</Text> : null}
+            </Text>
           </Animated.View>
         </Animated.View>
       </TouchableOpacity>
@@ -177,28 +170,25 @@ const styles = StyleSheet.create({
   inner: {
     flexDirection: 'row',
     alignItems: 'center',
-    justifyContent: 'center',
+    justifyContent: 'flex-start',
     paddingHorizontal: 14,
     gap: 6,
   },
   innerExpanded: {
     paddingVertical: 10,
   },
-  textCol: {
+  textContent: {
     flexShrink: 1,
-    alignItems: 'center',
+    fontSize: 12,
+    color: '#FFFFFF',
   },
   title: {
     fontFamily: 'Cantarell-Bold',
-    fontSize: 12,
     fontWeight: '600',
-    color: '#FFFFFF',
     letterSpacing: 0.1,
   },
   message: {
     fontFamily: 'Cantarell-Regular',
-    fontSize: 11,
     color: 'rgba(255, 255, 255, 0.65)',
-    marginTop: 1,
   },
 });

@@ -103,7 +103,7 @@ export default function App() {
             so toasts stay visible while the keyboard is open. */}
         <Toast
           position="top"
-          topOffset={15}
+          topOffset={50}
           visibilityTime={4000}
           config={{
             error: (props) => <IslandToast {...props} type="error" />,
