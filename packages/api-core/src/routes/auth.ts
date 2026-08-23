@@ -4,6 +4,7 @@ import crypto from 'crypto';
 import { z } from 'zod';
 import { ERROR_CODES, transaction, TABLES } from '@kinetik/shared';
 import { createUser, findUserByPhone, findUserByEmail, findUserById, createSubscription, updateUser, getSubscription, query } from '../services/database';
+import { decryptAuthPayload } from '../services/decrypt';
 import { deleteAllUserPhotos, deleteChatFile } from '../services/photoStorage';
 import { isRazorpayConfigured, fetchSubscription, cancelPremiumSubscription } from '../services/razorpay';
 import { eventBus } from '../services/eventBus';
@@ -156,9 +157,21 @@ const VerifyOtpSchema = z.object({
 });
 
 export async function authRoutes(app: FastifyInstance) {
+  // Helper: decrypt RSA-encrypted auth fields if the client sent them encrypted
+  const maybeDecrypt = (body: any): any => {
+    if (body && body._encrypted) {
+      try {
+        return decryptAuthPayload(body, ['phone', 'password', 'otp']);
+      } catch (err: any) {
+        console.error('[Auth] Decryption failed:', err.message);
+      }
+    }
+    return body;
+  };
+
   // ─── Register ────────────────────────────────────────
   app.post('/register', async (request: FastifyRequest, reply: FastifyReply) => {
-    const validation = RegisterSchema.safeParse(request.body);
+    const validation = RegisterSchema.safeParse(maybeDecrypt(request.body));
     if (!validation.success) {
       return reply.status(400).send({
         success: false,
@@ -237,7 +250,7 @@ export async function authRoutes(app: FastifyInstance) {
 
   // ─── Login ───────────────────────────────────────────
   app.post('/login', async (request: FastifyRequest, reply: FastifyReply) => {
-    const validation = LoginSchema.safeParse(request.body);
+    const validation = LoginSchema.safeParse(maybeDecrypt(request.body));
     if (!validation.success) {
       return reply.status(400).send({
         success: false,
@@ -319,7 +332,7 @@ export async function authRoutes(app: FastifyInstance) {
   // ─── Send OTP (resend) ─────────────────────────────────
   app.post('/send-otp', async (request: FastifyRequest, reply: FastifyReply) => {
     const schema = z.object({ phone: z.string().min(8).max(20) });
-    const validation = schema.safeParse(request.body);
+    const validation = schema.safeParse(maybeDecrypt(request.body));
     if (!validation.success) {
       return reply.status(400).send({
         success: false,
@@ -347,7 +360,7 @@ export async function authRoutes(app: FastifyInstance) {
 
   // ─── Verify OTP ──────────────────────────────────────
   app.post('/verify-otp', async (request: FastifyRequest, reply: FastifyReply) => {
-    const validation = VerifyOtpSchema.safeParse(request.body);
+    const validation = VerifyOtpSchema.safeParse(maybeDecrypt(request.body));
     if (!validation.success) {
       return reply.status(400).send({
         success: false,

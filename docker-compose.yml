@@ -175,6 +175,10 @@ services:
       REDIS_EVENTS_PASSWORD: ${REDIS_EVENTS_PASSWORD:-kinetik_events_2024}
       JWT_SECRET: ${JWT_SECRET:-super-secret-jwt-key-change-in-production-2024}
       JWT_EXPIRES_IN: 15m
+
+      # RSA-2048 private key for decrypting auth credentials encrypted by the
+      # mobile client. In production, set AUTH_RSA_PRIVATE_KEY in your .env file.
+      AUTH_RSA_PRIVATE_KEY: ${AUTH_RSA_PRIVATE_KEY:-}
       RAZORPAY_KEY_ID: ${RAZORPAY_KEY_ID:-rzp_test_xxxxxxxxxxxx}
       RAZORPAY_KEY_SECRET: ${RAZORPAY_KEY_SECRET:-your_razorpay_secret}
       RAZORPAY_WEBHOOK_SECRET: ${RAZORPAY_WEBHOOK_SECRET:-}
