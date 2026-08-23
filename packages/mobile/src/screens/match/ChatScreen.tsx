@@ -3,7 +3,7 @@ import {
   View, Text, StyleSheet, FlatList, TextInput, TouchableOpacity,
   Image, KeyboardAvoidingView, Platform, Keyboard, ActivityIndicator,
   Modal, Alert, Dimensions, Linking,
-  StatusBar,
+  StatusBar, Animated,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useAudioRecorder, createAudioPlayer, AudioPlayer, setAudioModeAsync, requestRecordingPermissionsAsync, RecordingPresets } from 'expo-audio';
@@ -185,6 +185,74 @@ export const ChatScreen: React.FC<{ navigation: any; route: any }> = ({ navigati
 
   // ─── Vibe Check State ──────────────────────────────────
   const [showVibeCheck, setShowVibeCheck] = useState(false);
+
+  // ─── Unmatch confirmation modal state ────────────────────
+  const [unmatchModalVisible, setUnmatchModalVisible] = useState(false);
+  const unmatchOverlayOpacity = useRef(new Animated.Value(0)).current;
+  const unmatchSheetY = useRef(new Animated.Value(1)).current;
+  const unmatchContentScale = useRef(new Animated.Value(1)).current;
+  const { height: SCREEN_HEIGHT } = Dimensions.get('window');
+
+  const openUnmatchModal = () => {
+    setUnmatchModalVisible(true);
+    Animated.parallel([
+      Animated.timing(unmatchOverlayOpacity, { toValue: 1, duration: 250, useNativeDriver: true }),
+      Animated.spring(unmatchSheetY, { toValue: 0, speed: 50, bounciness: 4, useNativeDriver: true }),
+      Animated.timing(unmatchContentScale, { toValue: 0.85, duration: 250, useNativeDriver: true }),
+    ]).start();
+  };
+
+  const closeUnmatchModal = (cb?: () => void) => {
+    Animated.parallel([
+      Animated.timing(unmatchOverlayOpacity, { toValue: 0, duration: 200, useNativeDriver: true }),
+      Animated.timing(unmatchSheetY, { toValue: 1, duration: 200, useNativeDriver: true }),
+      Animated.timing(unmatchContentScale, { toValue: 1, duration: 200, useNativeDriver: true }),
+    ]).start(() => {
+      setUnmatchModalVisible(false);
+      cb?.();
+    });
+  };
+
+  const confirmUnmatch = async () => {
+    closeUnmatchModal(async () => {
+      try {
+        const res = await api.unmatchUser(matchId);
+        if (!res.success) {
+          toast.showGlass('Server busy', res.error?.message || 'Try again.');
+          return;
+        }
+        navigation.goBack();
+      } catch {
+        toast.showGlass('Server busy', 'Try again.');
+      }
+    });
+  };
+
+  // ─── Media picker modal animations ──────────────────────
+  const mediaOverlayOpacity = useRef(new Animated.Value(0)).current;
+  const mediaSheetY = useRef(new Animated.Value(1)).current;
+  const contentScale = useRef(new Animated.Value(1)).current;
+
+  const openMediaPicker = () => {
+    setShowMediaPicker(true);
+    Animated.parallel([
+      Animated.timing(mediaOverlayOpacity, { toValue: 1, duration: 250, useNativeDriver: true }),
+      Animated.spring(mediaSheetY, { toValue: 0, speed: 50, bounciness: 4, useNativeDriver: true }),
+      Animated.timing(contentScale, { toValue: 0.85, duration: 250, useNativeDriver: true }),
+    ]).start();
+  };
+
+  const closeMediaPicker = (cb?: () => void) => {
+    Animated.parallel([
+      Animated.timing(mediaOverlayOpacity, { toValue: 0, duration: 200, useNativeDriver: true }),
+      Animated.timing(mediaSheetY, { toValue: 1, duration: 200, useNativeDriver: true }),
+      Animated.timing(contentScale, { toValue: 1, duration: 200, useNativeDriver: true }),
+    ]).start(() => {
+      setShowMediaPicker(false);
+      setViewOnce(false);
+      cb?.();
+    });
+  };
 
   // ─── Prevent screenshots on this screen ───────────────
   // This applies FLAG_SECURE on Android to prevent both screenshots and screen recording.
@@ -520,8 +588,7 @@ export const ChatScreen: React.FC<{ navigation: any; route: any }> = ({ navigati
   const sendMedia = async (uri: string, mediaType: string, durationSecs?: number) => {
     if (sending) return;
     setSending(true);
-    setShowMediaPicker(false);
-    setViewOnce(false); // Reset the toggle
+    closeMediaPicker();
 
     // View-once only applies to visual media — a stale toggle must never
     // flag a voice note, which would render as an unopenable card
@@ -671,7 +738,7 @@ export const ChatScreen: React.FC<{ navigation: any; route: any }> = ({ navigati
 
         // Dismiss keyboard and close picker when starting recording
         Keyboard.dismiss();
-        setShowMediaPicker(false);
+        closeMediaPicker();
 
         await setAudioModeAsync({ allowsRecording: true, playsInSilentMode: true });
 
@@ -1282,6 +1349,7 @@ export const ChatScreen: React.FC<{ navigation: any; route: any }> = ({ navigati
 
   return (
     <SafeAreaView style={styles.container}>
+      <Animated.View style={{ flex: 1, transform: [{ scale: contentScale }] }}>
       {/* Header */}
       <View style={styles.header}>
         <TouchableOpacity onPress={() => navigation.goBack()} style={styles.backBtn}>
@@ -1335,33 +1403,7 @@ export const ChatScreen: React.FC<{ navigation: any; route: any }> = ({ navigati
         {/* Unmatch menu */}
         <TouchableOpacity
           style={styles.callBtn}
-          onPress={() => {
-            Alert.alert(
-              `Unmatch ${partnerName}?`,
-              'This will permanently delete all messages and media exchanged. This cannot be undone.',
-              [
-                { text: 'Cancel', style: 'cancel' },
-                {
-                  text: 'Unmatch',
-                  style: 'destructive',
-                  onPress: async () => {
-                    try {
-                      const res = await api.unmatchUser(matchId);
-                      if (!res.success) {
-                        // Retryable failure (e.g. storage unreachable — nothing
-                        // was deleted server-side, safe to try again)
-                        toast.showGlass('Server busy', res.error?.message || 'Try again.');
-                        return;
-                      }
-                      navigation.goBack();
-                    } catch {
-                      toast.showGlass('Server busy', 'Try again.');
-                    }
-                  },
-                },
-              ],
-            );
-          }}
+          onPress={openUnmatchModal}
           activeOpacity={0.7}
         >
           <Ionicons name="ellipsis-vertical" size={20} color={colors.textPrimary} />
@@ -1491,7 +1533,7 @@ export const ChatScreen: React.FC<{ navigation: any; route: any }> = ({ navigati
         <View style={[styles.inputBar, { paddingBottom: keyboardWasActive ? spacing.xs : spacing.sm }]}>
           <TouchableOpacity
             style={styles.attachBtn}
-            onPress={() => setShowMediaPicker(true)}
+            onPress={openMediaPicker}
           >
             <Ionicons name="add" size={24} color={colors.textSecondary} />
           </TouchableOpacity>
@@ -1529,6 +1571,8 @@ export const ChatScreen: React.FC<{ navigation: any; route: any }> = ({ navigati
           )}
         </View>
       </KeyboardAvoidingView>
+
+      </Animated.View>
 
       {/* Full-Screen Photo Preview Modal */}
       <Modal
@@ -1652,38 +1696,35 @@ export const ChatScreen: React.FC<{ navigation: any; route: any }> = ({ navigati
         </View>
       </Modal>
 
-      {/* Media Picker Modal */}
-      <Modal
-        visible={showMediaPicker}
-        transparent
-        animationType="slide"
-        onRequestClose={() => setShowMediaPicker(false)}
-      >
+      {/* Media Picker — animated overlay with 0.85 content scale-down */}
+      {showMediaPicker && (
         <TouchableOpacity
-          style={styles.modalOverlay}
+          style={[styles.mediaPickerOverlay, { opacity: mediaOverlayOpacity }]}
           activeOpacity={1}
-          onPress={() => setShowMediaPicker(false)}
+          onPress={() => closeMediaPicker()}
         >
-          <View style={styles.mediaPickerSheet}>
+          <Animated.View
+            style={[styles.mediaPickerSheet, { transform: [{ translateY: mediaSheetY.interpolate({ inputRange: [0, 1], outputRange: [0, 300] }) }] }]}
+          >
             <View style={styles.mediaPickerHandle} />
             <Text style={styles.mediaPickerTitle}>Share</Text>
 
             <View style={styles.mediaPickerOptions}>
-              <TouchableOpacity style={styles.mediaOption} onPress={pickFromGallery} activeOpacity={0.6}>
+              <TouchableOpacity style={styles.mediaOption} onPress={() => closeMediaPicker(() => pickFromGallery())} activeOpacity={0.6}>
                 <View style={styles.mediaOptionIcon}>
                   <Ionicons name="images-outline" size={24} color={colors.textPrimary} />
                 </View>
                 <Text style={styles.mediaOptionLabel}>Gallery</Text>
               </TouchableOpacity>
 
-              <TouchableOpacity style={styles.mediaOption} onPress={takePhoto} activeOpacity={0.6}>
+              <TouchableOpacity style={styles.mediaOption} onPress={() => closeMediaPicker(() => takePhoto())} activeOpacity={0.6}>
                 <View style={styles.mediaOptionIcon}>
                   <Ionicons name="camera-outline" size={24} color={colors.textPrimary} />
                 </View>
                 <Text style={styles.mediaOptionLabel}>Camera</Text>
               </TouchableOpacity>
 
-              <TouchableOpacity style={styles.mediaOption} onPress={pickDocument} activeOpacity={0.6}>
+              <TouchableOpacity style={styles.mediaOption} onPress={() => closeMediaPicker(() => pickDocument())} activeOpacity={0.6}>
                 <View style={styles.mediaOptionIcon}>
                   <Ionicons name="document-outline" size={24} color={colors.textPrimary} />
                 </View>
@@ -1719,16 +1760,49 @@ export const ChatScreen: React.FC<{ navigation: any; route: any }> = ({ navigati
 
             <TouchableOpacity
               style={styles.mediaCancelBtn}
-              onPress={() => {
-                setShowMediaPicker(false);
-                setViewOnce(false);
-              }}
+              onPress={() => closeMediaPicker()}
             >
               <Text style={styles.mediaCancelText}>Cancel</Text>
             </TouchableOpacity>
-          </View>
+          </Animated.View>
         </TouchableOpacity>
-      </Modal>
+      )}
+
+      {/* Unmatch Confirmation Modal */}
+      {unmatchModalVisible && (
+        <Animated.View style={[styles.unmatchOverlay, { opacity: unmatchOverlayOpacity }]}>
+          <TouchableOpacity
+            style={StyleSheet.absoluteFill}
+            activeOpacity={1}
+            onPress={() => closeUnmatchModal()}
+          />
+          <Animated.View
+            style={[styles.unmatchSheet, { transform: [{ translateY: unmatchSheetY.interpolate({ inputRange: [0, 1], outputRange: [0, SCREEN_HEIGHT] }) }] }]}
+          >
+            <View style={styles.unmatchIcon}>
+              <Ionicons name="warning-outline" size={28} color="#E53935" />
+            </View>
+            <Text style={styles.unmatchTitle}>Unmatch {partnerName}?</Text>
+            <Text style={styles.unmatchBody}>
+              This will permanently delete all messages and media exchanged. This cannot be undone.
+            </Text>
+
+            <TouchableOpacity
+              style={styles.unmatchConfirmBtn}
+              onPress={confirmUnmatch}
+            >
+              <Text style={styles.unmatchConfirmBtnText}>Unmatch</Text>
+            </TouchableOpacity>
+
+            <TouchableOpacity
+              style={styles.unmatchCancel}
+              onPress={() => closeUnmatchModal()}
+            >
+              <Text style={styles.unmatchCancelText}>Cancel</Text>
+            </TouchableOpacity>
+          </Animated.View>
+        </Animated.View>
+      )}
 
       {/* ─── Date Planner Modal ─────────────────────────── */}
       <Modal
@@ -2439,6 +2513,12 @@ const styles = StyleSheet.create({
     justifyContent: 'flex-end',
     backgroundColor: 'rgba(0,0,0,0.5)',
   },
+  mediaPickerOverlay: {
+    ...StyleSheet.absoluteFill,
+    justifyContent: 'flex-end',
+    backgroundColor: 'rgba(0,0,0,0.5)',
+    zIndex: 100,
+  },
   mediaPickerSheet: {
     backgroundColor: colors.background,
     borderTopLeftRadius: radius.xl,
@@ -2524,6 +2604,66 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   mediaCancelText: { ...typography.button, color: colors.textPrimary },
+  // ─── Unmatch Confirmation Modal ─────────────────────────
+  unmatchOverlay: {
+    ...StyleSheet.absoluteFill,
+    backgroundColor: colors.overlay,
+    justifyContent: 'flex-end',
+    paddingBottom: spacing.xxl,
+  },
+  unmatchSheet: {
+    marginHorizontal: spacing.lg,
+    backgroundColor: colors.background,
+    borderRadius: radius.xl,
+    paddingVertical: spacing.xxl,
+    paddingHorizontal: spacing.xl,
+    alignItems: 'center',
+  },
+  unmatchIcon: {
+    width: 52,
+    height: 52,
+    borderRadius: 26,
+    backgroundColor: 'rgba(229, 57, 53, 0.1)',
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginBottom: spacing.md,
+  },
+  unmatchTitle: {
+    ...typography.h3,
+    color: colors.textPrimary,
+    textAlign: 'center',
+    marginBottom: spacing.sm,
+  },
+  unmatchBody: {
+    ...typography.body2,
+    color: colors.textSecondary,
+    textAlign: 'center',
+    lineHeight: 18,
+    marginBottom: spacing.xl,
+    paddingHorizontal: spacing.sm,
+  },
+  unmatchConfirmBtn: {
+    width: '100%',
+    paddingVertical: spacing.md + 2,
+    backgroundColor: '#E53935',
+    borderRadius: radius.lg,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginBottom: spacing.sm,
+  },
+  unmatchConfirmBtnText: {
+    ...typography.button,
+    color: colors.textInverse,
+  },
+  unmatchCancel: {
+    paddingVertical: spacing.md,
+    alignItems: 'center',
+  },
+  unmatchCancelText: {
+    ...typography.body1,
+    color: colors.textMuted,
+    fontWeight: '500',
+  },
 
   // ─── Fix-a-Date banner + picker ──────────────────────
   dateBanner: {
