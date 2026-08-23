@@ -89,11 +89,11 @@ export const SplashScreen: React.FC<{ navigation: any }> = ({ navigation }) => {
 
   const handleSubmit = async () => {
     if (!phone || !password) {
-      toast.showError('Validation Error', 'Please fill in all required fields.');
+      toast.showError('Missing fields', 'Fill in all required fields.');
       return;
     }
     if (mode === 'register' && !firstName) {
-      toast.showError('Validation Error', 'Please enter your first name.');
+      toast.showError('Missing name', 'Enter your first name.');
       return;
     }
 
@@ -105,7 +105,7 @@ export const SplashScreen: React.FC<{ navigation: any }> = ({ navigation }) => {
           if (result.requiresOtp) {
             navigation.navigate('OTPVerify');
           } else {
-            toast.showSuccess('Welcome back!', 'You have signed in successfully.');
+            toast.showSuccess('Welcome back!', 'Signed in successfully.');
             if (useAuthStore.getState().onboardingStep === 'complete') {
               navigation.getParent()?.reset({ index: 0, routes: [{ name: 'Main' }] });
             } else {
@@ -114,7 +114,7 @@ export const SplashScreen: React.FC<{ navigation: any }> = ({ navigation }) => {
           }
         } else {
           console.log('[LOGIN] failed:', result.error || 'unknown');
-          toast.showError('Login Failed', result.error || 'Invalid phone or password.');
+          toast.showError('Login failed', result.error || 'Invalid phone or password.');
           setErrorMsg(result.error || 'Wrong credential. Please try again.');
         }
       } else if (mode === 'register') {
@@ -122,22 +122,22 @@ export const SplashScreen: React.FC<{ navigation: any }> = ({ navigation }) => {
         if (firstName) payload.displayName = firstName;
         const result = await register(payload);
         if (result.success) {
-          toast.showSuccess('Account Created', 'Your account has been created. Please sign in.');
+          toast.showSuccess('Account created', 'Please sign in.');
           setMode('login');
           setPassword('');
           setFirstName('');
           setLastName('');
           setMiddleName('');
         } else if (result.errorCode === 'PHONE_EXISTS') {
-          toast.showGlass('Phone already exists!', 'Try signing in instead.');
+          toast.showGlass('Phone exists', 'Try signing in instead.');
         } else {
-          toast.showError('Registration Failed', result.error || 'Could not create your account. Please try again.');
+          toast.showError('Signup failed', result.error || 'Please try again.');
         }
       }
     } catch (e: any) {
       const errMsg = String(e?.message || e);
       console.log('[LOGIN] unexpected error:', errMsg);
-      toast.showError('Connection Error', 'Unable to reach server. Please check your connection.');
+      toast.showError('No connection', 'Check your network and retry.');
       setErrorMsg('Connection error. Please check your network and try again.');
     } finally {
       setLoading(false);

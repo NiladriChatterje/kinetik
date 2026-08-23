@@ -71,7 +71,7 @@ export const PhotoUploadScreen: React.FC<{ navigation: any }> = ({ navigation })
     } catch (error: any) {
       // Remove placeholder on failure
       setPhotos((prev) => prev.filter((p) => p.id !== placeholder.id));
-      toast.showError('Upload Failed', error.message || 'Could not upload photo.');
+      toast.showError('Upload failed', error.message || 'Try again.');
       console.error('[photos] Upload error:', error);
     } finally {
       setUploading(false);
@@ -96,16 +96,16 @@ export const PhotoUploadScreen: React.FC<{ navigation: any }> = ({ navigation })
     // All photos that are still uploading — wait for them
     const pendingUploads = photos.filter((p) => p.uploading);
     if (pendingUploads.length > 0) {
-      toast.showGlass('Please wait', 'Photos are still uploading...');
+      toast.showGlass('Uploading', 'Please wait...');
       return;
     }
 
     if (photos.length < 2) {
-      toast.showGlass('Must fill all the fields!', 'You need at least 2 photos to continue.');
+      toast.showGlass('Need more photos', 'Add at least 2 to continue.');
       return;
     }
 
-    toast.showSuccess('Photos Saved', 'Your photos have been uploaded.');
+    toast.showSuccess('Photos saved', 'All uploaded.');
     await api.updateOnboardingStep('photos');
     navigation.navigate('PoseVerification');
   };

@@ -366,10 +366,10 @@ export const MatchScreen: React.FC<{ navigation: any; route?: any }> = ({ naviga
         setProfiles(fp ? [fp, ...list.filter((p) => p.userId !== fp.userId)] : list);
         setCurrentIndex(0);
       } else {
-        toast.showError('Could not load profiles');
+        toast.showError('Load failed', 'Could not load profiles.');
       }
     } catch (err: any) {
-      toast.showError(err.message || 'Failed to load profiles');
+      toast.showError('Load failed', err.message || 'Try again.');
     } finally {
       setLoading(false);
     }
@@ -487,7 +487,7 @@ export const MatchScreen: React.FC<{ navigation: any; route?: any }> = ({ naviga
         // On a match, the match:new socket event drives the animated MatchPopup
         if (!data.matched) {
           hapticImpact();
-          toast.showSuccess('Super Like Sent!', 'They\'ll know you\'re interested.');
+          toast.showSuccess('Super Like sent!', 'They\'ll be notified.');
         }
       } else if (res.error?.code === 'SWIPE_LIMIT_REACHED') {
         const details = (res.error as any)?.details;
@@ -499,7 +499,7 @@ export const MatchScreen: React.FC<{ navigation: any; route?: any }> = ({ naviga
         });
       }
     } catch (err: any) {
-      toast.showError(err.message || 'Super Like failed');
+      toast.showError('Failed', err.message || 'Super like failed.');
     }
 
     removedIdsRef.current.add(profile.userId);
@@ -547,7 +547,7 @@ export const MatchScreen: React.FC<{ navigation: any; route?: any }> = ({ naviga
         }
         // On a match, the match:new socket event drives the animated MatchPopup
         if (!data.matched && direction === 'right') {
-          toast.showSuccess('Like Sent!', 'They\'ll see you in their likes.');
+          toast.showSuccess('Like sent!', 'Visible in their likes.');
         }
       } else if (res.error?.code === 'ALREADY_MATCHED') {
         // Stale card — the interaction/match already exists on the server
@@ -564,11 +564,11 @@ export const MatchScreen: React.FC<{ navigation: any; route?: any }> = ({ naviga
             limit: details?.limit ?? 30,
           });
         } else {
-          toast.showError(res.error?.message || 'Swipe failed — please try again');
+          toast.showError('Swipe failed', res.error?.message || 'Try again.');
         }
       }
     } catch (err: any) {
-      toast.showError(err.message || 'Swipe failed');
+      toast.showError('Swipe failed', err.message || 'Try again.');
     }
 
     if (!shouldAdvance) {

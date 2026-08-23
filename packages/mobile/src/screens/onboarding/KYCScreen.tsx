@@ -82,12 +82,7 @@ export const KYCScreen: React.FC<{ navigation: any; route?: any }> = ({ navigati
       // Guard: assets may be null, undefined, or empty array on some devices
       // (e.g. Android when the file provider fails to copy the file)
       if (!result.assets || result.assets.length === 0) {
-        toast.showError(
-          'No File Selected',
-          Platform.OS === 'android'
-            ? 'Could not access the selected file. Try selecting a different file or restarting the app.'
-            : 'Could not access the selected file. Please try again.',
-        );
+        toast.showError('No file', 'Could not access file. Try again.');
         return;
       }
 
@@ -111,7 +106,7 @@ export const KYCScreen: React.FC<{ navigation: any; route?: any }> = ({ navigati
       // asset.size can be null on some Android devices.
       const fileSize = asset.size ?? 0;
       if (fileSize > 20 * 1024 * 1024) {
-        toast.showError('File Too Large', 'Please select a file under 20MB.');
+        toast.showError('File too large', 'Max 20MB allowed.');
         return;
       }
 
@@ -125,10 +120,7 @@ export const KYCScreen: React.FC<{ navigation: any; route?: any }> = ({ navigati
       setUploadError(null);
     } catch (err: any) {
       console.error('[KYC] Document picker error:', err);
-      toast.showError(
-        'Selection Failed',
-        err?.message || 'Could not open file picker. Please try again.',
-      );
+      toast.showError('Selection failed', err?.message || 'Try again.');
     }
   }, [toast]);
 
@@ -137,7 +129,7 @@ export const KYCScreen: React.FC<{ navigation: any; route?: any }> = ({ navigati
    */
   const handleUpload = useCallback(async () => {
     if (!docType || !selectedFile) {
-      toast.showGlass('Missing Information', 'Please select a document type and file.');
+      toast.showGlass('Missing info', 'Select doc type and file.');
       return;
     }
 
@@ -151,14 +143,11 @@ export const KYCScreen: React.FC<{ navigation: any; route?: any }> = ({ navigati
         selectedFile.mimeType,
       );
       setUploadPhase('success');
-      toast.showSuccess(
-        'Document Submitted!',
-        `Your ${DOC_TYPES.find(d => d.id === docType)?.name || 'document'} has been uploaded for verification.`,
-      );
+      toast.showSuccess('Submitted', 'Document uploaded for review.');
     } catch (err: any) {
       setUploadPhase('error');
       setUploadError(err?.message || 'Upload failed. Please try again.');
-      toast.showError('Upload Failed', err?.message || 'Could not upload document.');
+      toast.showError('Upload failed', err?.message || 'Try again.');
     }
   }, [docType, selectedFile, toast]);
 
@@ -176,22 +165,16 @@ export const KYCScreen: React.FC<{ navigation: any; route?: any }> = ({ navigati
       if (result.match) {
         setVerifyPhase('matched');
         setVerifyMatchConfidence(result.confidence);
-        toast.showSuccess(
-          'Identity Verified!',
-          `Your face on the document matches your profile photos (${(result.confidence * 100).toFixed(0)}% confidence).`,
-        );
+        toast.showSuccess('Verified!', `${(result.confidence * 100).toFixed(0)}% match confidence.`);
       } else {
         setVerifyPhase('no_match');
         setVerifyMatchConfidence(result.confidence);
         const reason = result.rejectionReasons?.[0] || 'Face could not be matched';
-        toast.showGlass(
-          'Face Match Failed',
-          `${reason}. You can try again or complete setup and try later from settings.`,
-        );
+        toast.showGlass('No match', `${reason}. Try again later.`);
       }
     } catch (err: any) {
       setVerifyPhase('error');
-      toast.showError('Verification Failed', err?.message || 'Could not verify face. Please try again.');
+      toast.showError('Verification failed', err?.message || 'Try again.');
     }
   }, [verifyPhase, toast]);
 
@@ -205,13 +188,13 @@ export const KYCScreen: React.FC<{ navigation: any; route?: any }> = ({ navigati
         kycCompleted: uploadPhase === 'success' || verifyPhase === 'matched',
         kycDocumentType: docType,
       });
-      toast.showSuccess('Welcome to Kinetik!', 'Your profile is ready. Start matching!');
+      toast.showSuccess('Welcome!', 'Profile ready. Start matching!');
       useAuthStore.getState().setOnboardingStep('complete');
       navigation.getParent()?.reset({ index: 0, routes: [{ name: 'Main' }] });
     } else {
       // Settings flow — just go back
       navigation.goBack();
-      toast.showSuccess('Settings Saved', 'Your KYC verification settings have been updated.');
+      toast.showSuccess('Settings saved', 'KYC settings updated.');
     }
   }, [isFromSettings, uploadPhase, verifyPhase, docType, navigation, toast]);
 

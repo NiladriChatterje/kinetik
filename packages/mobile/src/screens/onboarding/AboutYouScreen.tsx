@@ -118,7 +118,7 @@ export const AboutYouScreen: React.FC<{ navigation: any }> = ({ navigation }) =>
     if (question && current.length >= question.max) {
       // Checked outside the state updater — updaters must stay pure
       // (React may invoke them twice in StrictMode, which would double-fire the toast).
-      toast.showGlass('Selection Limit', `You can pick up to ${question.max} in this section.`);
+      toast.showGlass('Limit reached', `Max ${question.max} selections.`);
       return;
     }
     setAnswers((prev) => ({ ...prev, [key]: [...prev[key], value] }));
@@ -132,11 +132,11 @@ export const AboutYouScreen: React.FC<{ navigation: any }> = ({ navigation }) =>
 
     const current = answers[key];
     if (current.includes(draft)) {
-      toast.showGlass('Already Added', `"${draft}" is already in this section.`);
+      toast.showGlass('Already added', `"${draft}" is in your list.`);
       return;
     }
     if (current.length >= question.max) {
-      toast.showGlass('Selection Limit', `You can pick up to ${question.max} in this section.`);
+      toast.showGlass('Limit reached', `Max ${question.max} selections.`);
       return;
     }
 
@@ -152,7 +152,7 @@ export const AboutYouScreen: React.FC<{ navigation: any }> = ({ navigation }) =>
     setAttempted(true);
     const missing = QUESTIONS.filter((q) => answers[q.key].length === 0);
     if (missing.length > 0) {
-      toast.showGlass('One More Step', 'Pick at least one answer in every section to continue.');
+      toast.showGlass('Incomplete', 'Pick one answer per section.');
       return;
     }
 
@@ -162,7 +162,7 @@ export const AboutYouScreen: React.FC<{ navigation: any }> = ({ navigation }) =>
       await api.updateOnboardingStep('about');
       navigation.navigate('Location');
     } else {
-      toast.showError('Update Failed', res.error?.message || 'Could not save your answers. Please try again.');
+      toast.showError('Save failed', res.error?.message || 'Try again.');
     }
     setLoading(false);
   };

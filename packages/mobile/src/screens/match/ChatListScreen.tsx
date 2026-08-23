@@ -49,7 +49,7 @@ export const ChatListScreen: React.FC<{ navigation: any }> = ({ navigation }) =>
         }
       }
     } catch (err: any) {
-      toast.showError('Failed to load conversations');
+      toast.showError('Load failed', 'Could not load chats.');
     } finally {
       setLoading(false);
     }

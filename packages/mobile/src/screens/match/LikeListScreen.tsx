@@ -49,7 +49,7 @@ export const LikeListScreen: React.FC<{ navigation: any }> = ({ navigation }) =>
         useAuthStore.getState().resetUnreadLikeCount();
       }
     } catch (err: any) {
-      toast.showError('Failed to load likes');
+      toast.showError('Load failed', 'Could not load likes.');
     } finally {
       setLoading(false);
     }
@@ -99,7 +99,7 @@ export const LikeListScreen: React.FC<{ navigation: any }> = ({ navigation }) =>
         });
       }
     } catch (err: any) {
-      toast.showError(err.message || 'Failed to respond');
+      toast.showError('Failed', err.message || 'Try again.');
     } finally {
       setResponding(null);
     }

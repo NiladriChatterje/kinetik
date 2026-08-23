@@ -108,14 +108,14 @@ export const IdentityScreen: React.FC<{ navigation: any }> = ({ navigation }) =>
     const pronounsFilled = pronouns.trim().length > 0;
 
     if (!dobFilled || !genderFilled || !categoryFilled || !pronounsFilled) {
-      toast.showGlass('Must fill all the fields!', 'Please complete your profile information.');
+      toast.showGlass('Incomplete', 'Fill in all fields to continue.');
       return;
     }
 
     // Validate DOB (age >= 18)
     const validation = validateDob(dob);
     if (!validation.valid) {
-      toast.showError('Invalid Date of Birth', validation.error);
+      toast.showError('Invalid DOB', validation.error);
       return;
     }
 
@@ -129,7 +129,7 @@ export const IdentityScreen: React.FC<{ navigation: any }> = ({ navigation }) =>
       await api.updateOnboardingStep('identity');
       navigation.navigate('About');
     } else {
-      toast.showError('Update Failed', res.error?.message || 'Could not save your profile. Please try again.');
+      toast.showError('Save failed', res.error?.message || 'Try again.');
     }
     setLoading(false);
   };

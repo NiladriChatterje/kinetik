@@ -25,15 +25,15 @@ export const LocationPermissionScreen: React.FC<{ navigation: any }> = ({ naviga
       const locationName = res?.data?.county || res?.data?.city || [res?.data?.city, res?.data?.region].filter(Boolean).join(', ');
       if (locationName) {
         setResolvedLocation(locationName);
-        toast.showSuccess('Location Set', `You're in ${locationName}`);
+        toast.showSuccess('Location set', `You're in ${locationName}`);
       } else {
-        toast.showSuccess('Location Enabled', 'Your location has been set up for matching.');
+        toast.showSuccess('Location enabled', 'Ready to match.');
       }
       await api.updateOnboardingStep('location');
       setTimeout(() => navigation.navigate('Photos'), 1200);
     } else {
       setPermissionStatus('denied');
-      toast.showError('Location Required', 'Kinetik needs location access to find matches near you.');
+      toast.showError('Location needed', 'Required to find matches nearby.');
     }
     setLoading(false);
   };

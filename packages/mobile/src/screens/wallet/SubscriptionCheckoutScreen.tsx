@@ -108,10 +108,10 @@ export const SubscriptionCheckoutScreen: React.FC = () => {
               if (!res.success) {
                 throw new Error(res.error?.message || 'Could not cancel subscription');
               }
-              toast.showSuccess('Subscription cancelled', 'Premium stays active until the end of this cycle.');
+              toast.showSuccess('Cancelled', 'Premium active until cycle ends.');
               await fetchStatus();
             } catch (error: any) {
-              toast.showError('Cancellation failed', error?.message || 'Please try again.');
+              toast.showError('Failed', error?.message || 'Try again.');
             } finally {
               setCancelling(false);
             }
@@ -170,9 +170,9 @@ export const SubscriptionCheckoutScreen: React.FC = () => {
       }
 
       if (verifyRes.data?.activated) {
-        toast.showSuccess('You are Premium!', 'Your subscription is active.');
+        toast.showSuccess('Premium active!', 'Subscription is live.');
       } else {
-        toast.showSuccess('Mandate approved', 'Your subscription will activate shortly.');
+        toast.showSuccess('Approved', 'Activating shortly.');
       }
       await fetchStatus();
     } catch (error: any) {
@@ -180,9 +180,9 @@ export const SubscriptionCheckoutScreen: React.FC = () => {
       const message = error?.description || error?.message;
       // Payment cancelled by the user is expected — show a neutral message
       if (code === 'BAD_REQUEST_ERROR' || code === 'PAYMENT_CANCELLED' || /cancelled|cancel/i.test(message || '')) {
-        toast.showError('Payment cancelled', 'You can try again any time.');
+        toast.showError('Cancelled', 'Try again any time.');
       } else {
-        toast.showError('Subscription failed', message || 'Please try again.');
+        toast.showError('Failed', message || 'Try again.');
       }
     } finally {
       setSubscribing(false);

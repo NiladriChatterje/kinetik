@@ -1350,15 +1350,12 @@ export const ChatScreen: React.FC<{ navigation: any; route: any }> = ({ navigati
                       if (!res.success) {
                         // Retryable failure (e.g. storage unreachable — nothing
                         // was deleted server-side, safe to try again)
-                        toast.showGlass(
-                          'Server is busy!',
-                          res.error?.message || 'Try again in a few moments.',
-                        );
+                        toast.showGlass('Server busy', res.error?.message || 'Try again.');
                         return;
                       }
                       navigation.goBack();
                     } catch {
-                      toast.showGlass('Server is busy!', 'Try again in a few moments.');
+                      toast.showGlass('Server busy', 'Try again.');
                     }
                   },
                 },

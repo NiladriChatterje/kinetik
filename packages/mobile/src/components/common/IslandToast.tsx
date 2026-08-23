@@ -50,8 +50,7 @@ const MAX_WIDTH = Math.min(Dimensions.get('window').width - 48, 340);
 export const IslandToast: React.FC<IslandToastProps> = React.memo(
   ({ type = 'glass', text1, text2, hide, onPress }) => {
     const expand = useRef(new Animated.Value(0)).current;
-    // Long messages are ellipsized to one line — the first tap expands the
-    // pill vertically to show the full text, the second tap dismisses.
+    const iconScale = useRef(new Animated.Value(0)).current;
     const [expanded, setExpanded] = useState(false);
 
     const title = text1 || '';
@@ -62,16 +61,33 @@ export const IslandToast: React.FC<IslandToastProps> = React.memo(
     useEffect(() => {
       Animated.sequence([
         // Let the container's top-drop finish before the dot opens up
-        Animated.delay(220),
-        Animated.spring(expand, {
-          toValue: 1,
-          friction: 9,
-          tension: 70,
-          // Width/height are layout props — native driver unavailable
-          useNativeDriver: false,
-        }),
+        Animated.delay(180),
+        Animated.parallel([
+          // Pill stretches out with a satisfying overshoot then settles
+          Animated.spring(expand, {
+            toValue: 1,
+            friction: 7,
+            tension: 80,
+            useNativeDriver: false,
+          }),
+          // Icon pops in with a quick scale bounce
+          Animated.sequence([
+            Animated.spring(iconScale, {
+              toValue: 1.3,
+              friction: 4,
+              tension: 120,
+              useNativeDriver: true,
+            }),
+            Animated.spring(iconScale, {
+              toValue: 1,
+              friction: 6,
+              tension: 80,
+              useNativeDriver: true,
+            }),
+          ]),
+        ]),
       ]).start();
-    }, [expand]);
+    }, [expand, iconScale]);
 
     const width = expand.interpolate({ inputRange: [0, 1], outputRange: [DOT_SIZE, MAX_WIDTH] });
     const height = expand.interpolate({ inputRange: [0, 1], outputRange: [DOT_SIZE, targetHeight] });
@@ -82,7 +98,7 @@ export const IslandToast: React.FC<IslandToastProps> = React.memo(
     // Content appears only near the end of the expansion so text is never
     // visible half-clipped mid-animation
     const contentOpacity = expand.interpolate({
-      inputRange: [0, 0.7, 1],
+      inputRange: [0, 0.6, 1],
       outputRange: [0, 0, 1],
     });
 
@@ -118,7 +134,9 @@ export const IslandToast: React.FC<IslandToastProps> = React.memo(
               expanded && styles.innerExpanded,
             ]}
           >
-            <Ionicons name={accent.icon} size={14} color={accent.color} />
+            <Animated.View style={{ transform: [{ scale: iconScale }] }}>
+              <Ionicons name={accent.icon} size={14} color={accent.color} />
+            </Animated.View>
             <View style={styles.textCol}>
               {title ? (
                 <Text style={styles.title} numberOfLines={1}>
@@ -171,12 +189,14 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   title: {
+    fontFamily: 'Cantarell-Bold',
     fontSize: 12,
     fontWeight: '600',
     color: '#FFFFFF',
     letterSpacing: 0.1,
   },
   message: {
+    fontFamily: 'Cantarell-Regular',
     fontSize: 11,
     color: 'rgba(255, 255, 255, 0.65)',
     marginTop: 1,

@@ -155,10 +155,10 @@ export const ProfileLedgerScreen: React.FC = () => {
 
     try {
       await compressAndUploadPhoto(uri);
-      toast.showSuccess('Photo Added', 'Your photo has been uploaded.');
+      toast.showSuccess('Photo added', 'Uploaded successfully.');
       await fetchProfileAndPhotos();
     } catch (err: any) {
-      toast.showError('Upload Failed', err?.message || 'Could not upload photo.');
+      toast.showError('Upload failed', err?.message || 'Try again.');
     } finally {
       setMutatingPhotoId(null);
     }
@@ -171,10 +171,10 @@ export const ProfileLedgerScreen: React.FC = () => {
       if (!res.success) {
         throw new Error(res.error?.message || 'Could not update primary photo.');
       }
-      toast.showSuccess('Primary Photo Updated', 'This photo is now your profile picture.');
+      toast.showSuccess('Primary updated', 'Profile photo set.');
       await fetchProfileAndPhotos();
     } catch (e: any) {
-      toast.showError('Failed', e?.message || 'Could not update primary photo.');
+      toast.showError('Failed', e?.message || 'Try again.');
     } finally {
       setMutatingPhotoId(null);
     }
@@ -198,9 +198,9 @@ export const ProfileLedgerScreen: React.FC = () => {
             const result = await deleteAccount();
             setDeletingAccount(false);
             if (result.success) {
-              toast.showSuccess('Account Deleted', 'Your account has been permanently deleted.');
+              toast.showSuccess('Account deleted', 'Permanently removed.');
             } else {
-              toast.showError('Delete Failed', result.error || 'Could not delete your account. Please try again.');
+              toast.showError('Delete failed', result.error || 'Try again.');
             }
           },
         },
@@ -221,10 +221,10 @@ export const ProfileLedgerScreen: React.FC = () => {
             setMutatingPhotoId(photoId);
             try {
               await api.deletePhoto(photoId);
-              toast.showSuccess('Photo Removed', 'The photo has been deleted.');
+              toast.showSuccess('Photo removed', 'Deleted.');
               await fetchProfileAndPhotos();
             } catch (e: any) {
-              toast.showError('Failed', e?.message || 'Could not delete photo.');
+              toast.showError('Failed', e?.message || 'Try again.');
             } finally {
               setMutatingPhotoId(null);
             }

@@ -65,9 +65,9 @@ export const OTPVerifyScreen: React.FC<{ navigation: any }> = ({ navigation }) =
     setCountdown(RESEND_COOLDOWN);
     const result = await sendOtp(pendingPhone);
     if (result.success) {
-      toast.showSuccess('Code Resent', 'A new verification code has been sent.');
+      toast.showSuccess('Code sent', 'Check your phone.');
     } else {
-      toast.showError('Failed', result.error || 'Could not resend code.');
+      toast.showError('Failed', result.error || 'Could not resend.');
       setCountdown(0);
     }
   };
@@ -75,7 +75,7 @@ export const OTPVerifyScreen: React.FC<{ navigation: any }> = ({ navigation }) =
   const handleVerify = async () => {
     const code = digits.join('');
     if (code.length !== 6 || !pendingPhone) {
-      toast.showGlass('Must fill all the fields!', 'Please enter the complete 6-digit code.');
+      toast.showGlass('Enter code', 'Enter the 6-digit code.');
       return;
     }
 
@@ -83,7 +83,7 @@ export const OTPVerifyScreen: React.FC<{ navigation: any }> = ({ navigation }) =
     try {
       const result = await verifyOtp(pendingPhone, code);
       if (result.success) {
-        toast.showSuccess('Verified!', 'You have been verified successfully.');
+        toast.showSuccess('Verified!', 'You\'re all set.');
         // Read the latest onboardingStep directly from store (avoid stale closure)
         const currentStep = useAuthStore.getState().onboardingStep;
         if (currentStep === 'complete') {
@@ -107,12 +107,12 @@ export const OTPVerifyScreen: React.FC<{ navigation: any }> = ({ navigation }) =
           navigation.navigate('Identity');
         }
       } else {
-        toast.showError('Verification Failed', result.error || 'Invalid code. Please try again.');
+        toast.showError('Verification failed', result.error || 'Invalid code.');
         setDigits(['', '', '', '', '', '']);
         inputRefs.current[0]?.focus();
       }
     } catch (e: any) {
-      toast.showError('Network Error', e?.message || 'Something went wrong.');
+      toast.showError('Network error', e?.message || 'Try again.');
     } finally {
       setLoading(false);
     }

@@ -62,7 +62,7 @@ export const PoseVerificationScreen: React.FC<{ navigation: any }> = ({ navigati
       });
 
       if (!photo?.uri) {
-        toast.showError('Capture Failed', 'Could not capture photo. Please try again.');
+        toast.showError('Capture failed', 'Try again.');
         return;
       }
 
@@ -76,7 +76,7 @@ export const PoseVerificationScreen: React.FC<{ navigation: any }> = ({ navigati
       setCapturedUri(manipulated.uri);
       setPhase('preview');
     } catch (err: any) {
-      toast.showError('Capture Failed', err?.message || 'Could not take photo.');
+      toast.showError('Capture failed', err?.message || 'Try again.');
     }
   }, [toast]);
 
@@ -97,16 +97,10 @@ export const PoseVerificationScreen: React.FC<{ navigation: any }> = ({ navigati
 
       if (result.verified) {
         hapticSuccess();
-        toast.showSuccess(
-          'Face Verified!',
-          'Your selfie matches your profile photos.',
-        );
+        toast.showSuccess('Face verified!', 'Selfie matches your photos.');
       } else {
         console.log('[pose] Not verified:', result.rejectionReasons.join('; '));
-        toast.showSuccess(
-          'Selfie Submitted',
-          'You can continue with onboarding.',
-        );
+        toast.showSuccess('Selfie submitted', 'Continue onboarding.');
       }
 
       // Self-report the on-device result (fire-and-forget on failure)
