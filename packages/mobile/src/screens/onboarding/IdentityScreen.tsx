@@ -1,6 +1,6 @@
 import React, { useState, useCallback } from 'react';
-import { View, Text, StyleSheet, ScrollView } from 'react-native';
-import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
+import { View, Text, StyleSheet, ScrollView, KeyboardAvoidingView, Platform } from 'react-native';
+import { SafeAreaView } from 'react-native-safe-area-context';
 import { Button } from '../../components/common/Button';
 import { useToast } from '../../hooks/useToast';
 import { Input } from '../../components/common/Input';
@@ -74,7 +74,6 @@ function validateDob(dob: string): { valid: boolean; error?: string } {
 }
 
 export const IdentityScreen: React.FC<{ navigation: any }> = ({ navigation }) => {
-  const insets = useSafeAreaInsets();
   const [dob, setDob] = useState('');
   const [gender, setGender] = useState<string | null>(null);
   const [genderTouched, setGenderTouched] = useState(false);
@@ -135,7 +134,8 @@ export const IdentityScreen: React.FC<{ navigation: any }> = ({ navigation }) =>
   };
 
   return (
-    <SafeAreaView style={styles.container}>
+    <SafeAreaView style={styles.container} edges={['top']}>
+      <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === 'ios' ? 'padding' : 'height'} keyboardVerticalOffset={0}>
       <ScrollView contentContainerStyle={styles.content} keyboardShouldPersistTaps="handled" bounces={false}>
         <Text style={styles.step}>Step 1 of 6</Text>
         <Text style={styles.title}>Who are you?</Text>
@@ -192,18 +192,19 @@ export const IdentityScreen: React.FC<{ navigation: any }> = ({ navigation }) =>
         {datingCategoryError && <Text style={styles.fieldError}>{datingCategoryError}</Text>}
 
         <Input label="Pronouns" value={pronouns} onChangeText={setPronouns} placeholder="they/them, she/her, he/him" required />
-      </ScrollView>
 
-      <View style={[styles.footer, { bottom: insets.bottom + 40 }]}>
-        <Button title="Continue" onPress={handleSubmit} loading={loading} fullWidth />
-      </View>
+        <View style={styles.footer}>
+          <Button title="Continue" onPress={handleSubmit} loading={loading} fullWidth />
+        </View>
+      </ScrollView>
+      </KeyboardAvoidingView>
     </SafeAreaView>
   );
 };
 
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: colors.background },
-  content: { padding: spacing.xxl, paddingBottom: 100, flexGrow: 1 },
+  content: { padding: spacing.xxl },
   step: { ...typography.label, color: colors.textPrimary, marginBottom: spacing.sm },
   title: { ...typography.h1, color: colors.textPrimary, marginBottom: spacing.sm },
   subtitle: { ...typography.body1, color: colors.textSecondary, marginBottom: spacing.xxl },
@@ -230,5 +231,5 @@ const styles = StyleSheet.create({
   categoryChipText: { ...typography.body1, color: colors.textPrimary, fontWeight: '600' },
   categoryChipTextActive: { color: colors.textInverse },
   categoryChipDesc: { ...typography.caption, color: colors.textMuted, marginTop: 2 },
-  footer: { position: 'absolute', bottom: 40, left: spacing.xxl, right: spacing.xxl },
+  footer: { paddingTop: spacing.lg, paddingBottom: spacing.xxl },
 });
