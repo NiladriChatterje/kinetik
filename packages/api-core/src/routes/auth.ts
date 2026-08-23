@@ -138,7 +138,6 @@ const RegisterSchema = z.object({
   authProvider: z.enum(['phone', 'google', 'apple']),
   authProviderId: z.string().optional(),
   displayName: z.string().min(1).max(100).optional(),
-  age: z.number().int().min(18).max(120),
   countryCode: z.string().optional(),
 });
 
@@ -207,9 +206,6 @@ export async function authRoutes(app: FastifyInstance) {
       authProviderId: data.authProviderId,
       displayName: data.displayName,
       countryCode: data.countryCode,
-      dateOfBirth: data.age
-        ? new Date(new Date().setFullYear(new Date().getFullYear() - data.age)).toISOString().split('T')[0]
-        : undefined,
     });
 
     // Generate JWT access token

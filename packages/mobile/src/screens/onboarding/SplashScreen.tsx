@@ -22,7 +22,6 @@ export const SplashScreen: React.FC<{ navigation: any }> = ({ navigation }) => {
   const [phoneNumber, setPhoneNumber] = useState('');
   const [countryCode, setCountryCode] = useState('+1');
   const [selectedCountry, setSelectedCountry] = useState<Country>({ code: '+1', flag: '🇺🇸', name: 'United States' });
-  const [age, setAge] = useState('');
   const [password, setPassword] = useState('');
   const [firstName, setFirstName] = useState('');
   const [lastName, setLastName] = useState('');
@@ -90,7 +89,6 @@ export const SplashScreen: React.FC<{ navigation: any }> = ({ navigation }) => {
     clearError();
     setPassword('');
     setPhoneNumber('');
-    setAge('');
     setFirstName('');
     setLastName('');
     setMiddleName('');
@@ -105,11 +103,6 @@ export const SplashScreen: React.FC<{ navigation: any }> = ({ navigation }) => {
       toast.showError('Missing name', 'Enter your first name.');
       return;
     }
-    if (mode === 'register' && (!age || parseInt(age, 10) < 18)) {
-      toast.showError('Invalid age', 'You must be at least 18.');
-      return;
-    }
-
     setLoading(true);
     try {
       if (mode === 'login') {
@@ -131,7 +124,7 @@ export const SplashScreen: React.FC<{ navigation: any }> = ({ navigation }) => {
           setErrorMsg(result.error || 'Wrong credential. Please try again.');
         }
       } else if (mode === 'register') {
-        const payload: { phone: string; password: string; displayName?: string; age: number; countryCode: string } = { phone: phoneNumber, password, age: parseInt(age, 10), countryCode };
+        const payload: { phone: string; password: string; displayName?: string; countryCode: string } = { phone: phoneNumber, password, countryCode };
         if (firstName) payload.displayName = firstName;
         const result = await register(payload);
         if (result.success) {
@@ -139,7 +132,6 @@ export const SplashScreen: React.FC<{ navigation: any }> = ({ navigation }) => {
           setMode('login');
           setPassword('');
           setPhoneNumber('');
-          setAge('');
           setFirstName('');
           setLastName('');
           setMiddleName('');
@@ -219,29 +211,14 @@ export const SplashScreen: React.FC<{ navigation: any }> = ({ navigation }) => {
           )}
 
           {mode === 'register' ? (
-            <View style={styles.row}>
-              <View style={styles.colHalf}>
-                <PhoneInput
-                  phoneNumber={phoneNumber}
-                  onPhoneNumberChange={(t) => { setPhoneNumber(t); clearError(); }}
-                  countryCode={countryCode}
-                  onCountryCodeChange={(c) => { setCountryCode(c.code); setSelectedCountry(c); clearError(); }}
-                  placeholder="5550123456"
-                  required
-                />
-              </View>
-              <View style={styles.colAge}>
-                <Input
-                  label="Age"
-                  value={age}
-                  onChangeText={setAge}
-                  placeholder="25"
-                  keyboardType="numeric"
-                  maxLength={3}
-                  required
-                />
-              </View>
-            </View>
+            <PhoneInput
+              phoneNumber={phoneNumber}
+              onPhoneNumberChange={(t) => { setPhoneNumber(t); clearError(); }}
+              countryCode={countryCode}
+              onCountryCodeChange={(c) => { setCountryCode(c.code); setSelectedCountry(c); clearError(); }}
+              placeholder="5550123456"
+              required
+            />
           ) : (
             <Input
               label="Phone Number"
@@ -429,16 +406,7 @@ const styles = StyleSheet.create({
     marginBottom: spacing.sm,
     gap: spacing.sm,
   },
-  row: {
-    flexDirection: 'row',
-    gap: spacing.md,
-  },
-  colHalf: {
-    flex: 1,
-  },
-  colAge: {
-    width: 72,
-  },
+
   errorText: {
     ...typography.body2,
     color: colors.textPrimary,

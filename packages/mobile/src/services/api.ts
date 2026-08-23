@@ -296,7 +296,7 @@ class ApiClient {
   }
 
   // ─── Auth ───────────────────────────────────────────
-  async register(data: { phone?: string; email?: string; password?: string; authProvider: string; authProviderId?: string; displayName?: string; age?: number; countryCode?: string }) {
+  async register(data: { phone?: string; email?: string; password?: string; authProvider: string; authProviderId?: string; displayName?: string; countryCode?: string }) {
     return this.request<{ user: any; token: string; refreshToken: string }>('/api/v1/auth/register', {
       method: 'POST',
       body: JSON.stringify(data),
