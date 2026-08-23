@@ -3,7 +3,7 @@ import {
   View, Text, StyleSheet, FlatList, TextInput, TouchableOpacity,
   Image, KeyboardAvoidingView, Platform, Keyboard, ActivityIndicator,
   Modal, Alert, Dimensions, Linking,
-  StatusBar, Animated,
+  StatusBar, Animated, ScrollView,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useAudioRecorder, createAudioPlayer, AudioPlayer, setAudioModeAsync, requestRecordingPermissionsAsync, RecordingPresets } from 'expo-audio';
@@ -75,25 +75,45 @@ function formatScheduledDate(dateStr: string): string {
   });
 }
 
-// Picker options — today plus the next 13 days
-const DATE_OPTIONS: { date: string; top: string; day: number }[] = (() => {
-  const now = new Date();
-  const out: { date: string; top: string; day: number }[] = [];
-  for (let i = 0; i < 14; i++) {
-    const d = new Date(now.getFullYear(), now.getMonth(), now.getDate() + i);
-    out.push({
-      date: toDateStr(d),
-      top:
-        i === 0
-          ? 'Today'
-          : i === 1
-            ? 'Tomorrow'
-            : d.toLocaleDateString(undefined, { weekday: 'short' }),
-      day: d.getDate(),
-    });
+// Calendar helpers — swipeable month view for date selection
+const TODAY = new Date();
+const TODAY_STR = toDateStr(TODAY);
+
+const WEEKDAYS = ['S', 'M', 'T', 'W', 'T', 'F', 'S'];
+const MONTH_NAMES = [
+  'January', 'February', 'March', 'April', 'May', 'June',
+  'July', 'August', 'September', 'October', 'November', 'December',
+];
+
+function getMonthDays(year: number, month: number): { date: Date; dateStr: string; day: number; isCurrentMonth: boolean; isPast: boolean }[] {
+  const firstDay = new Date(year, month, 1);
+  const startDow = firstDay.getDay(); // 0=Sun
+  const daysInMonth = new Date(year, month + 1, 0).getDate();
+  const prevMonthDays = new Date(year, month, 0).getDate();
+
+  const cells: { date: Date; dateStr: string; day: number; isCurrentMonth: boolean; isPast: boolean }[] = [];
+
+  // Previous month fill
+  for (let i = startDow - 1; i >= 0; i--) {
+    const d = new Date(year, month - 1, prevMonthDays - i);
+    cells.push({ date: d, dateStr: toDateStr(d), day: prevMonthDays - i, isCurrentMonth: false, isPast: d < new Date(TODAY.getFullYear(), TODAY.getMonth(), TODAY.getDate()) });
   }
-  return out;
-})();
+
+  // Current month
+  for (let i = 1; i <= daysInMonth; i++) {
+    const d = new Date(year, month, i);
+    cells.push({ date: d, dateStr: toDateStr(d), day: i, isCurrentMonth: true, isPast: d < new Date(TODAY.getFullYear(), TODAY.getMonth(), TODAY.getDate()) });
+  }
+
+  // Next month fill
+  const remaining = 42 - cells.length; // 6 rows
+  for (let i = 1; i <= remaining; i++) {
+    const d = new Date(year, month + 1, i);
+    cells.push({ date: d, dateStr: toDateStr(d), day: i, isCurrentMonth: false, isPast: false });
+  }
+
+  return cells;
+}
 
 // Rose accent used for the pinned-date banner + picker (matches the app's
 // existing like/badge accent — the theme itself is monochrome)
@@ -173,6 +193,8 @@ export const ChatScreen: React.FC<{ navigation: any; route: any }> = ({ navigati
 
   // ─── Date Planner State ────────────────────────────────
   const [plannerDate, setPlannerDate] = useState<string | null>(null); // YYYY-MM-DD
+  const [calendarMonth, setCalendarMonth] = useState(() => TODAY.getMonth());
+  const [calendarYear, setCalendarYear] = useState(() => TODAY.getFullYear());
   const [plannerActivities, setPlannerActivities] = useState<string[]>([]);
   const [plannerTodos, setPlannerTodos] = useState<{ id: string; text: string; done: boolean; addedBy: string }[]>([]);
   const [plannerNotes, setPlannerNotes] = useState('');
@@ -225,6 +247,32 @@ export const ChatScreen: React.FC<{ navigation: any; route: any }> = ({ navigati
       } catch {
         toast.showGlass('Server busy', 'Try again.');
       }
+    });
+  };
+
+  // ─── Date Planner modal animations ───────────────────────
+  const plannerOverlayOpacity = useRef(new Animated.Value(0)).current;
+  const plannerSheetY = useRef(new Animated.Value(1)).current;
+  const plannerContentScale = useRef(new Animated.Value(1)).current;
+
+  const openDatePicker = (tab?: 'activities' | 'checklist') => {
+    if (tab) setPlannerTab(tab);
+    setShowDatePicker(true);
+    Animated.parallel([
+      Animated.timing(plannerOverlayOpacity, { toValue: 1, duration: 250, useNativeDriver: true }),
+      Animated.spring(plannerSheetY, { toValue: 0, speed: 50, bounciness: 4, useNativeDriver: true }),
+      Animated.timing(plannerContentScale, { toValue: 0.85, duration: 250, useNativeDriver: true }),
+    ]).start();
+  };
+
+  const closeDatePicker = (cb?: () => void) => {
+    Animated.parallel([
+      Animated.timing(plannerOverlayOpacity, { toValue: 0, duration: 200, useNativeDriver: true }),
+      Animated.timing(plannerSheetY, { toValue: 1, duration: 200, useNativeDriver: true }),
+      Animated.timing(plannerContentScale, { toValue: 1, duration: 200, useNativeDriver: true }),
+    ]).start(() => {
+      setShowDatePicker(false);
+      cb?.();
     });
   };
 
@@ -1366,18 +1414,12 @@ export const ChatScreen: React.FC<{ navigation: any; route: any }> = ({ navigati
 
         <View style={styles.headerInfo}>
           <Text style={styles.headerName}>{partnerName}</Text>
-          <Text style={styles.headerStatus}>
-            {partnerTyping ? 'Typing...' : socketConnected ? 'Online' : 'Offline'}
-          </Text>
         </View>
 
         {/* Date Planner — opens the planner modal with activities + checklist */}
         <TouchableOpacity
           style={styles.callBtn}
-          onPress={() => {
-            setPlannerTab('activities');
-            setShowDatePicker(true);
-          }}
+          onPress={() => openDatePicker('activities')}
           activeOpacity={0.7}
         >
           <Ionicons name="calendar-outline" size={20} color={colors.textPrimary} />
@@ -1415,10 +1457,7 @@ export const ChatScreen: React.FC<{ navigation: any; route: any }> = ({ navigati
       {scheduledDate && scheduledDate >= todayDateStr() && (
         <TouchableOpacity
           style={styles.dateBanner}
-          onPress={() => {
-            setPlannerTab('checklist');
-            setShowDatePicker(true);
-          }}
+          onPress={() => openDatePicker('checklist')}
           activeOpacity={0.7}
         >
           <Ionicons name="rose" size={15} color={ROSE} />
@@ -1805,15 +1844,14 @@ export const ChatScreen: React.FC<{ navigation: any; route: any }> = ({ navigati
       )}
 
       {/* ─── Date Planner Modal ─────────────────────────── */}
-      <Modal
-        visible={showDatePicker}
-        transparent
-        animationType="slide"
-        statusBarTranslucent
-        onRequestClose={() => setShowDatePicker(false)}
-      >
-        <View style={styles.plannerOverlay}>
-          <View style={styles.plannerCard}>
+      {showDatePicker && (
+        <Animated.View style={[styles.plannerOverlay, { opacity: plannerOverlayOpacity }]}>
+          <TouchableOpacity
+            style={StyleSheet.absoluteFill}
+            activeOpacity={1}
+            onPress={() => closeDatePicker()}
+          />
+          <Animated.View style={[styles.plannerCard, { transform: [{ translateY: plannerSheetY.interpolate({ inputRange: [0, 1], outputRange: [0, SCREEN_HEIGHT] }) }] }]}>
             {/* Header */}
             <View style={styles.plannerHeader}>
               <View style={styles.plannerHeaderLeft}>
@@ -1821,10 +1859,7 @@ export const ChatScreen: React.FC<{ navigation: any; route: any }> = ({ navigati
                 <Text style={styles.plannerTitle}>Plan Your Date</Text>
               </View>
               <TouchableOpacity
-                onPress={() => {
-                  savePlanner();
-                  setShowDatePicker(false);
-                }}
+                onPress={() => closeDatePicker(() => savePlanner())}
                 hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
               >
                 <Ionicons name="close" size={20} color={colors.textSecondary} />
@@ -1855,32 +1890,79 @@ export const ChatScreen: React.FC<{ navigation: any; route: any }> = ({ navigati
               </TouchableOpacity>
             </View>
 
-            {/* Date Picker Row */}
+            {/* Scrollable content: date picker + activities/checklist */}
+            <ScrollView style={styles.plannerScroll} showsVerticalScrollIndicator={false} bounces={false}>
+
+            {/* Date Picker — month calendar */}
             <View style={styles.plannerDateSection}>
-              <Text style={styles.plannerSectionLabel}>When</Text>
-              <View style={styles.dateOptionsGrid}>
-                {DATE_OPTIONS.map((opt) => {
-                  const selected = plannerDate === opt.date;
+              <View style={styles.calMonthHeader}>
+                <TouchableOpacity
+                  onPress={() => {
+                    if (calendarMonth === 0) { setCalendarMonth(11); setCalendarYear((y) => y - 1); }
+                    else setCalendarMonth((m) => m - 1);
+                  }}
+                  hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+                >
+                  <Ionicons name="chevron-back" size={18} color={colors.textPrimary} />
+                </TouchableOpacity>
+                <Text style={styles.calMonthText}>{MONTH_NAMES[calendarMonth]} {calendarYear}</Text>
+                <TouchableOpacity
+                  onPress={() => {
+                    if (calendarMonth === 11) { setCalendarMonth(0); setCalendarYear((y) => y + 1); }
+                    else setCalendarMonth((m) => m + 1);
+                  }}
+                  hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+                >
+                  <Ionicons name="chevron-forward" size={18} color={colors.textPrimary} />
+                </TouchableOpacity>
+              </View>
+
+              {/* Weekday labels */}
+              <View style={styles.calWeekdays}>
+                {WEEKDAYS.map((wd, i) => (
+                  <Text key={i} style={styles.calWeekdayText}>{wd}</Text>
+                ))}
+              </View>
+
+              {/* Day grid */}
+              <View style={styles.calGrid}>
+                {getMonthDays(calendarYear, calendarMonth).map((cell, i) => {
+                  const selected = plannerDate === cell.dateStr;
+                  const isToday = cell.dateStr === TODAY_STR;
                   return (
                     <TouchableOpacity
-                      key={opt.date}
-                      style={[styles.dateOption, selected && styles.dateOptionActive]}
-                      onPress={() => setPlannerDate(opt.date)}
+                      key={i}
+                      style={[
+                        styles.calDay,
+                        selected && styles.calDaySelected,
+                        isToday && !selected && styles.calDayToday,
+                      ]}
+                      onPress={() => !cell.isPast && setPlannerDate(cell.dateStr)}
+                      disabled={cell.isPast || !cell.isCurrentMonth}
                       activeOpacity={0.7}
                     >
                       <Text
-                        style={[styles.dateOptionTop, selected && styles.dateOptionTextActive]}
-                        numberOfLines={1}
+                        style={[
+                          styles.calDayText,
+                          !cell.isCurrentMonth && styles.calDayOutside,
+                          cell.isPast && styles.calDayPast,
+                          selected && styles.calDayTextSelected,
+                          isToday && !selected && styles.calDayTodayText,
+                        ]}
                       >
-                        {opt.top}
-                      </Text>
-                      <Text style={[styles.dateOptionDay, selected && styles.dateOptionTextActive]}>
-                        {opt.day}
+                        {cell.day}
                       </Text>
                     </TouchableOpacity>
                   );
                 })}
               </View>
+
+              {/* Selected date label */}
+              {plannerDate && (
+                <Text style={styles.calSelectedLabel}>
+                  {new Date(plannerDate + 'T12:00:00').toLocaleDateString(undefined, { weekday: 'long', month: 'long', day: 'numeric', year: 'numeric' })}
+                </Text>
+              )}
             </View>
 
             {/* Activities Tab */}
@@ -2028,17 +2110,17 @@ export const ChatScreen: React.FC<{ navigation: any; route: any }> = ({ navigati
               </View>
             )}
 
+            </ScrollView>
+
             {/* Confirm Button */}
             <TouchableOpacity
               style={[styles.dateConfirmBtn, savingPlanner && styles.dateConfirmBtnDisabled]}
-              onPress={() => {
+              onPress={() => closeDatePicker(() => {
                 savePlanner();
-                // Also fix the date if a planner date is set and no scheduled date exists
                 if (plannerDate && plannerDate !== scheduledDate) {
                   handleFixDate();
                 }
-                setShowDatePicker(false);
-              }}
+              })}
               disabled={savingPlanner}
               activeOpacity={0.7}
             >
@@ -2048,9 +2130,9 @@ export const ChatScreen: React.FC<{ navigation: any; route: any }> = ({ navigati
                 <Text style={styles.dateConfirmText}>Save Plan</Text>
               )}
             </TouchableOpacity>
-          </View>
-        </View>
-      </Modal>
+          </Animated.View>
+        </Animated.View>
+      )}
     </SafeAreaView>
   );
 };
@@ -2702,37 +2784,72 @@ const styles = StyleSheet.create({
     marginBottom: spacing.xs,
   },
   datePickerTitle: { ...typography.h3, color: colors.textPrimary },
-  datePickerSubtitle: {
-    ...typography.body2,
-    color: colors.textSecondary,
-    marginBottom: spacing.lg,
+  // ─── Month Calendar ────────────────────────────────────
+  calMonthHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginBottom: spacing.md,
   },
-  dateOptionsGrid: {
+  calMonthText: {
+    ...typography.h4,
+    color: colors.textPrimary,
+  },
+  calWeekdays: {
+    flexDirection: 'row',
+    marginBottom: spacing.xs,
+  },
+  calWeekdayText: {
+    flex: 1,
+    textAlign: 'center',
+    ...typography.caption,
+    fontSize: 11,
+    color: colors.textMuted,
+    fontWeight: '600',
+  },
+  calGrid: {
     flexDirection: 'row',
     flexWrap: 'wrap',
-    gap: spacing.sm,
-    marginBottom: spacing.xl,
   },
-  dateOption: {
-    width: 44,
+  calDay: {
+    width: '14.28%',
+    aspectRatio: 1,
     alignItems: 'center',
-    paddingVertical: spacing.sm,
-    borderRadius: radius.md,
+    justifyContent: 'center',
+    borderRadius: radius.full,
+  },
+  calDaySelected: {
+    backgroundColor: colors.textPrimary,
+  },
+  calDayToday: {
     backgroundColor: colors.surfaceHighlight,
   },
-  dateOptionActive: { backgroundColor: ROSE },
-  dateOptionTop: {
-    ...typography.caption,
-    fontSize: 9,
-    color: colors.textMuted,
-    marginBottom: 2,
-  },
-  dateOptionDay: {
-    ...typography.body1,
+  calDayText: {
+    ...typography.body2,
     color: colors.textPrimary,
+    fontWeight: '500',
+  },
+  calDayOutside: {
+    color: colors.textMuted,
+    opacity: 0.3,
+  },
+  calDayPast: {
+    color: colors.textMuted,
+    opacity: 0.35,
+  },
+  calDayTextSelected: {
+    color: colors.textInverse,
     fontWeight: '700',
   },
-  dateOptionTextActive: { color: '#fff' },
+  calDayTodayText: {
+    fontWeight: '700',
+  },
+  calSelectedLabel: {
+    ...typography.caption,
+    color: colors.textSecondary,
+    textAlign: 'center',
+    marginTop: spacing.sm,
+  },
   dateConfirmBtn: {
     backgroundColor: colors.textPrimary,
     borderRadius: radius.full,
@@ -2744,7 +2861,7 @@ const styles = StyleSheet.create({
 
   // ─── Date Planner Modal ─────────────────────────────
   plannerOverlay: {
-    flex: 1,
+    ...StyleSheet.absoluteFill,
     backgroundColor: 'rgba(0,0,0,0.5)',
     justifyContent: 'flex-end',
   },
@@ -2756,6 +2873,7 @@ const styles = StyleSheet.create({
     paddingTop: spacing.lg,
     paddingBottom: spacing.xxxl,
     maxHeight: '85%',
+    overflow: 'hidden',
   },
   plannerHeader: {
     flexDirection: 'row',
@@ -2801,9 +2919,10 @@ const styles = StyleSheet.create({
     color: colors.textMuted,
     marginBottom: spacing.sm,
   },
-  plannerContent: {
+  plannerScroll: {
     flex: 1,
   },
+  plannerContent: {},
   plannerEmpty: {
     alignItems: 'center',
     paddingVertical: spacing.xxl,
