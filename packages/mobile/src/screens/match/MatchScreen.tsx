@@ -8,7 +8,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { useAuthStore } from '../../store/authStore';
 import { api } from '../../services/api';
 import { useToast } from '../../hooks/useToast';
-import { colors, typography, spacing, radius } from '../../theme';
+import { colors, typography, spacing, radius, shadows } from '../../theme';
 import { getPresenceSocket } from '../../services/presenceSocket';
 import { resolveUrl } from '../../config';
 import { MatchPopup } from '../../components/common/MatchPopup';
@@ -867,12 +867,13 @@ const styles = StyleSheet.create({
   card: {
     ...StyleSheet.absoluteFill,
     borderRadius: radius.xl,
-    backgroundColor: colors.surfaceHighlight,
+    backgroundColor: colors.background,
     overflow: 'hidden',
+    ...shadows.sm,
   },
   nextCard: {
-    transform: [{ scale: 0.95 }],
-    top: 10,
+    transform: [{ scale: 0.96 }],
+    top: 8,
   },
   cardScroll: {
     flex: 1,
@@ -882,10 +883,10 @@ const styles = StyleSheet.create({
   },
   cardImageContainer: {
     width: '100%',
-    height: SCREEN_HEIGHT * 0.55,
+    height: SCREEN_HEIGHT * 0.52,
     overflow: 'hidden',
     position: 'relative',
-    backgroundColor: colors.surfaceHighlight,
+    backgroundColor: colors.surface,
   },
   photoWrapper: {
     width: '100%',
@@ -898,7 +899,7 @@ const styles = StyleSheet.create({
   noPhoto: {
     justifyContent: 'center',
     alignItems: 'center',
-    backgroundColor: colors.surfaceHighlight,
+    backgroundColor: colors.surface,
   },
   photoTapLeft: {
     position: 'absolute',
@@ -922,32 +923,32 @@ const styles = StyleSheet.create({
   },
   photoDots: {
     position: 'absolute',
-    bottom: 8,
+    bottom: 10,
     left: 0,
     right: 0,
     flexDirection: 'row',
     justifyContent: 'center',
-    gap: 5,
+    gap: 4,
   },
   photoDot: {
-    width: 6,
-    height: 6,
-    borderRadius: 3,
-    backgroundColor: 'rgba(255,255,255,0.4)',
+    width: 5,
+    height: 5,
+    borderRadius: 2.5,
+    backgroundColor: 'rgba(255,255,255,0.35)',
   },
   photoDotActive: {
-    width: 18,
-    borderRadius: 3,
+    width: 16,
+    borderRadius: 2.5,
     backgroundColor: colors.textInverse,
   },
   photoCountBadge: {
     position: 'absolute',
-    top: 8,
-    right: 8,
+    top: spacing.sm,
+    right: spacing.sm,
     flexDirection: 'row',
     alignItems: 'center',
     gap: 4,
-    backgroundColor: 'rgba(0,0,0,0.5)',
+    backgroundColor: 'rgba(0,0,0,0.45)',
     paddingHorizontal: 8,
     paddingVertical: 3,
     borderRadius: radius.full,
@@ -988,28 +989,32 @@ const styles = StyleSheet.create({
   nameRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    marginBottom: spacing.xs,
+    marginBottom: 2,
   },
   name: { ...typography.h3, color: colors.textPrimary },
   pronounsText: { ...typography.caption, color: colors.textMuted, marginBottom: spacing.xs, fontSize: 11 },
-  bio: { ...typography.body2, color: colors.textSecondary, marginBottom: spacing.sm },
+  bio: { ...typography.body2, color: colors.textSecondary, marginBottom: spacing.sm, lineHeight: 19 },
   detailsRow: { flexDirection: 'row', flexWrap: 'wrap', gap: spacing.xs, marginBottom: spacing.sm },
   detailChip: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: 4,
-    backgroundColor: colors.surface,
+    backgroundColor: 'transparent',
     paddingHorizontal: spacing.sm,
     paddingVertical: 4,
     borderRadius: radius.sm,
+    borderWidth: 1,
+    borderColor: colors.cardBorder,
   },
   detailText: { ...typography.caption, color: colors.textSecondary },
   interestsRow: { flexDirection: 'row', flexWrap: 'wrap', gap: spacing.xs },
   interestChip: {
-    backgroundColor: colors.surface,
+    backgroundColor: 'transparent',
     paddingHorizontal: spacing.sm,
     paddingVertical: 3,
     borderRadius: radius.full,
+    borderWidth: 1,
+    borderColor: colors.cardBorder,
   },
   interestText: { ...typography.caption, color: colors.textSecondary, fontSize: 11 },
   aboutSection: {
@@ -1021,7 +1026,7 @@ const styles = StyleSheet.create({
   aboutHeading: {
     ...typography.label,
     color: colors.textMuted,
-    marginBottom: spacing.sm,
+    marginBottom: spacing.md,
   },
   aboutRow: {
     flexDirection: 'row',
@@ -1033,10 +1038,12 @@ const styles = StyleSheet.create({
   aboutLabel: { ...typography.caption, color: colors.textMuted, marginBottom: 4 },
   aboutChips: { flexDirection: 'row', flexWrap: 'wrap', gap: spacing.xs },
   aboutChip: {
-    backgroundColor: colors.surface,
+    backgroundColor: 'transparent',
     paddingHorizontal: spacing.sm,
     paddingVertical: 3,
     borderRadius: radius.full,
+    borderWidth: 1,
+    borderColor: colors.cardBorder,
   },
   aboutChipText: { ...typography.caption, color: colors.textSecondary, fontSize: 11 },
   actionBar: {
@@ -1045,23 +1052,24 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     gap: spacing.xxl,
     paddingVertical: spacing.lg,
-    backgroundColor: colors.background, // solid — no transparency, no border, no shadow
+    backgroundColor: colors.background,
   },
   actionBtn: {
-    width: 58,
-    height: 58,
-    borderRadius: 29,
-    backgroundColor: colors.surfaceHighlight,
+    width: 56,
+    height: 56,
+    borderRadius: 28,
+    backgroundColor: colors.surface,
     justifyContent: 'center',
     alignItems: 'center',
   },
   passBtn: {},
   superLikeBtn: {
-    width: 48,
-    height: 48,
-    borderRadius: 24,
-    borderWidth: 2,
+    width: 46,
+    height: 46,
+    borderRadius: 23,
+    borderWidth: 1.5,
     borderColor: colors.textPrimary,
+    backgroundColor: 'transparent',
   },
   likeBtn: {},
   superLikeHint: {
