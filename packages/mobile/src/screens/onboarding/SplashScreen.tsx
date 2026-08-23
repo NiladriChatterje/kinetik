@@ -1,14 +1,19 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import {
   View, Text, StyleSheet, TouchableOpacity,
-  ScrollView,
+  ScrollView, Animated, Dimensions,
 } from 'react-native';
+import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { useAuthStore } from '../../store/authStore';
 import { useToast } from '../../hooks/useToast';
 import { Button } from '../../components/common/Button';
 import { Input } from '../../components/common/Input';
 import { colors, typography, spacing, radius } from '../../theme';
+
+const { width: SCREEN_WIDTH } = Dimensions.get('window');
+const SEGMENT_WIDTH = SCREEN_WIDTH - spacing.xxl * 2;
+const SEGMENT_TAB_WIDTH = (SEGMENT_WIDTH - 4) / 2;
 
 export const SplashScreen: React.FC<{ navigation: any }> = ({ navigation }) => {
   const [mode, setMode] = useState<'login' | 'register'>('login');
@@ -23,10 +28,66 @@ export const SplashScreen: React.FC<{ navigation: any }> = ({ navigation }) => {
   const register = useAuthStore((s) => s.register);
   const toast = useToast();
 
+  // ─── Entrance animations ──────────────────────────────
+  const logoScale = useRef(new Animated.Value(0.6)).current;
+  const logoOpacity = useRef(new Animated.Value(0)).current;
+  const formOpacity = useRef(new Animated.Value(0)).current;
+  const formTranslateY = useRef(new Animated.Value(30)).current;
+  const segmentX = useRef(new Animated.Value(mode === 'login' ? 0 : 1)).current;
+
+  useEffect(() => {
+    Animated.sequence([
+      Animated.parallel([
+        Animated.spring(logoScale, {
+          toValue: 1,
+          friction: 8,
+          tension: 60,
+          useNativeDriver: true,
+        }),
+        Animated.timing(logoOpacity, {
+          toValue: 1,
+          duration: 400,
+          useNativeDriver: true,
+        }),
+      ]),
+      Animated.parallel([
+        Animated.timing(formOpacity, {
+          toValue: 1,
+          duration: 350,
+          useNativeDriver: true,
+        }),
+        Animated.spring(formTranslateY, {
+          toValue: 0,
+          friction: 9,
+          tension: 70,
+          useNativeDriver: true,
+        }),
+      ]),
+    ]).start();
+  }, []);
+
+  useEffect(() => {
+    Animated.spring(segmentX, {
+      toValue: mode === 'login' ? 0 : 1,
+      friction: 8,
+      tension: 80,
+      useNativeDriver: false,
+    }).start();
+  }, [mode]);
+
   const clearError = () => setErrorMsg('');
 
+  const handleModeSwitch = (newMode: 'login' | 'register') => {
+    if (newMode === mode) return;
+    setMode(newMode);
+    clearError();
+    setPassword('');
+    setFirstName('');
+    setLastName('');
+    setMiddleName('');
+  };
+
   const handleSubmit = async () => {
-    // Client-side validation
     if (!phone || !password) {
       toast.showError('Validation Error', 'Please fill in all required fields.');
       return;
@@ -42,12 +103,9 @@ export const SplashScreen: React.FC<{ navigation: any }> = ({ navigation }) => {
         const result = await login(phone, password);
         if (result.success) {
           if (result.requiresOtp) {
-            // Credentials valid — navigate to OTP verification
             navigation.navigate('OTPVerify');
           } else {
-            // OAuth login without OTP (handled by backend)
             toast.showSuccess('Welcome back!', 'You have signed in successfully.');
-            // Read live onboarding status from store (avoid stale closure)
             if (useAuthStore.getState().onboardingStep === 'complete') {
               navigation.getParent()?.reset({ index: 0, routes: [{ name: 'Main' }] });
             } else {
@@ -71,7 +129,6 @@ export const SplashScreen: React.FC<{ navigation: any }> = ({ navigation }) => {
           setLastName('');
           setMiddleName('');
         } else if (result.errorCode === 'PHONE_EXISTS') {
-          // Graceful glassmorphic toast for duplicate phone
           toast.showGlass('Phone already exists!', 'Try signing in instead.');
         } else {
           toast.showError('Registration Failed', result.error || 'Could not create your account. Please try again.');
@@ -87,28 +144,60 @@ export const SplashScreen: React.FC<{ navigation: any }> = ({ navigation }) => {
     }
   };
 
+  const indicatorTranslateX = segmentX.interpolate({
+    inputRange: [0, 1],
+    outputRange: [0, SEGMENT_TAB_WIDTH + 4],
+  });
+
   return (
-    <View style={styles.container}>
-      <ScrollView
-        contentContainerStyle={styles.scrollContent}
-        keyboardShouldPersistTaps="handled"
-        showsVerticalScrollIndicator={false}
-        bounces={false}
-      >
-        {/* Logo */}
-        <View style={styles.logoContainer}>
-          <View style={styles.logoIcon}>
-            <Ionicons name="flash" size={36} color={colors.textPrimary} />
-          </View>
-          <Text style={styles.title}>Kinetik</Text>
-          <Text style={styles.tagline}>Skip the chat. Meet already.</Text>
+    <SafeAreaView style={styles.container} edges={['top']}>
+      {/* ─── Fixed Top: Logo + Segment ──────────────────── */}
+      <Animated.View style={[styles.topSection, { opacity: logoOpacity, transform: [{ scale: logoScale }] }]}>
+        <View style={styles.logoIcon}>
+          <Ionicons name="flash" size={32} color={colors.textInverse} />
+        </View>
+        <Text style={styles.title}>Kinetik</Text>
+        <Text style={styles.tagline}>Skip the chat. Meet already.</Text>
+      </Animated.View>
+
+      {/* Segmented control sits just below the logo, still fixed */}
+      <Animated.View style={[styles.segmentSection, { opacity: formOpacity, transform: [{ translateY: formTranslateY }] }]}>
+        <View style={styles.segmentTrack}>
+          <Animated.View
+            style={[styles.segmentIndicator, { transform: [{ translateX: indicatorTranslateX }] }]}
+          />
+          <TouchableOpacity
+            style={styles.segmentTab}
+            onPress={() => handleModeSwitch('login')}
+            activeOpacity={0.8}
+          >
+            <Text style={[styles.segmentText, mode === 'login' && styles.segmentTextActive]}>
+              Sign In
+            </Text>
+          </TouchableOpacity>
+          <TouchableOpacity
+            style={styles.segmentTab}
+            onPress={() => handleModeSwitch('register')}
+            activeOpacity={0.8}
+          >
+            <Text style={[styles.segmentText, mode === 'register' && styles.segmentTextActive]}>
+              Sign Up
+            </Text>
+          </TouchableOpacity>
+        </View>
+      </Animated.View>
+
+      {/* ─── Scrollable Middle: Form Fields ─────────────── */}
+      <Animated.View style={[styles.formSection, { opacity: formOpacity, transform: [{ translateY: formTranslateY }] }]}>
+        <ScrollView
+          contentContainerStyle={styles.scrollContent}
+          keyboardShouldPersistTaps="handled"
+          showsVerticalScrollIndicator={false}
+        >
           {mode === 'register' && (
             <Text style={styles.registerSubtext}>Create your account to get started</Text>
           )}
-        </View>
 
-        {/* Auth Form */}
-        <View style={styles.form}>
           <Input
             label="Phone Number"
             value={phone}
@@ -155,38 +244,27 @@ export const SplashScreen: React.FC<{ navigation: any }> = ({ navigation }) => {
             </>
           )}
 
-          <Button
-            title={mode === 'login' ? 'Sign In' : 'Create Account'}
-            onPress={handleSubmit}
-            loading={loading}
-            disabled={loading}
-            fullWidth
-            size="lg"
-          />
-
-          {/* Inline error message */}
           {errorMsg ? (
             <View style={styles.errorBanner}>
               <Ionicons name="alert-circle-outline" size={16} color={colors.textPrimary} />
               <Text style={styles.errorText}>{errorMsg}</Text>
             </View>
           ) : null}
+        </ScrollView>
+      </Animated.View>
 
-          {/* Mode switcher */}
-          <View style={styles.switchContainer}>
-            {mode === 'login' ? (
-              <TouchableOpacity onPress={() => { setMode('register'); clearError(); }}>
-                <Text style={styles.switchText}>No account? Sign up</Text>
-              </TouchableOpacity>
-            ) : (
-              <TouchableOpacity onPress={() => { setMode('login'); clearError(); }}>
-                <Text style={styles.switchText}>Already have an account? Sign in</Text>
-              </TouchableOpacity>
-            )}
-          </View>
-        </View>
-      </ScrollView>
-    </View>
+      {/* ─── Fixed Bottom: Button ───────────────────────── */}
+      <View style={styles.bottomSection}>
+        <Button
+          title={mode === 'login' ? 'Sign In' : 'Create Account'}
+          onPress={handleSubmit}
+          loading={loading}
+          disabled={loading}
+          fullWidth
+          size="lg"
+        />
+      </View>
+    </SafeAreaView>
   );
 };
 
@@ -195,27 +273,102 @@ const styles = StyleSheet.create({
     flex: 1,
     backgroundColor: colors.background,
   },
-  scrollContent: {
-    flexGrow: 1,
-    paddingHorizontal: spacing.xxl,
-    paddingVertical: spacing.huge,
-  },
-  logoContainer: {
+
+  // ─── Fixed Top: Logo ─────────────────────────────────
+  topSection: {
     alignItems: 'center',
-    marginBottom: spacing.xxxl,
+    paddingTop: spacing.huge - spacing.lg,
+    paddingBottom: spacing.xl,
+    paddingHorizontal: spacing.xxl,
   },
   logoIcon: {
-    width: 80, height: 80, borderRadius: 40,
-    backgroundColor: colors.surfaceHighlight,
-    alignItems: 'center', justifyContent: 'center',
+    width: 72,
+    height: 72,
+    borderRadius: 20,
+    backgroundColor: colors.textPrimary,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginBottom: spacing.xl,
+  },
+  title: {
+    fontSize: 40,
+    lineHeight: 46,
+    fontWeight: '800',
+    letterSpacing: -1.5,
+    color: colors.textPrimary,
+    marginBottom: spacing.sm,
+  },
+  tagline: {
+    fontSize: 15,
+    lineHeight: 22,
+    fontWeight: '400',
+    color: colors.textSecondary,
+    letterSpacing: 0.2,
+  },
+
+  // ─── Fixed: Segmented Control ────────────────────────
+  segmentSection: {
+    paddingHorizontal: spacing.xxl,
+    paddingBottom: spacing.lg,
+  },
+  segmentTrack: {
+    height: 44,
+    flexDirection: 'row',
+    backgroundColor: colors.surface,
+    borderRadius: radius.full,
+    padding: 2,
+    position: 'relative',
+  },
+  segmentIndicator: {
+    position: 'absolute',
+    top: 2,
+    left: 2,
+    width: SEGMENT_TAB_WIDTH,
+    height: 40,
+    borderRadius: radius.full,
+    backgroundColor: colors.textPrimary,
+  },
+  segmentTab: {
+    flex: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+    zIndex: 1,
+  },
+  segmentText: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: colors.textMuted,
+  },
+  segmentTextActive: {
+    color: colors.textInverse,
+  },
+
+  // ─── Scrollable Middle: Form Fields ──────────────────
+  formSection: {
+    flex: 1,
+  },
+  scrollContent: {
+    paddingHorizontal: spacing.xxl,
+    paddingBottom: spacing.md,
+  },
+  registerSubtext: {
+    fontSize: 13,
+    lineHeight: 18,
+    fontWeight: '400',
+    color: colors.textMuted,
+    textAlign: 'center',
     marginBottom: spacing.lg,
   },
-  title: { ...typography.h1, color: colors.textPrimary, marginBottom: spacing.sm, textAlign: 'center' },
-  tagline: { ...typography.body1, color: colors.textSecondary, textAlign: 'center' },
-  registerSubtext: { ...typography.body2, color: colors.textMuted, textAlign: 'center', marginTop: spacing.sm },
-  form: { width: '100%' },
-  switchContainer: { alignItems: 'center', marginTop: spacing.xl },
-  switchText: { ...typography.body2, color: colors.textPrimary, marginTop: spacing.sm },
+
+  // ─── Fixed Bottom: Button ────────────────────────────
+  bottomSection: {
+    paddingHorizontal: spacing.xxl,
+    paddingBottom: spacing.xxl,
+    paddingTop: spacing.md,
+    backgroundColor: colors.background,
+  },
+
+  // ─── Error ───────────────────────────────────────────
   errorBanner: {
     flexDirection: 'row',
     alignItems: 'center',
