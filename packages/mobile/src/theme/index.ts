@@ -61,19 +61,24 @@ export const colors = {
 };
 
 // ─── Typography ──────────────────────────────────────────
+const cantarell = {
+  regular: 'Cantarell-Regular' as const,
+  bold: 'Cantarell-Bold' as const,
+};
+
 export const typography = {
-  h1: { fontSize: 28, lineHeight: 34, fontWeight: '700' as const, letterSpacing: -0.5 },
-  h2: { fontSize: 22, lineHeight: 28, fontWeight: '700' as const, letterSpacing: -0.3 },
-  h3: { fontSize: 18, lineHeight: 24, fontWeight: '600' as const, letterSpacing: -0.2 },
-  h4: { fontSize: 16, lineHeight: 22, fontWeight: '600' as const },
-  body1: { fontSize: 14, lineHeight: 20, fontWeight: '400' as const },
-  body2: { fontSize: 13, lineHeight: 18, fontWeight: '400' as const },
-  caption: { fontSize: 11, lineHeight: 15, fontWeight: '400' as const },
-  button: { fontSize: 14, lineHeight: 20, fontWeight: '600' as const, letterSpacing: 0.5 },
-  buttonSmall: { fontSize: 12, lineHeight: 17, fontWeight: '600' as const, letterSpacing: 0.3 },
-  label: { fontSize: 11, lineHeight: 15, fontWeight: '500' as const, letterSpacing: 0.5, textTransform: 'uppercase' as const },
-  countdown: { fontSize: 56, lineHeight: 64, fontWeight: '700' as const, letterSpacing: -2 },
-  timer: { fontSize: 42, lineHeight: 48, fontWeight: '300' as const, letterSpacing: 2 },
+  h1: { fontFamily: cantarell.bold, fontSize: 28, lineHeight: 34, fontWeight: '700' as const, letterSpacing: -0.5 },
+  h2: { fontFamily: cantarell.bold, fontSize: 22, lineHeight: 28, fontWeight: '700' as const, letterSpacing: -0.3 },
+  h3: { fontFamily: cantarell.bold, fontSize: 18, lineHeight: 24, fontWeight: '600' as const, letterSpacing: -0.2 },
+  h4: { fontFamily: cantarell.regular, fontSize: 16, lineHeight: 22, fontWeight: '600' as const },
+  body1: { fontFamily: cantarell.regular, fontSize: 14, lineHeight: 20, fontWeight: '400' as const },
+  body2: { fontFamily: cantarell.regular, fontSize: 13, lineHeight: 18, fontWeight: '400' as const },
+  caption: { fontFamily: cantarell.regular, fontSize: 11, lineHeight: 15, fontWeight: '400' as const },
+  button: { fontFamily: cantarell.bold, fontSize: 14, lineHeight: 20, fontWeight: '600' as const, letterSpacing: 0.5 },
+  buttonSmall: { fontFamily: cantarell.bold, fontSize: 12, lineHeight: 17, fontWeight: '600' as const, letterSpacing: 0.3 },
+  label: { fontFamily: cantarell.bold, fontSize: 12, lineHeight: 16, fontWeight: '500' as const, letterSpacing: 0.3 },
+  countdown: { fontFamily: cantarell.bold, fontSize: 56, lineHeight: 64, fontWeight: '700' as const, letterSpacing: -2 },
+  timer: { fontFamily: cantarell.regular, fontSize: 42, lineHeight: 48, fontWeight: '300' as const, letterSpacing: 2 },
 };
 
 // ─── Spacing ─────────────────────────────────────────────

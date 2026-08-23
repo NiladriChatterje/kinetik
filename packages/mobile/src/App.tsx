@@ -3,6 +3,8 @@ import { LogBox, View, Platform } from 'react-native';
 import Constants from 'expo-constants';
 import { StatusBar } from 'expo-status-bar';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
+import { useFonts, Cantarell_400Regular, Cantarell_700Bold } from '@expo-google-fonts/cantarell';
+import * as SplashScreen from 'expo-splash-screen';
 import * as NavigationBar from 'expo-navigation-bar';
 import Toast from 'react-native-toast-message';
 import { IslandToast } from './components/common/IslandToast';
@@ -48,6 +50,17 @@ export default function App() {
   const connectionError = useAuthStore((s) => s.connectionError);
   const [isRetrying, setIsRetrying] = React.useState(false);
 
+  const [fontsLoaded] = useFonts({
+    'Cantarell-Regular': Cantarell_400Regular,
+    'Cantarell-Bold': Cantarell_700Bold,
+  });
+
+  useEffect(() => {
+    if (fontsLoaded) {
+      SplashScreen.hideAsync();
+    }
+  }, [fontsLoaded]);
+
   // Initialize push notifications
   useNotifications();
 
@@ -65,6 +78,8 @@ export default function App() {
       }
     }
   }, []);
+
+  if (!fontsLoaded) return null;
 
   return (
     <View style={{ flex: 1, backgroundColor: colors.background }}>
