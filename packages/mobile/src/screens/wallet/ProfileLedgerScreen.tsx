@@ -1,5 +1,5 @@
-import React, { useEffect, useState, useCallback } from 'react';
-import { View, Text, StyleSheet, ScrollView, TouchableOpacity, Image, Alert, ActivityIndicator } from 'react-native';
+import React, { useEffect, useState, useCallback, useRef } from 'react';
+import { View, Text, StyleSheet, ScrollView, TouchableOpacity, Image, Alert, ActivityIndicator, Modal, Animated, Dimensions } from 'react-native';
 import { useNavigation } from '@react-navigation/native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
@@ -77,7 +77,34 @@ export const ProfileLedgerScreen: React.FC = () => {
   const [modalPhoto, setModalPhoto] = useState<ProfilePhoto | null>(null);
   const [kycStatus, setKycStatus] = useState<string | null>(null);
   const [deletingAccount, setDeletingAccount] = useState(false);
+  const [deleteModalVisible, setDeleteModalVisible] = useState(false);
   const [stats, setStats] = useState<ProfileStats | null>(null);
+
+  // ─── Delete modal animations ─────────────────────────────
+  const overlayOpacity = useRef(new Animated.Value(0)).current;
+  const sheetY = useRef(new Animated.Value(1)).current;
+  const contentScale = useRef(new Animated.Value(1)).current;
+  const { height: SCREEN_HEIGHT } = Dimensions.get('window');
+
+  const openDeleteModal = () => {
+    setDeleteModalVisible(true);
+    Animated.parallel([
+      Animated.timing(overlayOpacity, { toValue: 1, duration: 250, useNativeDriver: true }),
+      Animated.spring(sheetY, { toValue: 0, speed: 50, bounciness: 4, useNativeDriver: true }),
+      Animated.timing(contentScale, { toValue: 0.85, duration: 250, useNativeDriver: true }),
+    ]).start();
+  };
+
+  const closeDeleteModal = (cb?: () => void) => {
+    Animated.parallel([
+      Animated.timing(overlayOpacity, { toValue: 0, duration: 200, useNativeDriver: true }),
+      Animated.timing(sheetY, { toValue: 1, duration: 200, useNativeDriver: true }),
+      Animated.timing(contentScale, { toValue: 1, duration: 200, useNativeDriver: true }),
+    ]).start(() => {
+      setDeleteModalVisible(false);
+      cb?.();
+    });
+  };
 
   const fetchProfileAndPhotos = useCallback(async () => {
     try {
@@ -184,28 +211,20 @@ export const ProfileLedgerScreen: React.FC = () => {
   // Destructive action with an explicit confirmation. The server requires
   // { confirm: true } as well, so this is double-guarded against accidents.
   const handleDeleteAccount = useCallback(() => {
-    Alert.alert(
-      'Delete Account?',
-      'This permanently deletes your profile, photos, matches and all chat history. ' +
-      'You will not be able to log back in with this account. This cannot be undone.',
-      [
-        { text: 'Cancel', style: 'cancel' },
-        {
-          text: 'Delete My Account',
-          style: 'destructive',
-          onPress: async () => {
-            setDeletingAccount(true);
-            const result = await deleteAccount();
-            setDeletingAccount(false);
-            if (result.success) {
-              toast.showSuccess('Account deleted', 'Permanently removed.');
-            } else {
-              toast.showError('Delete failed', result.error || 'Try again.');
-            }
-          },
-        },
-      ],
-    );
+    openDeleteModal();
+  }, []);
+
+  const confirmDeleteAccount = useCallback(() => {
+    closeDeleteModal(async () => {
+      setDeletingAccount(true);
+      const result = await deleteAccount();
+      setDeletingAccount(false);
+      if (result.success) {
+        toast.showSuccess('Account deleted', 'Permanently removed.');
+      } else {
+        toast.showError('Delete failed', result.error || 'Try again.');
+      }
+    });
   }, [deleteAccount, toast]);
 
   const handleDeletePhoto = (photoId: string) => {
@@ -255,6 +274,7 @@ export const ProfileLedgerScreen: React.FC = () => {
 
   return (
     <SafeAreaView style={styles.container}>
+      <Animated.View style={[styles.contentWrap, { transform: [{ scale: contentScale }] }]}>  
       <ScrollView contentContainerStyle={styles.content}>
         {/* Profile Header */}
         <View style={styles.profileHeader}>
@@ -451,6 +471,7 @@ export const ProfileLedgerScreen: React.FC = () => {
           </Text>
         </View>
       </ScrollView>
+      </Animated.View>
 
       {/* Photo Options Modal */}
       <PhotoOptionsModal
@@ -465,12 +486,57 @@ export const ProfileLedgerScreen: React.FC = () => {
         }}
         onClose={() => setModalPhoto(null)}
       />
+
+      {/* Delete Account Confirmation Modal */}
+      <Modal
+        visible={deleteModalVisible}
+        transparent
+        animationType="none"
+        onRequestClose={() => closeDeleteModal()}
+      >
+        <Animated.View style={[styles.modalOverlay, { opacity: overlayOpacity }]}>
+          <TouchableOpacity
+            style={StyleSheet.absoluteFill}
+            activeOpacity={1}
+            onPress={() => closeDeleteModal()}
+          />
+          <Animated.View style={[styles.modalSheet, { transform: [{ translateY: sheetY.interpolate({ inputRange: [0, 1], outputRange: [0, SCREEN_HEIGHT] }) }] }]}>
+            <View style={styles.modalIcon}>
+              <Ionicons name="warning-outline" size={28} color="#E53935" />
+            </View>
+            <Text style={styles.modalTitle}>Delete Account?</Text>
+            <Text style={styles.modalBody}>
+              This permanently deletes your profile, photos, matches and all chat history. You will not be able to log back in. This cannot be undone.
+            </Text>
+
+            <TouchableOpacity
+              style={styles.modalDeleteBtn}
+              onPress={() => confirmDeleteAccount()}
+              disabled={deletingAccount}
+            >
+              {deletingAccount ? (
+                <ActivityIndicator size="small" color={colors.textInverse} />
+              ) : (
+                <Text style={styles.modalDeleteBtnText}>Delete My Account</Text>
+              )}
+            </TouchableOpacity>
+
+            <TouchableOpacity
+              style={styles.modalCancel}
+              onPress={() => closeDeleteModal()}
+            >
+              <Text style={styles.modalCancelText}>Cancel</Text>
+            </TouchableOpacity>
+          </Animated.View>
+        </Animated.View>
+      </Modal>
     </SafeAreaView>
   );
 };
 
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: colors.background },
+  contentWrap: { flex: 1 },
   content: { padding: spacing.xxl, paddingBottom: 100 },
   profileHeader: { alignItems: 'center', marginBottom: spacing.xxl },
   name: { ...typography.h2, color: colors.textPrimary, marginTop: spacing.md, marginBottom: spacing.xs },
@@ -590,5 +656,66 @@ const styles = StyleSheet.create({
     textAlign: 'center',
     marginTop: spacing.xs,
     paddingHorizontal: spacing.xxl,
+  },
+
+  // ─── Delete Confirmation Modal ─────────────────────────
+  modalOverlay: {
+    ...StyleSheet.absoluteFill,
+    backgroundColor: colors.overlay,
+    justifyContent: 'flex-end',
+    paddingBottom: spacing.xxl,
+  },
+  modalSheet: {
+    marginHorizontal: spacing.lg,
+    backgroundColor: colors.background,
+    borderRadius: radius.xl,
+    paddingVertical: spacing.xxl,
+    paddingHorizontal: spacing.xl,
+    alignItems: 'center',
+  },
+  modalIcon: {
+    width: 52,
+    height: 52,
+    borderRadius: 26,
+    backgroundColor: 'rgba(229, 57, 53, 0.1)',
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginBottom: spacing.md,
+  },
+  modalTitle: {
+    ...typography.h3,
+    color: colors.textPrimary,
+    textAlign: 'center',
+    marginBottom: spacing.sm,
+  },
+  modalBody: {
+    ...typography.body2,
+    color: colors.textSecondary,
+    textAlign: 'center',
+    lineHeight: 18,
+    marginBottom: spacing.xl,
+    paddingHorizontal: spacing.sm,
+  },
+  modalDeleteBtn: {
+    width: '100%',
+    paddingVertical: spacing.md + 2,
+    backgroundColor: '#E53935',
+    borderRadius: radius.lg,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginBottom: spacing.sm,
+  },
+  modalDeleteBtnText: {
+    ...typography.button,
+    color: colors.textInverse,
+  },
+  modalCancel: {
+    paddingVertical: spacing.md,
+    alignItems: 'center',
+  },
+  modalCancelText: {
+    ...typography.body1,
+    color: colors.textMuted,
+    fontWeight: '500',
   },
 });
