@@ -19,13 +19,14 @@ export async function createUser(data: {
   authProviderId?: string;
   displayName?: string;
   dateOfBirth?: string;
+  countryCode?: string;
 }) {
   try {
     const result = await query(
-      `INSERT INTO ${TABLES.USERS} (phone, email, password_hash, auth_provider, auth_provider_id, display_name, date_of_birth)
-       VALUES ($1, $2, $3, $4, $5, $6, $7)
+      `INSERT INTO ${TABLES.USERS} (phone, email, password_hash, auth_provider, auth_provider_id, display_name, date_of_birth, country_code)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
        RETURNING id, phone, email, display_name, created_at`,
-      [data.phone, data.email, data.passwordHash, data.authProvider, data.authProviderId, data.displayName, data.dateOfBirth || null],
+      [data.phone, data.email, data.passwordHash, data.authProvider, data.authProviderId, data.displayName, data.dateOfBirth || null, data.countryCode || null],
     );
     return result.rows[0];
   } catch (error: any) {

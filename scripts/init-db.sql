@@ -17,6 +17,7 @@ CREATE TYPE verification_status AS ENUM ('unverified', 'pending', 'verified', 'r
 CREATE TABLE users (
     id              UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
     phone           VARCHAR(20) UNIQUE,
+    country_code    VARCHAR(10),
     email           VARCHAR(255) UNIQUE,
     password_hash   VARCHAR(255),
     auth_provider   VARCHAR(50),       -- 'phone', 'google', 'apple'

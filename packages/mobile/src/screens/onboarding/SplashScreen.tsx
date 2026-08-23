@@ -80,9 +80,8 @@ export const SplashScreen: React.FC<{ navigation: any }> = ({ navigation }) => {
     }).start();
   }, [mode]);
 
-  const phone = mode === 'register'
-    ? countryCode + phoneNumber
-    : phoneNumber.startsWith('+') ? phoneNumber : countryCode + phoneNumber;
+  // Phone number is sent as-is (no auto-prepend of country code).
+  // Country code is stored separately in the database.
   const clearError = () => setErrorMsg('');
 
   const handleModeSwitch = (newMode: 'login' | 'register') => {
@@ -98,7 +97,7 @@ export const SplashScreen: React.FC<{ navigation: any }> = ({ navigation }) => {
   };
 
   const handleSubmit = async () => {
-    if (!phone || !password) {
+    if (!phoneNumber || !password) {
       toast.showError('Missing fields', 'Fill in all required fields.');
       return;
     }
@@ -114,7 +113,7 @@ export const SplashScreen: React.FC<{ navigation: any }> = ({ navigation }) => {
     setLoading(true);
     try {
       if (mode === 'login') {
-        const result = await login(phone, password);
+        const result = await login(phoneNumber, password);
         if (result.success) {
           if (result.requiresOtp) {
             navigation.navigate('OTPVerify');
@@ -132,7 +131,7 @@ export const SplashScreen: React.FC<{ navigation: any }> = ({ navigation }) => {
           setErrorMsg(result.error || 'Wrong credential. Please try again.');
         }
       } else if (mode === 'register') {
-        const payload: { phone: string; password: string; displayName?: string; age: number } = { phone, password, age: parseInt(age, 10) };
+        const payload: { phone: string; password: string; displayName?: string; age: number; countryCode: string } = { phone: phoneNumber, password, age: parseInt(age, 10), countryCode };
         if (firstName) payload.displayName = firstName;
         const result = await register(payload);
         if (result.success) {
