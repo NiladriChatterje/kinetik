@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect } from 'react';
 import { LogBox, View, Platform } from 'react-native';
 import Constants from 'expo-constants';
 import { StatusBar } from 'expo-status-bar';
@@ -9,7 +9,6 @@ import * as NavigationBar from 'expo-navigation-bar';
 import Toast from 'react-native-toast-message';
 import { IslandToast } from './components/common/IslandToast';
 import { IslandStatus } from './components/common/IslandStatus';
-import { AnimatedSplash } from './components/common/AnimatedSplash';
 import { RootNavigator } from './navigation/RootNavigator';
 import { useAuthStore } from './store/authStore';
 import { useNotifications } from './hooks/useNotifications';
@@ -80,13 +79,7 @@ export default function App() {
     }
   }, []);
 
-  const [splashDone, setSplashDone] = useState(false);
-
   if (!fontsLoaded) return null;
-
-  if (!splashDone) {
-    return <AnimatedSplash onFinish={() => setSplashDone(true)} />;
-  }
 
   return (
     <View style={{ flex: 1, backgroundColor: colors.background }}>
