@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef, useCallback } from 'react';  import {
+import React, { useState, useEffect, useRef, useCallback } from 'react'; import {
   View, Text, StyleSheet, Dimensions, TouchableOpacity,
   Animated, PanResponder, ActivityIndicator, Alert,
   ScrollView,
@@ -52,12 +52,12 @@ const ABOUT_SECTIONS: {
   icon: 'leaf-outline' | 'fitness-outline' | 'film-outline' | 'musical-notes-outline' | 'cafe-outline';
   label: string;
 }[] = [
-  { key: 'nature', icon: 'leaf-outline', label: 'Nature' },
-  { key: 'hobbies', icon: 'fitness-outline', label: 'Hobbies' },
-  { key: 'movieGenres', icon: 'film-outline', label: 'Movies' },
-  { key: 'music', icon: 'musical-notes-outline', label: 'Music' },
-  { key: 'dateStyle', icon: 'cafe-outline', label: 'Dates' },
-];
+    { key: 'nature', icon: 'leaf-outline', label: 'Nature' },
+    { key: 'hobbies', icon: 'fitness-outline', label: 'Hobbies' },
+    { key: 'movieGenres', icon: 'film-outline', label: 'Movies' },
+    { key: 'music', icon: 'musical-notes-outline', label: 'Music' },
+    { key: 'dateStyle', icon: 'cafe-outline', label: 'Dates' },
+  ];
 
 function SwipeCard({
   profile,
@@ -151,9 +151,9 @@ function SwipeCard({
         showsVerticalScrollIndicator={false}
         bounces={false}
       >
-      {/* Photo Gallery */}
-      <View style={styles.cardImageContainer}>
-        {currentPhoto ? (            <TouchableOpacity
+        {/* Photo Gallery */}
+        <View style={styles.cardImageContainer}>
+          {currentPhoto ? (<TouchableOpacity
             activeOpacity={1}
             onPressIn={(e) => {
               // Tap left half = prev, right half = next
@@ -201,108 +201,108 @@ function SwipeCard({
               </View>
             )}
           </TouchableOpacity>
-        ) : (
-          <View style={[styles.cardImage, styles.noPhoto]}>
-            <Ionicons name="person-outline" size={48} color={colors.textMuted} />
-          </View>
-        )}
-
-        {/* Photo count badge */}
-        {photoCount > 1 && (
-          <View style={styles.photoCountBadge}>
-            <Ionicons name="images-outline" size={12} color={colors.textInverse} />
-            <Text style={styles.photoCountText}>{photoIndex + 1}/{photoCount}</Text>
-          </View>
-        )}
-
-        {/* Like / Pass stickers */}
-        <Animated.View style={[styles.sticker, styles.likeSticker, { opacity: likeOpacity }]}>
-          <Text style={styles.stickerText}>LIKE</Text>
-        </Animated.View>
-        <Animated.View style={[styles.sticker, styles.passSticker, { opacity: passOpacity }]}>
-          <Text style={styles.stickerText}>PASS</Text>
-        </Animated.View>
-      </View>
-
-      {/* Info */}
-      <View style={styles.cardInfo}>
-        <View style={styles.nameRow}>
-          <Text style={styles.name}>
-            {profile.displayName}, {profile.age}
-          </Text>
-          {profile.isVerified && (
-            <Ionicons name="checkmark-circle" size={18} color={colors.success} style={{ marginLeft: 6 }} />
+          ) : (
+            <View style={[styles.cardImage, styles.noPhoto]}>
+              <Ionicons name="person-outline" size={48} color={colors.textMuted} />
+            </View>
           )}
+
+          {/* Photo count badge */}
+          {photoCount > 1 && (
+            <View style={styles.photoCountBadge}>
+              <Ionicons name="images-outline" size={12} color={colors.textInverse} />
+              <Text style={styles.photoCountText}>{photoIndex + 1}/{photoCount}</Text>
+            </View>
+          )}
+
+          {/* Like / Pass stickers */}
+          <Animated.View style={[styles.sticker, styles.likeSticker, { opacity: likeOpacity }]}>
+            <Text style={styles.stickerText}>LIKE</Text>
+          </Animated.View>
+          <Animated.View style={[styles.sticker, styles.passSticker, { opacity: passOpacity }]}>
+            <Text style={styles.stickerText}>PASS</Text>
+          </Animated.View>
         </View>
 
-        {profile.pronouns ? (
-          <Text style={styles.pronounsText}>{profile.pronouns}</Text>
-        ) : null}
-
-        {profile.bio ? <Text style={styles.bio}>{profile.bio}</Text> : null}
-
-        <View style={styles.detailsRow}>
-          {profile.occupation ? (
-            <View style={styles.detailChip}>
-              <Ionicons name="briefcase-outline" size={14} color={colors.textSecondary} />
-              <Text style={styles.detailText}>{profile.occupation}</Text>
-            </View>
-          ) : null}
-          {profile.education ? (
-            <View style={styles.detailChip}>
-              <Ionicons name="school-outline" size={14} color={colors.textSecondary} />
-              <Text style={styles.detailText}>{profile.education}</Text>
-            </View>
-          ) : null}
-          {profile.distanceKm != null ? (
-            <View style={styles.detailChip}>
-              <Ionicons name="location-outline" size={14} color={colors.textSecondary} />
-              <Text style={styles.detailText}>~{profile.distanceKm} km away</Text>
-            </View>
-          ) : null}
-        </View>
-
-        {profile.interests.length > 0 && (
-          <View style={styles.interestsRow}>
-            {profile.interests.map((interest) => (
-              <View key={interest.id} style={styles.interestChip}>
-                <Text style={styles.interestText}>
-                  {interest.name}
-                </Text>
-              </View>
-            ))}
+        {/* Info */}
+        <View style={styles.cardInfo}>
+          <View style={styles.nameRow}>
+            <Text style={styles.name}>
+              {profile.displayName}, {profile.age}
+            </Text>
+            {profile.isVerified && (
+              <Ionicons name="checkmark-circle" size={18} color={colors.success} style={{ marginLeft: 6 }} />
+            )}
           </View>
-        )}
 
-        {/* 'Knowing more about you' answers */}
-        {(() => {
-          const answered = ABOUT_SECTIONS.filter(({ key }) => (profile.aboutAnswers?.[key] ?? []).length > 0);
-          if (answered.length === 0) return null;
-          return (
-            <View style={styles.aboutSection}>
-              <Text style={styles.aboutHeading}>More about them</Text>
-              {answered.map(({ key, icon, label }) => {
-                const items = profile.aboutAnswers?.[key] ?? [];
-                return (
-                  <View key={key} style={styles.aboutRow}>
-                    <Ionicons name={icon} size={15} color={colors.textSecondary} />
-                    <View style={styles.aboutRowBody}>
-                      <Text style={styles.aboutLabel}>{label}</Text>
-                      <View style={styles.aboutChips}>
-                        {items.map((item) => (
-                          <View key={item} style={styles.aboutChip}>
-                            <Text style={styles.aboutChipText}>{item}</Text>
-                          </View>
-                        ))}
+          {profile.pronouns ? (
+            <Text style={styles.pronounsText}>{profile.pronouns}</Text>
+          ) : null}
+
+          {profile.bio ? <Text style={styles.bio}>{profile.bio}</Text> : null}
+
+          <View style={styles.detailsRow}>
+            {profile.occupation ? (
+              <View style={styles.detailChip}>
+                <Ionicons name="briefcase-outline" size={14} color={colors.textSecondary} />
+                <Text style={styles.detailText}>{profile.occupation}</Text>
+              </View>
+            ) : null}
+            {profile.education ? (
+              <View style={styles.detailChip}>
+                <Ionicons name="school-outline" size={14} color={colors.textSecondary} />
+                <Text style={styles.detailText}>{profile.education}</Text>
+              </View>
+            ) : null}
+            {profile.distanceKm != null ? (
+              <View style={styles.detailChip}>
+                <Ionicons name="location-outline" size={14} color={colors.textSecondary} />
+                <Text style={styles.detailText}>~{profile.distanceKm} km away</Text>
+              </View>
+            ) : null}
+          </View>
+
+          {profile.interests.length > 0 && (
+            <View style={styles.interestsRow}>
+              {profile.interests.map((interest) => (
+                <View key={interest.id} style={styles.interestChip}>
+                  <Text style={styles.interestText}>
+                    {interest.name}
+                  </Text>
+                </View>
+              ))}
+            </View>
+          )}
+
+          {/* 'Knowing more about you' answers */}
+          {(() => {
+            const answered = ABOUT_SECTIONS.filter(({ key }) => (profile.aboutAnswers?.[key] ?? []).length > 0);
+            if (answered.length === 0) return null;
+            return (
+              <View style={styles.aboutSection}>
+                <Text style={styles.aboutHeading}>More about {profile.displayName}</Text>
+                {answered.map(({ key, icon, label }) => {
+                  const items = profile.aboutAnswers?.[key] ?? [];
+                  return (
+                    <View key={key} style={styles.aboutRow}>
+                      <Ionicons name={icon} size={15} color={colors.textSecondary} />
+                      <View style={styles.aboutRowBody}>
+                        <Text style={styles.aboutLabel}>{label}</Text>
+                        <View style={styles.aboutChips}>
+                          {items.map((item) => (
+                            <View key={item} style={styles.aboutChip}>
+                              <Text style={styles.aboutChipText}>{item}</Text>
+                            </View>
+                          ))}
+                        </View>
                       </View>
                     </View>
-                  </View>
-                );
-              })}
-            </View>
-          );
-        })()}
-      </View>
+                  );
+                })}
+              </View>
+            );
+          })()}
+        </View>
       </ScrollView>
 
       {/* Super Like badge on card when remaining */}
@@ -614,32 +614,32 @@ export const MatchScreen: React.FC<{ navigation: any; route?: any }> = ({ naviga
           <Text style={styles.loadingText}>Finding profiles near you...</Text>
         </View>
 
-      {/* Match Popup overlay */}
-      <MatchPopup
-        visible={matchPopup.visible}
-        partnerName={matchPopup.partnerName}
-        partnerPhotoUrl={matchPopup.partnerPhotoUrl}
-        onKeepSwiping={handleKeepSwiping}
-        onSayHello={handleSayHello}
-      />
+        {/* Match Popup overlay */}
+        <MatchPopup
+          visible={matchPopup.visible}
+          partnerName={matchPopup.partnerName}
+          partnerPhotoUrl={matchPopup.partnerPhotoUrl}
+          onKeepSwiping={handleKeepSwiping}
+          onSayHello={handleSayHello}
+        />
 
-      {/* Paywall modal */}
-      <PaywallModal
-        visible={paywall.visible}
-        reason={paywall.reason}
-        used={paywall.used}
-        limit={paywall.limit}
-        onDismiss={() => setPaywall((prev) => ({ ...prev, visible: false }))}
-        onUpgrade={() => {
-          setPaywall((prev) => ({ ...prev, visible: false }));
-          navigation.navigate('SubscriptionCheckout');
-        }}
-      />
-    </SafeAreaView>
-  );
-}
+        {/* Paywall modal */}
+        <PaywallModal
+          visible={paywall.visible}
+          reason={paywall.reason}
+          used={paywall.used}
+          limit={paywall.limit}
+          onDismiss={() => setPaywall((prev) => ({ ...prev, visible: false }))}
+          onUpgrade={() => {
+            setPaywall((prev) => ({ ...prev, visible: false }));
+            navigation.navigate('SubscriptionCheckout');
+          }}
+        />
+      </SafeAreaView>
+    );
+  }
 
-const currentProfile = profiles[currentIndex];
+  const currentProfile = profiles[currentIndex];
 
   if (!currentProfile) {
     return (
@@ -667,58 +667,58 @@ const currentProfile = profiles[currentIndex];
             <Text style={styles.refreshBtnText}>Refresh</Text>
           </TouchableOpacity>
         </View>      {/* Match Popup overlay */}
-      <MatchPopup
-        visible={matchPopup.visible}
-        partnerName={matchPopup.partnerName}
-        partnerPhotoUrl={matchPopup.partnerPhotoUrl}
-        onKeepSwiping={handleKeepSwiping}
-        onSayHello={handleSayHello}
-      />
+        <MatchPopup
+          visible={matchPopup.visible}
+          partnerName={matchPopup.partnerName}
+          partnerPhotoUrl={matchPopup.partnerPhotoUrl}
+          onKeepSwiping={handleKeepSwiping}
+          onSayHello={handleSayHello}
+        />
 
-      {/* Paywall modal */}
-      <PaywallModal
-        visible={paywall.visible}
-        reason={paywall.reason}
-        used={paywall.used}
-        limit={paywall.limit}
-        onDismiss={() => setPaywall((prev) => ({ ...prev, visible: false }))}
-        onUpgrade={() => {
-          setPaywall((prev) => ({ ...prev, visible: false }));
-          navigation.navigate('SubscriptionCheckout');
-        }}
-      />
-    </SafeAreaView>
-  );
-}
+        {/* Paywall modal */}
+        <PaywallModal
+          visible={paywall.visible}
+          reason={paywall.reason}
+          used={paywall.used}
+          limit={paywall.limit}
+          onDismiss={() => setPaywall((prev) => ({ ...prev, visible: false }))}
+          onUpgrade={() => {
+            setPaywall((prev) => ({ ...prev, visible: false }));
+            navigation.navigate('SubscriptionCheckout');
+          }}
+        />
+      </SafeAreaView>
+    );
+  }
 
   return (
     <SafeAreaView style={styles.container}>
       <View style={styles.header}>
         <Text style={styles.headerTitle}>Discover</Text>
-          {/* Quiet swipe-budget counter — appears only when the free
+        {/* Quiet swipe-budget counter — appears only when the free
               lifetime allowance runs low, so the paywall isn't a surprise */}
-          {swipesRemaining !== null && swipesRemaining <= 5 && (
-            <View style={styles.swipeBudgetPill}>
-              <Text style={styles.swipeBudgetText}>
-                {swipesRemaining === 0
-                  ? 'No swipes left'
-                  : `${swipesRemaining} swipe${swipesRemaining === 1 ? '' : 's'} left`}
-              </Text>
-            </View>
-          )}
-          <TouchableOpacity onPress={() => navigation.navigate('Likes')}>
-            <View style={styles.likesBadge}>
-              <Ionicons name="heart-outline" size={22} color={colors.textPrimary} />
-              {unreadLikeCount > 0 && (
-                <View style={styles.likesBadgeCount}>
-                  <Text style={styles.likesBadgeCountText}>
-                    {unreadLikeCount > 9 ? '9+' : unreadLikeCount}
-                  </Text>
-                </View>
-              )}
-            </View>
-          </TouchableOpacity>
-        </View>
+        {swipesRemaining !== null && swipesRemaining <= 5 && (
+          <View style={styles.swipeBudgetPill}>
+            <Text style={styles.swipeBudgetText}>
+              {swipesRemaining === 0
+                ? 'No swipes left'
+                : `${swipesRemaining} swipe${swipesRemaining === 1 ? '' : 's'} left`}
+            </Text>
+          </View>
+        )}
+        <TouchableOpacity onPress={() => navigation.navigate('Likes')}>
+          <View style={styles.likesBadge}>
+            <Ionicons name="heart-outline" size={22} color={colors.textPrimary} />
+            {unreadLikeCount > 0 && (
+              <View style={styles.likesBadgeCount}>
+                <Text style={styles.likesBadgeCountText}>
+                  {unreadLikeCount > 9 ? '9+' : unreadLikeCount}
+                </Text>
+              </View>
+            )}
+          </View>
+        </TouchableOpacity>
+      </View>
 
       {/* Render cards stack */}
       <View style={styles.cardsContainer}>
