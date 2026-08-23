@@ -18,15 +18,19 @@ let publisher: Redis | null = null;
 
 function getPublisher(): Redis {
   if (!publisher) {
-    publisher = new Redis({
-      host: process.env.REDIS_EVENTS_HOST || 'localhost',
-      port: parseInt(process.env.REDIS_EVENTS_PORT || '6380', 10),
-      password: process.env.REDIS_EVENTS_PASSWORD,
-      retryStrategy: (times) => Math.min(times * 50, 2000),
-      maxRetriesPerRequest: null,    // Infinite retries — critical event bus
-      enableOfflineQueue: false,
-      lazyConnect: true,
-    });
+    publisher = new Redis(
+      "rediss://default:i9mBSZ62xWSnOG8RPxq2cFrU@redis-events-tiny-coast.cloud.layerbase.dev:6379",
+      {
+        tls: { servername: 'redis-events-tiny-coast.cloud.layerbase.dev' }
+        //   host: process.env.REDIS_EVENTS_HOST || 'localhost',
+        //   port: parseInt(process.env.REDIS_EVENTS_PORT || '6380', 10),
+        //   password: process.env.REDIS_EVENTS_PASSWORD,
+        //   retryStrategy: (times) => Math.min(times * 50, 2000),
+        //   maxRetriesPerRequest: null,    // Infinite retries — critical event bus
+        //   enableOfflineQueue: false,
+        //   lazyConnect: true,
+      }
+    );
 
     publisher.on('connect', () => {
       console.log('📡 Event Bus Redis connected');

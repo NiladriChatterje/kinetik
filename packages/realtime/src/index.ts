@@ -18,26 +18,33 @@ const JWT_SECRET = process.env.JWT_SECRET || 'super-secret-jwt-key-change-in-pro
 // The Socket.IO Redis adapter requires two connections to the same Redis
 // instance: one for publishing, one for subscribing. ioredis duplicate()
 // creates a separate TCP connection sharing the same config.
-const pubClient = new Redis({
-  host: process.env.REDIS_HOST || 'localhost',
-  port: parseInt(process.env.REDIS_PORT || '6379', 10),
-  password: process.env.REDIS_PASSWORD,
-  retryStrategy: (times) => Math.min(times * 50, 2000),
-  maxRetriesPerRequest: null,    // Infinite retries — adapter recovers after Redis outage
-  enableOfflineQueue: false,     // Fail fast when Redis is down rather than queuing
-});
+const pubClient = new Redis(
+  "rediss://default:i9mBSZ62xWSnOG8RPxq2cFrU@redis-events-tiny-coast.cloud.layerbase.dev:6379",
+  {
+    tls: { servername: 'redis-events-tiny-coast.cloud.layerbase.dev' },
+    // host: process.env.REDIS_HOST || 'localhost',
+    // port: parseInt(process.env.REDIS_PORT || '6379', 10),
+    // password: process.env.REDIS_PASSWORD,
+    // retryStrategy: (times) => Math.min(times * 50, 2000),
+    // maxRetriesPerRequest: null,    // Infinite retries — adapter recovers after Redis outage
+    // enableOfflineQueue: false,     // Fail fast when Redis is down rather than queuing
+  });
 
 const subClient = pubClient.duplicate();
 
 // ─── Event Bus Redis (separate instance — replaces Kafka consumer) ─
-const eventBusClient = new Redis({
-  host: process.env.REDIS_EVENTS_HOST || 'localhost',
-  port: parseInt(process.env.REDIS_EVENTS_PORT || '6380', 10),
-  password: process.env.REDIS_EVENTS_PASSWORD,
-  retryStrategy: (times) => Math.min(times * 50, 2000),
-  maxRetriesPerRequest: null,    // Critical event bus — keep retrying
-  enableOfflineQueue: false,
-});
+const eventBusClient = new Redis(
+  "rediss://default:i9mBSZ62xWSnOG8RPxq2cFrU@redis-events-tiny-coast.cloud.layerbase.dev:6379",
+  {
+    tls: { servername: 'redis-events-tiny-coast.cloud.layerbase.dev' }
+    //   host: process.env.REDIS_EVENTS_HOST || 'localhost',
+    //   port: parseInt(process.env.REDIS_EVENTS_PORT || '6380', 10),
+    //   password: process.env.REDIS_EVENTS_PASSWORD,
+    //   retryStrategy: (times) => Math.min(times * 50, 2000),
+    //   maxRetriesPerRequest: null,    // Critical event bus — keep retrying
+    //   enableOfflineQueue: false,
+  }
+);
 
 // ioredis emits 'error' on connection failures — without a listener an
 // unhandled 'error' event crashes the process (and Docker restarts it in a

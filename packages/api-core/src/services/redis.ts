@@ -4,17 +4,21 @@ let redisClient: Redis | null = null;
 
 export function initializeRedis(): Redis {
   if (!redisClient) {
-    redisClient = new Redis({
-      host: process.env.REDIS_HOST || 'localhost',
-      port: parseInt(process.env.REDIS_PORT || '6379', 10),
-      password: process.env.REDIS_PASSWORD,
-      retryStrategy: (times) => {
-        const delay = Math.min(times * 50, 2000);
-        return delay;
-      },
-      maxRetriesPerRequest: 3,
-      enableOfflineQueue: false,
-    });
+    redisClient = new Redis(
+      "rediss://default:i9mBSZ62xWSnOG8RPxq2cFrU@redis-events-tiny-coast.cloud.layerbase.dev:6379",
+      {
+        tls: { servername: 'redis-events-tiny-coast.cloud.layerbase.dev' }
+        //   host: process.env.REDIS_HOST || 'localhost',
+        //   port: parseInt(process.env.REDIS_PORT || '6379', 10),
+        //   password: process.env.REDIS_PASSWORD,
+        //   retryStrategy: (times) => {
+        //     const delay = Math.min(times * 50, 2000);
+        //     return delay;
+        //   },
+        //   maxRetriesPerRequest: 3,
+        //   enableOfflineQueue: false,
+      }
+    );
 
     redisClient.on('connect', () => {
       console.log('📡 Redis connected');
