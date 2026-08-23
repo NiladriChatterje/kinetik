@@ -401,7 +401,7 @@ export class ChatHandler {
       // delivery happens via the Redis pub/sub subscriber below.
       // This socket handler exists as a potential fallback for future use.
       socket.on(WsEvent.CHAT_MESSAGE, async (data: ChatMessagePayload) => {
-        const { matchId, content } = data;
+        const { content } = data;
 
         if (!content || content.trim().length === 0) return;
         if (content.length > 2000) return;

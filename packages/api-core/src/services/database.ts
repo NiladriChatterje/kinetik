@@ -127,7 +127,6 @@ export async function updateUser(id: string, data: Record<string, any>) {
 export async function upsertPreferences(userId: string, data: Record<string, any>) {
   const keys = Object.keys(data);
   const values = Object.values(data);
-  const setClause = keys.map((key, i) => `${key} = $${i + 2}`).join(', ');
   const updateClause = keys.map((key) => `${key} = EXCLUDED.${key}`).join(', ');
 
   try {

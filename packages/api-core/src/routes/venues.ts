@@ -16,7 +16,7 @@ export async function venueRoutes(app: FastifyInstance) {
 
   // ─── Get Nearby Venues ───────────────────────────────
   app.get('/nearby', async (request: FastifyRequest, reply: FastifyReply) => {
-    const { sub: userId } = request.user as any;
+    const { sub: _userId } = request.user as any;
     const { latitude, longitude, radius } = request.query as any;
 
     const lat = parseFloat(latitude) || 0;

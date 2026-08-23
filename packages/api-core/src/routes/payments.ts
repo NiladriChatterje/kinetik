@@ -97,7 +97,7 @@ export async function paymentRoutes(app: FastifyInstance) {
     }
 
     const { sub: userId } = request.user as any;
-    const { razorpayPaymentId, razorpayOrderId, razorpaySignature } = validation.data;
+    const { razorpayPaymentId, razorpayOrderId, razorpaySignature: _razorpaySignature } = validation.data;
 
     // In production, verify signature using Razorpay utility
     // const isValid = razorpay.utils.verifyPaymentSignature({

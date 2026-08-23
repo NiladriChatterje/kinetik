@@ -2,7 +2,7 @@ import { FastifyInstance, FastifyRequest, FastifyReply } from 'fastify';
 import {
   ERROR_CODES, REDIS_KEYS, FREE_SWIPE_LIMIT, FREE_CHAT_LIMIT,
   PREMIUM_CHAT_LIMIT, SUPER_LIKE_LIMIT_DAILY_FREE, SUPER_LIKE_LIMIT_DAILY_PREMIUM,
-  EVENT_BUS_CHANNELS, encryptMessage, decryptMessage, getOpeningLine, ChatMediaType,
+  EVENT_BUS_CHANNELS, encryptMessage, decryptMessage, getOpeningLine,
   h3ToGeo,
 } from '@kinetik/shared';
 import { v4 as uuidv4 } from 'uuid';
@@ -11,7 +11,7 @@ import { transaction } from '@kinetik/shared';
 import { notificationEvents } from '../services/notificationService';
 import { eventBus } from '../services/eventBus';
 import { getRedis, publishChatMessage } from '../services/redis';
-import { savePhoto, saveChatFile, saveEncryptedChatFile, getEncryptedChatFileBuffer, deleteChatFile } from '../services/photoStorage';
+import { savePhoto, saveEncryptedChatFile, getEncryptedChatFileBuffer, deleteChatFile } from '../services/photoStorage';
 
 const MESSAGE_ENCRYPTION_KEY = process.env.MESSAGE_ENCRYPTION_KEY || '';
 const redis = getRedis();
@@ -71,7 +71,7 @@ export async function matchRoutes(app: FastifyInstance) {
     const prefs = prefsResult.rows[0] || {};
     const ageMin = prefs.age_min ?? 18;
     const ageMax = prefs.age_max ?? 60;
-    const maxDistance = prefs.max_distance_km ?? 50;
+
 
     // Get the user's own H3 for distance filtering
     const userResult = await query(
@@ -353,12 +353,12 @@ export async function matchRoutes(app: FastifyInstance) {
     }
 
     // Record interaction
-    const interactionResult = await query(
+    await query(
       `INSERT INTO ${TABLES.USER_INTERACTIONS} (actor_id, target_id, action)
        VALUES ($1, $2, $3) RETURNING *`,
       [userId, targetUserId, action],
     );
-    const interaction = interactionResult.rows[0];
+
 
     // If it's a like or super_like, check for mutual like
     const isSuperLike = action === 'super_like';
@@ -788,9 +788,7 @@ export async function matchRoutes(app: FastifyInstance) {
       });
     }
 
-    const partnerId = matchCheck.rows[0].user_a_id === userId
-      ? matchCheck.rows[0].user_b_id
-      : matchCheck.rows[0].user_a_id;
+
 
     // ─── 1. Collect media file keys (read-only) ─────────
     const mediaResult = await query(

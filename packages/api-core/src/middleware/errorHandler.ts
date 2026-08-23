@@ -9,7 +9,7 @@ interface AppError extends Error {
 
 export function errorHandler(
   error: FastifyError | AppError,
-  request: FastifyRequest,
+  _request: FastifyRequest,
   reply: FastifyReply,
 ) {
   const statusCode = (error as AppError).statusCode || error.statusCode || 500;
@@ -53,4 +53,5 @@ export function errorHandler(
       details: (error as AppError).details,
     },
   });
+  return undefined;
 }

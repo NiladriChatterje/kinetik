@@ -76,7 +76,7 @@ export interface NotificationPayload {
  */
 export async function sendPushNotification(
   userId: string,
-  notificationType: string,
+  _notificationType: string,
   payload: NotificationPayload,
 ): Promise<void> {
   try {

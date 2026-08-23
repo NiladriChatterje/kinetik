@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { ERROR_CODES, REDIS_KEYS } from '@kinetik/shared';
+import { REDIS_KEYS } from '@kinetik/shared';
 
 // ─── Mocks ────────────────────────────────────────────────────────
 
@@ -65,23 +65,6 @@ vi.mock('../services/redis', () => ({
  * Simulate calling the "send a message" route handler logic directly.
  * We extract the relevant logic from the route handler to test it in isolation.
  */
-function createMockFastifyReply() {
-  const reply: any = {
-    status: vi.fn(() => reply),
-    send: vi.fn(() => reply),
-  };
-  return reply;
-}
-
-function createMockRequest(overrides: any = {}) {
-  return {
-    user: { sub: 'user-123' },
-    params: { id: 'match-456' },
-    body: { content: 'Hello!' },
-    jwtVerify: vi.fn().mockResolvedValue(undefined),
-    ...overrides,
-  } as any;
-}
 
 // ─── Tests ─────────────────────────────────────────────────────────
 
@@ -331,7 +314,6 @@ describe('Chat Message API - Send Message', () => {
 
   describe('GET /conversations/:id/messages', () => {
     it('should return 404 when user is not part of the match', () => {
-      const userId = 'user-999';
       const matchCheckResult = { rows: [] };
 
       const matchNotFound = !matchCheckResult.rows[0];
@@ -339,7 +321,6 @@ describe('Chat Message API - Send Message', () => {
     });
 
     it('should return messages when user is part of the match', () => {
-      const userId = 'user-123';
       const matchCheckResult = { rows: [{ id: 'match-456' }] };
 
       const matchFound = !!matchCheckResult.rows[0];

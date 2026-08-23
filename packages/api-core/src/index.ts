@@ -23,7 +23,6 @@ import { kycRoutes } from './routes/kyc';
 import { errorHandler } from './middleware/errorHandler';
 import { eventBus } from './services/eventBus';
 import { initializeRedis } from './services/redis';
-import { initializeDatabase } from './services/database';
 
 const PORT = parseInt(process.env.PORT || '3001', 10);
 const JWT_SECRET = process.env.JWT_SECRET || 'super-secret-jwt-key-change-in-production-2024';

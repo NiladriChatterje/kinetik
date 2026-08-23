@@ -1,7 +1,7 @@
 import Razorpay from 'razorpay';
 import { createHmac, timingSafeEqual } from 'crypto';
 import { validateWebhookSignature } from 'razorpay/dist/utils/razorpay-utils';
-import { PREMIUM_MONTHLY_COST_INR, getPricingForPhone, type CurrencyConfig } from '@kinetik/shared';
+import { PREMIUM_MONTHLY_COST_INR, getPricingForPhone } from '@kinetik/shared';
 
 // ─── Razorpay SDK Instance ────────────────────────────────
 // Constructed lazily so the server can still boot without credentials

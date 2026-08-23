@@ -329,7 +329,7 @@ export async function userRoutes(app: FastifyInstance) {
   });
 
   // ─── Get Interests ───────────────────────────────────
-  app.get('/interests', async (request: FastifyRequest, reply: FastifyReply) => {
+  app.get('/interests', async (_request: FastifyRequest, reply: FastifyReply) => {
     const result = await query(
       `SELECT id, name, category, emoji FROM ${TABLES.INTERESTS} ORDER BY category, name`,
     );

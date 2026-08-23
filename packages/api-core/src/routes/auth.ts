@@ -67,7 +67,6 @@ function maskPhone(phone: string): string {
 
 // ─── Refresh Token Helpers ───────────────────────────────────
 const REFRESH_TOKEN_TTL_DAYS = 30;
-const ACCESS_TOKEN_TTL_SECONDS = 15 * 60; // 15 minutes
 
 function hashToken(token: string): string {
   return crypto.createHash('sha256').update(token).digest('hex');
