@@ -10,7 +10,14 @@
  */
 
 import * as Location from 'expo-location';
-import { api } from '../services/api';
+
+// Lazy require to break the circular dependency with services/api.ts
+// (api.ts imports rankByProximity, proximity.ts needs api.getAreaDetails)
+let _api: any = null;
+const getApi = () => {
+  if (!_api) _api = require('../services/api').api;
+  return _api;
+};
 
 export interface ApproxLocation {
   latitude: number;
@@ -50,7 +57,7 @@ function getOwnLocation(): Promise<ApproxLocation | null> {
       }
 
       try {
-        const area = await api.getAreaDetails();
+        const area = await getApi().getAreaDetails();
         if (area.latitude != null && area.longitude != null) {
           return { latitude: area.latitude, longitude: area.longitude };
         }

@@ -41,7 +41,21 @@ LogBox.ignoreLogs([
   'InteractionManager has been deprecated',
   'InteractionManager.runAfterInteractions',
   'Text strings must be rendered within a <Text',
+  'Require cycles are allowed',
 ]);
+
+// Hard-suppress InteractionManager deprecation warnings that slip past LogBox
+// (e.g. from native modules or early-init code)
+const _origWarn = console.warn;
+console.warn = (...args: any[]) => {
+  const msg = String(args[0] ?? '');
+  if (
+    msg.includes('InteractionManager has been deprecated') ||
+    msg.includes('InteractionManager.runAfterInteractions') ||
+    msg.includes('Require cycles are allowed')
+  ) return;
+  _origWarn.apply(console, args);
+};
 
 export default function App() {
   const initialize = useAuthStore((s) => s.initialize);

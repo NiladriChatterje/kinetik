@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import {
   View, Text, StyleSheet, TouchableOpacity,
-  ScrollView, Animated, Dimensions, Modal, FlatList, TextInput,
+  ScrollView, Animated, Dimensions,
   KeyboardAvoidingView, Platform,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
@@ -10,6 +10,7 @@ import { useAuthStore } from '../../store/authStore';
 import { useToast } from '../../hooks/useToast';
 import { Button } from '../../components/common/Button';
 import { Input } from '../../components/common/Input';
+import { PhoneInput, Country } from '../../components/common/PhoneInput';
 import { colors, typography, spacing, radius } from '../../theme';
 
 const { width: SCREEN_WIDTH } = Dimensions.get('window');
@@ -18,7 +19,9 @@ const SEGMENT_TAB_WIDTH = (SEGMENT_WIDTH - 4) / 2;
 
 export const SplashScreen: React.FC<{ navigation: any }> = ({ navigation }) => {
   const [mode, setMode] = useState<'login' | 'register'>('login');
-  const [phone, setPhone] = useState('');
+  const [phoneNumber, setPhoneNumber] = useState('');
+  const [countryCode, setCountryCode] = useState('+1');
+  const [selectedCountry, setSelectedCountry] = useState<Country>({ code: '+1', flag: '🇺🇸', name: 'United States' });
   const [age, setAge] = useState('');
   const [password, setPassword] = useState('');
   const [firstName, setFirstName] = useState('');
@@ -77,6 +80,9 @@ export const SplashScreen: React.FC<{ navigation: any }> = ({ navigation }) => {
     }).start();
   }, [mode]);
 
+  const phone = mode === 'register'
+    ? countryCode + phoneNumber
+    : phoneNumber.startsWith('+') ? phoneNumber : countryCode + phoneNumber;
   const clearError = () => setErrorMsg('');
 
   const handleModeSwitch = (newMode: 'login' | 'register') => {
@@ -84,6 +90,8 @@ export const SplashScreen: React.FC<{ navigation: any }> = ({ navigation }) => {
     setMode(newMode);
     clearError();
     setPassword('');
+    setPhoneNumber('');
+    setAge('');
     setFirstName('');
     setLastName('');
     setMiddleName('');
@@ -131,6 +139,7 @@ export const SplashScreen: React.FC<{ navigation: any }> = ({ navigation }) => {
           toast.showSuccess('Account created', 'Please sign in.');
           setMode('login');
           setPassword('');
+          setPhoneNumber('');
           setAge('');
           setFirstName('');
           setLastName('');
@@ -213,16 +222,16 @@ export const SplashScreen: React.FC<{ navigation: any }> = ({ navigation }) => {
           {mode === 'register' ? (
             <View style={styles.row}>
               <View style={styles.colHalf}>
-                <Input
-                  label="Phone Number"
-                  value={phone}
-                  onChangeText={(t) => { setPhone(t); clearError(); }}
-                  placeholder="+1 555-0123"
-                  keyboardType="phone-pad"
+                <PhoneInput
+                  phoneNumber={phoneNumber}
+                  onPhoneNumberChange={(t) => { setPhoneNumber(t); clearError(); }}
+                  countryCode={countryCode}
+                  onCountryCodeChange={(c) => { setCountryCode(c.code); setSelectedCountry(c); clearError(); }}
+                  placeholder="5550123456"
                   required
                 />
               </View>
-              <View style={styles.colHalf}>
+              <View style={styles.colAge}>
                 <Input
                   label="Age"
                   value={age}
@@ -237,9 +246,9 @@ export const SplashScreen: React.FC<{ navigation: any }> = ({ navigation }) => {
           ) : (
             <Input
               label="Phone Number"
-              value={phone}
-              onChangeText={(t) => { setPhone(t); clearError(); }}
-              placeholder="+1 555-0123"
+              value={phoneNumber}
+              onChangeText={(t) => { setPhoneNumber(t); clearError(); }}
+              placeholder="5550123456"
               keyboardType="phone-pad"
               required
             />
@@ -427,6 +436,9 @@ const styles = StyleSheet.create({
   },
   colHalf: {
     flex: 1,
+  },
+  colAge: {
+    width: 72,
   },
   errorText: {
     ...typography.body2,
