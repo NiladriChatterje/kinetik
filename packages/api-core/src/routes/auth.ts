@@ -1,8 +1,9 @@
 import { FastifyInstance, FastifyRequest, FastifyReply } from 'fastify';
 import bcrypt from 'bcrypt';
+import crypto from 'crypto';
 import { z } from 'zod';
 import { ERROR_CODES, transaction, TABLES } from '@kinetik/shared';
-import { createUser, findUserByPhone, findUserByEmail, findUserById, createSubscription, updateUser, getSubscription } from '../services/database';
+import { createUser, findUserByPhone, findUserByEmail, findUserById, createSubscription, updateUser, getSubscription, query } from '../services/database';
 import { deleteAllUserPhotos, deleteChatFile } from '../services/photoStorage';
 import { isRazorpayConfigured, fetchSubscription, cancelPremiumSubscription } from '../services/razorpay';
 import { eventBus } from '../services/eventBus';
@@ -62,6 +63,73 @@ function canResendOtp(phone: string): boolean {
 function maskPhone(phone: string): string {
   if (phone.length <= 6) return phone;
   return phone.slice(0, 4) + '***' + phone.slice(-2);
+}
+
+// ─── Refresh Token Helpers ───────────────────────────────────
+const REFRESH_TOKEN_TTL_DAYS = 30;
+const ACCESS_TOKEN_TTL_SECONDS = 15 * 60; // 15 minutes
+
+function hashToken(token: string): string {
+  return crypto.createHash('sha256').update(token).digest('hex');
+}
+
+async function storeRefreshToken(userId: string, tokenHash: string, familyId: string): Promise<void> {
+  const expiresAt = new Date(Date.now() + REFRESH_TOKEN_TTL_DAYS * 24 * 60 * 60 * 1000);
+  await query(
+    `INSERT INTO refresh_tokens (user_id, token_hash, family_id, expires_at)
+     VALUES ($1, $2, $3, $4)`,
+    [userId, tokenHash, familyId, expiresAt],
+  );
+}
+
+async function verifyRefreshToken(token: string): Promise<{ userId: string; familyId: string } | null> {
+  const tokenHash = hashToken(token);
+  const result = await query(
+    `SELECT user_id, family_id, revoked_at, expires_at
+     FROM refresh_tokens
+     WHERE token_hash = $1`,
+    [tokenHash],
+  );
+  const row = result.rows[0];
+  if (!row) return null;
+
+  // Token expired
+  if (new Date(row.expires_at) < new Date()) return null;
+
+  // Token was revoked — possible replay attack, revoke entire family
+  if (row.revoked_at) {
+    await query(
+      `UPDATE refresh_tokens SET revoked_at = NOW()
+       WHERE family_id = $1 AND revoked_at IS NULL`,
+      [row.family_id],
+    );
+    return null;
+  }
+
+  return { userId: row.user_id, familyId: row.family_id };
+}
+
+async function rotateRefreshToken(oldToken: string, newTokenHash: string): Promise<boolean> {
+  const oldHash = hashToken(oldToken);
+  const result = await query(
+    `UPDATE refresh_tokens
+     SET revoked_at = NOW()
+     WHERE token_hash = $1 AND revoked_at IS NULL
+     RETURNING user_id, family_id`,
+    [oldHash],
+  );
+  if (result.rows.length === 0) return false;
+  const { user_id, family_id } = result.rows[0];
+  await storeRefreshToken(user_id, newTokenHash, family_id);
+  return true;
+}
+
+async function revokeAllRefreshTokens(userId: string): Promise<void> {
+  await query(
+    `UPDATE refresh_tokens SET revoked_at = NOW()
+     WHERE user_id = $1 AND revoked_at IS NULL`,
+    [userId],
+  );
 }
 
 const RegisterSchema = z.object({
@@ -143,11 +211,16 @@ export async function authRoutes(app: FastifyInstance) {
         : undefined,
     });
 
-    // Generate JWT
+    // Generate JWT access token
     const token = app.jwt.sign({
       sub: user.id,
       phone: user.phone,
     });
+
+    // Generate refresh token
+    const refreshToken = crypto.randomBytes(64).toString('hex');
+    const familyId = crypto.randomUUID();
+    await storeRefreshToken(user.id, hashToken(refreshToken), familyId);
 
     // Create subscription ledger
     await createSubscription(user.id, 'free');
@@ -157,6 +230,7 @@ export async function authRoutes(app: FastifyInstance) {
       data: {
         user: { id: user.id, phone: user.phone, email: user.email, displayName: user.display_name },
         token,
+        refreshToken,
       },
     });
   });
@@ -309,29 +383,70 @@ export async function authRoutes(app: FastifyInstance) {
     await updateUser(user.id, { phone_verified: true });
 
     const token = app.jwt.sign({ sub: user.id, phone: user.phone });
+
+    // Generate refresh token
+    const refreshToken = crypto.randomBytes(64).toString('hex');
+    const familyId = crypto.randomUUID();
+    await storeRefreshToken(user.id, hashToken(refreshToken), familyId);
+
     return reply.send({
       success: true,
       data: {
         user: { id: user.id, phone: user.phone, onboardingComplete: user.onboarding_complete },
         token,
+        refreshToken,
       },
     });
   });
 
   // ─── Refresh Token ───────────────────────────────────
+  // Rotates the refresh token: revokes the old one, issues a new access + refresh pair.
+  // If a revoked token is reused (replay attack), the entire family is revoked.
   app.post('/refresh', async (request: FastifyRequest, reply: FastifyReply) => {
     try {
-      await request.jwtVerify();
-      const user: any = request.user;
-      const token = app.jwt.sign({ sub: user.sub, phone: user.phone });
+      const { refreshToken } = (request.body as any) || {};
+      if (!refreshToken || typeof refreshToken !== 'string') {
+        return reply.status(400).send({
+          success: false,
+          error: { code: ERROR_CODES.VALIDATION_ERROR, message: 'Refresh token required.' },
+        });
+      }
+
+      const payload = await verifyRefreshToken(refreshToken);
+      if (!payload) {
+        return reply.status(401).send({
+          success: false,
+          error: { code: ERROR_CODES.TOKEN_EXPIRED, message: 'Refresh token expired or revoked. Please login again.' },
+        });
+      }
+
+      const user = await findUserById(payload.userId);
+      if (!user || !user.is_active) {
+        return reply.status(401).send({
+          success: false,
+          error: { code: ERROR_CODES.UNAUTHORIZED, message: 'Account not found or deactivated.' },
+        });
+      }
+
+      // Rotate: revoke old, issue new pair
+      const newAccessToken = app.jwt.sign({ sub: user.id, phone: user.phone });
+      const newRefreshToken = crypto.randomBytes(64).toString('hex');
+      const rotated = await rotateRefreshToken(refreshToken, hashToken(newRefreshToken));
+      if (!rotated) {
+        return reply.status(401).send({
+          success: false,
+          error: { code: ERROR_CODES.TOKEN_EXPIRED, message: 'Refresh token already used. Please login again.' },
+        });
+      }
+
       return reply.send({
         success: true,
-        data: { token },
+        data: { token: newAccessToken, refreshToken: newRefreshToken },
       });
     } catch {
       return reply.status(401).send({
         success: false,
-        error: { code: ERROR_CODES.TOKEN_EXPIRED, message: 'Token expired. Please login again.' },
+        error: { code: ERROR_CODES.TOKEN_EXPIRED, message: 'Token refresh failed. Please login again.' },
       });
     }
   });
@@ -408,6 +523,9 @@ export async function authRoutes(app: FastifyInstance) {
 
     let chatMediaUrls: string[] = [];
     try {
+      // Revoke all refresh tokens so the user can't use old tokens after deletion
+      await revokeAllRefreshTokens(userId);
+
       await transaction(async (q) => {
         // Collect chat media files for MinIO cleanup after commit
         const mediaResult = await q(

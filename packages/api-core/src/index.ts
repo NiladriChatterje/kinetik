@@ -43,7 +43,7 @@ async function bootstrap() {
 
   await app.register(jwt, {
     secret: JWT_SECRET,
-    sign: { expiresIn: process.env.JWT_EXPIRES_IN || '7d' },
+    sign: { expiresIn: process.env.JWT_EXPIRES_IN || '15m' },
   });
 
   // ─── Multipart Upload Support ───────────────────────────

@@ -217,7 +217,6 @@ export const useAuthStore = create<AuthState>((set, get) => ({
           });
           return { success: true, requiresOtp: true };
         }
-        api.setToken(response.data.token ?? null);
         set({
           user: response.data.user as User,
           token: response.data.token ?? null,
@@ -267,6 +266,7 @@ export const useAuthStore = create<AuthState>((set, get) => ({
       const response = await api.verifyOtp(phone, otp);
       if (response.success && response.data) {
         api.setToken(response.data.token);
+        api.setRefreshToken(response.data.refreshToken ?? null);
         const userData = response.data.user as User;
         const onboardingComplete = userData?.onboardingComplete ?? false;
 
@@ -454,6 +454,7 @@ export const useAuthStore = create<AuthState>((set, get) => ({
     closeCallSocket();
     countedUnreadMatchIds.clear();
     api.setToken(null);
+    api.setRefreshToken(null);
     set({
       user: null, token: null, isAuthenticated: false,
       onboardingStep: 'splash', pendingPhone: null, pendingUserId: null,
@@ -472,6 +473,7 @@ export const useAuthStore = create<AuthState>((set, get) => ({
         closeCallSocket();
         countedUnreadMatchIds.clear();
         api.setToken(null);
+        api.setRefreshToken(null);
         set({
           user: null, token: null, isAuthenticated: false,
           onboardingStep: 'splash', pendingPhone: null, pendingUserId: null,

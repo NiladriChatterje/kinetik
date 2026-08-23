@@ -13,9 +13,13 @@ interface ApiResponse<T = any> {
 
 class ApiClient {
   private token: string | null = null;
+  private refreshTokenValue: string | null = null;
+  private isRefreshing = false;
+  private refreshPromise: Promise<boolean> | null = null;
 
   async init() {
     this.token = await SecureStore.getItemAsync('auth_token');
+    this.refreshTokenValue = await SecureStore.getItemAsync('refresh_token');
   }
 
   /** Returns the current auth token (used by photoService for native file uploads). */
@@ -32,7 +36,91 @@ class ApiClient {
     }
   }
 
+  setRefreshToken(rt: string | null) {
+    this.refreshTokenValue = rt;
+    if (rt) {
+      SecureStore.setItemAsync('refresh_token', rt);
+    } else {
+      SecureStore.deleteItemAsync('refresh_token');
+    }
+  }
+
+  getRefreshToken(): string | null {
+    return this.refreshTokenValue;
+  }
+
+  /**
+   * Attempt to silently refresh the access token using the refresh token.
+   * Deduplicates concurrent calls so only one refresh request fires.
+   */
+  private async tryRefresh(): Promise<boolean> {
+    if (!this.refreshTokenValue) return false;
+
+    // Deduplicate concurrent refresh attempts
+    if (this.isRefreshing && this.refreshPromise) {
+      return this.refreshPromise;
+    }
+
+    this.isRefreshing = true;
+    this.refreshPromise = (async () => {
+      try {
+        const controller = new AbortController();
+        const timeout = setTimeout(() => controller.abort(), 10000);
+        const res = await fetch(`${API_URL}/api/v1/auth/refresh`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ refreshToken: this.refreshTokenValue }),
+          signal: controller.signal,
+        });
+        clearTimeout(timeout);
+        const body = await res.json().catch(() => null);
+        if (res.ok && body?.success && body.data?.token) {
+          this.setToken(body.data.token);
+          if (body.data.refreshToken) {
+            this.setRefreshToken(body.data.refreshToken);
+          }
+          return true;
+        }
+        // Refresh failed — tokens are compromised or expired, clear everything
+        this.setToken(null);
+        this.setRefreshToken(null);
+        return false;
+      } catch {
+        return false;
+      } finally {
+        this.isRefreshing = false;
+        this.refreshPromise = null;
+      }
+    })();
+
+    return this.refreshPromise;
+  }
+
   private async request<T>(
+    endpoint: string,
+    options: RequestInit = {},
+    _isRetry = false,
+  ): Promise<ApiResponse<T>> {
+    const result = await this._rawRequest<T>(endpoint, options);
+
+    // Auto-refresh on 401 UNAUTHORIZED / TOKEN_EXPIRED — retry once
+    if (
+      !_isRetry &&
+      !result.success &&
+      (result.error?.code === 'UNAUTHORIZED' || result.error?.code === 'TOKEN_EXPIRED') &&
+      result.error?.status === 401
+    ) {
+      const refreshed = await this.tryRefresh();
+      if (refreshed) {
+        return this.request<T>(endpoint, options, true);
+      }
+      // Refresh failed — propagate the error (auth store should handle logout)
+    }
+
+    return result;
+  }
+
+  private async _rawRequest<T>(
     endpoint: string,
     options: RequestInit = {},
   ): Promise<ApiResponse<T>> {
@@ -209,7 +297,7 @@ class ApiClient {
 
   // ─── Auth ───────────────────────────────────────────
   async register(data: { phone?: string; email?: string; password?: string; authProvider: string; authProviderId?: string; displayName?: string; age?: number }) {
-    return this.request<{ user: any; token: string }>('/api/v1/auth/register', {
+    return this.request<{ user: any; token: string; refreshToken: string }>('/api/v1/auth/register', {
       method: 'POST',
       body: JSON.stringify(data),
     });
@@ -230,7 +318,7 @@ class ApiClient {
   }
 
   async verifyOtp(phone: string, otp: string) {
-    return this.request<{ user: any; token: string }>('/api/v1/auth/verify-otp', {
+    return this.request<{ user: any; token: string; refreshToken: string }>('/api/v1/auth/verify-otp', {
       method: 'POST',
       body: JSON.stringify({ phone, otp }),
     });
