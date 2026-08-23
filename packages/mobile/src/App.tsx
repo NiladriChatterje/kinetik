@@ -38,6 +38,7 @@ try {
 LogBox.ignoreLogs([
   'InteractionManager has been deprecated',
   'InteractionManager.runAfterInteractions',
+  'Text strings must be rendered within a <Text',
 ]);
 
 export default function App() {
