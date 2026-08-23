@@ -1,7 +1,8 @@
 import React, { useState, useEffect, useRef } from 'react';
 import {
   View, Text, StyleSheet, TouchableOpacity,
-  ScrollView, Animated, Dimensions,
+  ScrollView, Animated, Dimensions, Modal, FlatList, TextInput,
+  KeyboardAvoidingView, Platform,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
@@ -157,6 +158,11 @@ export const SplashScreen: React.FC<{ navigation: any }> = ({ navigation }) => {
 
   return (
     <SafeAreaView style={styles.container} edges={['top']}>
+      <KeyboardAvoidingView
+        style={{ flex: 1 }}
+        behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+        keyboardVerticalOffset={0}
+      >
       {/* ─── Fixed Top: Logo + Segment ──────────────────── */}
       <Animated.View style={[styles.topSection, { opacity: logoOpacity, transform: [{ scale: logoScale }] }]}>
         <View style={styles.logoIcon}>
@@ -296,6 +302,7 @@ export const SplashScreen: React.FC<{ navigation: any }> = ({ navigation }) => {
           size="lg"
         />
       </View>
+      </KeyboardAvoidingView>
     </SafeAreaView>
   );
 };
