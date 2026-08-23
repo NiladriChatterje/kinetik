@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { View, Text, StyleSheet, Image, TouchableOpacity, ScrollView, ActivityIndicator } from 'react-native';
+import { View, Text, StyleSheet, Image, TouchableOpacity, ScrollView, ActivityIndicator, Alert } from 'react-native';
 import * as ImagePicker from 'expo-image-picker';
 import { Ionicons } from '@expo/vector-icons';
 import { SafeAreaView } from 'react-native-safe-area-context';
@@ -24,21 +24,34 @@ export const PhotoUploadScreen: React.FC<{ navigation: any }> = ({ navigation })
   const [uploading, setUploading] = useState(false);
   const toast = useToast();
 
-  const pickPhoto = async () => {
+  const pickFromGallery = async () => {
     const result = await ImagePicker.launchImageLibraryAsync({
       mediaTypes: ['images'],
-      quality: 1.0, // Max quality — we'll compress losslessly ourselves
+      quality: 1.0,
     });
     if (!result.canceled && result.assets[0]) {
       await processPhoto(result.assets[0].uri);
     }
   };
 
-  const takePhoto = async () => {
+  const takeWithCamera = async () => {
+    const { status } = await ImagePicker.requestCameraPermissionsAsync();
+    if (status !== 'granted') {
+      toast.showGlass('Permission needed', 'Allow camera access in Settings.');
+      return;
+    }
     const result = await ImagePicker.launchCameraAsync({ quality: 1.0 });
     if (!result.canceled && result.assets[0]) {
       await processPhoto(result.assets[0].uri);
     }
+  };
+
+  const promptSource = () => {
+    Alert.alert('Add Photo', 'Choose a source', [
+      { text: 'Gallery', onPress: pickFromGallery },
+      { text: 'Camera', onPress: takeWithCamera },
+      { text: 'Cancel', style: 'cancel' },
+    ]);
   };
 
   /**
@@ -126,7 +139,7 @@ export const PhotoUploadScreen: React.FC<{ navigation: any }> = ({ navigation })
                 style={[styles.photoSlot, photo ? styles.photoSlotFilled : undefined]}
                 // Tapping a filled slot must NOT delete — removal only via the
                 // ✕ badge or long-press, so an accidental tap can't discard an upload
-                onPress={photo ? undefined : i === 0 ? takePhoto : pickPhoto}
+                onPress={photo ? undefined : promptSource}
                 onLongPress={photo ? () => removePhoto(photo) : undefined}
               >
                 {photo ? (
@@ -151,17 +164,12 @@ export const PhotoUploadScreen: React.FC<{ navigation: any }> = ({ navigation })
                     )}
                   </View>
                 ) : (
-                  <Ionicons name={i === 0 ? 'camera-outline' : 'add-outline'} size={28} color={colors.textMuted} />
+                  <Ionicons name="add-outline" size={28} color={colors.textMuted} />
                 )}
               </TouchableOpacity>
             );
           })}
         </View>
-
-        <TouchableOpacity style={styles.uploadButton} onPress={pickPhoto} disabled={uploading}>
-          <Ionicons name="images-outline" size={20} color={colors.primary} style={{ marginRight: spacing.sm }} />
-          <Text style={styles.uploadText}>Upload from Gallery</Text>
-        </TouchableOpacity>
       </ScrollView>
 
       <View style={styles.footer}>
@@ -215,16 +223,7 @@ const styles = StyleSheet.create({
     backgroundColor: colors.background,
     borderRadius: 10,
   },
-  uploadButton: {
-    marginTop: spacing.xxl,
-    paddingVertical: spacing.md,
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    backgroundColor: colors.surfaceHighlight,
-    borderRadius: radius.md,
-  },
-  uploadText: { ...typography.body1, color: colors.textPrimary },
+
   footer: { position: 'absolute', bottom: 40, left: spacing.xxl, right: spacing.xxl },
   hintText: { ...typography.caption, color: colors.textMuted, textAlign: 'center', marginBottom: spacing.sm },
 });
