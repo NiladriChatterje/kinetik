@@ -1,6 +1,7 @@
 import { getDatabasePool, query, TABLES } from '@kinetik/shared';
+import { Pool } from 'pg';
 
-export function initializeDatabase() {
+export function initializeDatabase(): Pool {
   const pool = getDatabasePool();
   console.log('🗄️  PostgreSQL pool initialized');
   return pool;
