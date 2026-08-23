@@ -1,5 +1,5 @@
-import React, { useState } from 'react';
-import { View, Text, StyleSheet, Image, TouchableOpacity, ScrollView, ActivityIndicator, Modal } from 'react-native';
+import React, { useState, useRef, useEffect } from 'react';
+import { View, Text, StyleSheet, Image, TouchableOpacity, ScrollView, ActivityIndicator, Modal, Animated, Dimensions } from 'react-native';
 import * as ImagePicker from 'expo-image-picker';
 import { Ionicons } from '@expo/vector-icons';
 import { SafeAreaView } from 'react-native-safe-area-context';
@@ -22,7 +22,35 @@ interface UploadedPhoto {
 export const PhotoUploadScreen: React.FC<{ navigation: any }> = ({ navigation }) => {
   const [photos, setPhotos] = useState<UploadedPhoto[]>([]);
   const [uploading, setUploading] = useState(false);
+  const [sourceModalVisible, setSourceModalVisible] = useState(false);
   const toast = useToast();
+
+  // ─── Modal animations ────────────────────────────────────
+  const overlayOpacity = useRef(new Animated.Value(0)).current;
+  const sheetY = useRef(new Animated.Value(1)).current;
+  const contentScale = useRef(new Animated.Value(1)).current;
+
+  const { height: SCREEN_HEIGHT } = Dimensions.get('window');
+
+  const openModal = () => {
+    setSourceModalVisible(true);
+    Animated.parallel([
+      Animated.timing(overlayOpacity, { toValue: 1, duration: 250, useNativeDriver: true }),
+      Animated.spring(sheetY, { toValue: 0, speed: 50, bounciness: 4, useNativeDriver: true }),
+      Animated.timing(contentScale, { toValue: 0.85, duration: 250, useNativeDriver: true }),
+    ]).start();
+  };
+
+  const closeModal = (cb?: () => void) => {
+    Animated.parallel([
+      Animated.timing(overlayOpacity, { toValue: 0, duration: 200, useNativeDriver: true }),
+      Animated.timing(sheetY, { toValue: 1, duration: 200, useNativeDriver: true }),
+      Animated.timing(contentScale, { toValue: 1, duration: 200, useNativeDriver: true }),
+    ]).start(() => {
+      setSourceModalVisible(false);
+      cb?.();
+    });
+  };
 
   const pickFromGallery = async () => {
     const result = await ImagePicker.launchImageLibraryAsync({
@@ -46,8 +74,7 @@ export const PhotoUploadScreen: React.FC<{ navigation: any }> = ({ navigation })
     }
   };
 
-  const [sourceModalVisible, setSourceModalVisible] = useState(false);
-  const promptSource = () => setSourceModalVisible(true);
+  const promptSource = () => openModal();
 
   /**
    * Full pipeline: compress → upload → add to local state.
@@ -120,85 +147,86 @@ export const PhotoUploadScreen: React.FC<{ navigation: any }> = ({ navigation })
 
   return (
     <SafeAreaView style={styles.container}>
-      <ScrollView contentContainerStyle={styles.content}>
-        <Text style={styles.step}>Step 4 of 6</Text>
-        <Text style={styles.title}>Add Photos</Text>
-        <Text style={styles.subtitle}>Upload at least 2 clear photos for your profile</Text>
+      <Animated.View style={[styles.contentWrap, { transform: [{ scale: contentScale }] }]}>  
+        <ScrollView contentContainerStyle={styles.content}>
+          <Text style={styles.step}>Step 4 of 6</Text>
+          <Text style={styles.title}>Add Photos</Text>
+          <Text style={styles.subtitle}>Upload at least 2 clear photos for your profile</Text>
 
-        <View style={styles.photoGrid}>
-          {[0, 1, 2, 3, 4, 5].map((i) => {
-            const photo = photos[i];
-            return (
-              <TouchableOpacity
-                key={i}
-                style={[styles.photoSlot, photo ? styles.photoSlotFilled : undefined]}
-                // Tapping a filled slot must NOT delete — removal only via the
-                // ✕ badge or long-press, so an accidental tap can't discard an upload
-                onPress={photo ? undefined : promptSource}
-                onLongPress={photo ? () => removePhoto(photo) : undefined}
-              >
-                {photo ? (
-                  <View style={styles.photoWrapper}>
-                    <Image
-                      source={{ uri: photo.uploading ? photo.localUri : resolveUrl(photo.url) || photo.localUri }}
-                      style={styles.photo}
-                    />
-                    {photo.uploading && (
-                      <View style={styles.uploadOverlay}>
-                        <ActivityIndicator size="small" color={colors.textInverse} />
-                      </View>
-                    )}
-                    {!photo.uploading && (
-                      <TouchableOpacity
-                        style={styles.removeBadge}
-                        onPress={() => removePhoto(photo)}
-                        hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
-                      >
-                        <Ionicons name="close-circle" size={20} color={colors.error} />
-                      </TouchableOpacity>
-                    )}
-                  </View>
-                ) : (
-                  <Ionicons name="add-outline" size={28} color={colors.textMuted} />
-                )}
-              </TouchableOpacity>
-            );
-          })}
+          <View style={styles.photoGrid}>
+            {[0, 1, 2, 3, 4, 5].map((i) => {
+              const photo = photos[i];
+              return (
+                <TouchableOpacity
+                  key={i}
+                  style={[styles.photoSlot, photo ? styles.photoSlotFilled : undefined]}
+                  onPress={photo ? undefined : promptSource}
+                  onLongPress={photo ? () => removePhoto(photo) : undefined}
+                >
+                  {photo ? (
+                    <View style={styles.photoWrapper}>
+                      <Image
+                        source={{ uri: photo.uploading ? photo.localUri : resolveUrl(photo.url) || photo.localUri }}
+                        style={styles.photo}
+                      />
+                      {photo.uploading && (
+                        <View style={styles.uploadOverlay}>
+                          <ActivityIndicator size="small" color={colors.textInverse} />
+                        </View>
+                      )}
+                      {!photo.uploading && (
+                        <TouchableOpacity
+                          style={styles.removeBadge}
+                          onPress={() => removePhoto(photo)}
+                          hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+                        >
+                          <Ionicons name="close-circle" size={20} color={colors.error} />
+                        </TouchableOpacity>
+                      )}
+                    </View>
+                  ) : (
+                    <Ionicons name="add-outline" size={28} color={colors.textMuted} />
+                  )}
+                </TouchableOpacity>
+              );
+            })}
+          </View>
+        </ScrollView>
+
+        <View style={styles.footer}>
+          <Text style={styles.hintText}>
+            {uploading
+              ? 'Compressing & uploading...'
+              : `${photos.length}/2 minimum photos required`}
+          </Text>
+          <Button
+            title="Continue"
+            onPress={handleContinue}
+            loading={uploading}
+            fullWidth
+          />
         </View>
-      </ScrollView>
-
-      <View style={styles.footer}>
-        <Text style={styles.hintText}>
-          {uploading
-            ? 'Compressing & uploading...'
-            : `${photos.length}/2 minimum photos required`}
-        </Text>
-        <Button
-          title="Continue"
-          onPress={handleContinue}
-          loading={uploading}
-          fullWidth
-        />
-      </View>
+      </Animated.View>
 
       <Modal
         visible={sourceModalVisible}
         transparent
-        animationType="slide"
-        onRequestClose={() => setSourceModalVisible(false)}
+        animationType="none"
+        onRequestClose={() => closeModal()}
       >
-        <TouchableOpacity
-          style={styles.modalOverlay}
-          activeOpacity={1}
-          onPress={() => setSourceModalVisible(false)}
-        >
-          <TouchableOpacity activeOpacity={1} style={styles.modalSheet}>
+        <Animated.View style={[styles.modalOverlay, { opacity: overlayOpacity }]}>
+          <TouchableOpacity
+            style={StyleSheet.absoluteFill}
+            activeOpacity={1}
+            onPress={() => closeModal()}
+          />
+          <Animated.View style={[styles.modalSheet, { transform: [{ translateY: sheetY.interpolate({ inputRange: [0, 1], outputRange: [0, SCREEN_HEIGHT] }) }] }]}>
             <Text style={styles.modalTitle}>Add Photo</Text>
             <Text style={styles.modalSubtitle}>Choose a source</Text>
 
             <TouchableOpacity
               style={styles.modalOption}
-              onPress={() => { setSourceModalVisible(false); pickFromGallery(); }}
+              onPress={() => closeModal(() => pickFromGallery())}
             >
               <Ionicons name="images-outline" size={22} color={colors.textPrimary} />
               <Text style={styles.modalOptionText}>Gallery</Text>
@@ -208,7 +236,7 @@ export const PhotoUploadScreen: React.FC<{ navigation: any }> = ({ navigation })
 
             <TouchableOpacity
               style={styles.modalOption}
-              onPress={() => { setSourceModalVisible(false); takeWithCamera(); }}
+              onPress={() => closeModal(() => takeWithCamera())}
             >
               <Ionicons name="camera-outline" size={22} color={colors.textPrimary} />
               <Text style={styles.modalOptionText}>Camera</Text>
@@ -218,12 +246,12 @@ export const PhotoUploadScreen: React.FC<{ navigation: any }> = ({ navigation })
 
             <TouchableOpacity
               style={styles.modalCancel}
-              onPress={() => setSourceModalVisible(false)}
+              onPress={() => closeModal()}
             >
               <Text style={styles.modalCancelText}>Cancel</Text>
             </TouchableOpacity>
-          </TouchableOpacity>
-        </TouchableOpacity>
+          </Animated.View>
+        </Animated.View>
       </Modal>
     </SafeAreaView>
   );
@@ -231,6 +259,7 @@ export const PhotoUploadScreen: React.FC<{ navigation: any }> = ({ navigation })
 
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: colors.background },
+  contentWrap: { flex: 1 },
   content: { padding: spacing.xxl, paddingBottom: 120 },
   step: { ...typography.label, color: colors.textPrimary, marginBottom: spacing.sm },
   title: { ...typography.h1, color: colors.textPrimary, marginBottom: spacing.sm },
@@ -269,7 +298,7 @@ const styles = StyleSheet.create({
 
   // ─── Source Picker Modal ──────────────────────────────
   modalOverlay: {
-    flex: 1,
+    ...StyleSheet.absoluteFill,
     backgroundColor: colors.overlay,
     justifyContent: 'flex-end',
     paddingBottom: spacing.xxl,
