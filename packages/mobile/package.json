@@ -54,6 +54,7 @@
     "react-native-razorpay": "^3.0.0",
     "react-native-safe-area-context": "~5.7.0",
     "react-native-screens": "~4.26.0",
+    "react-native-svg": "15.15.4",
     "react-native-toast-message": "^2.3.3",
     "socket.io-client": "^4.7.5",
     "zustand": "^4.5.2"
