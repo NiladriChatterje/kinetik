@@ -1,5 +1,5 @@
 import React, { useState, useCallback } from 'react';
-import { View, Text, StyleSheet, ScrollView, KeyboardAvoidingView, Platform } from 'react-native';
+import { View, Text, StyleSheet, ScrollView, KeyboardAvoidingView, Platform, TouchableOpacity } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Button } from '../../components/common/Button';
 import { useToast } from '../../hooks/useToast';
@@ -146,17 +146,18 @@ export const IdentityScreen: React.FC<{ navigation: any }> = ({ navigation }) =>
         <Text style={styles.fieldLabel}>Gender *</Text>
         <View style={styles.genderGrid}>
           {GENDER_OPTIONS.map((g) => (
-            <View
+            <TouchableOpacity
               key={g}
+              activeOpacity={0.7}
               style={[styles.genderChip, gender === g && styles.genderChipActive]}
+              onPress={() => handleGenderSelect(g)}
             >
               <Text
                 style={[styles.genderChipText, gender === g && styles.genderChipTextActive]}
-                onPress={() => handleGenderSelect(g)}
               >
                 {g}
               </Text>
-            </View>
+            </TouchableOpacity>
           ))}
         </View>
         {genderError && <Text style={styles.fieldError}>{genderError}</Text>}
@@ -165,28 +166,30 @@ export const IdentityScreen: React.FC<{ navigation: any }> = ({ navigation }) =>
         <Text style={styles.fieldLabel}>What are you looking for? *</Text>
         <View style={styles.categoryGrid}>
           {DATING_CATEGORIES.map((cat) => (
-            <View
+            <TouchableOpacity
               key={cat.value}
+              activeOpacity={0.7}
               style={[
                 styles.categoryChip,
                 datingCategory === cat.value && styles.categoryChipActive,
-              ]}              >
+              ]}
+              onPress={() => {
+                setDatingCategoryTouched(true);
+                setDatingCategory(cat.value);
+              }}
+            >
               <Text
                 style={[
                   styles.categoryChipText,
                   datingCategory === cat.value && styles.categoryChipTextActive,
                 ]}
-                onPress={() => {
-                  setDatingCategoryTouched(true);
-                  setDatingCategory(cat.value);
-                }}
               >
                 {cat.label}
               </Text>
               <Text style={[styles.categoryChipDesc, datingCategory === cat.value && { color: 'rgba(255,255,255,0.7)' }]}>
                 {cat.description}
               </Text>
-            </View>
+            </TouchableOpacity>
           ))}
         </View>
         {datingCategoryError && <Text style={styles.fieldError}>{datingCategoryError}</Text>}
