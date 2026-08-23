@@ -1,7 +1,7 @@
 import React, { useState, useCallback, useMemo, useRef } from 'react';
 import {
   View, Text, StyleSheet, ScrollView, TextInput,
-  TouchableOpacity, Keyboard, Animated, LayoutAnimation, UIManager, Platform,
+  TouchableOpacity, Keyboard, Animated, LayoutAnimation,
 } from 'react-native';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Button } from '../../components/common/Button';
@@ -10,10 +10,6 @@ import { api } from '../../services/api';
 import { hapticLight } from '../../utils/haptics';
 import { colors, typography, spacing, radius } from '../../theme';
 
-// Enable LayoutAnimation on Android
-if (Platform.OS === 'android' && UIManager.setLayoutAnimationEnabledExperimental) {
-  UIManager.setLayoutAnimationEnabledExperimental(true);
-}
 
 // ─── Question Definitions ─────────────────────────────────
 // Each question maps to a key in the AboutAnswers JSON shape.
