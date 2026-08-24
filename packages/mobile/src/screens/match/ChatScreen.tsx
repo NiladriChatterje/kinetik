@@ -557,6 +557,14 @@ export const ChatScreen: React.FC<{ navigation: any; route: any }> = ({ navigati
     };
   }, [matchId, syncMessages, syncScheduledDate, syncPlanner]);
 
+  // ─── Signal to ChatListScreen that this DM is open ──
+  // So the chat list doesn't inflate the unread badge for messages
+  // the user is actively viewing.
+  useEffect(() => {
+    useAuthStore.getState().setOpenChatMatchId(matchId);
+    return () => useAuthStore.getState().setOpenChatMatchId(null);
+  }, [matchId]);
+
   // ─── Fetch message history ─────────────────────────
   useEffect(() => {
     (async () => {

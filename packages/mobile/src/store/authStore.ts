@@ -60,6 +60,12 @@ interface AuthState {
   fetchUnreadChatCount: () => Promise<void>;
   resetUnreadChatCount: () => void;
 
+  // Which DM conversation is currently open (ChatScreen sets this).
+  // ChatListScreen uses it to skip inflating the unread count for
+  // messages the user is actively viewing.
+  openChatMatchId: string | null;
+  setOpenChatMatchId: (matchId: string | null) => void;
+
   // Socket for real-time like/match updates
   likesSocket: Socket | null;
   connectLikesSocket: () => void;
@@ -122,6 +128,7 @@ export const useAuthStore = create<AuthState>((set, get) => ({
   pendingUserId: null,
   unreadLikeCount: 0,
   unreadChatCount: 0,
+  openChatMatchId: null,
   likesSocket: null,
   chatSocket: null,
 
@@ -446,6 +453,10 @@ export const useAuthStore = create<AuthState>((set, get) => ({
   resetUnreadChatCount: () => {
     countedUnreadMatchIds.clear();
     set({ unreadChatCount: 0 });
+  },
+
+  setOpenChatMatchId: (matchId: string | null) => {
+    set({ openChatMatchId: matchId });
   },
 
   logout: () => {

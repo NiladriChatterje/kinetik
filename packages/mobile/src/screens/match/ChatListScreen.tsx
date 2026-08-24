@@ -85,7 +85,7 @@ export const ChatListScreen: React.FC<{ navigation: any }> = ({ navigation }) =>
                 lastMessage: data.content,
                 lastMessageAt: data.createdAt,
                 lastMessageSenderId: data.senderId,
-                unreadCount: data.senderId !== authUser?.id
+                unreadCount: data.senderId !== authUser?.id && data.matchId !== useAuthStore.getState().openChatMatchId
                   ? conv.unreadCount + 1
                   : conv.unreadCount,
               }
@@ -103,21 +103,8 @@ export const ChatListScreen: React.FC<{ navigation: any }> = ({ navigation }) =>
       }
     };
 
-    // When a chat:read event arrives (e.g. the user opened the DM and is
-    // viewing messages), clear the local unread count for that conversation
-    // so the list doesn't show a stale badge until the next server re-fetch.
-    const onChatRead = (data: any) => {
-      if (!data?.matchId) return;
-      setConversations((prev) =>
-        prev.map((conv) =>
-          conv.matchId === data.matchId ? { ...conv, unreadCount: 0 } : conv,
-        ),
-      );
-    };
-
     socket.on('connect', onConnect);
     socket.on('chat:message', onChatMessage);
-    socket.on('chat:read', onChatRead);
     socket.on('match:new', onMatchNew);
     if (socket.connected) onConnect();
 
@@ -127,7 +114,6 @@ export const ChatListScreen: React.FC<{ navigation: any }> = ({ navigation }) =>
       // Shared socket — detach this screen's listeners only, never disconnect
       socket.off('connect', onConnect);
       socket.off('chat:message', onChatMessage);
-      socket.off('chat:read', onChatRead);
       socket.off('match:new', onMatchNew);
       socketRef.current = null;
     };
