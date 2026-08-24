@@ -5,7 +5,7 @@ import { z } from 'zod';
 import { ERROR_CODES, transaction, TABLES } from '@kinetik/shared';
 import { createUser, findUserByPhone, findUserByEmail, findUserById, createSubscription, updateUser, getSubscription, query } from '../services/database';
 import { deleteAllUserPhotos, deleteChatFile } from '../services/photoStorage';
-import { isRazorpayConfigured, fetchSubscription, cancelPremiumSubscription } from '../services/razorpay';
+import { isGooglePayConfigured, revokeAutopayMandate } from '../services/googlePay';
 import { eventBus } from '../services/eventBus';
 import { sendOtpSms } from '../services/sms';
 
@@ -452,7 +452,7 @@ export async function authRoutes(app: FastifyInstance) {
   // Permanently deletes the user's account and ALL associated records
   // (profile, photos, preferences, interests, KYC, push tokens, subscription,
   // transactions, likes, duo crews, matches, chats and chat media files),
-  // and cancels any active Razorpay subscription/mandate immediately.
+  // and revokes any active Google Pay autopay subscription/mandate immediately.
   //
   // Design:
   //   - The users row is soft-deleted (PII scrubbed, deleted_at set) purely so
@@ -495,17 +495,14 @@ export async function authRoutes(app: FastifyInstance) {
       });
     }
 
-    // The account is about to cease to exist — its recurring Razorpay
-    // subscription/mandate MUST stop charging. Cancel immediately (not at
-    // cycle end). If Razorpay can't be reached, abort the deletion so the
-    // user retries rather than leaving a live mandate on a dead account.
+    // The account is about to cease to exist — its recurring autopay
+    // mandate MUST stop charging. Revoke it at the gateway immediately (not
+    // at cycle end). If the gateway can't be reached, abort the deletion so
+    // the user retries rather than leaving a live mandate on a dead account.
     const ledger = await getSubscription(userId);
-    if (ledger?.razorpay_subscription_id && isRazorpayConfigured()) {
+    if (ledger?.gateway_subscription_id && isGooglePayConfigured()) {
       try {
-        const current = await fetchSubscription(ledger.razorpay_subscription_id);
-        if (!['cancelled', 'halted', 'completed', 'expired'].includes(current.status)) {
-          await cancelPremiumSubscription(ledger.razorpay_subscription_id, false);
-        }
+        await revokeAutopayMandate(ledger.gateway_subscription_id);
       } catch (err: any) {
         console.error(`[DeleteAccount] Failed to cancel subscription for ${userId}:`, err?.message || err);
         return reply.status(502).send({

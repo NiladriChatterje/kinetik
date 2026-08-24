@@ -247,7 +247,7 @@ CREATE TABLE duo_crews (
 CREATE INDEX idx_duo_crews_creator ON duo_crews(creator_id);
 CREATE INDEX idx_duo_crews_invite ON duo_crews(invite_code);
 
--- ─── Subscriptions & Payments (Razorpay) ─────────────────
+-- ─── Subscriptions & Payments (Google Pay) ────────────────
 CREATE TABLE subscription_ledger (
     id                      UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
     user_id                 UUID UNIQUE NOT NULL REFERENCES users(id) ON DELETE CASCADE,
@@ -257,8 +257,8 @@ CREATE TABLE subscription_ledger (
     swipe_reset_at          TIMESTAMPTZ DEFAULT NOW(),
     fast_passes_remaining   INT DEFAULT 0,
     rain_checks_remaining   INT DEFAULT 0,
-    razorpay_subscription_id VARCHAR(255),
-    razorpay_customer_id    VARCHAR(255),
+    gateway_subscription_id VARCHAR(255),
+    gateway_customer_id     VARCHAR(255),
     expires_at              TIMESTAMPTZ,
     auto_renew              BOOLEAN DEFAULT FALSE,
     created_at              TIMESTAMPTZ NOT NULL DEFAULT NOW(),
@@ -271,8 +271,9 @@ CREATE INDEX idx_subscription_user ON subscription_ledger(user_id);
 CREATE TABLE transactions (
     id                      UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
     user_id                 UUID NOT NULL REFERENCES users(id),
-    razorpay_payment_id     VARCHAR(255),
-    razorpay_order_id       VARCHAR(255),
+    gateway_payment_id      VARCHAR(255),
+    gateway_order_id        VARCHAR(255),
+    gateway_subscription_id VARCHAR(255),
     amount                  DECIMAL(10,2) NOT NULL,
     currency                VARCHAR(3) DEFAULT 'INR',
     status                  VARCHAR(50),

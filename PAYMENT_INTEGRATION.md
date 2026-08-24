@@ -1,15 +1,17 @@
-# Payment Integration — Razorpay Subscriptions
+# Payment Integration — Google Pay Subscriptions (Autopay Mandate)
 
-Status: **complete**. Audited end to end on 2026-08-16 — server (`packages/api-core/src/routes/payments.ts`, `services/razorpay.ts`, `routes/webhooks.ts`), mobile checkout (`packages/mobile/src/screens/wallet/SubscriptionCheckoutScreen.tsx` with `react-native-razorpay`), and config plumbing.
+Razorpay has been removed (the Razorpay React Native SDK is being discontinued). Premium is now billed through the **Google Pay API**: server (`packages/api-core/src/routes/payments.ts`, `services/googlePay.ts`, `routes/webhooks.ts`), mobile checkout (`packages/mobile/src/screens/wallet/SubscriptionCheckoutScreen.tsx` with [`@google/react-native-make-payment`](https://codelabs.developers.google.com/codelabs/pay-react-native)), and config plumbing.
 
 ## How the recurring flow works
 
-1. **Create** — `POST /api/v1/payments/subscription` creates/reuses the ₹100/month Razorpay Plan and a 12-cycle Subscription (`notes.user_id` set for webhook correlation), and records it on the subscription ledger.
-2. **Checkout** — the app opens native Razorpay Checkout with `subscription_id`. No `method` restriction is passed, so Checkout offers **every recurring method enabled on the Razorpay account**: credit card, debit card, UPI Autopay (mandate), and eMandate/net-banking.
-3. **Verify** — `POST /api/v1/payments/subscription/verify` checks the HMAC (`payment_id|subscription_id`, timing-safe), confirms the subscription belongs to the calling user, then fetches the authoritative status from Razorpay. Both `active` (card charged) **and** `authenticated` (UPI/eMandate mandate approved, first charge follows on schedule) grant premium.
-4. **Renewals / cancellation** — `POST /api/v1/webhooks/razorpay` handles `subscription.charged`, `subscription.activated`, `subscription.cancelled`, and `payment.captured`, with signature verification and payment-id dedupe. Cancellation is at-cycle-end; the webhook flips the tier back to free when the paid cycle ends.
+1. **Create** — `POST /api/v1/payments/subscription` creates a pending subscription (id stored on the subscription ledger) and returns the Google Pay sheet configuration (merchant + gateway ids, environment) plus the price in the user's local currency.
+2. **Payment sheet** — the app builds a `PaymentRequest` (`supportedMethods: 'google_pay'`) and shows the native Google Pay sheet. The user approves the **recurring autopay mandate** — UPI Autopay in India, a tokenized card elsewhere — and the sheet returns a gateway payment token (`paymentMethodData.tokenizationData.token`).
+3. **Activate** — `POST /api/v1/payments/subscription/activate` confirms the subscription belongs to the calling user, registers the token with the payment gateway as a recurring mandate (first charge included), then grants premium for one month.
+4. **Renewals / cancellation** — the gateway executes the monthly mandate charges and posts `subscription.charged`, `subscription.activated`, `subscription.cancelled`, and `payment.captured` to `POST /api/v1/webhooks/payments` (HMAC-SHA256 over the raw body in the `x-payment-signature` header, payment-id dedupe). Cancellation revokes the mandate and stops auto-renew; the user keeps Premium until the paid cycle ends. Deleting the account revokes the mandate immediately.
 
 The legacy one-off endpoints (`/payments/create-order`, `/payments/verify`) contain dev stubs but are not called anywhere by the app — the subscription flow does not touch them.
+
+> `registerAutopayMandate` / `revokeAutopayMandate` in `services/googlePay.ts` are where the PSP's recurring-payments API gets called in production — they are dev stubs today (matching the pre-existing dev-stub style of the one-off endpoints).
 
 ## Required configuration
 
@@ -17,14 +19,21 @@ All values go in **`.env` at the repo root** (template in `.env.example`); docke
 
 | Variable | Where to get it |
 |---|---|
-| `RAZORPAY_KEY_ID` | Razorpay Dashboard → Account & Settings → **API Keys** (`rzp_test_...` / `rzp_live_...`) |
-| `RAZORPAY_KEY_SECRET` | Shown once when generating the API key pair — same screen |
-| `RAZORPAY_WEBHOOK_SECRET` | Dashboard → Account & Settings → **Webhooks** → create a webhook pointing to `https://<your-api-domain>/api/v1/webhooks/razorpay`, subscribed to `payment.captured`, `subscription.charged`, `subscription.activated`, `subscription.cancelled`; the secret string you type there goes here |
-| `RAZORPAY_PLAN_ID` (optional, recommended in prod) | Dashboard → Subscriptions → **Plans** → create the ₹100/monthly plan once and paste its `plan_...` id; otherwise the server auto-creates a plan on first use |
+| `GOOGLE_PAY_ENVIRONMENT` | `TEST` (works immediately, test cards) or `PRODUCTION` |
+| `GOOGLE_PAY_MERCHANT_ID` | [Google Pay & Wallet Console](https://pay.google.com/business/console) → your merchant id (`BCR2DN...`); required for `PRODUCTION` |
+| `GOOGLE_PAY_MERCHANT_NAME` | Name shown on the payment sheet |
+| `GOOGLE_PAY_GATEWAY` / `GOOGLE_PAY_GATEWAY_MERCHANT_ID` | Your PSP's Google Pay tokenization identifiers (`example` / `exampleGatewayMerchantId` in TEST mode) |
+| `GOOGLE_PAY_COUNTRY_CODE` | Merchant country for `transactionInfo` (default `IN`) |
+| `PAYMENT_WEBHOOK_SECRET` | HMAC secret shared with the PSP for `POST /api/v1/webhooks/payments`; leave empty only in dev |
 
-Nothing is configured on the mobile side — the app receives the key id from the server at checkout time.
+Nothing secret is configured on the mobile side — the app receives merchant/gateway ids from the server at checkout time.
 
-## Dashboard-only prerequisites (no code)
+## Prerequisites (no code)
 
-- **Enable recurring payment methods** for the business: UPI Autopay, eMandate, and cards recurring each need activation/approval under Settings → Payment Methods. Test mode has them all; live mode requires Razorpay's approval for Subscriptions.
-- **Complete KYC** to obtain live keys.
+- **Android only** — the Google Pay API payment sheet is Android-only; `canMakePayment()` returns false elsewhere and the app surfaces "Google Pay is not available on this device".
+- `@google/react-native-make-payment` is a native module — Expo users need a dev client / prebuild (`npx expo prebuild`), not Expo Go.
+- For `PRODUCTION`: register the app in the Google Pay & Wallet Console and get the integration approved; enable recurring payments/UPI Autopay with your PSP.
+
+## Database
+
+Migration `scripts/migrations/016_rename_razorpay_columns_to_gateway.sql` renames the `razorpay_*` columns on `subscription_ledger` and `transactions` to gateway-neutral `gateway_*` names. Run it against existing databases before deploying this version.

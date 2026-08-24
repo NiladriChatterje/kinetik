@@ -165,7 +165,7 @@ export interface SubscriptionLedger {
   swipeUsedToday: number;
   fastPassesRemaining: number;
   rainChecksRemaining: number;
-  razorpaySubscriptionId?: string;
+  gatewaySubscriptionId?: string;
   expiresAt?: string;
   autoRenew: boolean;
 }
@@ -173,8 +173,8 @@ export interface SubscriptionLedger {
 export interface Transaction {
   id: string;
   userId: string;
-  razorpayPaymentId?: string;
-  razorpayOrderId?: string;
+  gatewayPaymentId?: string;
+  gatewayOrderId?: string;
   amount: number;
   currency: string;
   status: string;

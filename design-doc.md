@@ -1,4 +1,4 @@
-```markdown
+﻿```markdown
 # Kinetik: Product Requirement Document (PRD) & Engineering Architecture
 ## The Inertia-Killing Dating Network
 
@@ -20,8 +20,8 @@ This phenomenon is known as **The Texting Black Hole**:
 
 ```
 
-[Traditional Apps]  Match ──► Endless Texting ──► Ghosting / Momentum Loss
-[Kinetik Pipeline]  Queue ──► 3-Min Blind Audio ──► Mutual Unlock ──► Calendar Lock
+[Traditional Apps]  Match â”€â”€â–º Endless Texting â”€â”€â–º Ghosting / Momentum Loss
+[Kinetik Pipeline]  Queue â”€â”€â–º 3-Min Blind Audio â”€â”€â–º Mutual Unlock â”€â”€â–º Calendar Lock
 
 ```
 
@@ -63,33 +63,33 @@ To sustain millions of concurrent, sub-second matching calculations and real-tim
 ```
 
 ```
-             +────────────────────────┐
-             │   Client Applications  │
-             │   (iOS / Android React)│
-             +───────────┬────────────┘
-                         │
-        WebSockets / HTTP│ (Real-Time Signals)
-                         ▼
-             +────────────────────────┐
-             │  API Gateway & Routing │
-             │      (Envoy Proxy)     │
-             +───────────┬────────────┘
-                         │
-                         ├──────────────────────────────────────┐
-                         ▼                                      ▼
-             +───────────────────────┐              +───────────────────────┐
-             │ Live Matching Cluster │              │  Signaling & State    │
-             │   (Go / gRPC Pods)    │              │ (Elixir / Phoenix)    │
-             +───────────┬───────────┘              +───────────┬───────────┘
-                         │                                      │
-     Vectors / Spatial   │                                      │ WebRTC Control
-     Queries             ▼                                      ▼
-+─────────────────────────────────────────+        +─────────────────────────+
-│              DATA TIER                  │        │   Turn/Stun Infrastructure│
-│  - Redis Enterprise (Geospatial/State)  │        │   - LiveKit / Twilio     │
-│  - Milvus / Pinecone (Vector Database)  │        +─────────────────────────+
-│  - PostgreSQL (Persistent User Data)   │
-+─────────────────────────────────────────+
+             +â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”
+             â”‚   Client Applications  â”‚
+             â”‚   (iOS / Android React)â”‚
+             +â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”¬â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”˜
+                         â”‚
+        WebSockets / HTTPâ”‚ (Real-Time Signals)
+                         â–¼
+             +â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”
+             â”‚  API Gateway & Routing â”‚
+             â”‚      (Envoy Proxy)     â”‚
+             +â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”¬â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”˜
+                         â”‚
+                         â”œâ”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”
+                         â–¼                                      â–¼
+             +â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”              +â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”
+             â”‚ Live Matching Cluster â”‚              â”‚  Signaling & State    â”‚
+             â”‚   (Go / gRPC Pods)    â”‚              â”‚ (Elixir / Phoenix)    â”‚
+             +â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”¬â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”˜              +â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”¬â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”˜
+                         â”‚                                      â”‚
+     Vectors / Spatial   â”‚                                      â”‚ WebRTC Control
+     Queries             â–¼                                      â–¼
++â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€+        +â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€+
+â”‚              DATA TIER                  â”‚        â”‚   Turn/Stun Infrastructureâ”‚
+â”‚  - Redis Enterprise (Geospatial/State)  â”‚        â”‚   - LiveKit / Twilio     â”‚
+â”‚  - Milvus / Pinecone (Vector Database)  â”‚        +â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€+
+â”‚  - PostgreSQL (Persistent User Data)   â”‚
++â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€+
 
 ```
 
@@ -182,7 +182,7 @@ Kinetik drops the traditional, predatory "Pay to Win" matching boosts in favor o
 ## 6. Implementation & Deployment Phase Roadmap
 
 ```
-[Phase 1: Alpha Core] ──► [Phase 2: Local Cluster Testing] ──► [Phase 3: Scale Launch]
+[Phase 1: Alpha Core] â”€â”€â–º [Phase 2: Local Cluster Testing] â”€â”€â–º [Phase 3: Scale Launch]
  - Elixir Signaling        - Campus Beta Drops                 - Global Vector Mesh
  - WebRTC Audio Stacks      - High-Density Popups               - Dynamic Token Ledger
 
@@ -272,7 +272,7 @@ Here is the complete catalog of UI screens required to build and scale **Kinetik
 
 
 --------------------------------------------------------
-To scale **Kinetik** to millions of concurrent users using **Node.js**, the architecture must be designed to circumvent Node’s primary limitation: its single-threaded event loop. If your system attempts to process millions of live connections, calculate vector math, and handle geographical spatial clustering on a single main thread, the event loop will block, and the application will crash.
+To scale **Kinetik** to millions of concurrent users using **Node.js**, the architecture must be designed to circumvent Nodeâ€™s primary limitation: its single-threaded event loop. If your system attempts to process millions of live connections, calculate vector math, and handle geographical spatial clustering on a single main thread, the event loop will block, and the application will crash.
 
 The solution is a **decentralized, event-driven, distributed microservices architecture**.
 
@@ -286,40 +286,40 @@ The architecture isolates high-throughput, short-lived tasks (like standard API 
 
 ```
                       [ Client Applications ] (iOS / Android)
-                                 │
-            ┌────────────────────┴────────────────────┐
-            │ HTTPS (REST/gRPC)                       │ WebSockets (WSS)
-            ▼                                         ▼
-   +─────────────────+                       +─────────────────+
-   │   API Gateway   │                       │   Edge Proxy    │
-   │  (Envoy/NGINX)  │                       │  (Envoy / WSS)  │
-   +────────┬────────+                       +────────┬────────+
-            │                                         │
-            ▼ Internal Routing                        ▼ Load Balanced
-   +─────────────────────────+               +─────────────────────────+
-   │ Core API Cluster        │               │ Real-Time WS Cluster    │
-   │ (Node.js - Fastify Pods)│               │ (Node.js - Socket.io)   │
-   +────────┬────────────────+               +────────┬────────────────+
-            │                                         │
-            ├────────────────────┬────────────────────┤ Event Streaming
-            ▼                    ▼                    ▼
-   +─────────────────+  +─────────────────+  +─────────────────+
-   │ Persistent DB   │  │ Cache & States  │  │ Message Broker  │
-   │  (PostgreSQL)   │  │ (Redis Cluster) │  │  (Apache Kafka) │
-   +─────────────────+  +─────────────────+  +────────┬────────+
-                                                      │
-                                                      ▼ Consume Events
-                                             +─────────────────────────+
-                                             │ Background Match Engine │
-                                             │ (Node.js Worker Pools)  │
-                                             +────────┬────────┬───────+
-                                                      │        │
-                                       Vector Queries │        │ WebRTC Tokens
-                                                      ▼        ▼
-                                             +───────────+  +───────────+
-                                             │ Vector DB │  │ Media SFU │
-                                             │ (Milvus)  │  │ (LiveKit) │
-                                             +───────────+  +───────────+
+                                 â”‚
+            â”Œâ”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”´â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”
+            â”‚ HTTPS (REST/gRPC)                       â”‚ WebSockets (WSS)
+            â–¼                                         â–¼
+   +â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€+                       +â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€+
+   â”‚   API Gateway   â”‚                       â”‚   Edge Proxy    â”‚
+   â”‚  (Envoy/NGINX)  â”‚                       â”‚  (Envoy / WSS)  â”‚
+   +â”€â”€â”€â”€â”€â”€â”€â”€â”¬â”€â”€â”€â”€â”€â”€â”€â”€+                       +â”€â”€â”€â”€â”€â”€â”€â”€â”¬â”€â”€â”€â”€â”€â”€â”€â”€+
+            â”‚                                         â”‚
+            â–¼ Internal Routing                        â–¼ Load Balanced
+   +â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€+               +â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€+
+   â”‚ Core API Cluster        â”‚               â”‚ Real-Time WS Cluster    â”‚
+   â”‚ (Node.js - Fastify Pods)â”‚               â”‚ (Node.js - Socket.io)   â”‚
+   +â”€â”€â”€â”€â”€â”€â”€â”€â”¬â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€+               +â”€â”€â”€â”€â”€â”€â”€â”€â”¬â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€+
+            â”‚                                         â”‚
+            â”œâ”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”¬â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”¤ Event Streaming
+            â–¼                    â–¼                    â–¼
+   +â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€+  +â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€+  +â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€+
+   â”‚ Persistent DB   â”‚  â”‚ Cache & States  â”‚  â”‚ Message Broker  â”‚
+   â”‚  (PostgreSQL)   â”‚  â”‚ (Redis Cluster) â”‚  â”‚  (Apache Kafka) â”‚
+   +â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€+  +â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€+  +â”€â”€â”€â”€â”€â”€â”€â”€â”¬â”€â”€â”€â”€â”€â”€â”€â”€+
+                                                      â”‚
+                                                      â–¼ Consume Events
+                                             +â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€+
+                                             â”‚ Background Match Engine â”‚
+                                             â”‚ (Node.js Worker Pools)  â”‚
+                                             +â”€â”€â”€â”€â”€â”€â”€â”€â”¬â”€â”€â”€â”€â”€â”€â”€â”€â”¬â”€â”€â”€â”€â”€â”€â”€+
+                                                      â”‚        â”‚
+                                       Vector Queries â”‚        â”‚ WebRTC Tokens
+                                                      â–¼        â–¼
+                                             +â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€+  +â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€+
+                                             â”‚ Vector DB â”‚  â”‚ Media SFU â”‚
+                                             â”‚ (Milvus)  â”‚  â”‚ (LiveKit) â”‚
+                                             +â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€+  +â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€+
 
 ```
 
@@ -374,13 +374,13 @@ A critical architecture choice for millions of users is selecting the right tool
 To process matches across millions of users in real time without creating database deadlocks, the architecture relies on a **Spatial Sharding pipeline**:
 
 ```
-[User App Checks In] ──► [WebSocket Pod] ──► [Write User ID to Redis H3 Cell Key]
-                                                   │
-                                                   ▼
-[Worker Node] ◄── [Read Bulk User IDs] ◄── [Query Neighboring H3 Redis Sets]
-     │
-     ▼
-[Send Local ID Array to Milvus Vector Database] ──► [Return Single Best Match Pair]
+[User App Checks In] â”€â”€â–º [WebSocket Pod] â”€â”€â–º [Write User ID to Redis H3 Cell Key]
+                                                   â”‚
+                                                   â–¼
+[Worker Node] â—„â”€â”€ [Read Bulk User IDs] â—„â”€â”€ [Query Neighboring H3 Redis Sets]
+     â”‚
+     â–¼
+[Send Local ID Array to Milvus Vector Database] â”€â”€â–º [Return Single Best Match Pair]
 
 ```
 
@@ -400,8 +400,8 @@ To support millions of simultaneous live video and audio streams without going b
 * **The Signaling Plane (Node.js):** Your Node.js backend handles the orchestration layer. It negotiates connection terms, keeps track of the active 3-minute countdown timers, and generates encrypted authentication tokens. It never handles actual audio or video bits.
 * **The Media Plane (LiveKit / Selective Forwarding Unit):** WebRTC connections route through a highly optimized, dedicated open-source SFU (Selective Forwarding Unit) framework like **LiveKit** or **Janus** running on bare-metal or heavy computing infrastructure.
 * **Bandwidth Optimization Loop:** The client applications connect directly to the SFU to pipe their audio streams. The SFU dynamically alters stream characteristics based on instructions from the Node.js signaling tier.
-* *Minute 0–1:* Node tells the SFU to only forward audio data and completely blocks video packets.
-* *Minute 1–2:* Node tells the SFU to start passing video packets, but triggers an integrated client-side blurring shader wrapper.
+* *Minute 0â€“1:* Node tells the SFU to only forward audio data and completely blocks video packets.
+* *Minute 1â€“2:* Node tells the SFU to start passing video packets, but triggers an integrated client-side blurring shader wrapper.
 * *Minute 3:* If mutual verification fails, Node immediately drops the WebRTC connection token on the SFU server level, terminating the stream instantly.
 
 
@@ -411,12 +411,12 @@ To support millions of simultaneous live video and audio streams without going b
 ## 5. System Resilience & Scale Guardrails
 
 1. **Decoupled Job Queues (BullMQ):** All long-running asynchronous workflows (such as running facial biometrics, sending transactional push alerts, or processing third-party venue reservations) are decoupled from the request cycle using **BullMQ** or **RabbitMQ**. If downstream processing targets experience an outage, incoming traffic stays safely backed up in the message broker until performance returns to normal.
-2. **Circuit Breakers (Resilience4j / Custom Proxies):** Every connection from Node.js to an external dependency (the Vector database, KYC providers, or Apple/Google Cloud Messaging networks) is wrapped inside an architectural **Circuit Breaker Pattern**. If a service experiences latency spikes, the circuit trips immediately, serving graceful fallback data to users rather than exhausting Node’s database connection pools.
+2. **Circuit Breakers (Resilience4j / Custom Proxies):** Every connection from Node.js to an external dependency (the Vector database, KYC providers, or Apple/Google Cloud Messaging networks) is wrapped inside an architectural **Circuit Breaker Pattern**. If a service experiences latency spikes, the circuit trips immediately, serving graceful fallback data to users rather than exhausting Nodeâ€™s database connection pools.
 3. **The Multi-Region Cache Strategy:** The user's vector signature and match preferences are kept pre-warmed inside the global Redis cluster. When a Flash Window opens, the system avoids hitting the primary database entirely, allowing the matching services to run solely off the in-memory data store for maximum processing speed.
 
 --------------------------------------------------------------------------
 
-To integrate **Swipe Limits** and **"See Who Liked You" (Beeside / Fans Queue)** into your Node.js microservices architecture, you need to embed these paywalls across your **Data Storage**, **Real-Time Match Engine**, and **Razorpay Transactional Core**.
+To integrate **Swipe Limits** and **"See Who Liked You" (Beeside / Fans Queue)** into your Node.js microservices architecture, you need to embed these paywalls across your **Data Storage**, **Real-Time Match Engine**, and **Google Pay Transactional Core**.
 
 Since these features are high-throughput and checked every time a user triggers an action, you cannot rely solely on slow PostgreSQL database queries. Instead, the monetization gates are managed in **Redis** for speed, with **PostgreSQL** serving as the source of truth for billing.
 
@@ -427,23 +427,23 @@ Since these features are high-throughput and checked every time a user triggers 
 ```
                                 [ USER ACTION ]
                         (Swipe Right / Open Fans Tab)
-                                       │
-                                       ▼
+                                       â”‚
+                                       â–¼
                              [ API GATEWAY / ENVOY ]
-                                       │
-                                       ▼
+                                       â”‚
+                                       â–¼
                            [ CORE NODE.JS / FASTIFY ]
-                                       │
-                ┌──────────────────────┴──────────────────────┐
-                ▼                                             ▼
+                                       â”‚
+                â”Œâ”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”´â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”
+                â–¼                                             â–¼
        [ SWIPE LIMIT GATE ]                          [ REVEAL LIKES GATE ]
   (Check Redis Daily Counter)                   (Check User Account Status Tier)
-                │                                             │
-      ┌─────────┴─────────┐                         ┌─────────┴─────────┐
-      ▼                   ▼                         ▼                   ▼
+                â”‚                                             â”‚
+      â”Œâ”€â”€â”€â”€â”€â”€â”€â”€â”€â”´â”€â”€â”€â”€â”€â”€â”€â”€â”€â”                         â”Œâ”€â”€â”€â”€â”€â”€â”€â”€â”€â”´â”€â”€â”€â”€â”€â”€â”€â”€â”€â”
+      â–¼                   â–¼                         â–¼                   â–¼
 [Under Limit]       [Limit Reached]           [Premium Tier]      [Free / Basic Tier]
  Allow Swipe        Block Swipe;              Fetch Unblurred     Apply Blur Filter;
- Update Stack       Trigger Razorpay Modal    Profiles            Serve Razorpay Paywall
+ Update Stack       Trigger Google Pay Modal    Profiles            Serve Google Pay Paywall
 
 ```
 
@@ -453,14 +453,14 @@ Since these features are high-throughput and checked every time a user triggers 
 
 ### Feature A: Swipe Limits & Counter (The Engagement Cap)
 
-Free users get a restricted allocation of right swipes per 24 hours (e.g., 50 swipes). When the limit hits 0, the Node.js backend intercepts the action and returns an `HTTP 402 Payment Required` status, which prompts the client app to open the Razorpay monetization checkout sheet.
+Free users get a restricted allocation of right swipes per 24 hours (e.g., 50 swipes). When the limit hits 0, the Node.js backend intercepts the action and returns an `HTTP 402 Payment Required` status, which prompts the client app to open the Google Pay monetization checkout sheet.
 
 * **Where it lives:** Inside your **Real-Time Node.js Service** interacting with a **Redis Cache Layer**.
 * **The Mechanism:**
 1. Every swipe action triggers a fast `INCR` command on a Redis key linked to the user (`user:{id}:swipes:daily`).
 2. On the very first swipe of the day, Node sets an automated 24-hour expiration (`EXPIRE`) on that key.
-3. If the returned increment value exceeds the free limit, Node flags the profile, blocks the matching engine from processing the swipe, and sends an event back to the user app to show the **Razorpay Premium Upgrade Canvas** (`SCR-WAL-001`).
-4. Once a user pays via Razorpay and the webhook validates the payment, Node programmatically deletes the Redis limit key or changes the ceiling setting to `infinity`.
+3. If the returned increment value exceeds the free limit, Node flags the profile, blocks the matching engine from processing the swipe, and sends an event back to the user app to show the **Google Pay Premium Upgrade Canvas** (`SCR-WAL-001`).
+4. Once a user pays via Google Pay and the webhook validates the payment, Node programmatically deletes the Redis limit key or changes the ceiling setting to `infinity`.
 
 
 
@@ -473,7 +473,7 @@ This is typically the highest-converting premium feature in dating networks. It 
 1. When User A swipes right on User B, Node writes a structural record to the relational database table `UserInteractions` with a status of `PENDING_MATCH`.
 2. When User B opens their "Fans Queue" dashboard (`SCR-ENG-002`), the client hits your Node.js API (`GET /api/v1/profiles/likes-me`).
 3. **The Paywall Interceptor:** The Node.js controller checks the user's account state ledger.
-* **If Free:** Node fetches the profile records of the fans, but stripping away identifying metadata. It passes the images through a server-side blurring engine or instructs the UI layer to securely apply an obfuscation filter wrapper, overlaying a **Razorpay "Unlock All" Call-to-Action**.
+* **If Free:** Node fetches the profile records of the fans, but stripping away identifying metadata. It passes the images through a server-side blurring engine or instructs the UI layer to securely apply an obfuscation filter wrapper, overlaying a **Google Pay "Unlock All" Call-to-Action**.
 * **If Premium:** Node skips the masking middleware entirely, allowing a clean array of profiles to pass straight to the view layer for instant, high-efficiency matching.
 
 
@@ -484,20 +484,20 @@ This is typically the highest-converting premium feature in dating networks. It 
 
 ## 3. Updated Schema Architecture for Payments
 
-To tie these systems into your existing **Razorpay Webhook Worker Engine**, your database model needs explicit billing parameters to track entitlements:
+To tie these systems into your existing **Google Pay Webhook Worker Engine**, your database model needs explicit billing parameters to track entitlements:
 
 ```
-[User Table] ───► has_one ───► [Subscription Ledger]
-                                  • tier: FREE / PREMIUM / INFINITE
-                                  • swipe_allowance: Int (e.g., 50 or 99999)
-                                  • expires_at: Timestamp
-                                  • razorpay_subscription_id: String (Null)
+[User Table] â”€â”€â”€â–º has_one â”€â”€â”€â–º [Subscription Ledger]
+                                  â€¢ tier: FREE / PREMIUM / INFINITE
+                                  â€¢ swipe_allowance: Int (e.g., 50 or 99999)
+                                  â€¢ expires_at: Timestamp
+                                  â€¢ gateway_subscription_id: String (Null)
 
 ```
 
 ### The Verification-to-Feature-Unlock Chain
 
-1. When a payment event arrives from Razorpay (`payment.captured` or `subscription.activated`), your **Asynchronous Webhook Node** verifies the signature.
+1. When a payment event arrives from Google Pay (`payment.captured` or `subscription.activated`), your **Asynchronous Webhook Node** verifies the signature.
 2. The worker updates the `Subscription Ledger` in PostgreSQL, moving the account tier status from `FREE` to `PREMIUM`.
 3. The worker immediately flushes the user's active configuration limits inside the **Redis Cache Cluster**.
 4. The WebSocket handler issues a silent, real-time push event to the client device, transitioning the UI instantly to remove image blurs and restore full swiping rights without requiring a clumsy manual application restart.

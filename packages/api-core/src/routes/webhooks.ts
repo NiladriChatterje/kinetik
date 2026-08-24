@@ -4,12 +4,12 @@ import { FREE_SWIPE_LIMIT } from '@kinetik/shared';
 import { query, TABLES } from '../services/database';
 import { eventBus } from '../services/eventBus';
 import { getRedis } from '../services/redis';
-import { verifyWebhookSignature } from '../services/razorpay';
+import { verifyWebhookSignature } from '../services/googlePay';
 
 export async function webhookRoutes(app: FastifyInstance) {
-  // Capture the raw request body so we can verify Razorpay's webhook signature.
-  // Signature is computed over the exact bytes Razorpay sent, so we buffer the
-  // stream in a preParsing hook (scoped to this plugin) and hand Fastify a
+  // Capture the raw request body so we can verify the webhook signature.
+  // Signature is computed over the exact bytes the gateway sent, so we buffer
+  // the stream in a preParsing hook (scoped to this plugin) and hand Fastify a
   // fresh stream to parse normally.
   app.addHook('preParsing', async (request: any, _reply: any, payload: any) => {
     const chunks: Buffer[] = [];
@@ -20,17 +20,21 @@ export async function webhookRoutes(app: FastifyInstance) {
     return Readable.from([request.rawBody]);
   });
 
-  // ─── Razorpay Webhook ────────────────────────────────
-  // Events we care about:
+  // ─── Payments Webhook ────────────────────────────────
+  // Posted by the payment gateway that executes the Google Pay autopay
+  // mandate charges. Events we care about:
   //   payment.captured       – one-off or subscription charge captured
   //   subscription.charged   – recurring renewal succeeded (grant/refresh premium)
-  //   subscription.activated – initial activation
+  //   subscription.activated – mandate registered / initial activation
   //   subscription.cancelled – user cancelled / mandate revoked
-  // Signature is verified against RAZORPAY_WEBHOOK_SECRET when configured
-  // (set it from the Razorpay Dashboard → Settings → Webhooks).
-  app.post('/razorpay', async (request: FastifyRequest, reply: FastifyReply) => {
-    const webhookSecret = process.env.RAZORPAY_WEBHOOK_SECRET;
-    const signature = request.headers['x-razorpay-signature'] as string | undefined;
+  // Expected payload shape (flat, gateway-neutral):
+  //   { event, payload: { userId, subscriptionId?, paymentId?, orderId?,
+  //                       amount?, currency?, currentEnd? } }
+  // Signature: hex hmac_sha256(rawBody, PAYMENT_WEBHOOK_SECRET) in the
+  // `x-payment-signature` header, verified when the secret is configured.
+  app.post('/payments', async (request: FastifyRequest, reply: FastifyReply) => {
+    const webhookSecret = process.env.PAYMENT_WEBHOOK_SECRET;
+    const signature = request.headers['x-payment-signature'] as string | undefined;
 
     if (webhookSecret) {
       if (!verifyWebhookSignature((request as any).rawBody, signature)) {
@@ -39,7 +43,7 @@ export async function webhookRoutes(app: FastifyInstance) {
     } else {
       // Dev fallback: without a webhook secret we cannot authenticate the
       // payload. Log loudly so this never silently ships to production.
-      console.warn('[webhooks] RAZORPAY_WEBHOOK_SECRET is not set — skipping signature verification');
+      console.warn('[webhooks] PAYMENT_WEBHOOK_SECRET is not set — skipping signature verification');
     }
 
     const event = request.body as any;
@@ -49,68 +53,60 @@ export async function webhookRoutes(app: FastifyInstance) {
     }
 
     const { event: eventType, payload } = event;
+    const data = payload || {};
 
     try {
       switch (eventType) {
         case 'payment.captured': {
-          const payment = payload.payment?.entity;
-          if (!payment) break;
+          const { userId, paymentId } = data;
+          if (!userId || !paymentId) break;
 
-          const userId = payment.receipt || payment.notes?.user_id;
-          if (!userId) break;
-
-          // Store transaction (dedupe: Razorpay may retry webhook delivery)
+          // Store transaction (dedupe: the gateway may retry webhook delivery)
           await query(
             `INSERT INTO ${TABLES.TRANSACTIONS}
-             (user_id, razorpay_payment_id, razorpay_order_id, razorpay_subscription_id, amount, currency, status)
+             (user_id, gateway_payment_id, gateway_order_id, gateway_subscription_id, amount, currency, status)
              SELECT $1, $2, $3, $4, $5, $6, 'completed'
              WHERE NOT EXISTS (
-               SELECT 1 FROM ${TABLES.TRANSACTIONS} WHERE razorpay_payment_id = $2
+               SELECT 1 FROM ${TABLES.TRANSACTIONS} WHERE gateway_payment_id = $2
              )`,
-            [userId, payment.id, payment.order_id, payment.subscription_id || null,
-             payment.amount / 100, payment.currency],
+            [userId, paymentId, data.orderId || null, data.subscriptionId || null,
+             data.amount ?? null, data.currency || 'INR'],
           );
 
           await eventBus.sendPaymentEvent({
             type: 'payment.captured',
-            payload: payment,
+            payload: data,
           });
           break;
         }
 
         case 'subscription.charged': {
-          const subscription = payload.subscription?.entity;
-          if (!subscription) break;
+          const { userId, subscriptionId } = data;
+          if (!userId || !subscriptionId) break;
 
-          const userId = subscription.notes?.user_id;
-          if (!userId) break;
-
-          const currentEnd = subscription.current_end
-            ? new Date(Number(subscription.current_end) * 1000)
-            : null;
+          const currentEnd = data.currentEnd ? new Date(data.currentEnd) : null;
 
           // Grant / refresh premium until the end of the current billing cycle
           await query(
             `UPDATE ${TABLES.SUBSCRIPTION_LEDGER}
-             SET tier = 'premium', razorpay_subscription_id = $1,
+             SET tier = 'premium', gateway_subscription_id = $1,
                  expires_at = COALESCE($2, expires_at), auto_renew = TRUE,
                  updated_at = NOW()
              WHERE user_id = $3`,
-            [subscription.id, currentEnd, userId],
+            [subscriptionId, currentEnd, userId],
           );
 
           // Record the recurring charge
-          const payment = payload.payment?.entity;
-          if (payment) {
+          if (data.paymentId) {
             await query(
               `INSERT INTO ${TABLES.TRANSACTIONS}
-               (user_id, razorpay_payment_id, razorpay_subscription_id, amount, currency, status, description)
+               (user_id, gateway_payment_id, gateway_subscription_id, amount, currency, status, description)
                SELECT $1, $2, $3, $4, $5, 'completed', $6
                WHERE NOT EXISTS (
-                 SELECT 1 FROM ${TABLES.TRANSACTIONS} WHERE razorpay_payment_id = $2
+                 SELECT 1 FROM ${TABLES.TRANSACTIONS} WHERE gateway_payment_id = $2
                )`,
-              [userId, payment.id, subscription.id,
-               payment.amount ? payment.amount / 100 : null, payment.currency || 'INR',                'Kinetik Premium — ₹250/month'],
+              [userId, data.paymentId, subscriptionId,
+               data.amount ?? null, data.currency || 'INR', 'Kinetik Premium — monthly renewal'],
             );
           }
 
@@ -120,23 +116,21 @@ export async function webhookRoutes(app: FastifyInstance) {
 
           await eventBus.sendPaymentEvent({
             type: 'subscription.charged',
-            payload: { userId, razorpaySubscriptionId: subscription.id, currentEnd },
+            payload: { userId, subscriptionId, currentEnd },
           });
           break;
         }
 
         case 'subscription.activated': {
-          const subscription = payload.subscription?.entity;
-          if (!subscription) break;
-
-          const userId = subscription.notes?.user_id;
-          if (userId) {
+          const { userId, subscriptionId } = data;
+          if (userId && subscriptionId) {
+            const currentEnd = data.currentEnd ? new Date(data.currentEnd) : null;
             await query(
               `UPDATE ${TABLES.SUBSCRIPTION_LEDGER}
-               SET tier = 'premium', razorpay_subscription_id = $1,
-                   expires_at = TO_TIMESTAMP($2), auto_renew = TRUE, updated_at = NOW()
+               SET tier = 'premium', gateway_subscription_id = $1,
+                   expires_at = COALESCE($2, expires_at), auto_renew = TRUE, updated_at = NOW()
                WHERE user_id = $3`,
-              [subscription.id, subscription.current_end, userId],
+              [subscriptionId, currentEnd, userId],
             );
 
             // Clear swipe cache
@@ -146,19 +140,18 @@ export async function webhookRoutes(app: FastifyInstance) {
 
           await eventBus.sendPaymentEvent({
             type: 'subscription.activated',
-            payload: subscription,
+            payload: data,
           });
           break;
         }
 
         case 'subscription.cancelled': {
-          const cancelled = payload.subscription?.entity;
-          if (cancelled?.notes?.user_id) {
+          if (data.userId) {
             await query(
               `UPDATE ${TABLES.SUBSCRIPTION_LEDGER}
                SET tier = 'free', swipe_allowance = $2, auto_renew = FALSE, updated_at = NOW()
                WHERE user_id = $1`,
-              [cancelled.notes.user_id, FREE_SWIPE_LIMIT],
+              [data.userId, FREE_SWIPE_LIMIT],
             );
           }
           break;

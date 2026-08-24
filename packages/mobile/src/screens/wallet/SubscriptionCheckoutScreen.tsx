@@ -2,11 +2,10 @@ import React, { useCallback, useEffect, useState } from 'react';
 import { View, Text, StyleSheet, ScrollView, ActivityIndicator, Alert } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
-import RazorpayCheckout from 'react-native-razorpay';
+import { PaymentRequest } from '@google/react-native-make-payment';
 import { Card } from '../../components/common/Card';
 import { Button } from '../../components/common/Button';
 import { useToast } from '../../hooks/useToast';
-import { useAuthStore } from '../../store/authStore';
 import { api } from '../../services/api';
 import { colors, typography, spacing, radius } from '../../theme';
 
@@ -40,7 +39,7 @@ const FEATURES = [
   { icon: 'eye-off-outline' as const, label: 'See who liked you — no blur' },
 ];
 
-const PAYMENT_METHODS = ['Credit / Debit Card', 'UPI Autopay (recurring mandate)'];
+const PAYMENT_METHODS = ['Google Pay — UPI Autopay (recurring mandate)', 'Google Pay — Credit / Debit Card'];
 
 function formatDate(iso: string | null): string {
   if (!iso) return '';
@@ -50,7 +49,6 @@ function formatDate(iso: string | null): string {
 }
 
 export const SubscriptionCheckoutScreen: React.FC = () => {
-  const authUser = useAuthStore((s) => s.user);
   const toast = useToast();
 
   const [status, setStatus] = useState<SubscriptionStatus | null>(null);
@@ -104,7 +102,7 @@ export const SubscriptionCheckoutScreen: React.FC = () => {
           onPress: async () => {
             setCancelling(true);
             try {
-              const res = await api.cancelRazorpaySubscription();
+              const res = await api.cancelGooglePaySubscription();
               if (!res.success) {
                 throw new Error(res.error?.message || 'Could not cancel subscription');
               }
@@ -125,61 +123,94 @@ export const SubscriptionCheckoutScreen: React.FC = () => {
     if (subscribing) return;
     setSubscribing(true);
     try {
-      // 1. Create the recurring subscription on the server
-      const createRes = await api.createRazorpaySubscription();
+      // 1. Create the pending subscription + Google Pay config on the server
+      const createRes = await api.createGooglePaySubscription();
       if (!createRes.success || !createRes.data) {
         throw new Error(createRes.error?.message || 'Could not start checkout');
       }
-      const { subscriptionId, razorpayKeyId } = createRes.data;
+      const { subscriptionId, googlePay, amount, currency, label } = createRes.data;
+      const totalPrice = Number(amount).toFixed(2);
 
-      // 2. Open the Razorpay Checkout — cards + UPI Autopay mandate
-      const contact = (authUser?.phone || '').replace(/\D/g, '').slice(-10);
-      const options = {
-        key: razorpayKeyId,
-        subscription_id: subscriptionId,
-        name: 'Kinetik',
-        description: `Kinetik Premium — ${pricing?.label ?? '₹250/month'}`,
-        currency: pricing?.currency ?? 'INR',
-        prefill: {
-          name: authUser?.displayName || '',
-          email: authUser?.email || '',
-          contact,
+      // 2. Show the Google Pay payment sheet — the user approves the
+      //    recurring autopay mandate (UPI Autopay / tokenized card) and the
+      //    sheet returns a gateway payment token.
+      const paymentRequest = new PaymentRequest(
+        [
+          {
+            supportedMethods: 'google_pay',
+            // TEST vs PRODUCTION is a build-time setting: the
+            // GOOGLE_PAY_ENVIRONMENT property in android/gradle.properties.
+            data: {
+              apiVersion: 2,
+              apiVersionMinor: 0,
+              merchantInfo: {
+                merchantId: googlePay.merchantId,
+                merchantName: googlePay.merchantName,
+              },
+              allowedPaymentMethods: [
+                {
+                  type: 'CARD',
+                  parameters: {
+                    allowedAuthMethods: googlePay.allowedAuthMethods,
+                    allowedCardNetworks: googlePay.allowedCardNetworks,
+                  },
+                  tokenizationSpecification: {
+                    type: 'PAYMENT_GATEWAY',
+                    parameters: {
+                      gateway: googlePay.gateway,
+                      gatewayMerchantId: googlePay.gatewayMerchantId,
+                    },
+                  },
+                },
+              ],
+              transactionInfo: {
+                totalPriceStatus: 'FINAL',
+                totalPrice,
+                currencyCode: currency,
+                countryCode: googlePay.countryCode,
+              },
+            },
+          },
+        ],
+        {
+          total: {
+            label: `Kinetik Premium — ${label}`,
+            amount: { currency, value: totalPrice },
+          },
         },
-        theme: { color: colors.primary },
-      };
+      );
 
-      const data = await RazorpayCheckout.open(options) as {
-        razorpay_payment_id?: string;
-        razorpay_subscription_id?: string;
-        razorpay_signature?: string;
-      };
-
-      // 3. Server-side verification + activation (HMAC over payment + subscription)
-      if (!data?.razorpay_payment_id || !data?.razorpay_subscription_id || !data?.razorpay_signature) {
-        throw new Error('Checkout returned an incomplete response');
+      if (!(await paymentRequest.canMakePayment())) {
+        throw new Error('Google Pay is not available on this device');
       }
 
-      const verifyRes = await api.verifyRazorpaySubscription({
-        razorpayPaymentId: data.razorpay_payment_id,
-        razorpaySubscriptionId: data.razorpay_subscription_id,
-        razorpaySignature: data.razorpay_signature,
+      const response = await paymentRequest.show();
+      const paymentToken: string | undefined =
+        (response as any)?.details?.paymentMethodData?.tokenizationData?.token;
+      if (!paymentToken) {
+        throw new Error('Google Pay returned an incomplete response');
+      }
+
+      // 3. Server-side mandate registration + premium activation
+      const activateRes = await api.activateGooglePaySubscription({
+        subscriptionId,
+        paymentToken,
       });
 
-      if (!verifyRes.success) {
-        throw new Error(verifyRes.error?.message || 'Payment could not be verified');
+      if (!activateRes.success) {
+        throw new Error(activateRes.error?.message || 'Payment could not be verified');
       }
 
-      if (verifyRes.data?.activated) {
+      if (activateRes.data?.activated) {
         toast.showSuccess('Premium active!', 'Subscription is live.');
       } else {
         toast.showSuccess('Approved', 'Activating shortly.');
       }
       await fetchStatus();
     } catch (error: any) {
-      const code = error?.code;
-      const message = error?.description || error?.message;
-      // Payment cancelled by the user is expected — show a neutral message
-      if (code === 'BAD_REQUEST_ERROR' || code === 'PAYMENT_CANCELLED' || /cancelled|cancel/i.test(message || '')) {
+      const message = error?.message || error?.description;
+      // Payment sheet dismissed by the user is expected — show a neutral message
+      if (error?.name === 'AbortError' || /cancelled|cancel/i.test(message || '')) {
         toast.showError('Cancelled', 'Try again any time.');
       } else {
         toast.showError('Failed', message || 'Try again.');
@@ -187,7 +218,7 @@ export const SubscriptionCheckoutScreen: React.FC = () => {
     } finally {
       setSubscribing(false);
     }
-  }, [subscribing, authUser, toast, fetchStatus]);
+  }, [subscribing, toast, fetchStatus]);
 
   return (
     <SafeAreaView style={styles.container}>
@@ -210,7 +241,7 @@ export const SubscriptionCheckoutScreen: React.FC = () => {
               <View style={styles.priceRow}>
                 <Text style={styles.price}>{pricing?.label ?? '₹250/month'}</Text>
               </View>
-              <Text style={styles.planNote}>Recurring — cancel any time from Razorpay</Text>
+              <Text style={styles.planNote}>Recurring — cancel any time from Kinetik or the Google Pay app</Text>
 
               {isPremium && (
                 <View style={styles.activeBox}>
@@ -246,8 +277,9 @@ export const SubscriptionCheckoutScreen: React.FC = () => {
               </View>
             ))}
             <Text style={styles.disclaimer}>
-              Subscriptions are billed by Razorpay in {pricing?.currency ?? 'INR'}. Cards are charged {pricing?.label ?? '₹250'} each month; UPI users
-              approve a recurring mandate. Razorpay sends payment reminders before every charge.
+              Subscriptions are billed through Google Pay in {pricing?.currency ?? 'INR'}. You approve a
+              recurring autopay mandate once, and {pricing?.label ?? '₹250'} is charged each month; Google Pay
+              notifies you before every charge.
             </Text>
 
             <Button

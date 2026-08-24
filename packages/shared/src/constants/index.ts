@@ -111,12 +111,12 @@ export const API_ROUTES = {
   PAYMENTS_CREATE_ORDER: '/api/v1/payments/create-order',
   PAYMENTS_VERIFY: '/api/v1/payments/verify',
   PAYMENTS_SUBSCRIPTION: '/api/v1/payments/subscription',
-  PAYMENTS_SUBSCRIPTION_VERIFY: '/api/v1/payments/subscription/verify',
+  PAYMENTS_SUBSCRIPTION_ACTIVATE: '/api/v1/payments/subscription/activate',
   PAYMENTS_SUBSCRIPTION_STATUS: '/api/v1/payments/subscription/status',
   PAYMENTS_SUBSCRIPTION_CANCEL: '/api/v1/payments/subscription/cancel',
 
   // Webhooks
-  WEBHOOK_RAZORPAY: '/api/v1/webhooks/razorpay',
+  WEBHOOK_PAYMENTS: '/api/v1/webhooks/payments',
 
   // Duo Crew
   DUO_PREFIX: '/api/v1/duo',

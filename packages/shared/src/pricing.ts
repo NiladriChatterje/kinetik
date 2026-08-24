@@ -3,9 +3,7 @@
  *
  * Prices are fixed per region (not live-converted) so users see predictable
  * charges. Update these when exchange rates shift significantly or when
- * Razorpay adds/removes supported currencies.
- *
- * Currency codes: https://razorpay.com/docs/payments/payments/currency/
+ * the payment gateway adds/removes supported currencies.
  */
 
 export interface CurrencyConfig {
@@ -13,7 +11,7 @@ export interface CurrencyConfig {
   currency: string;
   /** Display symbol (e.g. "₹", "$") */
   symbol: string;
-  /** Monthly price in minor units (paise/cents) for Razorpay */
+  /** Monthly price in minor units (paise/cents) for the payment gateway */
   amountMinor: number;
   /** Monthly price in major units for display */
   amountMajor: number;
@@ -169,7 +167,7 @@ export function getPricingForCountry(countryCode: string): CurrencyConfig {
 }
 
 /**
- * All supported currency codes (for Razorpay plan creation).
+ * All supported currency codes.
  */
 export function getSupportedCurrencies(): string[] {
   const currencies = new Set(Object.values(PRICING_BY_COUNTRY).map((c) => c.currency));

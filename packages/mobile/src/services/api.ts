@@ -468,27 +468,38 @@ class ApiClient {
   }
 
   /**
-   * Creates a recurring Razorpay subscription (₹250/month premium plan).
-   * Returns the subscription_id + razorpayKeyId needed to open the Checkout.
+   * Creates a pending recurring subscription (₹250/month premium plan) and
+   * returns the Google Pay sheet configuration needed to approve the
+   * autopay mandate.
    */
-  async createRazorpaySubscription() {
+  async createGooglePaySubscription() {
     return this.request<{
       subscriptionId: string;
-      razorpayKeyId: string;
+      googlePay: {
+        environment: 'TEST' | 'PRODUCTION';
+        merchantId: string;
+        merchantName: string;
+        gateway: string;
+        gatewayMerchantId: string;
+        countryCode: string;
+        allowedAuthMethods: string[];
+        allowedCardNetworks: string[];
+      };
       amount: number;
+      amountMinor: number;
       currency: string;
+      label: string;
       period: string;
     }>('/api/v1/payments/subscription', { method: 'POST' });
   }
 
   /**
-   * Verifies the Razorpay Checkout response for a subscription payment and
-   * activates premium on the server when the signature checks out.
+   * Sends the Google Pay payment token to the server, which registers the
+   * recurring autopay mandate with the gateway and activates premium.
    */
-  async verifyRazorpaySubscription(payload: {
-    razorpayPaymentId: string;
-    razorpaySubscriptionId: string;
-    razorpaySignature: string;
+  async activateGooglePaySubscription(payload: {
+    subscriptionId: string;
+    paymentToken: string;
   }) {
     return this.request<{
       verified: boolean;
@@ -496,7 +507,7 @@ class ApiClient {
       tier?: string;
       expiresAt?: string;
       status?: string;
-    }>('/api/v1/payments/subscription/verify', {
+    }>('/api/v1/payments/subscription/activate', {
       method: 'POST',
       body: JSON.stringify(payload),
     });
@@ -527,10 +538,11 @@ class ApiClient {
   }
 
   /**
-   * Cancels the recurring Razorpay subscription. The user keeps Premium until
-   * the end of the current billing cycle, then it stops renewing.
+   * Cancels the recurring subscription (revokes the autopay mandate). The user
+   * keeps Premium until the end of the current billing cycle, then it stops
+   * renewing.
    */
-  async cancelRazorpaySubscription() {
+  async cancelGooglePaySubscription() {
     return this.request<{
       cancelled: boolean;
       status: string;

@@ -85,7 +85,7 @@ export async function fanRoutes(app: FastifyInstance) {
   app.post('/unlock', async (request: FastifyRequest, reply: FastifyReply) => {
     const { sub: userId } = request.user as any;
 
-    // In production, process payment via Razorpay
+    // In production, process payment via Google Pay
     // Update subscription tier
     await query(
       `UPDATE ${TABLES.SUBSCRIPTION_LEDGER} 

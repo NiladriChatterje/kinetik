@@ -1,15 +1,16 @@
 import { FastifyInstance, FastifyRequest, FastifyReply } from 'fastify';
 import { z } from 'zod';
-import { ERROR_CODES, FREE_SWIPE_LIMIT, FREE_CHAT_LIMIT, PREMIUM_SWIPE_LIMIT, PREMIUM_CHAT_LIMIT, PREMIUM_MONTHLY_COST_INR, getPricingForPhone } from '@kinetik/shared';
+import { ERROR_CODES, FREE_SWIPE_LIMIT, FREE_CHAT_LIMIT, PREMIUM_SWIPE_LIMIT, PREMIUM_CHAT_LIMIT, getPricingForPhone } from '@kinetik/shared';
 import { query, TABLES, getSubscription } from '../services/database';
 import { eventBus } from '../services/eventBus';
 import {
-  isRazorpayConfigured,
-  createPremiumSubscription,
-  fetchSubscription,
-  cancelPremiumSubscription,
-  verifySubscriptionSignature,
-} from '../services/razorpay';
+  isGooglePayConfigured,
+  getGooglePayClientConfig,
+  createSubscriptionId,
+  registerAutopayMandate,
+  revokeAutopayMandate,
+  PREMIUM_PLAN_PERIOD,
+} from '../services/googlePay';
 
 const CreateOrderSchema = z.object({
   amount: z.number().positive(),
@@ -18,15 +19,14 @@ const CreateOrderSchema = z.object({
 });
 
 const VerifyPaymentSchema = z.object({
-  razorpayPaymentId: z.string(),
-  razorpayOrderId: z.string(),
-  razorpaySignature: z.string(),
+  paymentId: z.string(),
+  orderId: z.string(),
 });
 
-const VerifySubscriptionSchema = z.object({
-  razorpayPaymentId: z.string(),
-  razorpaySubscriptionId: z.string(),
-  razorpaySignature: z.string(),
+const ActivateSubscriptionSchema = z.object({
+  subscriptionId: z.string(),
+  // Opaque token from the Google Pay sheet: paymentMethodData.tokenizationData.token
+  paymentToken: z.string().min(1),
 });
 
 export async function paymentRoutes(app: FastifyInstance) {
@@ -41,7 +41,7 @@ export async function paymentRoutes(app: FastifyInstance) {
     }
   });
 
-  // ─── Create Razorpay Order ───────────────────────────
+  // ─── Create Payment Order (one-off) ──────────────────
   app.post('/create-order', async (request: FastifyRequest, reply: FastifyReply) => {
     const validation = CreateOrderSchema.safeParse(request.body);
     if (!validation.success) {
@@ -58,9 +58,6 @@ export async function paymentRoutes(app: FastifyInstance) {
     const { sub: userId } = request.user as any;
     const { amount, currency, description } = validation.data;
 
-    // In production, create order via Razorpay API
-    // const razorpayOrder = await razorpay.orders.create({ amount, currency, receipt: userId });
-
     // Store pending order in DB
     const result = await query(
       `INSERT INTO ${TABLES.TRANSACTIONS} (user_id, amount, currency, status, description)
@@ -75,14 +72,13 @@ export async function paymentRoutes(app: FastifyInstance) {
         transactionId: result.rows[0].id,
         amount: result.rows[0].amount,
         currency: result.rows[0].currency,
-        // In production: razorpayOrderId: razorpayOrder.id,
-        razorpayOrderId: `order_${result.rows[0].id}`,
-        razorpayKeyId: process.env.RAZORPAY_KEY_ID,
+        orderId: `order_${result.rows[0].id}`,
+        googlePay: getGooglePayClientConfig(),
       },
     });
   });
 
-  // ─── Verify Payment ──────────────────────────────────
+  // ─── Verify Payment (one-off) ────────────────────────
   app.post('/verify', async (request: FastifyRequest, reply: FastifyReply) => {
     const validation = VerifyPaymentSchema.safeParse(request.body);
     if (!validation.success) {
@@ -97,15 +93,10 @@ export async function paymentRoutes(app: FastifyInstance) {
     }
 
     const { sub: userId } = request.user as any;
-    const { razorpayPaymentId, razorpayOrderId, razorpaySignature: _razorpaySignature } = validation.data;
+    const { paymentId, orderId } = validation.data;
 
-    // In production, verify signature using Razorpay utility
-    // const isValid = razorpay.utils.verifyPaymentSignature({
-    //   order_id: razorpayOrderId,
-    //   payment_id: razorpayPaymentId,
-    //   signature: razorpaySignature,
-    // });
-
+    // In production, confirm the charge with the payment gateway before
+    // marking the transaction complete.
     const isValid = true; // Simplified for dev
 
     if (!isValid) {
@@ -117,20 +108,20 @@ export async function paymentRoutes(app: FastifyInstance) {
 
     // Update transaction
     await query(
-      `UPDATE ${TABLES.TRANSACTIONS} 
-       SET razorpay_payment_id = $1, razorpay_order_id = $2, status = 'completed'
-       WHERE razorpay_order_id = $3`,
-      [razorpayPaymentId, razorpayOrderId, razorpayOrderId],
+      `UPDATE ${TABLES.TRANSACTIONS}
+       SET gateway_payment_id = $1, gateway_order_id = $2, status = 'completed'
+       WHERE gateway_order_id = $2`,
+      [paymentId, orderId],
     );
 
     await eventBus.sendPaymentEvent({
       type: 'payment.completed',
-      payload: { userId, razorpayPaymentId, razorpayOrderId },
+      payload: { userId, paymentId, orderId },
     });
 
     return reply.send({
       success: true,
-      data: { verified: true, paymentId: razorpayPaymentId },
+      data: { verified: true, paymentId },
     });
   });
 
@@ -202,15 +193,16 @@ export async function paymentRoutes(app: FastifyInstance) {
     });
   });
 
-  // ─── Create Subscription (Razorpay recurring plan) ────
-  // Creates a Razorpay subscription for the premium plan in the user's
-  // local currency. The client then opens the Razorpay Checkout with the
-  // returned subscription_id so the user can pay by card or set up a
-  // UPI Autopay mandate.
+  // ─── Create Subscription (Google Pay recurring) ───────
+  // Creates a pending premium subscription in the user's local currency and
+  // returns the Google Pay sheet configuration. The client then shows the
+  // Google Pay payment sheet so the user can approve the recurring mandate
+  // (UPI Autopay / tokenized card) and calls /subscription/activate with the
+  // returned payment token.
   app.post('/subscription', async (request: FastifyRequest, reply: FastifyReply) => {
     const { sub: userId } = request.user as any;
 
-    if (!isRazorpayConfigured()) {
+    if (!isGooglePayConfigured()) {
       return reply.status(503).send({
         success: false,
         error: {
@@ -226,30 +218,31 @@ export async function paymentRoutes(app: FastifyInstance) {
       const phone = userResult.rows[0]?.phone;
       const pricing = getPricingForPhone(phone || '');
 
-      const subscription = await createPremiumSubscription(userId, phone);
+      const subscriptionId = createSubscriptionId();
 
-      // Remember the subscription on the ledger so /subscription/verify can
+      // Remember the subscription on the ledger so /subscription/activate can
       // confirm it actually belongs to this user, and status shows 'pending'.
       await query(
-        `INSERT INTO ${TABLES.SUBSCRIPTION_LEDGER} (user_id, razorpay_subscription_id, updated_at)
+        `INSERT INTO ${TABLES.SUBSCRIPTION_LEDGER} (user_id, gateway_subscription_id, updated_at)
          VALUES ($1, $2, NOW())
-         ON CONFLICT (user_id) DO UPDATE SET razorpay_subscription_id = $2, updated_at = NOW()`,
-        [userId, subscription.id],
+         ON CONFLICT (user_id) DO UPDATE SET gateway_subscription_id = $2, updated_at = NOW()`,
+        [userId, subscriptionId],
       );
 
       return reply.send({
         success: true,
         data: {
-          subscriptionId: subscription.id,
-          razorpayKeyId: process.env.RAZORPAY_KEY_ID,
+          subscriptionId,
+          googlePay: getGooglePayClientConfig(),
           amount: pricing.amountMajor,
+          amountMinor: pricing.amountMinor,
           currency: pricing.currency,
           label: pricing.label,
-          period: 'monthly',
+          period: PREMIUM_PLAN_PERIOD,
         },
       });
     } catch (error: any) {
-      console.error('[payments] Failed to create Razorpay subscription:', error?.message || error);
+      console.error('[payments] Failed to create subscription:', error?.message || error);
       return reply.status(502).send({
         success: false,
         error: {
@@ -260,105 +253,99 @@ export async function paymentRoutes(app: FastifyInstance) {
     }
   });
 
-  // ─── Verify Subscription Payment ──────────────────────
-  // Called by the app after the Razorpay Checkout returns. We verify the HMAC
-  // signature over payment_id + subscription_id (documented flow for
-  // subscriptions) and confirm the subscription belongs to this user before
-  // activating premium. The subscription.charged webhook handles later renewals.
-  app.post('/subscription/verify', async (request: FastifyRequest, reply: FastifyReply) => {
-    const validation = VerifySubscriptionSchema.safeParse(request.body);
+  // ─── Activate Subscription ────────────────────────────
+  // Called by the app after the Google Pay sheet returns. We confirm the
+  // subscription belongs to this user, register the payment token with the
+  // gateway as a recurring mandate (first charge included), then grant
+  // premium. Renewals arrive on the payments webhook each month.
+  app.post('/subscription/activate', async (request: FastifyRequest, reply: FastifyReply) => {
+    const validation = ActivateSubscriptionSchema.safeParse(request.body);
     if (!validation.success) {
       return reply.status(400).send({
         success: false,
         error: {
           code: ERROR_CODES.VALIDATION_ERROR,
-          message: 'Invalid verification data',
+          message: 'Invalid activation data',
           details: validation.error.flatten(),
         },
       });
     }
 
     const { sub: userId } = request.user as any;
-    const { razorpayPaymentId, razorpaySubscriptionId, razorpaySignature } = validation.data;
-
-    if (!verifySubscriptionSignature({
-      paymentId: razorpayPaymentId,
-      subscriptionId: razorpaySubscriptionId,
-      signature: razorpaySignature,
-    })) {
-      return reply.status(400).send({
-        success: false,
-        error: { code: ERROR_CODES.PAYMENT_FAILED, message: 'Payment verification failed' },
-      });
-    }
+    const { subscriptionId, paymentToken } = validation.data;
 
     // The subscription must be one we created for this user.
     const ledger = await getSubscription(userId);
-    if (!ledger || ledger.razorpay_subscription_id !== razorpaySubscriptionId) {
+    if (!ledger || ledger.gateway_subscription_id !== subscriptionId) {
       return reply.status(400).send({
         success: false,
         error: { code: ERROR_CODES.PAYMENT_FAILED, message: 'Subscription does not match this account' },
       });
     }
 
-    // Ask Razorpay for the authoritative subscription state. 'active' (card
-    // charged) and 'authenticated' (UPI mandate set up) both mean the user is
-    // entitled to premium; the first real charge follows per the plan schedule.
-    let subscription: any;
+    // Price in the user's currency — the mandate is registered for this amount.
+    const userResult = await query(`SELECT phone FROM ${TABLES.USERS} WHERE id = $1`, [userId]);
+    const pricing = getPricingForPhone(userResult.rows[0]?.phone || '');
+
+    let mandate: { status: string; paymentId: string };
     try {
-      subscription = await fetchSubscription(razorpaySubscriptionId);
+      mandate = await registerAutopayMandate({
+        subscriptionId,
+        userId,
+        paymentToken,
+        amountMinor: pricing.amountMinor,
+        currency: pricing.currency,
+      });
     } catch (error: any) {
-      console.error('[payments] Failed to fetch subscription:', error?.message || error);
+      console.error('[payments] Failed to register autopay mandate:', error?.message || error);
       return reply.status(502).send({
         success: false,
         error: {
           code: ERROR_CODES.PAYMENT_FAILED,
-          message: 'Could not confirm the subscription. Please try again.',
+          message: 'Could not confirm the payment. Please try again.',
         },
       });
     }
 
-    const { status, current_end } = subscription;
-    if (status !== 'active' && status !== 'authenticated') {
+    if (mandate.status !== 'active') {
       return reply.send({
         success: true,
-        data: { verified: true, activated: false, status },
+        data: { verified: true, activated: false, status: mandate.status },
       });
     }
 
-    const expiresAt = current_end
-      ? new Date(Number(current_end) * 1000)
-      : (() => { const d = new Date(); d.setMonth(d.getMonth() + 1); return d; })();
+    const expiresAt = (() => { const d = new Date(); d.setMonth(d.getMonth() + 1); return d; })();
 
     // Grant premium entitlement
     await query(
       `INSERT INTO ${TABLES.SUBSCRIPTION_LEDGER}
          (user_id, tier, swipe_allowance, fast_passes_remaining, rain_checks_remaining,
-          razorpay_subscription_id, expires_at, auto_renew, updated_at)
+          gateway_subscription_id, expires_at, auto_renew, updated_at)
        VALUES ($1, 'premium', $2, 5, 3, $3, $4, TRUE, NOW())
        ON CONFLICT (user_id) DO UPDATE SET
          tier = 'premium',
          swipe_allowance = $2,
          fast_passes_remaining = 5,
          rain_checks_remaining = 3,
-         razorpay_subscription_id = $3,
+         gateway_subscription_id = $3,
          expires_at = $4,
          auto_renew = TRUE,
          updated_at = NOW()`,
-      [userId, PREMIUM_SWIPE_LIMIT, razorpaySubscriptionId, expiresAt.toISOString()],
+      [userId, PREMIUM_SWIPE_LIMIT, subscriptionId, expiresAt.toISOString()],
     );
 
     // Record the first transaction
     await query(
       `INSERT INTO ${TABLES.TRANSACTIONS}
-         (user_id, razorpay_payment_id, razorpay_subscription_id, amount, currency, status, description)
-       VALUES ($1, $2, $3, $4, 'INR', 'completed', $5)`,
-      [userId, razorpayPaymentId, razorpaySubscriptionId, PREMIUM_MONTHLY_COST_INR, 'Kinetik Premium — ₹250/month'],
+         (user_id, gateway_payment_id, gateway_subscription_id, amount, currency, status, description)
+       VALUES ($1, $2, $3, $4, $5, 'completed', $6)`,
+      [userId, mandate.paymentId, subscriptionId, pricing.amountMajor, pricing.currency,
+       `Kinetik Premium — ${pricing.label}`],
     );
 
     await eventBus.sendPaymentEvent({
       type: 'subscription.activated',
-      payload: { userId, tier: 'premium', expiresAt, razorpaySubscriptionId },
+      payload: { userId, tier: 'premium', expiresAt, subscriptionId },
     });
 
     return reply.send({
@@ -373,7 +360,7 @@ export async function paymentRoutes(app: FastifyInstance) {
     const { sub: userId } = request.user as any;
     const ledger = await getSubscription(userId);
 
-    if (!ledger || !ledger.razorpay_subscription_id) {
+    if (!ledger || !ledger.gateway_subscription_id) {
       return reply.send({
         success: true,
         data: { tier: 'free', autoRenew: false, expiresAt: null, subscriptionId: null },
@@ -386,7 +373,7 @@ export async function paymentRoutes(app: FastifyInstance) {
         tier: ledger.tier,
         autoRenew: Boolean(ledger.auto_renew),
         expiresAt: ledger.expires_at ? new Date(ledger.expires_at).toISOString() : null,
-        subscriptionId: ledger.razorpay_subscription_id,
+        subscriptionId: ledger.gateway_subscription_id,
       },
     });
   });
@@ -398,16 +385,16 @@ export async function paymentRoutes(app: FastifyInstance) {
     const { sub: userId } = request.user as any;
 
     const result = await query(
-      `SELECT razorpay_payment_id, amount, currency, status, description, created_at
+      `SELECT gateway_payment_id, amount, currency, status, description, created_at
        FROM ${TABLES.TRANSACTIONS}
-       WHERE user_id = $1 AND razorpay_subscription_id IS NOT NULL
+       WHERE user_id = $1 AND gateway_subscription_id IS NOT NULL
        ORDER BY created_at DESC
        LIMIT 36`,
       [userId],
     );
 
     const payments = result.rows.map((row: any) => ({
-      paymentId: row.razorpay_payment_id,
+      paymentId: row.gateway_payment_id,
       amount: row.amount !== null ? Number(row.amount) : null,
       currency: row.currency || 'INR',
       status: row.status,
@@ -425,15 +412,14 @@ export async function paymentRoutes(app: FastifyInstance) {
   });
 
   // ─── Cancel Subscription ─────────────────────────────
-  // Cancels the Razorpay subscription at the end of the current billing cycle
-  // (the user keeps Premium until the date they already paid for, then it
-  // stops renewing). The subscription.cancelled webhook later flips the tier
-  // to free when the cycle actually ends.
+  // Revokes the autopay mandate at the gateway and stops auto-renew. The user
+  // keeps Premium until the date they already paid for; the payments webhook
+  // (subscription.cancelled) flips the tier to free when the cycle ends.
   app.post('/subscription/cancel', async (request: FastifyRequest, reply: FastifyReply) => {
     const { sub: userId } = request.user as any;
 
     const ledger = await getSubscription(userId);
-    const subscriptionId = ledger?.razorpay_subscription_id;
+    const subscriptionId = ledger?.gateway_subscription_id;
     if (!ledger || !subscriptionId) {
       return reply.status(400).send({
         success: false,
@@ -442,16 +428,7 @@ export async function paymentRoutes(app: FastifyInstance) {
     }
 
     try {
-      // If it's already cancelled on Razorpay's side (e.g. a previous attempt),
-      // skip the API call and just make sure our ledger reflects it.
-      const current = await fetchSubscription(subscriptionId);
-      const alreadyCancelled = ['cancelled', 'halted'].includes(current.status);
-
-      let status = current.status;
-      if (!alreadyCancelled) {
-        const cancelled = await cancelPremiumSubscription(subscriptionId);
-        status = cancelled.status;
-      }
+      const { status } = await revokeAutopayMandate(subscriptionId);
 
       // Keep premium until the end of the paid cycle; stop auto-renew
       await query(
@@ -461,18 +438,16 @@ export async function paymentRoutes(app: FastifyInstance) {
         [userId],
       );
 
-      const currentEnd = current.current_end
-        ? new Date(Number(current.current_end) * 1000).toISOString()
-        : null;
+      const expiresAt = ledger.expires_at ? new Date(ledger.expires_at).toISOString() : null;
 
       await eventBus.sendPaymentEvent({
         type: 'subscription.cancelled',
-        payload: { userId, razorpaySubscriptionId: subscriptionId, status },
+        payload: { userId, subscriptionId, status },
       });
 
       return reply.send({
         success: true,
-        data: { cancelled: true, status, subscriptionId, expiresAt: currentEnd },
+        data: { cancelled: true, status, subscriptionId, expiresAt },
       });
     } catch (error: any) {
       console.error('[payments] Failed to cancel subscription:', error?.message || error);
