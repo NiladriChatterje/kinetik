@@ -22,8 +22,6 @@ interface GridProfile {
   interests: { id: string; name: string; emoji: string; category: string }[];
   /** Attached on-device by rankByProximity */
   distanceKm?: number;
-  /** This profile has a pending like on the viewer (server flag + live socket) */
-  likedYou?: boolean;
 }
 
 const PAGE_SIZE = 24;
@@ -50,10 +48,8 @@ export const ExploreScreen: React.FC<{ navigation: any }> = ({ navigation }) => 
   const loadingMoreRef = useRef(false);
   const offsetRef = useRef(0);
 
-  const fetchProfiles = useCallback(async (mode: 'initial' | 'refresh' | 'silent' = 'initial') => {
-    // 'silent' re-syncs the grid without any spinner (used on tab focus)
-    if (mode === 'initial') setLoading(true);
-    if (mode === 'refresh') setRefreshing(true);
+  const fetchProfiles = useCallback(async (asRefresh = false) => {
+    asRefresh ? setRefreshing(true) : setLoading(true);
     try {
       const res = await api.getExploreProfiles(0, PAGE_SIZE);
       if (res.success && res.data) {
@@ -95,20 +91,7 @@ export const ExploreScreen: React.FC<{ navigation: any }> = ({ navigation }) => 
     fetchProfiles();
   }, [fetchProfiles]);
 
-  // The grid is fetched on mount and pruned live by match:new below — but if
-  // that socket event is missed (app backgrounded, socket reconnecting), a
-  // matched profile lingers. Silently re-sync from the server (which excludes
-  // active matches) whenever the tab regains focus.
-  useEffect(() => {
-    const unsubscribe = navigation.addListener('focus', () => {
-      fetchProfiles('silent');
-    });
-    return unsubscribe;
-  }, [navigation, fetchProfiles]);
-
-  // Live grid updates from the shared /presence socket:
-  //  - match:new  → drop the profile (matched users leave Explore)
-  //  - likes:new  → mark the liker's card "Liked you" (faded, scaled down)
+  // Drop a profile from the grid as soon as it becomes a match
   useEffect(() => {
     const socket = getPresenceSocket();
     const onMatchNew = (data: any) => {
@@ -116,18 +99,9 @@ export const ExploreScreen: React.FC<{ navigation: any }> = ({ navigation }) => 
         setProfiles((prev) => prev.filter((p) => p.userId !== data.partnerId));
       }
     };
-    const onLikesNew = (data: any) => {
-      if (data?.likedByUserId) {
-        setProfiles((prev) =>
-          prev.map((p) => (p.userId === data.likedByUserId ? { ...p, likedYou: true } : p)),
-        );
-      }
-    };
     socket.on('match:new', onMatchNew);
-    socket.on('likes:new', onLikesNew);
     return () => {
       socket.off('match:new', onMatchNew);
-      socket.off('likes:new', onLikesNew);
     };
   }, []);
 
@@ -144,63 +118,52 @@ export const ExploreScreen: React.FC<{ navigation: any }> = ({ navigation }) => 
 
     return (
       <TouchableOpacity
-        style={[styles.card, { height }, item.likedYou && styles.likedYouCard]}
+        style={[styles.card, { height }]}
         activeOpacity={0.85}
         onPress={() => openProfile(item)}
       >
-        {/* Card body fades when this profile has liked the viewer; the
-            "Liked you" pill stays at full opacity on top */}
-        <View style={[styles.cardBody, item.likedYou && styles.likedYouBody]}>
-          {photo ? (
-            <ProgressiveImage
-              uri={resolveUrl(photo.thumbnailUrl || photo.url)}
-              style={styles.cardImage}
-            />
-          ) : (
-            <View style={[styles.cardImage, styles.noPhoto]}>
-              <Ionicons name="person-outline" size={36} color={colors.textMuted} />
-            </View>
-          )}
-
-          {item.photos.length > 1 && (
-            <View style={styles.photoCountBadge}>
-              <Ionicons name="images-outline" size={11} color="#fff" />
-              <Text style={styles.photoCountText}>{item.photos.length}</Text>
-            </View>
-          )}
-
-          {item.distanceKm != null && (
-            <View style={styles.distanceBadge}>
-              <Ionicons name="location-outline" size={11} color="#fff" />
-              <Text style={styles.photoCountText}>~{item.distanceKm} km</Text>
-            </View>
-          )}
-
-          <View style={styles.cardScrim}>
-            <View style={styles.nameRow}>
-              <Text style={styles.cardName} numberOfLines={1}>
-                {item.displayName}, {item.age}
-              </Text>
-              {item.isVerified && (
-                <Ionicons name="checkmark-circle" size={14} color={colors.success} />
-              )}
-            </View>
-            {item.occupation ? (
-              <Text style={styles.cardSub} numberOfLines={1}>{item.occupation}</Text>
-            ) : item.interests.length > 0 ? (
-              <Text style={styles.cardSub} numberOfLines={1}>
-                {item.interests.slice(0, 2).map((i) => i.name).join(' · ')}
-              </Text>
-            ) : null}
-          </View>
-        </View>
-
-        {item.likedYou && (
-          <View style={styles.likedYouPill}>
-            <Ionicons name="heart" size={11} color="#fff" />
-            <Text style={styles.likedYouText}>Liked you</Text>
+        {photo ? (
+          <ProgressiveImage
+            uri={resolveUrl(photo.thumbnailUrl || photo.url)}
+            style={styles.cardImage}
+          />
+        ) : (
+          <View style={[styles.cardImage, styles.noPhoto]}>
+            <Ionicons name="person-outline" size={36} color={colors.textMuted} />
           </View>
         )}
+
+        {item.photos.length > 1 && (
+          <View style={styles.photoCountBadge}>
+            <Ionicons name="images-outline" size={11} color="#fff" />
+            <Text style={styles.photoCountText}>{item.photos.length}</Text>
+          </View>
+        )}
+
+        {item.distanceKm != null && (
+          <View style={styles.distanceBadge}>
+            <Ionicons name="location-outline" size={11} color="#fff" />
+            <Text style={styles.photoCountText}>~{item.distanceKm} km</Text>
+          </View>
+        )}
+
+        <View style={styles.cardScrim}>
+          <View style={styles.nameRow}>
+            <Text style={styles.cardName} numberOfLines={1}>
+              {item.displayName}, {item.age}
+            </Text>
+            {item.isVerified && (
+              <Ionicons name="checkmark-circle" size={14} color={colors.success} />
+            )}
+          </View>
+          {item.occupation ? (
+            <Text style={styles.cardSub} numberOfLines={1}>{item.occupation}</Text>
+          ) : item.interests.length > 0 ? (
+            <Text style={styles.cardSub} numberOfLines={1}>
+              {item.interests.slice(0, 2).map((i) => i.name).join(' · ')}
+            </Text>
+          ) : null}
+        </View>
       </TouchableOpacity>
     );
   }, []);
@@ -264,7 +227,7 @@ export const ExploreScreen: React.FC<{ navigation: any }> = ({ navigation }) => 
           refreshControl={
             <RefreshControl
               refreshing={refreshing}
-              onRefresh={() => fetchProfiles('refresh')}
+              onRefresh={() => fetchProfiles(true)}
               tintColor={colors.textPrimary}
             />
           }
@@ -336,24 +299,6 @@ const styles = StyleSheet.create({
   },
   cardImage: { width: '100%', height: '100%' },
   noPhoto: { justifyContent: 'center', alignItems: 'center' },
-  // "Liked you" state — the whole card scales down, its content fades,
-  // and a pill labels it at the top
-  cardBody: { flex: 1 },
-  likedYouCard: { transform: [{ scale: 0.85 }] },
-  likedYouBody: { opacity: 0.55 },
-  likedYouPill: {
-    position: 'absolute',
-    top: spacing.sm,
-    alignSelf: 'center',
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 4,
-    backgroundColor: 'rgba(0,0,0,0.65)',
-    paddingHorizontal: spacing.md,
-    paddingVertical: 4,
-    borderRadius: radius.full,
-  },
-  likedYouText: { ...typography.caption, color: '#fff', fontWeight: '700' },
   photoCountBadge: {
     position: 'absolute',
     top: spacing.sm,
