@@ -4,6 +4,7 @@ import {
   Image, ActivityIndicator, Dimensions,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
+import { Gesture, GestureDetector } from 'react-native-gesture-handler';
 import { Ionicons } from '@expo/vector-icons';
 import { CameraView, useCameraPermissions } from 'expo-camera';
 import * as ImageManipulator from 'expo-image-manipulator';
@@ -22,13 +23,32 @@ const CAMERA_HEIGHT = Math.round(CAMERA_WIDTH * (16 / 9));
 
 type Phase = 'camera' | 'preview' | 'uploading' | 'success';
 
+/** How much of the camera's zoom range (0–1) one full pinch spread covers */
+const PINCH_ZOOM_SPEED = 0.4;
+
 export const PoseVerificationScreen: React.FC<{ navigation: any }> = ({ navigation }) => {
   const [permission, requestPermission] = useCameraPermissions();
   const [phase, setPhase] = useState<Phase>('camera');
   const [verified, setVerified] = useState(false);
   const [capturedUri, setCapturedUri] = useState<string | null>(null);
+  const [zoom, setZoom] = useState(0);
   const cameraRef = useRef<any>(null);
+  const pinchStartZoomRef = useRef(0);
   const toast = useToast();
+
+  // Instagram-style pinch-to-zoom on the front camera. expo-camera's `zoom`
+  // is a 0–1 fraction of the device's max zoom; the pinch nudges it from
+  // wherever the last pinch ended. runOnJS keeps the setState safe if
+  // reanimated (which workletizes gesture callbacks) is ever added.
+  const pinchGesture = Gesture.Pinch()
+    .runOnJS(true)
+    .onStart(() => {
+      pinchStartZoomRef.current = zoom;
+    })
+    .onUpdate((e) => {
+      const next = pinchStartZoomRef.current + (e.scale - 1) * PINCH_ZOOM_SPEED;
+      setZoom(Math.max(0, Math.min(1, next)));
+    });
 
   // Profile photo face embeddings, precomputed on-device while the user
   // lines up their selfie. null = still loading (or failed — treated as empty).
@@ -124,6 +144,7 @@ export const PoseVerificationScreen: React.FC<{ navigation: any }> = ({ navigati
    */
   const handleRetake = useCallback(() => {
     setCapturedUri(null);
+    setZoom(0);
     setPhase('camera');
   }, []);
 
@@ -259,27 +280,38 @@ export const PoseVerificationScreen: React.FC<{ navigation: any }> = ({ navigati
         <Text style={styles.title}>Verify You're Real</Text>
         <Text style={styles.subtitle}>Take a clear selfie for liveness verification</Text>
 
-        <View style={styles.cameraContainer}>
-          {/* Mirror the front-camera preview so it behaves like a mirror */}
-          <CameraView
-            ref={cameraRef}
-            style={[styles.camera, { transform: [{ scaleX: -1 }] }]}
-            facing="front"
-          />
+        <GestureDetector gesture={pinchGesture}>
+          <View style={styles.cameraContainer}>
+            {/* Mirror the front-camera preview so it behaves like a mirror */}
+            <CameraView
+              ref={cameraRef}
+              style={[styles.camera, { transform: [{ scaleX: -1 }] }]}
+              facing="front"
+              zoom={zoom}
+            />
 
-          {/* Pose instruction overlay */}
-          <View style={styles.poseOverlay}>
-            <Text style={styles.poseText}>Take a selfie</Text>
-          </View>
+            {/* Zoom indicator — only while zoomed in */}
+            {zoom > 0 && (
+              <View style={styles.zoomBadge}>
+                <Ionicons name="search" size={12} color={colors.textInverse} />
+                <Text style={styles.zoomBadgeText}>{Math.round(zoom * 100)}%</Text>
+              </View>
+            )}
 
-          {/* Face guide frame */}
-          <View style={styles.faceGuide}>
-            <View style={[styles.corner, styles.cornerTL]} />
-            <View style={[styles.corner, styles.cornerTR]} />
-            <View style={[styles.corner, styles.cornerBL]} />
-            <View style={[styles.corner, styles.cornerBR]} />
+            {/* Pose instruction overlay */}
+            <View style={styles.poseOverlay}>
+              <Text style={styles.poseText}>Take a selfie</Text>
+            </View>
+
+            {/* Face guide frame */}
+            <View style={styles.faceGuide}>
+              <View style={[styles.corner, styles.cornerTL]} />
+              <View style={[styles.corner, styles.cornerTR]} />
+              <View style={[styles.corner, styles.cornerBL]} />
+              <View style={[styles.corner, styles.cornerBR]} />
+            </View>
           </View>
-        </View>
+        </GestureDetector>
       </View>
 
       <View style={styles.footer}>
@@ -327,6 +359,21 @@ const styles = StyleSheet.create({
     width: '100%',
     height: '100%',
   },
+
+  // Zoom indicator
+  zoomBadge: {
+    position: 'absolute',
+    top: spacing.md,
+    alignSelf: 'center',
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.xs,
+    paddingHorizontal: spacing.md,
+    paddingVertical: spacing.xs,
+    borderRadius: radius.full,
+    backgroundColor: 'rgba(0,0,0,0.5)',
+  },
+  zoomBadgeText: { ...typography.caption, color: colors.textInverse, fontWeight: '600' },
 
   // Pose overlay
   poseOverlay: {

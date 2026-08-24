@@ -1,8 +1,9 @@
 import React, { useEffect } from 'react';
-import { LogBox, View, Platform } from 'react-native';
+import { LogBox, Platform } from 'react-native';
 import Constants from 'expo-constants';
 import { StatusBar } from 'expo-status-bar';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
+import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import { useFonts, Cantarell_400Regular, Cantarell_700Bold } from '@expo-google-fonts/cantarell';
 import * as SplashScreen from 'expo-splash-screen';
 import * as NavigationBar from 'expo-navigation-bar';
@@ -96,7 +97,7 @@ export default function App() {
   if (!fontsLoaded) return null;
 
   return (
-    <View style={{ flex: 1, backgroundColor: colors.background }}>
+    <GestureHandlerRootView style={{ flex: 1, backgroundColor: colors.background }}>
       <SafeAreaProvider>
         <StatusBar style="dark" />
         <RootNavigator />
@@ -127,7 +128,7 @@ export default function App() {
           }}
         />
       </SafeAreaProvider>
-    </View>
+    </GestureHandlerRootView>
   );
 }
 
