@@ -22,6 +22,8 @@ interface GridProfile {
   interests: { id: string; name: string; emoji: string; category: string }[];
   /** Attached on-device by rankByProximity */
   distanceKm?: number;
+  /** This profile has a pending like on the viewer (server flag + live socket) */
+  likedYou?: boolean;
 }
 
 const PAGE_SIZE = 24;
@@ -91,7 +93,9 @@ export const ExploreScreen: React.FC<{ navigation: any }> = ({ navigation }) => 
     fetchProfiles();
   }, [fetchProfiles]);
 
-  // Drop a profile from the grid as soon as it becomes a match
+  // Live grid updates from the shared /presence socket:
+  //  - match:new → drop the profile (matched users leave Explore)
+  //  - likes:new → tag the liker's card "Liked you" in place, in realtime
   useEffect(() => {
     const socket = getPresenceSocket();
     const onMatchNew = (data: any) => {
@@ -99,9 +103,18 @@ export const ExploreScreen: React.FC<{ navigation: any }> = ({ navigation }) => 
         setProfiles((prev) => prev.filter((p) => p.userId !== data.partnerId));
       }
     };
+    const onLikesNew = (data: any) => {
+      if (data?.likedByUserId) {
+        setProfiles((prev) =>
+          prev.map((p) => (p.userId === data.likedByUserId ? { ...p, likedYou: true } : p)),
+        );
+      }
+    };
     socket.on('match:new', onMatchNew);
+    socket.on('likes:new', onLikesNew);
     return () => {
       socket.off('match:new', onMatchNew);
+      socket.off('likes:new', onLikesNew);
     };
   }, []);
 
@@ -118,18 +131,25 @@ export const ExploreScreen: React.FC<{ navigation: any }> = ({ navigation }) => 
 
     return (
       <TouchableOpacity
-        style={[styles.card, { height }]}
+        style={[styles.card, { height }, item.likedYou && styles.likedYouCard]}
         activeOpacity={0.85}
         onPress={() => openProfile(item)}
       >
         {photo ? (
           <ProgressiveImage
             uri={resolveUrl(photo.thumbnailUrl || photo.url)}
-            style={styles.cardImage}
+            style={[styles.cardImage, item.likedYou && styles.likedYouImage]}
           />
         ) : (
-          <View style={[styles.cardImage, styles.noPhoto]}>
+          <View style={[styles.cardImage, styles.noPhoto, item.likedYou && styles.likedYouImage]}>
             <Ionicons name="person-outline" size={36} color={colors.textMuted} />
+          </View>
+        )}
+
+        {item.likedYou && (
+          <View style={styles.likedYouPill}>
+            <Ionicons name="heart" size={11} color="#fff" />
+            <Text style={styles.likedYouText}>Liked you</Text>
           </View>
         )}
 
@@ -299,6 +319,24 @@ const styles = StyleSheet.create({
   },
   cardImage: { width: '100%', height: '100%' },
   noPhoto: { justifyContent: 'center', alignItems: 'center' },
+  // "Liked you" state — card scales to 0.85, the photo fades, and a pill
+  // labels it at the top; badges/scrim stay at full opacity above the photo
+  likedYouCard: { transform: [{ scale: 0.85 }] },
+  likedYouImage: { opacity: 0.55 },
+  likedYouPill: {
+    position: 'absolute',
+    top: spacing.sm,
+    alignSelf: 'center',
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    backgroundColor: 'rgba(0,0,0,0.65)',
+    paddingHorizontal: spacing.md,
+    paddingVertical: 4,
+    borderRadius: radius.full,
+    zIndex: 2,
+  },
+  likedYouText: { ...typography.caption, color: '#fff', fontWeight: '700' },
   photoCountBadge: {
     position: 'absolute',
     top: spacing.sm,

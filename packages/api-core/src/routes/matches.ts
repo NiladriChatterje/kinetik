@@ -145,7 +145,15 @@ export async function matchRoutes(app: FastifyInstance) {
         SELECT
           u.id, u.display_name, u.date_of_birth, u.bio, u.occupation,
           u.education, u.pronouns, u.is_verified, u.about_answers,
-          u.h3_index, u.latitude, u.longitude
+          u.h3_index, u.latitude, u.longitude,
+          -- Pending incoming like from this profile — the Explore grid shows
+          -- their card with a "Liked you" tag
+          EXISTS (
+            SELECT 1 FROM ${TABLES.USER_INTERACTIONS} ui
+            WHERE ui.actor_id = u.id AND ui.target_id = $1
+              AND ui.action IN ('like', 'super_like')
+              AND ui.is_mutual = FALSE AND ui.responded_at IS NULL
+          ) AS liked_you
         FROM ${TABLES.USERS} u
         WHERE u.id != $1
           AND u.is_active = TRUE
@@ -252,6 +260,8 @@ export async function matchRoutes(app: FastifyInstance) {
         })),
         aboutAnswers: row.about_answers || undefined,
         isVerified: row.is_verified,
+        // Only set by the explore query; undefined (→ false) for the deck
+        likedYou: Boolean(row.liked_you),
       };
     });
 
