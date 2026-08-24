@@ -545,6 +545,10 @@ export async function matchRoutes(app: FastifyInstance) {
        WHERE ui.target_id = $1
         AND ui.action IN ('like', 'super_like')
         AND ui.is_mutual = FALSE
+        -- Discarded likes are gone for good: /respond stamps responded_at,
+        -- and the UNIQUE (actor_id, target_id) constraint means the liker
+        -- can never create a fresh row to reappear here.
+        AND ui.responded_at IS NULL
        ORDER BY ui.created_at DESC
        LIMIT 50`,
       [userId],

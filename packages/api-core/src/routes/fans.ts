@@ -35,6 +35,8 @@ export async function fanRoutes(app: FastifyInstance) {
        JOIN ${TABLES.USERS} u ON u.id = ui.actor_id
        LEFT JOIN ${TABLES.PROFILE_PHOTOS} pp ON pp.user_id = u.id AND pp.is_primary = TRUE
        WHERE ui.target_id = $1 AND ui.action = 'like'
+         -- Exclude likes the user already responded to (discarded or liked back)
+         AND ui.responded_at IS NULL
        ORDER BY ui.created_at DESC
        LIMIT 50`,
       [userId],
