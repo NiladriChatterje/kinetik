@@ -666,7 +666,9 @@ export const MatchScreen: React.FC<{ navigation: any; route?: any }> = ({ naviga
           <TouchableOpacity style={styles.refreshBtn} onPress={fetchProfiles}>
             <Text style={styles.refreshBtnText}>Refresh</Text>
           </TouchableOpacity>
-        </View>      {/* Match Popup overlay */}
+        </View>
+
+        {/* Match Popup overlay */}
         <MatchPopup
           visible={matchPopup.visible}
           partnerName={matchPopup.partnerName}
