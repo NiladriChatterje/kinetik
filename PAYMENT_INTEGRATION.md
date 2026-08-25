@@ -1,6 +1,6 @@
 # Payment Integration — Google Pay Subscriptions (Autopay Mandate)
 
-Kinetik Premium (₹250/month) is billed through the **Google Pay API**. Razorpay was removed because its React Native SDK is being discontinued.
+Kinetik Premium (₹149/month, the single global plan) is billed through the **Google Pay API**. Razorpay was removed because its React Native SDK is being discontinued.
 
 | Layer | Where |
 |---|---|

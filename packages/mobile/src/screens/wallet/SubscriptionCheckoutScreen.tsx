@@ -239,7 +239,7 @@ export const SubscriptionCheckoutScreen: React.FC = () => {
                 <Text style={styles.planBadgeText}>PREMIUM</Text>
               </View>
               <View style={styles.priceRow}>
-                <Text style={styles.price}>{pricing?.label ?? '₹250/month'}</Text>
+                <Text style={styles.price}>{pricing?.label ?? '₹149/month'}</Text>
               </View>
               <Text style={styles.planNote}>Recurring — cancel any time from Kinetik or the Google Pay app</Text>
 
@@ -278,12 +278,12 @@ export const SubscriptionCheckoutScreen: React.FC = () => {
             ))}
             <Text style={styles.disclaimer}>
               Subscriptions are billed through Google Pay in {pricing?.currency ?? 'INR'}. You approve a
-              recurring autopay mandate once, and {pricing?.label ?? '₹250'} is charged each month; Google Pay
+              recurring autopay mandate once, and {pricing?.label ?? '₹149'} is charged each month; Google Pay
               notifies you before every charge.
             </Text>
 
             <Button
-              title={isPremium && !isAutoRenew ? 'Renew subscription' : `Subscribe for ${pricing?.label ?? '₹250/month'}`}
+              title={isPremium && !isAutoRenew ? 'Renew subscription' : `Subscribe for ${pricing?.label ?? '₹149/month'}`}
               onPress={handleSubscribe}
               loading={subscribing}
               disabled={isPremium && isAutoRenew}

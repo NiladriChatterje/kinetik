@@ -468,7 +468,7 @@ class ApiClient {
   }
 
   /**
-   * Creates a pending recurring subscription (₹250/month premium plan) and
+   * Creates a pending recurring subscription (₹149/month premium plan) and
    * returns the Google Pay sheet configuration needed to approve the
    * autopay mandate.
    */
