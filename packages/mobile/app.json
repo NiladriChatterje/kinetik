@@ -45,7 +45,6 @@
     },
     "plugins": [
       "expo-dev-client",
-      "llama.rn",
       [
         "expo-splash-screen",
         {

@@ -3,11 +3,19 @@
  *
  * Tier A (on-device LLM): a tiny instruct model (Qwen2.5 0.5B, Q4 GGUF,
  * ~400 MB) reads the last 20 messages and writes 3 strategic replies.
- * The conversation never leaves the device. llama.rn (the engine),
- * expo-device (RAM gate) and expo-network (Wi-Fi-only model download check)
- * are installed; Tier A activates on the first dev-client build that
- * includes their native sides ("llama.rn" is registered in app.json
- * plugins). Older builds simply keep serving Tier B.
+ * The conversation never leaves the device. Model: LFM2-1.2B (Liquid AI),
+ * chosen for edge inference — ~2x the prefill/decode throughput of
+ * same-size transformers, so it reads the 20-message history fast.
+ *
+ * Tier A is currently DORMANT — llama.rn was removed from package.json by
+ * request. To re-enable, ALL THREE steps are required:
+ *   1. `npm i llama.rn` (needs Linux/EAS or working tar on Windows)
+ *   2. add "llama.rn" back to app.json "plugins"
+ *   3. in tryRequire() below, switch the llama.rn case back to a STATIC
+ *      `require('llama.rn')` — Metro only bundles statically required
+ *      modules, so the eval guard used while the package is absent would
+ *      otherwise keep Tier A dead even after installing
+ * then rebuild the dev client. Until then Tier B serves every device.
  *
  * Tier B (heuristics): a zero-weight rule engine — who spoke last, question
  * detection, message energy, conversation age — picks from a curated bank of
@@ -18,8 +26,8 @@
  */
 
 const MODEL_URL =
-  'https://huggingface.co/Qwen/Qwen2.5-0.5B-Instruct-GGUF/resolve/main/qwen2.5-0.5b-instruct-q4_k_m.gguf';
-const MODEL_FILE = 'qwen2.5-0.5b-instruct-q4_k_m.gguf';
+  'https://huggingface.co/LiquidAI/LFM2-1.2B-GGUF/resolve/main/LFM2-1.2B-Q4_K_M.gguf';
+const MODEL_FILE = 'LFM2-1.2B-Q4_K_M.gguf';
 const MIN_RAM_BYTES = 4 * 1024 * 1024 * 1024;
 const LLM_TIMEOUT_MS = 25000;
 
@@ -39,8 +47,14 @@ type OptionalModule = 'llama.rn' | 'expo-device' | 'expo-network' | 'expo-file-s
 function tryRequire(name: OptionalModule): any | null {
   try {
     switch (name) {
-      case 'llama.rn':
-        return require('llama.rn');
+      case 'llama.rn': {
+        // llama.rn is NOT installed — the eval keeps Metro from trying to
+        // resolve it at bundle time. When reinstalling, replace this case
+        // with a static `return require('llama.rn')` (see header note 3).
+        // eslint-disable-next-line no-eval
+        const req: any = eval('require');
+        return req('llama.rn');
+      }
       case 'expo-device':
         return require('expo-device');
       case 'expo-network':
@@ -173,7 +187,16 @@ async function llmSuggestions(
               'topic of the last few messages — do not change the subject. Mix the shapes: ' +
               'one witty or teasing statement, one sincere statement, and one that moves ' +
               'the conversation forward. At most ONE suggestion may be a question. ' +
-              'Match the other person\'s tone and language. One line each, numbered 1-3, nothing else.',
+              'Match the other person\'s tone and language. One line each, numbered 1-3, nothing else.\n' +
+              'Style examples (imitate the energy, not the words):\n' +
+              'them: "i could eat biryani every single day" →\n' +
+              '1. Every day is bold. I respect the commitment 😏\n' +
+              '2. Okay same, honestly — it never misses\n' +
+              '3. Fine, loser buys the next plate. Deal?\n' +
+              'them: "ugh work was brutal today" →\n' +
+              '1. Sounds like your boss owes you a dessert. I can cover it if he flakes 😏\n' +
+              '2. That sucks — hope the evening treats you softer\n' +
+              '3. Brutal days deserve good distractions. I volunteer 🙋',
           },
           { role: 'user', content: transcript || `The chat with ${partnerName} is empty. Suggest 3 openers.` },
         ],

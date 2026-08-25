@@ -49,7 +49,6 @@
     "expo-system-ui": "~57.0.2",
     "jpeg-js": "^0.4.4",
     "livekit-client": "^2.21.0",
-    "llama.rn": "^0.13.0-rc.1",
     "react": "19.2.3",
     "react-native": "0.86.2",
     "react-native-fast-tflite": "^3.0.1",
