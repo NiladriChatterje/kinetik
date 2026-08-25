@@ -19,6 +19,7 @@ import { compressPhoto } from '../../services/photoService';
 import { getChatSocket } from '../../services/callSocket';
 import { useAuthStore } from '../../store/authStore';
 import { useToast } from '../../hooks/useToast';
+import { DmSuggestionChips } from '../../components/chat/DmSuggestionChips';
 import { resolveUrl } from '../../config';
 import { colors, typography, spacing, radius } from '../../theme';
 
@@ -1572,6 +1573,15 @@ export const ChatScreen: React.FC<{ navigation: any; route: any }> = ({ navigati
             ))}
           </View>
         )}
+
+        {/* Ambient reply suggestions — refresh as the conversation evolves;
+            tap inserts into the input, hidden while the user is typing */}
+        <DmSuggestionChips
+          messages={messages}
+          partnerName={partnerName}
+          visible={inputText.trim().length === 0}
+          onPick={setInputText}
+        />
 
         {/* Input bar */}
         <View style={[styles.inputBar, { paddingBottom: keyboardWasActive ? spacing.xs : spacing.sm }]}>
