@@ -148,8 +148,8 @@ function HeroRadarSVG() {
           Make it messy.
         </h1>
         <p>
-          Kinetik replaces the infinite swiping loop with 3-minute voice Vibe Checks.
-          Real voices. Real chemistry. Real dates — not another dead chat thread.
+          A verified dating app that gets you from swipe to date.
+          Real profiles, real chats, real plans — with an AI that helps you say the right thing.
         </p>
         <div className="hero-actions">
           <a href="#how-it-works" className="btn btn-primary">
@@ -214,8 +214,9 @@ function BlackHoleSVG() {
                     textAnchor="middle"
                     dominantBaseline="middle"
                     fill="var(--primary)"
-                    fontSize="11"
-                    opacity={0.3 + progress * 0.4}
+                    fontSize="16"
+                    fontWeight="600"
+                    opacity={0.45 + progress * 0.45}
                     fontFamily="var(--font)"
                   >
                     {msg}
@@ -235,18 +236,23 @@ function BlackHoleSVG() {
 const STEPS = [
   {
     num: '01',
-    title: 'Flash Windows',
-    body: 'At 8:30 PM every day, Kinetik opens a 30-minute matching window in your area. Everyone checks in at once — maximum local density, maximum intent.',
+    title: 'Explore',
+    body: 'Browse a gallery of verified profiles in your area. Real photos, real people, no bots.',
   },
   {
     num: '02',
-    title: '3-Minute Vibe Check',
-    body: 'No photos. No profiles. Just a blind audio call. For the first 60 seconds you hear only a voice. Then the image gradually unblurs. Chemistry before judgment.',
+    title: 'Swipe & Match',
+    body: 'Like what you see? Swipe right. When it\'s mutual, you match instantly — no waiting, no guessing.',
   },
   {
     num: '03',
-    title: 'Lock It In',
-    body: 'After 3 minutes, both of you choose: "Lock It In" or "Pass." If it\'s mutual — straight to scheduling a real date. No texting. No ghosting. Just a plan.',
+    title: 'Chat',
+    body: 'Start a real conversation. Real-time messaging with read receipts, typing indicators, and push notifications.',
+  },
+  {
+    num: '04',
+    title: 'Meet',
+    body: 'Make a plan and actually go. Kinetik is built to get you offline — not keep you swiping.',
   },
 ];
 
@@ -259,9 +265,9 @@ function PipelineSVG() {
     <section className="section" id="how-it-works" ref={ref}>
       <div className="container">
         <span className="section-label">HOW IT WORKS</span>
-        <h2 className="section-title">Three steps to a real date</h2>
+        <h2 className="section-title">From swipe to date</h2>
         <p className="section-sub">
-          No profiles to agonize over. No messages to craft. Just show up, talk, and decide.
+          No endless loops. No dead-end chats. Just a straight path from discovery to real life.
         </p>
 
         <div className="pipeline">
@@ -296,24 +302,20 @@ function PipelineSVG() {
         <div className="pipeline-visual">
           <svg viewBox="0 0 800 120" className="pipeline-svg" fill="none">
             {/* Three phases */}
-            {/* Phase 1: Radar / Queue */}
+            {/* Phase 1: Explore gallery grid */}
             <g opacity={clamp((progress - 0.1) / 0.2, 0, 1)}>
-              <circle cx="130" cy="60" r="40" stroke="var(--primary)" strokeWidth="1.5" opacity="0.3" />
-              <circle cx="130" cy="60" r="25" stroke="var(--primary)" strokeWidth="1" opacity="0.2" />
-              <circle cx="130" cy="60" r="10" stroke="var(--primary)" strokeWidth="1" opacity="0.15" />
-              {/* Sweep */}
-              <line
-                x1="130"
-                y1="60"
-                x2={130 + 40 * Math.cos(progress * 8)}
-                y2={60 + 40 * Math.sin(progress * 8)}
-                stroke="var(--primary)"
-                strokeWidth="1.5"
-                opacity="0.5"
-              />
-              <circle cx="130" cy="60" r="3" fill="var(--primary)" />
+              {/* Grid of profile cards */}
+              <rect x="100" y="25" width="24" height="30" rx="4" stroke="var(--primary)" strokeWidth="1.5" opacity="0.3" />
+              <rect x="128" y="25" width="24" height="30" rx="4" stroke="var(--primary)" strokeWidth="1.5" opacity="0.3" />
+              <rect x="100" y="59" width="24" height="30" rx="4" stroke="var(--primary)" strokeWidth="1.5" opacity="0.3" />
+              <rect x="128" y="59" width="24" height="30" rx="4" stroke="var(--primary)" strokeWidth="1.5" opacity="0.3" />
+              {/* Profile silhouettes in cards */}
+              <circle cx="112" cy="37" r="5" fill="var(--primary)" opacity="0.15" />
+              <circle cx="140" cy="37" r="5" fill="var(--primary)" opacity="0.15" />
+              <circle cx="112" cy="71" r="5" fill="var(--primary)" opacity="0.15" />
+              <circle cx="140" cy="71" r="5" fill="var(--primary)" opacity="0.15" />
               <text x="130" y="115" textAnchor="middle" fill="var(--secondary)" fontSize="12" fontFamily="var(--font)">
-                Flash Window
+                Explore
               </text>
             </g>
 
@@ -323,69 +325,48 @@ function PipelineSVG() {
               <polygon points="290,55 300,60 290,65" fill="var(--primary)" opacity="0.5" />
             </g>
 
-            {/* Phase 2: Vibe Check — silhouette to reveal */}
-            <g opacity={clamp((progress - 0.35) / 0.2, 0, 1)}>
-              <rect x="340" y="20" width="80" height="80" rx="16" stroke="var(--primary)" strokeWidth="1.5" opacity="0.3" />
-              {/* Silhouette head */}
-              <circle
-                cx="380"
-                cy="48"
-                r="14"
-                fill="var(--primary)"
-                opacity={0.1 + clamp((progress - 0.4) / 0.3, 0, 1) * 0.5}
-              />
-              {/* Silhouette body */}
-              <ellipse
-                cx="380"
-                cy="80"
-                rx="20"
-                ry="12"
-                fill="var(--primary)"
-                opacity={0.08 + clamp((progress - 0.4) / 0.3, 0, 1) * 0.4}
-              />
-              {/* Blur overlay decreases */}
-              <rect
-                x="340"
-                y="20"
-                width="80"
-                height="80"
-                rx="16"
-                fill="var(--background)"
-                opacity={clamp(0.7 - (progress - 0.35) * 2, 0, 0.7)}
-              />
-              <text x="380" y="115" textAnchor="middle" fill="var(--secondary)" fontSize="12" fontFamily="var(--font)">
-                Vibe Check
+            {/* Phase 2: Swipe card */}
+            <g opacity={clamp((progress - 0.3) / 0.15, 0, 1)}>
+              <rect x="330" y="25" width="55" height="70" rx="8" stroke="var(--primary)" strokeWidth="1.5" opacity="0.3" transform={`rotate(-8, 357, 60)`} />
+              <circle cx="357" cy="48" r="10" fill="var(--primary)" opacity="0.12" />
+              <rect x="340" y="65" width="34" height="3" rx="1.5" fill="var(--primary)" opacity="0.1" />
+              <text x="357" y="115" textAnchor="middle" fill="var(--secondary)" fontSize="12" fontFamily="var(--font)">
+                Swipe
               </text>
             </g>
 
             {/* Arrow 2→3 */}
-            <g opacity={clamp((progress - 0.55) / 0.15, 0, 1)}>
-              <line x1="460" y1="60" x2="540" y2="60" stroke="var(--primary)" strokeWidth="1.5" strokeDasharray="4 4" />
-              <polygon points="540,55 550,60 540,65" fill="var(--primary)" opacity="0.5" />
+            <g opacity={clamp((progress - 0.4) / 0.1, 0, 1)}>
+              <line x1="410" y1="60" x2="470" y2="60" stroke="var(--primary)" strokeWidth="1.5" strokeDasharray="4 4" />
+              <polygon points="470,55 480,60 470,65" fill="var(--primary)" opacity="0.5" />
             </g>
 
-            {/* Phase 3: Lock It In — calendar/lock */}
-            <g opacity={clamp((progress - 0.6) / 0.2, 0, 1)}>
-              <rect x="590" y="20" width="80" height="80" rx="16" stroke="var(--primary)" strokeWidth="1.5" opacity="0.3" />
-              {/* Lock icon */}
-              <rect
-                x="615"
-                y="52"
-                width="30"
-                height="24"
-                rx="4"
-                fill="var(--primary)"
-                opacity={0.15 + clamp((progress - 0.65) / 0.2, 0, 1) * 0.45}
-              />
+            {/* Phase 3: Match heart */}
+            <g opacity={clamp((progress - 0.45) / 0.15, 0, 1)}>
+              <rect x="510" y="20" width="80" height="80" rx="16" stroke="var(--primary)" strokeWidth="1.5" opacity="0.3" />
               <path
-                d="M 624 52 V 44 A 16 16 0 0 1 636 44 V 52"
-                stroke="var(--primary)"
-                strokeWidth="2.5"
-                fill="none"
-                opacity={0.2 + clamp((progress - 0.65) / 0.2, 0, 1) * 0.5}
+                d="M 550 55 C 550 42, 530 42, 530 55 C 530 42, 510 42, 510 55 C 510 72, 530 85, 530 85 C 530 85, 550 72, 550 55 Z"
+                fill="var(--primary)"
+                opacity={0.15 + clamp((progress - 0.5) / 0.2, 0, 1) * 0.35}
               />
-              <text x="630" y="115" textAnchor="middle" fill="var(--secondary)" fontSize="12" fontFamily="var(--font)">
-                Lock It In
+              <text x="550" y="115" textAnchor="middle" fill="var(--secondary)" fontSize="12" fontFamily="var(--font)">
+                Match
+              </text>
+            </g>
+
+            {/* Arrow 3→4 */}
+            <g opacity={clamp((progress - 0.6) / 0.1, 0, 1)}>
+              <line x1="610" y1="60" x2="670" y2="60" stroke="var(--primary)" strokeWidth="1.5" strokeDasharray="4 4" />
+              <polygon points="670,55 680,60 670,65" fill="var(--primary)" opacity="0.5" />
+            </g>
+
+            {/* Phase 4: Chat bubble */}
+            <g opacity={clamp((progress - 0.65) / 0.15, 0, 1)}>
+              <rect x="710" y="30" width="70" height="50" rx="12" stroke="var(--primary)" strokeWidth="1.5" opacity="0.3" />
+              <rect x="720" y="42" width="35" height="3" rx="1.5" fill="var(--primary)" opacity="0.15" />
+              <rect x="720" y="50" width="25" height="3" rx="1.5" fill="var(--primary)" opacity="0.1" />
+              <text x="745" y="115" textAnchor="middle" fill="var(--secondary)" fontSize="12" fontFamily="var(--font)">
+                Chat & Meet
               </text>
             </g>
           </svg>
@@ -395,142 +376,191 @@ function PipelineSVG() {
   );
 }
 
-/* ─── SVG: Vibe Check Reveal animation ───────────────────── */
-function VibeCheckSVG() {
-  const ref = useRef<HTMLElement>(null);
-  const progress = useScrollProgress(ref);
-  const reveal = clamp((progress - 0.15) / 0.5, 0, 1);
-  const silhouetteOpacity = 1 - reveal * 0.7;
-  const faceOpacity = reveal;
-
-  return (
-    <section className="section section-alt" id="vibe-check" ref={ref}>
-      <div className="container split-layout reverse">
-        <div className="split-text">
-          <span className="section-label">THE VIBE CHECK</span>
-          <h2>Heard first. Seen second.</h2>
-          <p>
-            For the first 60 seconds, it's audio only — a dark silhouette on screen.
-            You listen to a voice, not judge a photo. Then the image gradually unblurs.
-            By minute three, you know exactly who you're talking to.
-          </p>
-          <div className="phase-indicators">
-            <div className={`phase-dot ${progress > 0.2 ? 'active' : ''}`}>
-              <span>0:00</span>
-              <small>Audio only</small>
-            </div>
-            <div className={`phase-dot ${progress > 0.45 ? 'active' : ''}`}>
-              <span>1:00</span>
-              <small>Blur clears</small>
-            </div>
-            <div className={`phase-dot ${progress > 0.7 ? 'active' : ''}`}>
-              <span>2:00</span>
-              <small>Full reveal</small>
-            </div>
-          </div>
-        </div>
-        <div className="split-visual">
-          <svg viewBox="0 0 300 380" className="vibe-check-svg" fill="none">
-            {/* Phone frame */}
-            <rect x="50" y="20" width="200" height="340" rx="28" stroke="var(--primary)" strokeWidth="2" opacity="0.2" />
-            <rect x="58" y="28" width="184" height="324" rx="22" fill="var(--surface)" />
-
-            {/* Timer */}
-            <text x="150" y="60" textAnchor="middle" fill="var(--primary)" fontSize="14" fontFamily="var(--font)" fontWeight="700" opacity="0.6">
-              {Math.floor(clamp(progress * 3, 0, 3))}:{String(Math.floor((clamp(progress * 3, 0, 3) % 1) * 60)).padStart(2, '0')}
-            </text>
-
-            {/* Silhouette (fades out) */}
-            <g opacity={silhouetteOpacity}>
-              <circle cx="150" cy="160" r="50" fill="var(--primary)" opacity="0.12" />
-              <ellipse cx="150" cy="240" rx="55" ry="40" fill="var(--primary)" opacity="0.08" />
-              {/* Animated pulse ring */}
-              <circle
-                cx="150"
-                cy="160"
-                r={55 + progress * 20}
-                stroke="var(--primary)"
-                strokeWidth="1"
-                opacity={0.15 - progress * 0.1}
-              />
-            </g>
-
-            {/* Revealed face (fades in) */}
-            <g opacity={faceOpacity}>
-              <circle cx="150" cy="155" r="45" fill="var(--primary)" opacity="0.2" />
-              {/* Simple face features */}
-              <circle cx="137" cy="148" r="3" fill="var(--primary)" opacity="0.4" />
-              <circle cx="163" cy="148" r="3" fill="var(--primary)" opacity="0.4" />
-              <path d="M 140 165 Q 150 175 160 165" stroke="var(--primary)" strokeWidth="2" fill="none" opacity="0.3" />
-              {/* Hair */}
-              <path d="M 105 145 Q 110 100 150 95 Q 190 100 195 145" stroke="var(--primary)" strokeWidth="2.5" fill="none" opacity="0.25" />
-            </g>
-
-            {/* Phase dots */}
-            <circle cx="125" cy="310" r="5" fill={progress > 0.2 ? 'var(--primary)' : 'var(--surface-highlight)'} />
-            <circle cx="150" cy="310" r="5" fill={progress > 0.45 ? 'var(--primary)' : 'var(--surface-highlight)'} />
-            <circle cx="175" cy="310" r="5" fill={progress > 0.7 ? 'var(--primary)' : 'var(--surface-highlight)'} />
-
-            {/* Labels */}
-            <text x="150" y="345" textAnchor="middle" fill="var(--secondary)" fontSize="11" fontFamily="var(--font)">
-              {progress < 0.25 ? 'Audio only' : progress < 0.55 ? 'Revealing...' : progress < 0.75 ? 'Almost there...' : 'Full reveal'}
-            </text>
-          </svg>
-        </div>
-      </div>
-    </section>
-  );
-}
-
-/* ─── SVG: Community dots converging ─────────────────────── */
+/* ─── SVG: Explore gallery grid ──────────────────────────── */
 function CommunitySVG() {
   const ref = useRef<HTMLElement>(null);
   const progress = useScrollProgress(ref);
   const converge = clamp((progress - 0.2) / 0.5, 0, 1);
 
-  // Generate deterministic "random" positions
-  const dots = Array.from({ length: 24 }, (_, i) => {
-    const angle = (i / 24) * Math.PI * 2;
-    const spreadRadius = 80 + (i % 3) * 20;
-    return {
-      startX: 200 + Math.cos(angle) * spreadRadius,
-      startY: 200 + Math.sin(angle) * spreadRadius,
-      endX: 200 + Math.cos(angle) * (20 + (i % 4) * 8),
-      endY: 200 + Math.sin(angle) * (20 + (i % 4) * 8),
-      r: 3 + (i % 3),
-    };
-  });
-
   return (
     <section className="section" id="community" ref={ref}>
       <div className="container center-text">
-        <span className="section-label">LOCAL INTENT</span>
-        <h2 className="section-title">Everyone checks in at once</h2>
+        <span className="section-label">EXPLORE</span>
+        <h2 className="section-title">A gallery, not a roulette</h2>
         <p className="section-sub">
-          Flash Windows concentrate your entire local dating pool into a 30-minute window.
-          Maximum people. Maximum intent. No dead profiles.
+          Browse verified profiles like a gallery — clean, curated, and real.
+          No bots, no fakes, no endless random swiping.
         </p>
         <div className="community-visual">
-          <svg viewBox="0 0 400 400" className="community-svg" fill="none">
-            {/* Outer ring */}
-            <circle cx="200" cy="200" r="180" stroke="var(--primary)" strokeWidth="0.5" opacity="0.1" />
-            <circle cx="200" cy="200" r="120" stroke="var(--primary)" strokeWidth="0.5" opacity="0.08" />
-            <circle cx="200" cy="200" r="60" stroke="var(--primary)" strokeWidth="0.5" opacity="0.06" />
-            {/* Dots converging */}
-            {dots.map((dot, i) => (
-              <circle
-                key={i}
-                cx={dot.startX + (dot.endX - dot.startX) * converge}
-                cy={dot.startY + (dot.endY - dot.startY) * converge}
-                r={dot.r}
-                fill="var(--primary)"
-                opacity={0.15 + converge * 0.35}
-              />
-            ))}
-            {/* Center label */}
-            <text x="200" y="200" textAnchor="middle" dominantBaseline="middle" fill="var(--primary)" fontSize="13" fontWeight="700" fontFamily="var(--font)" opacity={converge * 0.7}>
-              8:30 PM
-            </text>
+          <svg viewBox="0 0 400 300" className="community-svg" fill="none">
+            {/* Gallery grid of profile cards */}
+            {[0, 1, 2, 3, 4, 5].map((i) => {
+              const col = i % 3;
+              const row = Math.floor(i / 3);
+              const x = 80 + col * 90;
+              const y = 30 + row * 130;
+              const delay = i * 0.08;
+              const cardOpacity = clamp((converge - delay) / 0.3, 0, 1);
+              return (
+                <g key={i} opacity={0.15 + cardOpacity * 0.6} transform={`translate(0, ${(1 - cardOpacity) * 20})`}>
+                  <rect x={x} y={y} width="70" height="100" rx="10" stroke="var(--primary)" strokeWidth="1.5" />
+                  <circle cx={x + 35} cy={y + 32} r="14" fill="var(--primary)" opacity="0.1" />
+                  <rect x={x + 15} y={y + 55} width="40" height="4" rx="2" fill="var(--primary)" opacity="0.1" />
+                  <rect x={x + 20} y={y + 65} width="30" height="3" rx="1.5" fill="var(--primary)" opacity="0.07" />
+                </g>
+              );
+            })}
+            {/* Verified badge on one card */}
+            <g opacity={clamp((converge - 0.5) / 0.3, 0, 1)}>
+              <circle cx="185" cy="45" r="7" fill="var(--primary)" opacity="0.25" />
+              <text x="185" y="48" textAnchor="middle" fill="var(--primary)" fontSize="8" fontWeight="700">✓</text>
+            </g>
+          </svg>
+        </div>
+      </div>
+    </section>
+  );
+}
+
+/* ─── SVG: On-Device AI Chat Coach ──────────────────────── */
+function ChatCoachSVG() {
+  const ref = useRef<HTMLElement>(null);
+  const progress = useScrollProgress(ref);
+  const reveal = clamp((progress - 0.15) / 0.5, 0, 1);
+
+  // Chat messages
+  const messages = [
+    { from: 'them', text: 'so what do you do for fun?', delay: 0.1 },
+    { from: 'me', text: 'honestly just hiking and cooking', delay: 0.25 },
+    { from: 'them', text: 'oh nice! i love cooking too. what\'s your go-to?', delay: 0.4 },
+  ];
+
+  // AI suggestion chips
+  const suggestions = [
+    'ask about their favorite cuisine',
+    'suggest a cooking date',
+    'share a recipe you love',
+  ];
+
+  const suggestionsVisible = clamp((progress - 0.55) / 0.3, 0, 1);
+  const chipOpacity = clamp((progress - 0.6) / 0.2, 0, 1);
+  const lockOpacity = clamp((progress - 0.7) / 0.2, 0, 1);
+
+  return (
+    <section className="section" id="ai-coach" ref={ref}>
+      <div className="container split-layout">
+        <div className="split-text">
+          <span className="section-label">ON-DEVICE AI</span>
+          <h2>Your conversations,{'\n'}with a safety net</h2>
+          <p>
+            Not everyone is smooth talker. Kinetik runs a small language model{' '}
+            <strong>entirely on your device</strong> — it reads your conversation and suggests{' '}
+            what to say next. Your chats never leave your phone.
+          </p>
+          <div className="ai-privacy-badge">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+              <rect x="3" y="11" width="18" height="11" rx="2" ry="2" />
+              <path d="M7 11V7a5 5 0 0 1 10 0v4" />
+            </svg>
+            <span>100% on-device. Zero server calls. Your data stays yours.</span>
+          </div>
+        </div>
+        <div className="split-visual">
+          <svg viewBox="0 0 300 440" className="chat-coach-svg" fill="none">
+            {/* Phone frame */}
+            <rect x="40" y="10" width="220" height="420" rx="32" stroke="var(--primary)" strokeWidth="2" opacity="0.2" />
+            <rect x="48" y="18" width="204" height="404" rx="26" fill="var(--surface)" />
+
+            {/* Header bar */}
+            <rect x="48" y="18" width="204" height="52" rx="26" fill="var(--primary)" opacity="0.06" />
+            <circle cx="82" cy="44" r="12" fill="var(--primary)" opacity="0.12" />
+            <rect x="100" y="38" width="60" height="5" rx="2.5" fill="var(--primary)" opacity="0.15" />
+            <rect x="100" y="47" width="40" height="3" rx="1.5" fill="var(--primary)" opacity="0.08" />
+
+            {/* Chat messages */}
+            {messages.map((msg, i) => {
+              const msgReveal = clamp((reveal - msg.delay) / 0.12, 0, 1);
+              const isMe = msg.from === 'me';
+              const y = 90 + i * 65;
+              const x = isMe ? 115 : 65;
+              const maxW = 130;
+              return (
+                <g key={i} opacity={msgReveal} transform={`translate(0, ${(1 - msgReveal) * 10})`}>
+                  <rect
+                    x={x}
+                    y={y}
+                    width={maxW}
+                    height={40}
+                    rx={isMe ? '14 14 4 14' : '14 14 14 4'}
+                    fill={isMe ? 'var(--primary)' : '#fff'}
+                    opacity={isMe ? 0.9 : 1}
+                    stroke={isMe ? 'none' : 'var(--card-border)'}
+                  />
+                  <text
+                    x={x + 14}
+                    y={y + 18}
+                    fill={isMe ? '#fff' : 'var(--primary)'}
+                    fontSize="9.5"
+                    fontFamily="var(--font)"
+                    opacity={0.85}
+                  >
+                    {msg.text.length > 28 ? msg.text.slice(0, 28) + '...' : msg.text}
+                  </text>
+                </g>
+              );
+            })}
+
+            {/* AI suggestion chips — appear at bottom */}
+            <g opacity={suggestionsVisible}>
+              {/* Label */}
+              <text x="150" y="310" textAnchor="middle" fill="var(--primary)" fontSize="9" fontWeight="700" fontFamily="var(--font)" opacity={chipOpacity * 0.5} letterSpacing="0.5">
+                ✦ SUGGESTED BY AI
+              </text>
+
+              {/* Chips */}
+              {suggestions.map((s, i) => {
+                const chipDelay = i * 0.12;
+                const chipVis = clamp((suggestionsVisible - chipDelay) / 0.2, 0, 1);
+                const y = 325 + i * 32;
+                const textLen = s.length * 5.5 + 28;
+                return (
+                  <g key={i} opacity={chipVis} transform={`translate(${(1 - chipVis) * 20}, 0)`}>
+                    <rect
+                      x={150 - textLen / 2}
+                      y={y}
+                      width={textLen}
+                      height={26}
+                      rx="13"
+                      fill="none"
+                      stroke="var(--primary)"
+                      strokeWidth="1.2"
+                      opacity="0.3"
+                    />
+                    <text
+                      x={150}
+                      y={y + 17}
+                      textAnchor="middle"
+                      fill="var(--primary)"
+                      fontSize="9"
+                      fontFamily="var(--font)"
+                      opacity="0.65"
+                    >
+                      {s}
+                    </text>
+                  </g>
+                );
+              })}
+
+              {/* Lock icon */}
+              <g opacity={lockOpacity} transform="translate(137, 418)">
+                <rect x="0" y="8" width="26" height="18" rx="3" fill="var(--primary)" opacity="0.15" />
+                <path d="M 7 8 V 5 A 6 6 0 0 1 19 5 V 8" stroke="var(--primary)" strokeWidth="1.5" fill="none" opacity="0.3" />
+                <circle cx="13" cy="17" r="2" fill="var(--primary)" opacity="0.3" />
+              </g>
+              <text x="150" y="440" textAnchor="middle" fill="var(--muted)" fontSize="8" fontFamily="var(--font)" opacity={lockOpacity * 0.7}>
+                processed on-device only
+              </text>
+            </g>
           </svg>
         </div>
       </div>
@@ -541,14 +571,19 @@ function CommunitySVG() {
 /* ─── Features Grid ──────────────────────────────────────── */
 const FEATURES = [
   {
-    icon: '🎙',
-    title: 'Audio-first Vibe Checks',
-    body: 'No photos upfront. Three minutes of real conversation. Chemistry before appearance.',
+    icon: '🧠',
+    title: 'On-Device AI Coach',
+    body: 'Stuck on what to say? A local LLM suggests replies in real-time — running entirely on your phone, never on our servers.',
   },
   {
-    icon: '⚡',
-    title: 'Flash Windows',
-    body: 'Daily 30-minute windows at 8:30 PM. Everyone checks in at once for maximum local matches.',
+    icon: '📸',
+    title: 'Explore Gallery',
+    body: 'Browse verified profiles in a clean gallery view. Real people, real photos, real compatibility — no roulette.',
+  },
+  {
+    icon: '💬',
+    title: 'Real-time Chat',
+    body: 'Instant messaging with read receipts, typing indicators, and push notifications. No more dead silence.',
   },
   {
     icon: '🔒',
@@ -819,8 +854,8 @@ export default function App() {
         <HeroRadarSVG />
         <BlackHoleSVG />
         <PipelineSVG />
-        <VibeCheckSVG />
-        <CommunitySVG />
+    <CommunitySVG />
+        <ChatCoachSVG />
         <Features />
         <Premium />
         <Support />
@@ -846,7 +881,11 @@ function Header() {
     <header className={`header ${scrolled ? 'scrolled' : ''}`}>
       <div className="container header-inner">
         <a href="#top" className="logo">
-          <span className="logo-mark">K</span>
+          <span className="logo-mark">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+              <polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2" />
+            </svg>
+          </span>
           {BUSINESS_NAME}
         </a>
         <nav className="nav">
