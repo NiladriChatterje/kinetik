@@ -495,7 +495,7 @@ function ChatCoachSVG() {
                     y={y}
                     width={maxW}
                     height={40}
-                    rx={isMe ? '14 14 4 14' : '14 14 14 4'}
+                    rx="14"
                     fill={isMe ? 'var(--primary)' : '#fff'}
                     opacity={isMe ? 0.9 : 1}
                     stroke={isMe ? 'none' : 'var(--card-border)'}
