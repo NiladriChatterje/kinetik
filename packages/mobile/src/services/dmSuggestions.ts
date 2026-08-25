@@ -3,12 +3,11 @@
  *
  * Tier A (on-device LLM): a tiny instruct model (Qwen2.5 0.5B, Q4 GGUF,
  * ~400 MB) reads the last 20 messages and writes 3 strategic replies.
- * The conversation never leaves the device. Requirements, all optional and
- * deliberately NOT dependencies yet (zero bundle weight until enabled):
- *   - To enable Tier A, on a Linux/EAS environment run
- *     `npm i llama.rn expo-device expo-network` and rebuild the dev client.
- *     (llama.rn's install script breaks on Windows; expo-device is the
- *     RAM gate, expo-network the Wi-Fi-only model download check.)
+ * The conversation never leaves the device. llama.rn (the engine),
+ * expo-device (RAM gate) and expo-network (Wi-Fi-only model download check)
+ * are installed; Tier A activates on the first dev-client build that
+ * includes their native sides ("llama.rn" is registered in app.json
+ * plugins). Older builds simply keep serving Tier B.
  *
  * Tier B (heuristics): a zero-weight rule engine — who spoke last, question
  * detection, message energy, conversation age — picks from a curated bank of
@@ -31,19 +30,28 @@ export interface SuggestionMessage {
 }
 
 // ─── Guarded module access ────────────────────────────────
-// eval('require') keeps Metro from statically resolving optional packages
-// that may not be installed (llama.rn). For installed packages whose NATIVE
-// side may be absent from the current build (expo-device/network), a plain
-// try/catch around usage is enough.
+// Static literal requires so Metro bundles the JS of each module; the
+// try/catch guards builds whose NATIVE side predates these packages —
+// there the require (or first native call) throws and we serve Tier B.
 
-function tryRequire(name: string): any | null {
+type OptionalModule = 'llama.rn' | 'expo-device' | 'expo-network' | 'expo-file-system/legacy';
+
+function tryRequire(name: OptionalModule): any | null {
   try {
-    // eslint-disable-next-line no-eval
-    const req: any = eval('require');
-    return req(name);
+    switch (name) {
+      case 'llama.rn':
+        return require('llama.rn');
+      case 'expo-device':
+        return require('expo-device');
+      case 'expo-network':
+        return require('expo-network');
+      case 'expo-file-system/legacy':
+        return require('expo-file-system/legacy');
+    }
   } catch {
-    return null;
+    // fall through
   }
+  return null;
 }
 
 // ─── Tier A: on-device LLM ────────────────────────────────
