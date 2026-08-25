@@ -45,11 +45,12 @@ function getPublisher(): Redis {
 
 export const eventBus = {
   async connect(): Promise<void> {
-    if (!publisher) {
-      getPublisher();
-    }
-    if (publisher && publisher.status !== 'ready') {
-      await publisher.connect();
+    const client = getPublisher();
+    // The client starts connecting on construction; calling connect() while
+    // it is already connecting/connected throws "Redis is already
+    // connecting/connected". Only connect from the idle states.
+    if (client.status === 'wait' || client.status === 'end') {
+      await client.connect();
       console.log('📨 Event Bus connected');
     }
   },
@@ -69,19 +70,17 @@ export const eventBus = {
     channel: string,
     event: { type: string; payload: Record<string, unknown> },
   ): Promise<void> {
-    if (!publisher) {
-      getPublisher();
-    }
-    if (publisher!.status !== 'ready') {
-      await publisher!.connect();
-    }
+    const client = getPublisher();
 
     const message = JSON.stringify({
       ...event,
       timestamp: new Date().toISOString(),
     });
 
-    await publisher!.publish(channel, message);
+    // While the connection is still being established, ioredis queues the
+    // command and sends it once ready — waiting beats forcing connect(),
+    // which throws if the client is already mid-connection.
+    await client.publish(channel, message);
   },
 
   /**

@@ -45,12 +45,14 @@ export function errorHandler(
     });
   }
 
+  // Internal errors are logged above with the full stack for developers —
+  // users must never see infrastructure details (Redis states, SQL, etc.)
   reply.status(statusCode).send({
     success: false,
     error: {
       code,
-      message,
-      details: (error as AppError).details,
+      message: statusCode >= 500 ? 'Something went wrong! Please try connecting again.' : message,
+      details: statusCode >= 500 ? undefined : (error as AppError).details,
     },
   });
   return undefined;
