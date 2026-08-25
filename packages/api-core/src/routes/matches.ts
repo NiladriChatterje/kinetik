@@ -841,10 +841,20 @@ export async function matchRoutes(app: FastifyInstance) {
     }
 
     // ─── 3. Delete records in a single transaction ───────
+    const { user_a_id: userAId, user_b_id: userBId } = matchCheck.rows[0];
     await transaction(async (q) => {
       await q(`DELETE FROM ${TABLES.CHAT_MEDIA} WHERE message_id IN (SELECT id FROM ${TABLES.MESSAGES} WHERE match_id = $1)`, [matchId]);
       await q(`DELETE FROM ${TABLES.MESSAGES} WHERE match_id = $1`, [matchId]);
       await q(`UPDATE ${TABLES.MATCHES} SET is_active = FALSE WHERE id = $1`, [matchId]);
+      // Clear the pair's interaction history so both users can organically
+      // meet and like again after an unmatch. Without this the UNIQUE
+      // (actor_id, target_id) rows lock the pair forever: every future
+      // swipe between them 409s and no like can ever be delivered.
+      await q(
+        `DELETE FROM ${TABLES.USER_INTERACTIONS}
+         WHERE (actor_id = $1 AND target_id = $2) OR (actor_id = $2 AND target_id = $1)`,
+        [userAId, userBId],
+      );
     });
 
     // Publish unmatch event so partner's realtime client removes the conversation
