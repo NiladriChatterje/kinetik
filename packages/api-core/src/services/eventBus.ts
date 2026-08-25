@@ -19,9 +19,9 @@ let publisher: Redis | null = null;
 function getPublisher(): Redis {
   if (!publisher) {
     publisher = new Redis(
-      "rediss://default:i9mBSZ62xWSnOG8RPxq2cFrU@redis-events-tiny-coast.cloud.layerbase.dev:6379",
+      process.env.REDIS_LAYERBASE_URL!,
       {
-        tls: { servername: 'redis-events-tiny-coast.cloud.layerbase.dev' }
+        tls: { servername: process.env.REDIS_LAYERBASE_HOST! }
         //   host: process.env.REDIS_EVENTS_HOST || 'localhost',
         //   port: parseInt(process.env.REDIS_EVENTS_PORT || '6380', 10),
         //   password: process.env.REDIS_EVENTS_PASSWORD,

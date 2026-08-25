@@ -61,10 +61,8 @@ async function bootstrap() {
   await app.register(rateLimit, {
     max: 100,
     timeWindow: '1 minute',
-    redis: new Redis({
-      host: process.env.REDIS_HOST || 'localhost',
-      port: parseInt(process.env.REDIS_PORT || '6379'),
-      password: process.env.REDIS_PASSWORD,
+    redis: new Redis(process.env.REDIS_AIVEN_URL!, {
+      tls: { servername: process.env.REDIS_AIVEN_HOST! },
       enableOfflineQueue: false,
     }),
     keyGenerator: (request) => {

@@ -61,50 +61,50 @@ services:
     logging: *default-logging
 
   # ─── Redis (Caching + Socket.IO adapter + presence) ─────
-  redis:
-    image: redis:7-alpine
-    container_name: kinetik-redis
-    restart: unless-stopped
-    command: redis-server --requirepass ${REDIS_PASSWORD:-kinetik_redis_2024} --maxmemory 384mb --maxmemory-policy allkeys-lru --appendonly yes
-    ports:
-      - "${REDIS_PORT:-6379}:6379"
-    volumes:
-      - redis-data:/data
-    deploy:
-      resources:
-        limits:
-          cpus: "0.5"
-          memory: 384M
-        reservations:
-          memory: 256M
-    healthcheck:
-      test: ["CMD", "redis-cli", "--raw", "incr", "ping"]
-      interval: 10s
-      timeout: 5s
-      retries: 5
-    logging: *default-logging
+  # redis:
+  #   image: redis:7-alpine
+  #   container_name: kinetik-redis
+  #   restart: unless-stopped
+  #   command: redis-server --requirepass ${REDIS_PASSWORD:-kinetik_redis_2024} --maxmemory 384mb --maxmemory-policy allkeys-lru --appendonly yes
+  #   ports:
+  #     - "${REDIS_PORT:-6379}:6379"
+  #   volumes:
+  #     - redis-data:/data
+  #   deploy:
+  #     resources:
+  #       limits:
+  #         cpus: "0.5"
+  #         memory: 384M
+  #       reservations:
+  #         memory: 256M
+  #   healthcheck:
+  #     test: ["CMD", "redis-cli", "--raw", "incr", "ping"]
+  #     interval: 10s
+  #     timeout: 5s
+  #     retries: 5
+  #   logging: *default-logging
 
-  # ─── Event Bus Redis (dedicated pub/sub — replaces Kafka) ─
-  redis-events:
-    image: redis:7-alpine
-    container_name: kinetik-redis-events
-    restart: unless-stopped
-    command: redis-server --requirepass ${REDIS_EVENTS_PASSWORD:-kinetik_events_2024} --maxmemory 256mb --maxmemory-policy allkeys-lru --appendonly no
-    ports:
-      - "${REDIS_EVENTS_PORT:-6380}:6379"
-    deploy:
-      resources:
-        limits:
-          cpus: "0.25"
-          memory: 256M
-        reservations:
-          memory: 128M
-    healthcheck:
-      test: ["CMD", "redis-cli", "--raw", "incr", "ping"]
-      interval: 10s
-      timeout: 5s
-      retries: 5
-    logging: *default-logging
+  # # ─── Event Bus Redis (dedicated pub/sub — replaces Kafka) ─
+  # redis-events:
+  #   image: redis:7-alpine
+  #   container_name: kinetik-redis-events
+  #   restart: unless-stopped
+  #   command: redis-server --requirepass ${REDIS_EVENTS_PASSWORD:-kinetik_events_2024} --maxmemory 256mb --maxmemory-policy allkeys-lru --appendonly no
+  #   ports:
+  #     - "${REDIS_EVENTS_PORT:-6380}:6379"
+  #   deploy:
+  #     resources:
+  #       limits:
+  #         cpus: "0.25"
+  #         memory: 256M
+  #       reservations:
+  #         memory: 128M
+  #   healthcheck:
+  #     test: ["CMD", "redis-cli", "--raw", "incr", "ping"]
+  #     interval: 10s
+  #     timeout: 5s
+  #     retries: 5
+  #   logging: *default-logging
 
   # ─── LiveKit WebRTC SFU ──────────────────────────────────
   livekit:
@@ -142,9 +142,6 @@ services:
       # for dev, e.g. LIVEKIT_RTC_NODE_IP=192.168.1.50. Requires
       # use_external_ip: false (already set in livekit.yaml).
       LIVEKIT_RTC_NODE_IP: ${LIVEKIT_RTC_NODE_IP:-}
-    depends_on:
-      redis:
-        condition: service_healthy
     deploy:
       resources:
         limits:
@@ -170,6 +167,8 @@ services:
       REDIS_HOST: redis
       REDIS_PORT: 6379
       REDIS_PASSWORD: ${REDIS_PASSWORD:-kinetik_redis_2024}
+      REDIS_LAYERBASE_URL: ${REDIS_LAYERBASE_URL:-}
+      REDIS_LAYERBASE_HOST: ${REDIS_LAYERBASE_HOST:-}
       REDIS_EVENTS_HOST: redis-events
       REDIS_EVENTS_PORT: 6379
       REDIS_EVENTS_PASSWORD: ${REDIS_EVENTS_PASSWORD:-kinetik_events_2024}
@@ -214,10 +213,6 @@ services:
     depends_on:
       postgres:
         condition: service_healthy
-      redis:
-        condition: service_healthy
-      redis-events:
-        condition: service_healthy
       migration-runner:
         condition: service_completed_successfully
     deploy:
@@ -245,6 +240,8 @@ services:
       REDIS_HOST: redis
       REDIS_PORT: 6379
       REDIS_PASSWORD: ${REDIS_PASSWORD:-kinetik_redis_2024}
+      REDIS_LAYERBASE_URL: ${REDIS_LAYERBASE_URL:-}
+      REDIS_LAYERBASE_HOST: ${REDIS_LAYERBASE_HOST:-}
       REDIS_EVENTS_HOST: redis-events
       REDIS_EVENTS_PORT: 6379
       REDIS_EVENTS_PASSWORD: ${REDIS_EVENTS_PASSWORD:-kinetik_events_2024}
@@ -253,10 +250,10 @@ services:
       LIVEKIT_API_KEY: ${LIVEKIT_API_KEY:-kinetik_livekit_key}
       LIVEKIT_API_SECRET: ${LIVEKIT_API_SECRET:-kinetik_livekit_secret_2024_dev_xyz}
     depends_on:
-      redis:
-        condition: service_healthy
-      redis-events:
-        condition: service_healthy
+      # redis:
+      #   condition: service_healthy
+      # redis-events:
+      #   condition: service_healthy
       migration-runner:
         condition: service_completed_successfully
       livekit:
@@ -383,5 +380,5 @@ services:
 
 volumes:
   postgres-data:
-  redis-data:
+  # redis-data:
   minio-data:

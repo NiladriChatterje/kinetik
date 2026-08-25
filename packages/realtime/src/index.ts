@@ -19,9 +19,9 @@ const JWT_SECRET = process.env.JWT_SECRET || 'super-secret-jwt-key-change-in-pro
 // instance: one for publishing, one for subscribing. ioredis duplicate()
 // creates a separate TCP connection sharing the same config.
 const pubClient = new Redis(
-  "rediss://default:i9mBSZ62xWSnOG8RPxq2cFrU@redis-events-tiny-coast.cloud.layerbase.dev:6379",
+  process.env.REDIS_AIVEN_URL!,
   {
-    tls: { servername: 'redis-events-tiny-coast.cloud.layerbase.dev' },
+    tls: { servername: process.env.REDIS_AIVEN_HOST! },
     // host: process.env.REDIS_HOST || 'localhost',
     // port: parseInt(process.env.REDIS_PORT || '6379', 10),
     // password: process.env.REDIS_PASSWORD,
@@ -34,9 +34,9 @@ const subClient = pubClient.duplicate();
 
 // ─── Event Bus Redis (separate instance — replaces Kafka consumer) ─
 const eventBusClient = new Redis(
-  "rediss://default:i9mBSZ62xWSnOG8RPxq2cFrU@redis-events-tiny-coast.cloud.layerbase.dev:6379",
+  process.env.REDIS_LAYERBASE_URL!,
   {
-    tls: { servername: 'redis-events-tiny-coast.cloud.layerbase.dev' }
+    tls: { servername: process.env.REDIS_LAYERBASE_HOST! }
     //   host: process.env.REDIS_EVENTS_HOST || 'localhost',
     //   port: parseInt(process.env.REDIS_EVENTS_PORT || '6380', 10),
     //   password: process.env.REDIS_EVENTS_PASSWORD,

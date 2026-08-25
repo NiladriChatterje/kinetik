@@ -5,9 +5,9 @@ let redisClient: Redis | null = null;
 export function initializeRedis(): Redis {
   if (!redisClient) {
     redisClient = new Redis(
-      "rediss://default:i9mBSZ62xWSnOG8RPxq2cFrU@redis-events-tiny-coast.cloud.layerbase.dev:6379",
+      process.env.REDIS_AIVEN_URL!,
       {
-        tls: { servername: 'redis-events-tiny-coast.cloud.layerbase.dev' }
+        tls: { servername: process.env.REDIS_AIVEN_HOST! },
         //   host: process.env.REDIS_HOST || 'localhost',
         //   port: parseInt(process.env.REDIS_PORT || '6379', 10),
         //   password: process.env.REDIS_PASSWORD,

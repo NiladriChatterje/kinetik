@@ -54,6 +54,8 @@ turn:
   tls_port: 5349
 
 
-redis:
-  address: redis:6379
-  password: kinetik_redis_2024
+# Redis is only needed for multi-node LiveKit. The local redis container was
+# retired (app services use cloud Redis now), and single-node runs without it.
+# redis:
+#   address: redis:6379
+#   password: kinetik_redis_2024
