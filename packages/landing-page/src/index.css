@@ -185,6 +185,27 @@ img {
   flex-wrap: wrap;
 }
 
+.hero-free-tier {
+  margin-top: 20px;
+  font-size: 14px;
+  color: var(--muted);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+}
+
+.free-badge {
+  display: inline-block;
+  background: var(--surface-light);
+  color: var(--primary);
+  border-radius: 9999px;
+  padding: 3px 10px;
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.8px;
+}
+
 /* ─── Buttons ────────────────────────────────────────────── */
 .btn {
   display: inline-block;

@@ -159,6 +159,10 @@ function HeroRadarSVG() {
             Go Premium — ₹149/mo
           </a>
         </div>
+        <div className="hero-free-tier">
+          <span className="free-badge">FREE</span>
+          30 swipes &middot; 3 chats — then upgrade to Premium to unlock
+        </div>
       </div>
     </section>
   );
@@ -596,14 +600,9 @@ const FEATURES = [
     body: 'No blur, no guessing. See exactly who has already liked your profile and match instantly.',
   },
   {
-    icon: '👥',
-    title: 'Duo Crew',
-    body: 'Bring a single friend. Two Duo Crews get paired for a double date hangout. Dates are better with friends.',
-  },
-  {
     icon: '∞',
     title: 'Unlimited swipes (Premium)',
-    body: 'Premium members never hit a swipe limit. Explore every profile, every day.',
+    body: '30 swipes and 3 chats free. After that, swipes lock — Premium gives you unlimited swipes, 25 Super Likes/day, and more.',
   },
 ];
 
