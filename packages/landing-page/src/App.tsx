@@ -675,38 +675,167 @@ function Premium() {
   );
 }
 
-/* ─── Support ────────────────────────────────────────────── */
+/* ─── Support Form ───────────────────────────────────────── */
+const WEB3FORMS_KEY = 'YOUR_WEB3FORMS_ACCESS_KEY'; // Replace with your key from web3forms.com
+const SUPPORT_TO = 'ecartxvstore@gmail.com';
+
+const ISSUE_TYPES = [
+  'Account issue',
+  'Payment / Billing',
+  'Safety concern',
+  'Bug report',
+  'Feature request',
+  'Refund request',
+  'Other',
+];
+
 function Support() {
   const { ref, visible } = useInView(0.1);
+  const [form, setForm] = useState({
+    email: '',
+    name: '',
+    issueType: ISSUE_TYPES[0],
+    description: '',
+  });
+  const [status, setStatus] = useState<'idle' | 'submitting' | 'success' | 'error'>('idle');
+
+  const handleChange = (
+    e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement>,
+  ) => {
+    setForm((prev) => ({ ...prev, [e.target.name]: e.target.value }));
+  };
+
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!form.email || !form.description) return;
+    setStatus('submitting');
+
+    try {
+      const res = await fetch('https://api.web3forms.com/submit', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          access_key: WEB3FORMS_KEY,
+          to: SUPPORT_TO,
+          subject: `[Kinetik Support] ${form.issueType}`,
+          from_name: form.name || 'Kinetik User',
+          from_email: form.email,
+          message: form.description,
+          issue_type: form.issueType,
+          reply_to: form.email,
+        }),
+      });
+
+      const data = await res.json();
+      if (data.success) {
+        setStatus('success');
+        setForm({ email: '', name: '', issueType: ISSUE_TYPES[0], description: '' });
+      } else {
+        setStatus('error');
+      }
+    } catch {
+      setStatus('error');
+    }
+  };
+
   return (
     <section className="section section-alt" id="support" ref={ref}>
       <div className="container">
         <span className="section-label">SUPPORT</span>
-        <h2 className="section-title">Customer support</h2>
+        <h2 className="section-title">Get in touch</h2>
         <p className="section-sub">
-          Payment, account, or safety concern? We respond to every query within{' '}
-          <strong>48 hours</strong>, and payment issues within <strong>24 hours</strong>.
+          Report an issue, request a refund, or just say hi. We respond within{' '}
+          <strong>48 hours</strong> — payment issues within <strong>24 hours</strong>.
         </p>
-        <div className={`support-grid stagger ${visible ? 'visible' : ''}`}>
-          <div className="support-card" style={{ animationDelay: '0s' }}>
-            <div className="label">EMAIL US</div>
-            <div className="value">
-              <a href={`mailto:${SUPPORT_EMAIL}`}>{SUPPORT_EMAIL}</a>
+
+        <div className={`support-form-wrap ${visible ? 'visible' : ''}`}>
+          {status === 'success' ? (
+            <div className="support-success">
+              <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="var(--primary)" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
+                <circle cx="12" cy="12" r="10" />
+                <path d="M8 12l3 3 5-5" />
+              </svg>
+              <h3>Message sent</h3>
+              <p>Thanks! We'll get back to you at <strong>{form.email || 'your email'}</strong> within 48 hours.</p>
+              <button className="btn btn-outline" onClick={() => setStatus('idle')}>
+                Send another message
+              </button>
             </div>
-          </div>
-          <div className="support-card" style={{ animationDelay: '0.08s' }}>
-            <div className="label">IN THE APP</div>
-            <div className="value">
-              Profile → Settings → Help &amp; Support
-            </div>
-          </div>
-          <div className="support-card" style={{ animationDelay: '0.16s' }}>
-            <div className="label">BILLING HELP</div>
-            <div className="value">
-              For charges from {BUSINESS_NAME} Premium, include your Google Pay transaction ID
-              when you write to us.
-            </div>
-          </div>
+          ) : (
+            <form className="support-form" onSubmit={handleSubmit}>
+              <div className="form-row">
+                <div className="form-field">
+                  <label htmlFor="support-email">Email <span className="required">*</span></label>
+                  <input
+                    id="support-email"
+                    name="email"
+                    type="email"
+                    required
+                    placeholder="you@example.com"
+                    value={form.email}
+                    onChange={handleChange}
+                  />
+                </div>
+                <div className="form-field">
+                  <label htmlFor="support-name">Name</label>
+                  <input
+                    id="support-name"
+                    name="name"
+                    type="text"
+                    placeholder="Your name (optional)"
+                    value={form.name}
+                    onChange={handleChange}
+                  />
+                </div>
+              </div>
+
+              <div className="form-field">
+                <label htmlFor="support-issue">Issue type <span className="required">*</span></label>
+                <select
+                  id="support-issue"
+                  name="issueType"
+                  value={form.issueType}
+                  onChange={handleChange}
+                >
+                  {ISSUE_TYPES.map((t) => (
+                    <option key={t} value={t}>{t}</option>
+                  ))}
+                </select>
+              </div>
+
+              <div className="form-field">
+                <label htmlFor="support-desc">Description <span className="required">*</span></label>
+                <textarea
+                  id="support-desc"
+                  name="description"
+                  required
+                  rows={5}
+                  placeholder="Tell us what's going on — include screenshots or transaction IDs if relevant."
+                  value={form.description}
+                  onChange={handleChange}
+                />
+              </div>
+
+              <div className="form-footer">
+                <button
+                  type="submit"
+                  className="btn btn-primary"
+                  disabled={status === 'submitting' || !form.email || !form.description}
+                >
+                  {status === 'submitting' ? 'Sending…' : 'Send message'}
+                </button>
+                {status === 'error' && (
+                  <span className="form-error">Something went wrong. Try again or email us directly at{' '}
+                    <a href={`mailto:${SUPPORT_EMAIL}`}>{SUPPORT_EMAIL}</a>
+                  </span>
+                )}
+              </div>
+            </form>
+          )}
+        </div>
+
+        <div className="support-alt">
+          <p>Or reach us directly: <a href={`mailto:${SUPPORT_EMAIL}`}>{SUPPORT_EMAIL}</a></p>
         </div>
       </div>
     </section>
