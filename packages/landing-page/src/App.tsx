@@ -676,9 +676,6 @@ function Premium() {
 }
 
 /* ─── Support Form ───────────────────────────────────────── */
-const WEB3FORMS_KEY = 'YOUR_WEB3FORMS_ACCESS_KEY'; // Replace with your key from web3forms.com
-const SUPPORT_TO = 'ecartxvstore@gmail.com';
-
 const ISSUE_TYPES = [
   'Account issue',
   'Payment / Billing',
@@ -691,45 +688,29 @@ const ISSUE_TYPES = [
 
 function Support() {
   const { ref, visible } = useInView(0.1);
-  const [form, setForm] = useState({
-    email: '',
-    name: '',
-    issueType: ISSUE_TYPES[0],
-    description: '',
-  });
   const [status, setStatus] = useState<'idle' | 'submitting' | 'success' | 'error'>('idle');
 
-  const handleChange = (
-    e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement>,
-  ) => {
-    setForm((prev) => ({ ...prev, [e.target.name]: e.target.value }));
-  };
-
-  const handleSubmit = async (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();
-    if (!form.email || !form.description) return;
     setStatus('submitting');
 
     try {
-      const res = await fetch('https://api.web3forms.com/submit', {
+      const form = e.currentTarget;
+      const formData = new FormData(form);
+      formData.append('access_key', '2501e1e2-0b6a-472d-b2e8-1fa62704f1d5');
+      formData.append('subject', `[Kinetik Support] ${formData.get('issueType') || 'General'}`);
+      formData.append('to', 'ecartxvstore@gmail.com');
+      formData.append('reply_to', String(formData.get('email') || ''));
+
+      const response = await fetch('https://api.web3forms.com/submit', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          access_key: WEB3FORMS_KEY,
-          to: SUPPORT_TO,
-          subject: `[Kinetik Support] ${form.issueType}`,
-          from_name: form.name || 'Kinetik User',
-          from_email: form.email,
-          message: form.description,
-          issue_type: form.issueType,
-          reply_to: form.email,
-        }),
+        body: formData,
       });
 
-      const data = await res.json();
+      const data = await response.json();
       if (data.success) {
         setStatus('success');
-        setForm({ email: '', name: '', issueType: ISSUE_TYPES[0], description: '' });
+        form.reset();
       } else {
         setStatus('error');
       }
@@ -756,7 +737,7 @@ function Support() {
                 <path d="M8 12l3 3 5-5" />
               </svg>
               <h3>Message sent</h3>
-              <p>Thanks! We'll get back to you at <strong>{form.email || 'your email'}</strong> within 48 hours.</p>
+              <p>Thanks for reaching out! We'll get back to you within 48 hours.</p>
               <button className="btn btn-outline" onClick={() => setStatus('idle')}>
                 Send another message
               </button>
@@ -765,6 +746,16 @@ function Support() {
             <form className="support-form" onSubmit={handleSubmit}>
               <div className="form-row">
                 <div className="form-field">
+                  <label htmlFor="support-name">Name</label>
+                  <input
+                    id="support-name"
+                    name="name"
+                    type="text"
+                    required
+                    placeholder="Your name"
+                  />
+                </div>
+                <div className="form-field">
                   <label htmlFor="support-email">Email <span className="required">*</span></label>
                   <input
                     id="support-email"
@@ -772,19 +763,6 @@ function Support() {
                     type="email"
                     required
                     placeholder="you@example.com"
-                    value={form.email}
-                    onChange={handleChange}
-                  />
-                </div>
-                <div className="form-field">
-                  <label htmlFor="support-name">Name</label>
-                  <input
-                    id="support-name"
-                    name="name"
-                    type="text"
-                    placeholder="Your name (optional)"
-                    value={form.name}
-                    onChange={handleChange}
                   />
                 </div>
               </div>
@@ -794,8 +772,7 @@ function Support() {
                 <select
                   id="support-issue"
                   name="issueType"
-                  value={form.issueType}
-                  onChange={handleChange}
+                  required
                 >
                   {ISSUE_TYPES.map((t) => (
                     <option key={t} value={t}>{t}</option>
@@ -807,12 +784,10 @@ function Support() {
                 <label htmlFor="support-desc">Description <span className="required">*</span></label>
                 <textarea
                   id="support-desc"
-                  name="description"
+                  name="message"
                   required
                   rows={5}
                   placeholder="Tell us what's going on — include screenshots or transaction IDs if relevant."
-                  value={form.description}
-                  onChange={handleChange}
                 />
               </div>
 
@@ -820,13 +795,13 @@ function Support() {
                 <button
                   type="submit"
                   className="btn btn-primary"
-                  disabled={status === 'submitting' || !form.email || !form.description}
+                  disabled={status === 'submitting'}
                 >
                   {status === 'submitting' ? 'Sending…' : 'Send message'}
                 </button>
                 {status === 'error' && (
                   <span className="form-error">Something went wrong. Try again or email us directly at{' '}
-                    <a href={`mailto:${SUPPORT_EMAIL}`}>{SUPPORT_EMAIL}</a>
+                    <a href="mailto:ecartxvstore@gmail.com">ecartxvstore@gmail.com</a>
                   </span>
                 )}
               </div>
@@ -835,7 +810,7 @@ function Support() {
         </div>
 
         <div className="support-alt">
-          <p>Or reach us directly: <a href={`mailto:${SUPPORT_EMAIL}`}>{SUPPORT_EMAIL}</a></p>
+          <p>Or reach us directly at <a href="mailto:ecartxvstore@gmail.com">ecartxvstore@gmail.com</a></p>
         </div>
       </div>
     </section>
