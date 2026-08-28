@@ -195,7 +195,7 @@ export async function authRoutes(app: FastifyInstance) {
     // Hash password if provided
     let passwordHash: string | undefined;
     if (data.password) {
-      passwordHash = await bcrypt.hash(data.password, 12);
+      passwordHash = await bcrypt.hash(data.password, 10);
     }
 
     const user = await createUser({
