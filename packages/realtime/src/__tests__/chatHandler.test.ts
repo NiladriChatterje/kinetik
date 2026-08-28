@@ -63,6 +63,20 @@ function createMockNamespace() {
       }
     }
   };
+  // socket.io's adapter.rooms — Map<room, Set<socketId>>, derived from the
+  // same membership the mock sockets track
+  nsp.adapter = {
+    get rooms() {
+      const rooms = new Map<string, Set<string>>();
+      for (const [id, s] of nsp.sockets) {
+        for (const r of s.rooms) {
+          if (!rooms.has(r)) rooms.set(r, new Set<string>());
+          rooms.get(r)!.add(id);
+        }
+      }
+      return rooms;
+    },
+  };
   nsp.local = {
     to: (room: string) => ({
       emit: (event: string, data: any) => deliver(room, [], event, data),

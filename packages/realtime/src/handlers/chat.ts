@@ -302,10 +302,10 @@ export class ChatHandler {
    * the LAST of them has left the match room.
    */
   private userHasLocalSocketInRoom(userId: string, room: string): boolean {
-    for (const [, socket] of this.nsp.sockets) {
-      if ((socket as any).userId === userId && socket.rooms.has(room)) {
-        return true;
-      }
+    const socketIds = this.nsp.adapter.rooms.get(room);
+    if (!socketIds) return false;
+    for (const id of socketIds) {
+      if ((this.nsp.sockets.get(id) as any)?.userId === userId) return true;
     }
     return false;
   }
