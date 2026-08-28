@@ -486,14 +486,14 @@ export const ChatScreen: React.FC<{ navigation: any; route: any }> = ({ navigati
           prev.map((m) =>
             m.media?.id === data.mediaId
               ? {
-                  ...m,
-                  media: {
-                    ...m.media!,
-                    viewedAt: data.viewedAt,
-                    url: '',
-                    thumbnailUrl: undefined,
-                  },
-                }
+                ...m,
+                media: {
+                  ...m.media!,
+                  viewedAt: data.viewedAt,
+                  url: '',
+                  thumbnailUrl: undefined,
+                },
+              }
               : m,
           ),
         );
@@ -786,7 +786,7 @@ export const ChatScreen: React.FC<{ navigation: any; route: any }> = ({ navigati
 
         // Clean up previous cached voice file
         if (lastCacheUriRef.current) {
-          FileSystem.deleteAsync(lastCacheUriRef.current).catch(() => {});
+          FileSystem.deleteAsync(lastCacheUriRef.current).catch(() => { });
           lastCacheUriRef.current = null;
         }
 
@@ -810,7 +810,7 @@ export const ChatScreen: React.FC<{ navigation: any; route: any }> = ({ navigati
         // Last checkpoint: if the press ended during the awaits above, do NOT
         // begin capture — this was the race that left the mic recording forever
         if (!micPressActiveRef.current) {
-          setAudioModeAsync({ allowsRecording: false, playsInSilentMode: true }).catch(() => {});
+          setAudioModeAsync({ allowsRecording: false, playsInSilentMode: true }).catch(() => { });
           return;
         }
 
@@ -842,7 +842,7 @@ export const ChatScreen: React.FC<{ navigation: any; route: any }> = ({ navigati
     // If a start is still in flight, let it settle first — stopping mid-start
     // is what used to orphan the native session
     if (startTaskRef.current) {
-      try { await startTaskRef.current; } catch {}
+      try { await startTaskRef.current; } catch { }
     }
     // Start aborted (quick tap / permission denied) — nothing is recording
     if (!isRecordingActiveRef.current) return;
@@ -865,7 +865,7 @@ export const ChatScreen: React.FC<{ navigation: any; route: any }> = ({ navigati
       // allowsRecording: true; leaving it set keeps the mic/earpiece routing
       // active so the recorded note plays back silent or via the earpiece.
       // playsInSilentMode keeps playback audible with the iOS silent switch on.
-      setAudioModeAsync({ allowsRecording: false, playsInSilentMode: true }).catch(() => {});
+      setAudioModeAsync({ allowsRecording: false, playsInSilentMode: true }).catch(() => { });
 
       // Ignore very short taps (< 1 second) — likely accidental
       if (duration < 1) return;
@@ -982,7 +982,7 @@ export const ChatScreen: React.FC<{ navigation: any; route: any }> = ({ navigati
   const cancelRecording = async () => {
     micPressActiveRef.current = false;
     if (startTaskRef.current) {
-      try { await startTaskRef.current; } catch {}
+      try { await startTaskRef.current; } catch { }
     }
     isRecordingActiveRef.current = false;
     if (recordingTimerRef.current) {
@@ -992,9 +992,9 @@ export const ChatScreen: React.FC<{ navigation: any; route: any }> = ({ navigati
     const recorder = audioRecorderRef.current;
     try {
       await recorder.stop();
-    } catch {}
+    } catch { }
     // Return the audio session to playback mode (same as in stopRecording)
-    setAudioModeAsync({ allowsRecording: false, playsInSilentMode: true }).catch(() => {});
+    setAudioModeAsync({ allowsRecording: false, playsInSilentMode: true }).catch(() => { });
     setIsRecording(false);
     setRecordingDuration(0);
   };
@@ -1007,7 +1007,7 @@ export const ChatScreen: React.FC<{ navigation: any; route: any }> = ({ navigati
       try {
         playerRef.current.pause();
         (playerRef.current as any).remove?.();
-      } catch {}
+      } catch { }
       playerRef.current = null;
     }
   };
@@ -1024,7 +1024,7 @@ export const ChatScreen: React.FC<{ navigation: any; route: any }> = ({ navigati
     try {
       // Ensure the session is in playback mode — a stale recording mode routes
       // playback to the earpiece / mutes it under the iOS silent switch
-      await setAudioModeAsync({ allowsRecording: false, playsInSilentMode: true }).catch(() => {});
+      await setAudioModeAsync({ allowsRecording: false, playsInSilentMode: true }).catch(() => { });
 
       // Append auth token as query param — native media players (AVPlayer,
       // ExoPlayer) cannot send custom HTTP headers, so we pass the JWT
@@ -1067,7 +1067,7 @@ export const ChatScreen: React.FC<{ navigation: any; route: any }> = ({ navigati
         try {
           playerRef.current.pause();
           (playerRef.current as any).remove?.();
-        } catch {}
+        } catch { }
         playerRef.current = null;
       }
       if (recordingTimerRef.current) {
@@ -1080,8 +1080,8 @@ export const ChatScreen: React.FC<{ navigation: any; route: any }> = ({ navigati
         micPressActiveRef.current = false;
         try {
           audioRecorderRef.current.stop();
-        } catch {}
-        setAudioModeAsync({ allowsRecording: false, playsInSilentMode: true }).catch(() => {});
+        } catch { }
+        setAudioModeAsync({ allowsRecording: false, playsInSilentMode: true }).catch(() => { });
       }
     };
   }, []);
@@ -1199,13 +1199,13 @@ export const ChatScreen: React.FC<{ navigation: any; route: any }> = ({ navigati
     // View-once media that has been viewed — show "Opened" placeholder
     if (media.isViewOnce && media.viewedAt) {
       return (
-        <View style={styles.viewOnceViewed}>
+        <View style={[styles.viewOnceViewed, isMine && styles.viewOnceViewedMine]}>
           <Ionicons
-            name={isMine ? 'checkmark-done' : 'eye-outline'}
-            size={14}
-            color={isMine ? colors.textInverse : colors.textMuted}
+            name="lock-open-outline"
+            size={isMine ? 12 : 14}
+            color={isMine ? 'rgba(255,255,255,0.55)' : colors.textMuted}
           />
-          <Text style={[styles.viewOnceViewedText, isMine && { color: colors.textInverse }]}>
+          <Text style={[styles.viewOnceViewedText, isMine && styles.viewOnceViewedTextMine]}>
             {isMine ? 'Opened' : 'Viewed'}
           </Text>
         </View>
@@ -1384,227 +1384,227 @@ export const ChatScreen: React.FC<{ navigation: any; route: any }> = ({ navigati
   return (
     <SafeAreaView style={styles.container}>
       <Animated.View style={{ flex: 1, transform: [{ scale: contentScale }] }}>
-      {/* Header */}
-      <View style={styles.header}>
-        <TouchableOpacity onPress={() => navigation.goBack()} style={styles.backBtn}>
-          <Ionicons name="chevron-back" size={24} color={colors.textPrimary} />
-        </TouchableOpacity>
+        {/* Header */}
+        <View style={styles.header}>
+          <TouchableOpacity onPress={() => navigation.goBack()} style={styles.backBtn}>
+            <Ionicons name="chevron-back" size={24} color={colors.textPrimary} />
+          </TouchableOpacity>
 
-        {pPhoto ? (
-          <Image source={{ uri: resolveUrl(pPhoto) }} style={styles.headerAvatar} />
-        ) : (
-          <View style={[styles.headerAvatar, styles.noHeaderAvatar]}>
-            <Ionicons name="person-outline" size={20} color={colors.textMuted} />
-          </View>
-        )}
-
-        <View style={styles.headerInfo}>
-          <Text style={styles.headerName}>{partnerName}</Text>
-        </View>
-
-        {/* Date Planner — opens the planner modal with activities + checklist */}
-        <TouchableOpacity
-          style={styles.callBtn}
-          onPress={() => openDatePicker('activities')}
-          activeOpacity={0.7}
-        >
-          <Ionicons name="calendar-outline" size={20} color={colors.textPrimary} />
-        </TouchableOpacity>
-
-        {/* 1:1 voice/video call (private date call) */}
-        <TouchableOpacity
-          style={styles.callBtn}
-          onPress={() =>
-            navigation.navigate('Call', {
-              matchId,
-              partnerName,
-              partnerPhotoUrl: pPhoto,
-              partnerId: pId,
-              mode: 'caller',
-            })
-          }
-          activeOpacity={0.7}
-        >
-          <Ionicons name="call" size={20} color={colors.textPrimary} />
-        </TouchableOpacity>
-
-        {/* Unmatch menu */}
-        <TouchableOpacity
-          style={styles.callBtn}
-          onPress={openUnmatchModal}
-          activeOpacity={0.7}
-        >
-          <Ionicons name="ellipsis-vertical" size={20} color={colors.textPrimary} />
-        </TouchableOpacity>
-      </View>
-
-      {/* Pinned scheduled date / planner — sticky under the header, visible on both
-          ends. Hidden once the date has passed ("expired"). Tapping opens the planner. */}
-      {scheduledDate && scheduledDate >= todayDateStr() && (
-        <TouchableOpacity
-          style={styles.dateBanner}
-          onPress={() => openDatePicker('checklist')}
-          activeOpacity={0.7}
-        >
-          <Ionicons name="rose" size={15} color={ROSE} />
-          <Text style={styles.dateBannerText}>
-            {plannerActivities.length > 0 || plannerTodos.length > 0
-              ? 'Plan set for ' + formatScheduledDate(scheduledDate)
-              : 'Date fixed for ' + formatScheduledDate(scheduledDate)}
-          </Text>
-          <Ionicons name="chevron-forward" size={14} color={colors.textMuted} />
-        </TouchableOpacity>
-      )}
-
-      {/* Messages */}
-      <KeyboardAvoidingView
-        style={styles.chatArea}
-        behavior="padding"
-        keyboardVerticalOffset={0}
-      >
-        {loading ? (
-          <View style={styles.centered}>
-            <ActivityIndicator size="large" color={colors.primary} />
-          </View>
-        ) : (
-          <FlatList
-            ref={flatListRef}
-            data={messages}
-            keyExtractor={(item) => item.id}
-            renderItem={renderMessage}
-            contentContainerStyle={styles.messagesList}
-            showsVerticalScrollIndicator={false}
-            removeClippedSubviews
-            maxToRenderPerBatch={12}
-            windowSize={9}
-            initialNumToRender={15}
-            onContentSizeChange={() =>
-              flatListRef.current?.scrollToEnd({ animated: false })
-            }
-            ListEmptyComponent={
-              <View style={styles.emptyChat}>
-                <Ionicons name="chatbubble-ellipses-outline" size={48} color={colors.textMuted} />
-                <Text style={styles.emptyText}>Say hello to {partnerName}!</Text>
-              </View>
-            }
-          />
-        )}
-
-        {/* Recording bar — shown while recording audio */}
-        {isRecording ? (
-          <View style={styles.recordingBar}>
-            <TouchableOpacity onPress={cancelRecording} style={styles.recordingCancelBtn}>
-              <Ionicons name="close" size={22} color="#FF6B6B" />
-            </TouchableOpacity>
-            <Text style={styles.recordingHint}>Release to send</Text>
-            <View style={styles.recordingIndicator}>
-              <View style={styles.recordingDot} />
-              <Text style={styles.recordingTimer}>
-                {String(Math.floor(recordingDuration / 60)).padStart(2, '0')}:
-                {String(recordingDuration % 60).padStart(2, '0')}
-              </Text>
+          {pPhoto ? (
+            <Image source={{ uri: resolveUrl(pPhoto) }} style={styles.headerAvatar} />
+          ) : (
+            <View style={[styles.headerAvatar, styles.noHeaderAvatar]}>
+              <Ionicons name="person-outline" size={20} color={colors.textMuted} />
             </View>
-          </View>
-        ) : null}
+          )}
 
-        {/* Icebreaker bar — shown when chat is not recording */}
-        {!isRecording && (
+          <View style={styles.headerInfo}>
+            <Text style={styles.headerName}>{partnerName}</Text>
+          </View>
+
+          {/* Date Planner — opens the planner modal with activities + checklist */}
           <TouchableOpacity
-            style={styles.icebreakerBar}
-            onPress={() => {
-              // Send the icebreaker as a message
-              const prompt = ICEBREAKERS[icebreakerIndex];
-              setInputText(prompt);
-            }}
+            style={styles.callBtn}
+            onPress={() => openDatePicker('activities')}
             activeOpacity={0.7}
           >
-            <Ionicons name="chatbubbles-outline" size={14} color={colors.textMuted} />
-            <Text style={styles.icebreakerText} numberOfLines={1}>
-              {ICEBREAKERS[icebreakerIndex]}
-            </Text>
-            <TouchableOpacity
-              onPress={() => {
-                setIcebreakerIndex((prev) => (prev + 1) % ICEBREAKERS.length);
-              }}
-              hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
-            >
-              <Ionicons name="shuffle-outline" size={14} color={colors.textSecondary} />
-            </TouchableOpacity>
+            <Ionicons name="calendar-outline" size={20} color={colors.textPrimary} />
           </TouchableOpacity>
-        )}
 
-        {/* Vibe check row — shown when not recording and no text input */}
-        {!isRecording && inputText.trim().length === 0 && (
-          <View style={styles.vibeCheckRow}>
-            {VIBE_OPTIONS.map((vibe, idx) => (
-              <TouchableOpacity
-                key={idx}
-                style={styles.vibeCheckBtn}
-                onPress={() => {
-                  // Send vibe as a message
-                  setInputText(vibe.sentAs);
-                  // Auto-send after a brief moment
-                  setTimeout(() => handleSend(), 100);
-                }}
-                activeOpacity={0.6}
-              >
-                <Ionicons name={vibe.icon} size={18} color={colors.textSecondary} />
-              </TouchableOpacity>
-            ))}
-          </View>
-        )}
-
-        {/* Ambient reply suggestions — refresh as the conversation evolves;
-            tap inserts into the input, hidden while the user is typing */}
-        <DmSuggestionChips
-          messages={messages}
-          partnerName={partnerName}
-          visible={inputText.trim().length === 0}
-          onPick={setInputText}
-        />
-
-        {/* Input bar */}
-        <View style={[styles.inputBar, { paddingBottom: keyboardWasActive ? spacing.xs : spacing.sm }]}>
+          {/* 1:1 voice/video call (private date call) */}
           <TouchableOpacity
-            style={styles.attachBtn}
-            onPress={openMediaPicker}
+            style={styles.callBtn}
+            onPress={() =>
+              navigation.navigate('Call', {
+                matchId,
+                partnerName,
+                partnerPhotoUrl: pPhoto,
+                partnerId: pId,
+                mode: 'caller',
+              })
+            }
+            activeOpacity={0.7}
           >
-            <Ionicons name="add" size={24} color={colors.textSecondary} />
+            <Ionicons name="call" size={20} color={colors.textPrimary} />
           </TouchableOpacity>
 
-          <TextInput
-            style={styles.input}
-            placeholder="Message..."
-            placeholderTextColor={colors.textMuted}
-            value={inputText}
-            onChangeText={handleInputChange}
-            multiline
-            maxLength={2000}
-          />
-          {inputText.trim().length > 0 ? (
-            <TouchableOpacity
-              style={styles.sendBtn}
-              onPress={handleSend}
-              disabled={sending}
-            >
-              <Ionicons name="send" size={20} color={colors.textInverse} />
-            </TouchableOpacity>
+          {/* Unmatch menu */}
+          <TouchableOpacity
+            style={styles.callBtn}
+            onPress={openUnmatchModal}
+            activeOpacity={0.7}
+          >
+            <Ionicons name="ellipsis-vertical" size={20} color={colors.textPrimary} />
+          </TouchableOpacity>
+        </View>
+
+        {/* Pinned scheduled date / planner — sticky under the header, visible on both
+          ends. Hidden once the date has passed ("expired"). Tapping opens the planner. */}
+        {scheduledDate && scheduledDate >= todayDateStr() && (
+          <TouchableOpacity
+            style={styles.dateBanner}
+            onPress={() => openDatePicker('checklist')}
+            activeOpacity={0.7}
+          >
+            <Ionicons name="rose" size={15} color={ROSE} />
+            <Text style={styles.dateBannerText}>
+              {plannerActivities.length > 0 || plannerTodos.length > 0
+                ? 'Plan set for ' + formatScheduledDate(scheduledDate)
+                : 'Date fixed for ' + formatScheduledDate(scheduledDate)}
+            </Text>
+            <Ionicons name="chevron-forward" size={14} color={colors.textMuted} />
+          </TouchableOpacity>
+        )}
+
+        {/* Messages */}
+        <KeyboardAvoidingView
+          style={styles.chatArea}
+          behavior="padding"
+          keyboardVerticalOffset={0}
+        >
+          {loading ? (
+            <View style={styles.centered}>
+              <ActivityIndicator size="large" color={colors.primary} />
+            </View>
           ) : (
+            <FlatList
+              ref={flatListRef}
+              data={messages}
+              keyExtractor={(item) => item.id}
+              renderItem={renderMessage}
+              contentContainerStyle={styles.messagesList}
+              showsVerticalScrollIndicator={false}
+              removeClippedSubviews
+              maxToRenderPerBatch={12}
+              windowSize={9}
+              initialNumToRender={15}
+              onContentSizeChange={() =>
+                flatListRef.current?.scrollToEnd({ animated: false })
+              }
+              ListEmptyComponent={
+                <View style={styles.emptyChat}>
+                  <Ionicons name="chatbubble-ellipses-outline" size={48} color={colors.textMuted} />
+                  <Text style={styles.emptyText}>Say hello to {partnerName}!</Text>
+                </View>
+              }
+            />
+          )}
+
+          {/* Recording bar — shown while recording audio */}
+          {isRecording ? (
+            <View style={styles.recordingBar}>
+              <TouchableOpacity onPress={cancelRecording} style={styles.recordingCancelBtn}>
+                <Ionicons name="close" size={22} color="#FF6B6B" />
+              </TouchableOpacity>
+              <Text style={styles.recordingHint}>Release to send</Text>
+              <View style={styles.recordingIndicator}>
+                <View style={styles.recordingDot} />
+                <Text style={styles.recordingTimer}>
+                  {String(Math.floor(recordingDuration / 60)).padStart(2, '0')}:
+                  {String(recordingDuration % 60).padStart(2, '0')}
+                </Text>
+              </View>
+            </View>
+          ) : null}
+
+          {/* Icebreaker bar — shown when chat is not recording */}
+          {!isRecording && (
             <TouchableOpacity
-              style={[styles.micBtn, isRecording && styles.micBtnActive]}
-              onPressIn={startRecording}
-              onPressOut={stopRecording}
-              disabled={sending}
+              style={styles.icebreakerBar}
+              onPress={() => {
+                // Send the icebreaker as a message
+                const prompt = ICEBREAKERS[icebreakerIndex];
+                setInputText(prompt);
+              }}
+              activeOpacity={0.7}
             >
-              <Ionicons
-                name="mic"
-                size={22}
-                color={isRecording ? colors.textInverse : colors.textSecondary}
-              />
+              <Ionicons name="chatbubbles-outline" size={14} color={colors.textMuted} />
+              <Text style={styles.icebreakerText} numberOfLines={1}>
+                {ICEBREAKERS[icebreakerIndex]}
+              </Text>
+              <TouchableOpacity
+                onPress={() => {
+                  setIcebreakerIndex((prev) => (prev + 1) % ICEBREAKERS.length);
+                }}
+                hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+              >
+                <Ionicons name="shuffle-outline" size={14} color={colors.textSecondary} />
+              </TouchableOpacity>
             </TouchableOpacity>
           )}
-        </View>
-      </KeyboardAvoidingView>
+
+          {/* Vibe check row — shown when not recording and no text input */}
+          {!isRecording && inputText.trim().length === 0 && (
+            <View style={styles.vibeCheckRow}>
+              {VIBE_OPTIONS.map((vibe, idx) => (
+                <TouchableOpacity
+                  key={idx}
+                  style={styles.vibeCheckBtn}
+                  onPress={() => {
+                    // Send vibe as a message
+                    setInputText(vibe.sentAs);
+                    // Auto-send after a brief moment
+                    setTimeout(() => handleSend(), 100);
+                  }}
+                  activeOpacity={0.6}
+                >
+                  <Ionicons name={vibe.icon} size={18} color={colors.textSecondary} />
+                </TouchableOpacity>
+              ))}
+            </View>
+          )}
+
+          {/* Ambient reply suggestions — refresh as the conversation evolves;
+            tap inserts into the input, hidden while the user is typing */}
+          <DmSuggestionChips
+            messages={messages}
+            partnerName={partnerName}
+            visible={inputText.trim().length === 0}
+            onPick={setInputText}
+          />
+
+          {/* Input bar */}
+          <View style={[styles.inputBar, { paddingBottom: keyboardWasActive ? spacing.xs : spacing.sm }]}>
+            <TouchableOpacity
+              style={styles.attachBtn}
+              onPress={openMediaPicker}
+            >
+              <Ionicons name="add" size={24} color={colors.textSecondary} />
+            </TouchableOpacity>
+
+            <TextInput
+              style={styles.input}
+              placeholder="Message..."
+              placeholderTextColor={colors.textMuted}
+              value={inputText}
+              onChangeText={handleInputChange}
+              multiline
+              maxLength={2000}
+            />
+            {inputText.trim().length > 0 ? (
+              <TouchableOpacity
+                style={styles.sendBtn}
+                onPress={handleSend}
+                disabled={sending}
+              >
+                <Ionicons name="send" size={20} color={colors.textInverse} />
+              </TouchableOpacity>
+            ) : (
+              <TouchableOpacity
+                style={[styles.micBtn, isRecording && styles.micBtnActive]}
+                onPressIn={startRecording}
+                onPressOut={stopRecording}
+                disabled={sending}
+              >
+                <Ionicons
+                  name="mic"
+                  size={22}
+                  color={isRecording ? colors.textInverse : colors.textSecondary}
+                />
+              </TouchableOpacity>
+            )}
+          </View>
+        </KeyboardAvoidingView>
 
       </Animated.View>
 
@@ -1893,222 +1893,222 @@ export const ChatScreen: React.FC<{ navigation: any; route: any }> = ({ navigati
             {/* Scrollable content: date picker + activities/checklist */}
             <ScrollView style={styles.plannerScroll} showsVerticalScrollIndicator={false} bounces={false}>
 
-            {/* Date Picker — month calendar */}
-            <View style={styles.plannerDateSection}>
-              <View style={styles.calMonthHeader}>
-                <TouchableOpacity
-                  onPress={() => {
-                    if (calendarMonth === 0) { setCalendarMonth(11); setCalendarYear((y) => y - 1); }
-                    else setCalendarMonth((m) => m - 1);
-                  }}
-                  hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
-                >
-                  <Ionicons name="chevron-back" size={18} color={colors.textPrimary} />
-                </TouchableOpacity>
-                <Text style={styles.calMonthText}>{MONTH_NAMES[calendarMonth]} {calendarYear}</Text>
-                <TouchableOpacity
-                  onPress={() => {
-                    if (calendarMonth === 11) { setCalendarMonth(0); setCalendarYear((y) => y + 1); }
-                    else setCalendarMonth((m) => m + 1);
-                  }}
-                  hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
-                >
-                  <Ionicons name="chevron-forward" size={18} color={colors.textPrimary} />
-                </TouchableOpacity>
-              </View>
+              {/* Date Picker — month calendar */}
+              <View style={styles.plannerDateSection}>
+                <View style={styles.calMonthHeader}>
+                  <TouchableOpacity
+                    onPress={() => {
+                      if (calendarMonth === 0) { setCalendarMonth(11); setCalendarYear((y) => y - 1); }
+                      else setCalendarMonth((m) => m - 1);
+                    }}
+                    hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+                  >
+                    <Ionicons name="chevron-back" size={18} color={colors.textPrimary} />
+                  </TouchableOpacity>
+                  <Text style={styles.calMonthText}>{MONTH_NAMES[calendarMonth]} {calendarYear}</Text>
+                  <TouchableOpacity
+                    onPress={() => {
+                      if (calendarMonth === 11) { setCalendarMonth(0); setCalendarYear((y) => y + 1); }
+                      else setCalendarMonth((m) => m + 1);
+                    }}
+                    hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+                  >
+                    <Ionicons name="chevron-forward" size={18} color={colors.textPrimary} />
+                  </TouchableOpacity>
+                </View>
 
-              {/* Weekday labels */}
-              <View style={styles.calWeekdays}>
-                {WEEKDAYS.map((wd, i) => (
-                  <Text key={i} style={styles.calWeekdayText}>{wd}</Text>
-                ))}
-              </View>
+                {/* Weekday labels */}
+                <View style={styles.calWeekdays}>
+                  {WEEKDAYS.map((wd, i) => (
+                    <Text key={i} style={styles.calWeekdayText}>{wd}</Text>
+                  ))}
+                </View>
 
-              {/* Day grid */}
-              <View style={styles.calGrid}>
-                {getMonthDays(calendarYear, calendarMonth).map((cell, i) => {
-                  const selected = plannerDate === cell.dateStr;
-                  const isToday = cell.dateStr === TODAY_STR;
-                  return (
-                    <TouchableOpacity
-                      key={i}
-                      style={[
-                        styles.calDay,
-                        selected && styles.calDaySelected,
-                        isToday && !selected && styles.calDayToday,
-                      ]}
-                      onPress={() => !cell.isPast && setPlannerDate(cell.dateStr)}
-                      disabled={cell.isPast || !cell.isCurrentMonth}
-                      activeOpacity={0.7}
-                    >
-                      <Text
-                        style={[
-                          styles.calDayText,
-                          !cell.isCurrentMonth && styles.calDayOutside,
-                          cell.isPast && styles.calDayPast,
-                          selected && styles.calDayTextSelected,
-                          isToday && !selected && styles.calDayTodayText,
-                        ]}
-                      >
-                        {cell.day}
-                      </Text>
-                    </TouchableOpacity>
-                  );
-                })}
-              </View>
-
-              {/* Selected date label */}
-              {plannerDate && (
-                <Text style={styles.calSelectedLabel}>
-                  {new Date(plannerDate + 'T12:00:00').toLocaleDateString(undefined, { weekday: 'long', month: 'long', day: 'numeric', year: 'numeric' })}
-                </Text>
-              )}
-            </View>
-
-            {/* Activities Tab */}
-            {plannerTab === 'activities' && (
-              <View style={styles.plannerContent}>
-                <Text style={styles.plannerSectionLabel}>What to do</Text>
-                <View style={styles.activitiesGrid}>
-                  {ACTIVITIES.map((activity) => {
-                    const selected = plannerActivities.includes(activity.id);
+                {/* Day grid */}
+                <View style={styles.calGrid}>
+                  {getMonthDays(calendarYear, calendarMonth).map((cell, i) => {
+                    const selected = plannerDate === cell.dateStr;
+                    const isToday = cell.dateStr === TODAY_STR;
                     return (
                       <TouchableOpacity
-                        key={activity.id}
-                        style={[styles.activityCard, selected && styles.activityCardActive]}
-                        onPress={() => {
-                          setPlannerActivities((prev) =>
-                            selected
-                              ? prev.filter((a) => a !== activity.id)
-                              : [...prev, activity.id]
-                          );
-                        }}
+                        key={i}
+                        style={[
+                          styles.calDay,
+                          selected && styles.calDaySelected,
+                          isToday && !selected && styles.calDayToday,
+                        ]}
+                        onPress={() => !cell.isPast && setPlannerDate(cell.dateStr)}
+                        disabled={cell.isPast || !cell.isCurrentMonth}
                         activeOpacity={0.7}
                       >
-                        <Ionicons
-                          name={activity.icon}
-                          size={20}
-                          color={selected ? colors.textInverse : colors.textSecondary}
-                        />
-                        <Text style={[styles.activityLabel, selected && styles.activityLabelActive]}>
-                          {activity.label}
+                        <Text
+                          style={[
+                            styles.calDayText,
+                            !cell.isCurrentMonth && styles.calDayOutside,
+                            cell.isPast && styles.calDayPast,
+                            selected && styles.calDayTextSelected,
+                            isToday && !selected && styles.calDayTodayText,
+                          ]}
+                        >
+                          {cell.day}
                         </Text>
-                        {selected && (
-                          <Ionicons name="checkmark" size={12} color={colors.textInverse} style={styles.activityCheck} />
-                        )}
                       </TouchableOpacity>
                     );
                   })}
                 </View>
 
-                {/* Notes */}
-                <Text style={[styles.plannerSectionLabel, { marginTop: spacing.md }]}>Notes</Text>
-                <TextInput
-                  style={styles.plannerNotesInput}
-                  placeholder="Add details like time, meeting point..."
-                  placeholderTextColor={colors.textMuted}
-                  value={plannerNotes}
-                  onChangeText={setPlannerNotes}
-                  multiline
-                  maxLength={500}
-                />
+                {/* Selected date label */}
+                {plannerDate && (
+                  <Text style={styles.calSelectedLabel}>
+                    {new Date(plannerDate + 'T12:00:00').toLocaleDateString(undefined, { weekday: 'long', month: 'long', day: 'numeric', year: 'numeric' })}
+                  </Text>
+                )}
               </View>
-            )}
 
-            {/* Checklist Tab */}
-            {plannerTab === 'checklist' && (
-              <View style={styles.plannerContent}>
-                {plannerTodos.length === 0 ? (
-                  <View style={styles.plannerEmpty}>
-                    <Ionicons name="checkmark-done-outline" size={32} color={colors.textMuted} />
-                    <Text style={styles.plannerEmptyText}>No items yet. Add something to plan together.</Text>
-                  </View>
-                ) : (
-                  <View style={styles.todoList}>
-                    {plannerTodos.map((todo) => (
-                      <View key={todo.id} style={styles.todoItem}>
+              {/* Activities Tab */}
+              {plannerTab === 'activities' && (
+                <View style={styles.plannerContent}>
+                  <Text style={styles.plannerSectionLabel}>What to do</Text>
+                  <View style={styles.activitiesGrid}>
+                    {ACTIVITIES.map((activity) => {
+                      const selected = plannerActivities.includes(activity.id);
+                      return (
                         <TouchableOpacity
+                          key={activity.id}
+                          style={[styles.activityCard, selected && styles.activityCardActive]}
                           onPress={() => {
-                            setPlannerTodos((prev) =>
-                              prev.map((t) => (t.id === todo.id ? { ...t, done: !t.done } : t))
+                            setPlannerActivities((prev) =>
+                              selected
+                                ? prev.filter((a) => a !== activity.id)
+                                : [...prev, activity.id]
                             );
                           }}
-                          hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+                          activeOpacity={0.7}
                         >
                           <Ionicons
-                            name={todo.done ? 'checkmark-circle' : 'ellipse-outline'}
+                            name={activity.icon}
                             size={20}
-                            color={todo.done ? colors.primary : colors.textMuted}
+                            color={selected ? colors.textInverse : colors.textSecondary}
                           />
+                          <Text style={[styles.activityLabel, selected && styles.activityLabelActive]}>
+                            {activity.label}
+                          </Text>
+                          {selected && (
+                            <Ionicons name="checkmark" size={12} color={colors.textInverse} style={styles.activityCheck} />
+                          )}
                         </TouchableOpacity>
-                        <Text
-                          style={[styles.todoText, todo.done && styles.todoTextDone]}
-                          numberOfLines={2}
-                        >
-                          {todo.text}
-                        </Text>
-                        <TouchableOpacity
-                          onPress={() => {
-                            setPlannerTodos((prev) => prev.filter((t) => t.id !== todo.id));
-                          }}
-                          hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
-                        >
-                          <Ionicons name="close" size={14} color={colors.textMuted} />
-                        </TouchableOpacity>
-                      </View>
-                    ))}
+                      );
+                    })}
                   </View>
-                )}
 
-                {/* Add Todo Input */}
-                <View style={styles.todoAddRow}>
+                  {/* Notes */}
+                  <Text style={[styles.plannerSectionLabel, { marginTop: spacing.md }]}>Notes</Text>
                   <TextInput
-                    style={styles.todoAddInput}
-                    placeholder="Add an item..."
+                    style={styles.plannerNotesInput}
+                    placeholder="Add details like time, meeting point..."
                     placeholderTextColor={colors.textMuted}
-                    value={newTodoText}
-                    onChangeText={setNewTodoText}
-                    maxLength={100}
-                    onSubmitEditing={() => {
-                      if (newTodoText.trim()) {
-                        setPlannerTodos((prev) => [
-                          ...prev,
-                          {
-                            id: `todo-${Date.now()}`,
-                            text: newTodoText.trim(),
-                            done: false,
-                            addedBy: authUser?.id || '',
-                          },
-                        ]);
-                        setNewTodoText('');
-                      }
-                    }}
-                    returnKeyType="done"
+                    value={plannerNotes}
+                    onChangeText={setPlannerNotes}
+                    multiline
+                    maxLength={500}
                   />
-                  <TouchableOpacity
-                    style={[styles.todoAddBtn, !newTodoText.trim() && styles.todoAddBtnDisabled]}
-                    onPress={() => {
-                      if (newTodoText.trim()) {
-                        setPlannerTodos((prev) => [
-                          ...prev,
-                          {
-                            id: `todo-${Date.now()}`,
-                            text: newTodoText.trim(),
-                            done: false,
-                            addedBy: authUser?.id || '',
-                          },
-                        ]);
-                        setNewTodoText('');
-                      }
-                    }}
-                    disabled={!newTodoText.trim()}
-                    activeOpacity={0.7}
-                  >
-                    <Ionicons name="add" size={18} color={colors.textInverse} />
-                  </TouchableOpacity>
                 </View>
-              </View>
-            )}
+              )}
+
+              {/* Checklist Tab */}
+              {plannerTab === 'checklist' && (
+                <View style={styles.plannerContent}>
+                  {plannerTodos.length === 0 ? (
+                    <View style={styles.plannerEmpty}>
+                      <Ionicons name="checkmark-done-outline" size={32} color={colors.textMuted} />
+                      <Text style={styles.plannerEmptyText}>No items yet. Add something to plan together.</Text>
+                    </View>
+                  ) : (
+                    <View style={styles.todoList}>
+                      {plannerTodos.map((todo) => (
+                        <View key={todo.id} style={styles.todoItem}>
+                          <TouchableOpacity
+                            onPress={() => {
+                              setPlannerTodos((prev) =>
+                                prev.map((t) => (t.id === todo.id ? { ...t, done: !t.done } : t))
+                              );
+                            }}
+                            hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+                          >
+                            <Ionicons
+                              name={todo.done ? 'checkmark-circle' : 'ellipse-outline'}
+                              size={20}
+                              color={todo.done ? colors.primary : colors.textMuted}
+                            />
+                          </TouchableOpacity>
+                          <Text
+                            style={[styles.todoText, todo.done && styles.todoTextDone]}
+                            numberOfLines={2}
+                          >
+                            {todo.text}
+                          </Text>
+                          <TouchableOpacity
+                            onPress={() => {
+                              setPlannerTodos((prev) => prev.filter((t) => t.id !== todo.id));
+                            }}
+                            hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+                          >
+                            <Ionicons name="close" size={14} color={colors.textMuted} />
+                          </TouchableOpacity>
+                        </View>
+                      ))}
+                    </View>
+                  )}
+
+                  {/* Add Todo Input */}
+                  <View style={styles.todoAddRow}>
+                    <TextInput
+                      style={styles.todoAddInput}
+                      placeholder="Add an item..."
+                      placeholderTextColor={colors.textMuted}
+                      value={newTodoText}
+                      onChangeText={setNewTodoText}
+                      maxLength={100}
+                      onSubmitEditing={() => {
+                        if (newTodoText.trim()) {
+                          setPlannerTodos((prev) => [
+                            ...prev,
+                            {
+                              id: `todo-${Date.now()}`,
+                              text: newTodoText.trim(),
+                              done: false,
+                              addedBy: authUser?.id || '',
+                            },
+                          ]);
+                          setNewTodoText('');
+                        }
+                      }}
+                      returnKeyType="done"
+                    />
+                    <TouchableOpacity
+                      style={[styles.todoAddBtn, !newTodoText.trim() && styles.todoAddBtnDisabled]}
+                      onPress={() => {
+                        if (newTodoText.trim()) {
+                          setPlannerTodos((prev) => [
+                            ...prev,
+                            {
+                              id: `todo-${Date.now()}`,
+                              text: newTodoText.trim(),
+                              done: false,
+                              addedBy: authUser?.id || '',
+                            },
+                          ]);
+                          setNewTodoText('');
+                        }
+                      }}
+                      disabled={!newTodoText.trim()}
+                      activeOpacity={0.7}
+                    >
+                      <Ionicons name="add" size={18} color={colors.textInverse} />
+                    </TouchableOpacity>
+                  </View>
+                </View>
+              )}
 
             </ScrollView>
 
@@ -2440,14 +2440,29 @@ const styles = StyleSheet.create({
   viewOnceViewed: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 4,
-    paddingVertical: 2,
+    gap: 5,
+    paddingVertical: 3,
+    paddingHorizontal: 2,
   },
   viewOnceViewedText: {
     ...typography.caption,
     color: colors.textMuted,
     fontStyle: 'italic',
     fontSize: 12,
+    // The italic slant pushes the ascender of the last letter past the
+    // measured text width, so it clips without a trailing pad
+    paddingRight: 6,
+  },
+  viewOnceViewedMine: {
+    paddingVertical: 0,
+    paddingHorizontal: 8,
+  },
+  viewOnceViewedTextMine: {
+    color: 'rgba(255,255,255,0.55)',
+    fontSize: 11,
+    // No lineHeight/includeFontPadding here — cropping the line box clips the
+    // ascender of the italic d. Height comes from the row padding instead.
+    lineHeight: 15,
   },
   // One-Time Viewer Modal
   onceViewOverlay: {
