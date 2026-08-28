@@ -4,12 +4,10 @@
  * Uploads profile photos to a MinIO bucket, generates thumbnails via sharp,
  * and returns pre-signed or public URLs.
  *
- * Full-res photos are stored as lossless WebP (zero quality loss vs. the
- * upload, smaller than raw PNG/HEIC originals); thumbnails are lossy WebP
- * since they're only 300px previews.
+ * Full-res photos and thumbnails are both stored as lossy WebP.
  *
  * Bucket structure:
- *   kinetik-photos/{userId}/{photoId}.webp        (full-res, lossless WebP)
+ *   kinetik-photos/{userId}/{photoId}.webp        (full-res, q88)
  *   kinetik-photos/{userId}/{photoId}_thumb.webp   (thumbnail, 300px, lossy)
  *
  * Environment variables:
@@ -116,19 +114,12 @@ export async function savePhoto(
   const photoId = uuidv4();
   const client = getS3Client();
 
-  // ── Generate full-res WebP (lossless) ────────────────────
-  // Full-res profile photos are stored with lossless WebP encoding so no
-  // additional quality is lost server-side (important for pose-verification /
-  // KYC face matching). Lossless WebP is still smaller than the raw JPEG/PNG/
-  // HEIC upload in most cases, and metadata is stripped in the process.
-  // `effort` (0–6) trades encode time for compression ratio — 6 = best ratio.
-  // Chat images pass { lossless: false } — lossless effort-6 on a
-  // full-resolution camera photo can take minutes, blowing past nginx's 60s
-  // proxy_read_timeout (502). Lossless stays the default for profile photos,
-  // which feed pose-verification / KYC face matching.
+  // ── Generate full-res WebP ───────────────────────────────
+  // Lossy: lossless effort-6 cost minutes of CPU per photo, and its only
+  // consumer (server-side pose verification) moved on-device.
   const fullKey = `${userId}/${photoId}.webp`;
   const fullBuffer = await sharp(fileBuffer)
-    .webp(opts.lossless === false ? { quality: 82, effort: 4 } : { lossless: true, effort: 6 })
+    .webp({ quality: opts.lossless === false ? 82 : 88, effort: 4 })
     .toBuffer();
 
   await client.send(
@@ -176,7 +167,7 @@ export async function savePhoto(
   console.log(
     `[photoStorage] Uploaded to minio://${BUCKET}/${fullKey} ` +
       `| original=${(fileBuffer.length / 1024).toFixed(1)}KB ` +
-      `full-lossless=${(fullBuffer.length / 1024).toFixed(1)}KB ` +
+      `full=${(fullBuffer.length / 1024).toFixed(1)}KB ` +
       `thumb=${(thumbBuffer.length / 1024).toFixed(1)}KB ` +
       `blur=${blurHash.length}ch`,
   );
