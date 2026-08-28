@@ -18,7 +18,6 @@ export class PresenceHandler {
     private subClient: Redis,
   ) {
     this.setupListeners();
-    this.setupPresenceCleanup();
   }
 
   private setupListeners() {
@@ -48,9 +47,6 @@ export class PresenceHandler {
       // Join personal room
       socket.join(`user:${userId}`);
 
-      // Broadcast online status
-      this.nsp.emit(WsEvent.PRESENCE_UPDATE, { userId, status: 'online' });
-
       // Update status
       socket.on('presence:status', async (data: { status: 'online' | 'away' | 'busy' }) => {
         const presenceData: PresenceData = {
@@ -64,7 +60,6 @@ export class PresenceHandler {
           'EX',
           120,
         );
-        this.nsp.emit(WsEvent.PRESENCE_UPDATE, { userId, status: data.status });
       });
 
       // Heartbeat
@@ -104,7 +99,6 @@ export class PresenceHandler {
               'EX',
               30,
             );
-            this.nsp.emit(WsEvent.PRESENCE_UPDATE, { userId, status: 'offline', lastSeen: Date.now() });
           }
         }
       });
@@ -118,23 +112,6 @@ export class PresenceHandler {
         this.nsp.emit(WsEvent.PRESENCE_UPDATE, event);
       }
     });
-  }
-
-  private setupPresenceCleanup() {
-    // Clean up stale presence entries every 5 minutes
-    setInterval(async () => {
-      try {
-        const keys = await this.pubClient.keys('user:*:presence');
-        for (const key of keys) {
-          const ttl = await this.pubClient.ttl(key);
-          if (ttl < 0) {
-            await this.pubClient.del(key);
-          }
-        }
-      } catch (err) {
-        console.error('[Presence] Cleanup error:', err);
-      }
-    }, 5 * 60 * 1000);
   }
 
   // ─── Public Methods ─────────────────────────────────
