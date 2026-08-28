@@ -59,9 +59,29 @@ export const WS_URL: string = configuredWsUrl
     ? API_URL // WS goes through nginx on the same host:port
     : 'http://localhost:3002'; // Dev mode: standalone WS on port 3002
 
+// ─── Feature Flags ─────────────────────────────────────────────
+
+/**
+ * Enforce on-device face verification during onboarding.
+ *
+ *   false (default) — a failed match is shown but onboarding continues.
+ *   true            — a failed match blocks until the user retakes.
+ *
+ * Set with EXPO_PUBLIC_PRODUCTION_POSE=true, or app.json extra.productionPose.
+ * Both are build-time values — changing either needs a rebuild.
+ *
+ * A TECHNICAL failure (TFLite/ML Kit unavailable, model missing) never blocks
+ * in either mode: a broken build must not stop every signup. Only a genuine
+ * mismatch the user can fix by retaking is enforced.
+ */
+export const PRODUCTION_POSE: boolean =
+  String(process.env.EXPO_PUBLIC_PRODUCTION_POSE ?? '').toLowerCase() === 'true' ||
+  Constants.expoConfig?.extra?.productionPose === true;
+
 if (typeof __DEV__ !== 'undefined' && __DEV__) {
   console.log('[Config] API_URL:', API_URL);
   console.log('[Config] WS_URL:', WS_URL);
+  console.log('[Config] PRODUCTION_POSE:', PRODUCTION_POSE);
 }
 
 // ─── URL Resolution ────────────────────────────────────────────

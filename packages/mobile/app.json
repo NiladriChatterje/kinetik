@@ -77,7 +77,8 @@
     },
     "extra": {
       "apiUrl": "http://192.168.31.144:8080",
-      "wsUrl": "http://192.168.31.144:8080"
+      "wsUrl": "http://192.168.31.144:8080",
+      "productionPose": false
     }
   }
 }

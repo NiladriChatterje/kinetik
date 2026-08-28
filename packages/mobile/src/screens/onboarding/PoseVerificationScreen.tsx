@@ -11,8 +11,8 @@ import * as ImageManipulator from 'expo-image-manipulator';
 import { Button } from '../../components/common/Button';
 import { useToast } from '../../hooks/useToast';
 import { api } from '../../services/api';
-import { resolveUrl } from '../../config';
-import { embedProfilePhotos, verifySelfie } from '../../services/faceVerification';
+import { resolveUrl, PRODUCTION_POSE } from '../../config';
+import { embedProfilePhotos, verifySelfie, MIN_PROFILE_FACES } from '../../services/faceVerification';
 import { hapticSuccess } from '../../utils/haptics';
 import { colors, typography, spacing, radius } from '../../theme';
 
@@ -30,6 +30,8 @@ export const PoseVerificationScreen: React.FC<{ navigation: any }> = ({ navigati
   const [permission, requestPermission] = useCameraPermissions();
   const [phase, setPhase] = useState<Phase>('camera');
   const [verified, setVerified] = useState(false);
+  const [reasons, setReasons] = useState<string[]>([]);
+  const [blocked, setBlocked] = useState(false);
   const [capturedUri, setCapturedUri] = useState<string | null>(null);
   const [zoom, setZoom] = useState(0);
   const cameraRef = useRef<any>(null);
@@ -114,13 +116,23 @@ export const PoseVerificationScreen: React.FC<{ navigation: any }> = ({ navigati
       const profileEmbeddings = (await profileEmbeddingsRef.current) ?? [];
       const result = await verifySelfie(capturedUri, profileEmbeddings);
       isVerified = result.verified;
+      setReasons(result.rejectionReasons);
+
+      // Enforce only a mismatch the user can fix by retaking. Too few profile
+      // photos with faces is not retakeable — blocking on it would dead-end.
+      const retakeable = result.profileFacesDetected >= MIN_PROFILE_FACES;
+      setBlocked(PRODUCTION_POSE && !result.verified && retakeable);
 
       if (result.verified) {
         hapticSuccess();
         toast.showSuccess('Face verified!', 'Selfie matches your photos.');
       } else {
         console.log('[pose] Not verified:', result.rejectionReasons.join('; '));
-        toast.showSuccess('Selfie submitted', 'Continue onboarding.');
+        if (PRODUCTION_POSE && retakeable) {
+          toast.showError('Face not matched', 'Retake your selfie to continue.');
+        } else {
+          toast.showSuccess('Selfie submitted', 'Continue onboarding.');
+        }
       }
 
       // Self-report the on-device result (fire-and-forget on failure)
@@ -128,8 +140,11 @@ export const PoseVerificationScreen: React.FC<{ navigation: any }> = ({ navigati
         .reportPoseVerification({ verified: result.verified, confidence: result.confidence })
         .catch((err) => console.warn('[pose] Failed to report verification:', err));
     } catch (err: any) {
-      // Verification errors never block onboarding
+      // A technical failure never blocks, even under PRODUCTION_POSE — a
+      // broken model or unlinked ML Kit must not stop every signup.
       console.warn('[pose] On-device verification failed:', err?.message || err);
+      setReasons([`Check failed: ${err?.message || 'unknown error'}`]);
+      setBlocked(false);
       toast.showSuccess(
         'Selfie Submitted',
         'You can continue with onboarding.',
@@ -145,6 +160,8 @@ export const PoseVerificationScreen: React.FC<{ navigation: any }> = ({ navigati
   const handleRetake = useCallback(() => {
     setCapturedUri(null);
     setZoom(0);
+    setReasons([]);
+    setBlocked(false);
     setPhase('camera');
   }, []);
 
@@ -198,20 +215,42 @@ export const PoseVerificationScreen: React.FC<{ navigation: any }> = ({ navigati
           <Text style={styles.subtitle}>Follow the prompts to complete liveness verification</Text>
 
           <View style={styles.successContainer}>
-            <Ionicons name="checkmark-circle" size={64} color={colors.textPrimary} />
+            <Ionicons
+              name={blocked ? 'alert-circle' : 'checkmark-circle'}
+              size={64}
+              color={colors.textPrimary}
+            />
             <Text style={styles.successTitle}>
-              {verified ? 'Identity Verified!' : 'Selfie Submitted'}
+              {verified ? 'Identity Verified!' : blocked ? 'Not Matched' : 'Selfie Submitted'}
             </Text>
             <Text style={styles.successSubtitle}>
               {verified
                 ? 'Your selfie matches your profile photos.'
-                : 'Your selfie has been submitted. You can continue with onboarding.'}
+                : blocked
+                  ? 'This selfie did not match your profile photos. Retake it to continue.'
+                  : 'Your selfie has been submitted. You can continue with onboarding.'}
             </Text>
           </View>
+
+          {!verified && reasons.length > 0 && (
+            <View style={styles.reasonsBox}>
+              <Text style={styles.reasonsTitle}>Why it didn't match</Text>
+              {reasons.map((reason, i) => (
+                <View key={i} style={styles.reasonRow}>
+                  <Ionicons name="alert-circle-outline" size={14} color={colors.textMuted} />
+                  <Text style={styles.reasonText}>{reason}</Text>
+                </View>
+              ))}
+            </View>
+          )}
         </View>
 
         <View style={styles.footer}>
-          <Button title="Continue" onPress={handleContinue} fullWidth />
+          {blocked ? (
+            <Button title="Retake Selfie" onPress={handleRetake} fullWidth />
+          ) : (
+            <Button title="Continue" onPress={handleContinue} fullWidth />
+          )}
         </View>
       </SafeAreaView>
     );
@@ -456,6 +495,19 @@ const styles = StyleSheet.create({
   },
   successTitle: { ...typography.h2, color: colors.textPrimary },
   successSubtitle: { ...typography.body1, color: colors.textSecondary, textAlign: 'center' },
+
+  // Rejection reasons — surfaced so a failed match is diagnosable
+  reasonsBox: {
+    alignSelf: 'stretch',
+    marginTop: spacing.xxl,
+    padding: spacing.md,
+    borderRadius: radius.md,
+    backgroundColor: colors.surface,
+    gap: spacing.xs,
+  },
+  reasonsTitle: { ...typography.label, color: colors.textSecondary, marginBottom: spacing.xs },
+  reasonRow: { flexDirection: 'row', alignItems: 'flex-start', gap: spacing.sm },
+  reasonText: { ...typography.caption, color: colors.textSecondary, flex: 1 },
 
   // Preview actions
   previewActions: {
