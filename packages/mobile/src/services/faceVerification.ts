@@ -36,7 +36,7 @@ async function getFastTflite() {
 const MAX_HEAD_YAW_DEG = 30; // |rotationY| — left/right turn
 const MAX_HEAD_PITCH_DEG = 25; // |rotationX| — up/down nod
 const MIN_MATCH_THRESHOLD = 0.55; // cosine similarity on MobileFaceNet embeddings
-const MIN_PROFILE_FACES = 2; // profile photos that must contain a face
+export const MIN_PROFILE_FACES = 2; // profile photos that must contain a face
 const MODEL_INPUT_SIZE = 112; // MobileFaceNet input is 112×112×3
 const FACE_CROP_EXPANSION = 0.25; // grow the detection box to include full face
 
@@ -224,22 +224,22 @@ export async function verifySelfie(
       scores: [],
       faceDetectedInSelfie: false,
       profileFacesDetected: profileEmbeddings.length,
-      rejectionReasons: ['No face detected in selfie'],
+      rejectionReasons: ['No face detected'],
     };
   }
 
   if (faceCount > 1) {
-    rejectionReasons.push(`Multiple faces detected (${faceCount}, expected 1)`);
+    rejectionReasons.push(`More than one face in frame (${faceCount})`);
   }
   if (Math.abs(face.rotationY) > MAX_HEAD_YAW_DEG) {
-    rejectionReasons.push(`Head turned too far sideways (${face.rotationY.toFixed(1)}°)`);
+    rejectionReasons.push(`Head turned too far (${face.rotationY.toFixed(0)}°)`);
   }
   if (Math.abs(face.rotationX) > MAX_HEAD_PITCH_DEG) {
-    rejectionReasons.push(`Head tilted too far up/down (${face.rotationX.toFixed(1)}°)`);
+    rejectionReasons.push(`Head tilted too far (${face.rotationX.toFixed(0)}°)`);
   }
   if (profileEmbeddings.length < MIN_PROFILE_FACES) {
     rejectionReasons.push(
-      `Only ${profileEmbeddings.length} profile photo(s) have detectable faces — need at least ${MIN_PROFILE_FACES}`,
+      `Need ${MIN_PROFILE_FACES} profile photos with a clear face (found ${profileEmbeddings.length})`,
     );
   }
 
@@ -250,7 +250,7 @@ export async function verifySelfie(
 
   if (scores.length && confidence < MIN_MATCH_THRESHOLD) {
     rejectionReasons.push(
-      `Face match confidence ${confidence.toFixed(3)} below threshold ${MIN_MATCH_THRESHOLD}`,
+      `Face match too low (${confidence.toFixed(2)}, need ${MIN_MATCH_THRESHOLD})`,
     );
   }
 
