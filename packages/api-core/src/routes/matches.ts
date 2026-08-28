@@ -389,7 +389,7 @@ export async function matchRoutes(app: FastifyInstance) {
 
       if (mutualCheck.rows.length > 0) {
         // Mutual like! Check chat limit before creating a match.
-        const chatCheck = await checkChatLimit(userId);
+        const chatCheck = await checkChatLimit(userId, tier);
         if (!chatCheck.allowed) {
           // Still record the interaction as mutual (so the like shows up in likes list)
           // but don't create a new match — the user must upgrade to unlock more chats.
@@ -474,7 +474,7 @@ export async function matchRoutes(app: FastifyInstance) {
             });
 
             // Send new message notification instead of match notification
-            await notificationEvents.newMessage(targetUserId, swiperName, 'You have a new match! Say hi');
+            notificationEvents.newMessage(targetUserId, swiperName, 'You have a new match! Say hi').catch(() => {});
           }
 
           return reply.status(201).send({
@@ -508,7 +508,7 @@ export async function matchRoutes(app: FastifyInstance) {
       });
 
       // Send push notification
-      await notificationEvents.newLike(targetUserId, swiperName);
+      notificationEvents.newLike(targetUserId, swiperName).catch(() => {});
 
       return reply.send({
         success: true,
@@ -1014,7 +1014,7 @@ export async function matchRoutes(app: FastifyInstance) {
     const senderName = senderResult.rows[0]?.display_name || 'Someone';
     const preview = plainContent.length > 80 ? plainContent.slice(0, 80) + '…' : plainContent;
 
-    await notificationEvents.newMessage(partnerId, senderName, preview);
+    notificationEvents.newMessage(partnerId, senderName, preview).catch(() => {});
 
     return reply.status(201).send({
       success: true,
@@ -1188,7 +1188,7 @@ export async function matchRoutes(app: FastifyInstance) {
     const senderName = senderResult.rows[0]?.display_name || 'Someone';
     const preview = mediaType === 'image' ? 'Sent a photo' : `Sent ${mediaType}`;
 
-    await notificationEvents.newMessage(partnerId, senderName, preview);
+    notificationEvents.newMessage(partnerId, senderName, preview).catch(() => {});
 
     return reply.status(201).send({
       success: true,
@@ -1638,12 +1638,16 @@ export async function matchRoutes(app: FastifyInstance) {
  * Premium users have unlimited matches.
  * Returns { allowed: boolean, activeCount: number, limit: number }.
  */
-async function checkChatLimit(userId: string): Promise<{ allowed: boolean; activeCount: number; limit: number }> {
-  const subResult = await query(
-    `SELECT tier FROM ${TABLES.SUBSCRIPTION_LEDGER} WHERE user_id = $1`,
-    [userId],
-  );
-  const tier = subResult.rows[0]?.tier || 'free';
+// knownTier: pass the caller's already-loaded tier to skip a redundant read.
+async function checkChatLimit(userId: string, knownTier?: string): Promise<{ allowed: boolean; activeCount: number; limit: number }> {
+  let tier = knownTier;
+  if (!tier) {
+    const subResult = await query(
+      `SELECT tier FROM ${TABLES.SUBSCRIPTION_LEDGER} WHERE user_id = $1`,
+      [userId],
+    );
+    tier = subResult.rows[0]?.tier || 'free';
+  }
 
   if (tier !== 'free') {
     return { allowed: true, activeCount: 0, limit: PREMIUM_CHAT_LIMIT };
