@@ -3,7 +3,7 @@ import {
   View, Text, StyleSheet, FlatList, TextInput, TouchableOpacity,
   Image, KeyboardAvoidingView, Platform, Keyboard, ActivityIndicator,
   Modal, Alert, Dimensions, Linking,
-  StatusBar, Animated, ScrollView,
+  StatusBar, Animated, ScrollView, Easing,
 } from 'react-native';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useAudioRecorder, createAudioPlayer, AudioPlayer, setAudioModeAsync, requestRecordingPermissionsAsync, RecordingPresets } from 'expo-audio';
@@ -234,6 +234,87 @@ const VIBE_OPTIONS = [
  * second gap on phones that do.
  */
 const MIN_INPUT_BOTTOM_GAP = spacing.xxl;
+
+// ─── Recording Indicators ───────────────────────────────
+// Both are purely decorative and hold no recording state, so they cannot
+// affect capture — they only mount while `isRecording` is already true.
+
+const WAVEFORM_BARS = 24;
+const WAVEFORM_HEIGHT = 24;
+/** Scale floor, so a quiet bar is still a visible tick rather than nothing. */
+const WAVEFORM_MIN_SCALE = 0.18;
+
+/**
+ * Live waveform for an in-progress voice note.
+ *
+ * Each bar jumps to a fresh random height on its own schedule, which reads as
+ * live input. It is not driven by real amplitude — the recorder exposes no
+ * metering here — so treat it as an activity indicator, not a signal display.
+ *
+ * Only `scaleY` is animated, so every bar runs on the native driver and the JS
+ * thread stays free for the recording itself.
+ *
+ * Memoised because the parent re-renders once a second as the timer ticks;
+ * without it each tick would rebuild the Animated.Value array just for useRef
+ * to discard it.
+ */
+const RecordingWaveform: React.FC = React.memo(() => {
+  const bars = useRef(
+    Array.from({ length: WAVEFORM_BARS }, () => new Animated.Value(WAVEFORM_MIN_SCALE)),
+  ).current;
+
+  useEffect(() => {
+    let cancelled = false;
+
+    const pulse = (bar: Animated.Value) => {
+      if (cancelled) return;
+      Animated.timing(bar, {
+        toValue: WAVEFORM_MIN_SCALE + Math.random() * (1 - WAVEFORM_MIN_SCALE),
+        duration: 130 + Math.random() * 190,
+        easing: Easing.out(Easing.quad),
+        useNativeDriver: true,
+      }).start(({ finished }) => {
+        if (finished) pulse(bar);
+      });
+    };
+
+    // Stagger the starts so the row ripples to life instead of flashing at once.
+    bars.forEach((bar, i) => setTimeout(() => pulse(bar), i * 18));
+
+    return () => {
+      cancelled = true;
+      bars.forEach((bar) => bar.stopAnimation());
+    };
+  }, [bars]);
+
+  return (
+    <View style={styles.waveform} pointerEvents="none">
+      {bars.map((bar, i) => (
+        <Animated.View key={i} style={[styles.waveformBar, { transform: [{ scaleY: bar }] }]} />
+      ))}
+    </View>
+  );
+});
+RecordingWaveform.displayName = 'RecordingWaveform';
+
+/** Slow blink on the REC dot — the conventional "we are live" cue. */
+const RecordingDot: React.FC = React.memo(() => {
+  const opacity = useRef(new Animated.Value(1)).current;
+
+  useEffect(() => {
+    const loop = Animated.loop(
+      Animated.sequence([
+        Animated.timing(opacity, { toValue: 0.2, duration: 550, useNativeDriver: true }),
+        Animated.timing(opacity, { toValue: 1, duration: 550, useNativeDriver: true }),
+      ]),
+    );
+    loop.start();
+    return () => loop.stop();
+  }, [opacity]);
+
+  return <Animated.View style={[styles.recordingDot, { opacity }]} pointerEvents="none" />;
+});
+RecordingDot.displayName = 'RecordingDot';
 
 export const ChatScreen: React.FC<{ navigation: any; route: any }> = ({ navigation, route }) => {
   const { matchId, partnerName: pName, partnerId: pId, partnerPhotoUrl: pPhoto } = route.params || {};
@@ -1607,12 +1688,21 @@ export const ChatScreen: React.FC<{ navigation: any; route: any }> = ({ navigati
           {/* Recording bar — shown while recording audio */}
           {isRecording ? (
             <View style={styles.recordingBar}>
-              <TouchableOpacity onPress={cancelRecording} style={styles.recordingCancelBtn}>
-                <Ionicons name="close" size={22} color="#FF6B6B" />
+              <TouchableOpacity
+                onPress={cancelRecording}
+                style={styles.recordingCancelBtn}
+                hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+              >
+                <Ionicons name="close" size={20} color="#FF6B6B" />
               </TouchableOpacity>
-              <Text style={styles.recordingHint}>Release to send</Text>
+
+              <View style={styles.recordingCenter}>
+                <RecordingWaveform />
+                <Text style={styles.recordingHint}>Release to send</Text>
+              </View>
+
               <View style={styles.recordingIndicator}>
-                <View style={styles.recordingDot} />
+                <RecordingDot />
                 <Text style={styles.recordingTimer}>
                   {String(Math.floor(recordingDuration / 60)).padStart(2, '0')}:
                   {String(recordingDuration % 60).padStart(2, '0')}
@@ -2312,30 +2402,57 @@ const styles = StyleSheet.create({
   recordingBar: {
     flexDirection: 'row',
     alignItems: 'center',
-    justifyContent: 'space-between',
     paddingHorizontal: spacing.md,
     paddingVertical: spacing.sm,
     backgroundColor: colors.surfaceHighlight,
     borderTopWidth: 1,
     borderTopColor: colors.primary,
+    gap: spacing.md,
+  },
+  recordingCenter: {
+    flex: 1,
+    alignItems: 'center',
+    gap: 3,
+  },
+  // Waveform bars scale from their centre, so the row reads as a symmetric
+  // waveform around the midline.
+  waveform: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    alignSelf: 'stretch',
+    height: WAVEFORM_HEIGHT,
+    gap: 2,
+  },
+  waveformBar: {
+    flex: 1,
+    height: WAVEFORM_HEIGHT,
+    borderRadius: 1.5,
+    backgroundColor: '#FF6B6B',
   },
   recordingIndicator: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: spacing.sm,
+    gap: spacing.xs,
   },
   recordingDot: {
-    width: 10,
-    height: 10,
-    borderRadius: 5,
+    width: 8,
+    height: 8,
+    borderRadius: 4,
     backgroundColor: '#FF3B30',
   },
-  recordingTimer: { ...typography.h3, color: '#FF3B30', fontSize: 16 },
-  recordingHint: { ...typography.caption, color: colors.textMuted, flex: 1, textAlign: 'center' },
+  recordingTimer: {
+    ...typography.h3,
+    color: '#FF3B30',
+    fontSize: 15,
+    // Tabular-ish minimum so the row does not jitter as digits change
+    minWidth: 42,
+    textAlign: 'right',
+  },
+  recordingHint: { ...typography.caption, color: colors.textMuted },
   recordingCancelBtn: {
-    width: 36,
-    height: 36,
-    borderRadius: 18,
+    width: 34,
+    height: 34,
+    borderRadius: 17,
     backgroundColor: colors.surface,
     justifyContent: 'center',
     alignItems: 'center',
