@@ -5,7 +5,7 @@ import {
   Modal, Alert, Dimensions, Linking,
   StatusBar, Animated, ScrollView,
 } from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
+import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useAudioRecorder, createAudioPlayer, AudioPlayer, setAudioModeAsync, requestRecordingPermissionsAsync, RecordingPresets } from 'expo-audio';
 import { usePreventScreenCapture } from 'expo-screen-capture';
 
@@ -227,9 +227,18 @@ const VIBE_OPTIONS = [
   { icon: 'sparkles-outline' as const, sentAs: 'Magical' },
 ];
 
+/**
+ * Minimum clearance between the input bar and the bottom of the screen,
+ * counting whatever the device's safe-area inset already provides. Keeps the
+ * bar off the edge on phones that report no bottom inset without adding a
+ * second gap on phones that do.
+ */
+const MIN_INPUT_BOTTOM_GAP = spacing.xxl;
+
 export const ChatScreen: React.FC<{ navigation: any; route: any }> = ({ navigation, route }) => {
   const { matchId, partnerName: pName, partnerId: pId, partnerPhotoUrl: pPhoto } = route.params || {};
   const toast = useToast();
+  const insets = useSafeAreaInsets();
   const [messages, setMessages] = useState<Message[]>([]);
   const [inputText, setInputText] = useState('');
   const [loading, setLoading] = useState(true);
@@ -237,7 +246,7 @@ export const ChatScreen: React.FC<{ navigation: any; route: any }> = ({ navigati
   const [partnerTyping, setPartnerTyping] = useState(false);
   const [socketConnected, setSocketConnected] = useState(false);
   const [showMediaPicker, setShowMediaPicker] = useState(false);
-  const [keyboardWasActive, setKeyboardWasActive] = useState(false);
+  const [keyboardVisible, setKeyboardVisible] = useState(false);
   const [isRecording, setIsRecording] = useState(false);
   const [recordingDuration, setRecordingDuration] = useState(0);
   const [previewPhotoUrl, setPreviewPhotoUrl] = useState<string | null>(null);
@@ -675,12 +684,22 @@ export const ChatScreen: React.FC<{ navigation: any; route: any }> = ({ navigati
   }, [messages.length]);
 
   // ─── Track keyboard state for dynamic padding ──────
+  // Both edges matter: with only a show listener this latched on the first
+  // focus and never released, so the input bar kept the tight keyboard-open
+  // padding for the rest of the session even after the keyboard closed.
   useEffect(() => {
     const show = Keyboard.addListener(
       Platform.OS === 'ios' ? 'keyboardWillShow' : 'keyboardDidShow',
-      () => setKeyboardWasActive(true),
+      () => setKeyboardVisible(true),
     );
-    return () => show.remove();
+    const hide = Keyboard.addListener(
+      Platform.OS === 'ios' ? 'keyboardWillHide' : 'keyboardDidHide',
+      () => setKeyboardVisible(false),
+    );
+    return () => {
+      show.remove();
+      hide.remove();
+    };
   }, []);
 
   // ─── Send a text message ───────────────────────────
@@ -1463,6 +1482,19 @@ export const ChatScreen: React.FC<{ navigation: any; route: any }> = ({ navigati
     );
   };
 
+  // ─── Input bar bottom spacing ──────────────────────
+  // The enclosing SafeAreaView already contributes `insets.bottom`, which is
+  // ~34px on a gesture-bar phone but 0 on one with hardware/3-button nav. A
+  // fixed padding therefore looked right on the former and sat on the screen
+  // edge on the latter, so top up only the shortfall and let the gesture bar
+  // do the work where it exists.
+  //
+  // While the keyboard is open it covers that area entirely, so the inset is
+  // irrelevant and the bar hugs the keyboard instead.
+  const inputBarPaddingBottom = keyboardVisible
+    ? spacing.xs
+    : Math.max(spacing.sm, MIN_INPUT_BOTTOM_GAP - insets.bottom);
+
   return (
     <SafeAreaView style={styles.container}>
       <Animated.View style={{ flex: 1, transform: [{ scale: contentScale }] }}>
@@ -1646,7 +1678,7 @@ export const ChatScreen: React.FC<{ navigation: any; route: any }> = ({ navigati
           />
 
           {/* Input bar */}
-          <View style={[styles.inputBar, { paddingBottom: keyboardWasActive ? spacing.xs : spacing.sm }]}>
+          <View style={[styles.inputBar, { paddingBottom: inputBarPaddingBottom }]}>
             <TouchableOpacity
               style={styles.attachBtn}
               onPress={openMediaPicker}
