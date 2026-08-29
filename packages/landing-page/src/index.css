@@ -452,6 +452,12 @@ img {
   color: var(--primary);
 }
 
+/* ─── Date Planner ──────────────────────────────────────── */
+.planner-svg {
+  width: 100%;
+  max-width: 280px;
+}
+
 @media (max-width: 768px) {
   .split-layout {
     grid-template-columns: 1fr;
