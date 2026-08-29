@@ -3,6 +3,8 @@
   "compilerOptions": {
     "strict": true,
     "ignoreDeprecations": "6.0",
+    // app.config.ts runs in Node at build time; the rest of the app does not.
+    "types": ["node", "react"],
     "baseUrl": ".",
     "paths": {
       "@/*": ["src/*"],
@@ -15,5 +17,5 @@
       "@store/*": ["src/store/*"]
     }
   },
-  "include": ["src/**/*.ts", "src/**/*.tsx"]
+  "include": ["src/**/*.ts", "src/**/*.tsx", "app.config.ts"]
 }

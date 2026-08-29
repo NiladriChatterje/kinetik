@@ -21,19 +21,30 @@
  *
  * ─── How to configure per environment ───────────────────────────
  *
- * Option A — app.json (static, checked in to Git):
- *   Edit "extra.apiUrl" directly.
+ * `app.config.ts` populates `extra` from the environment at build time —
+ * see that file for the rules. In short:
  *
- * Option B — Environment variables with app.config.ts:
- *   Create app.config.ts that reads EXPO_PUBLIC_API_URL / EXPO_PUBLIC_WS_URL
- *   and passes them into extra. Preferred for CI/CD.
+ *   APP_ENV=development           → LAN backend over http:// (cleartext allowed)
+ *   APP_ENV=preview|production    → EXPO_PUBLIC_API_URL required; production
+ *                                   additionally must be https:// / wss://
  *
- * Option C — Build-time override:
- *   Constants.expoConfig?.extra values are evaluated at build time,
- *   so rebuilding with different config is required.
+ * EAS sets APP_ENV per build profile (`eas.json`). Every value below is
+ * frozen into the binary at build time, so changing one needs a rebuild —
+ * restarting the app is not enough.
  */
 
 import Constants from 'expo-constants';
+
+// ─── Environment ───────────────────────────────────────────────
+
+export type AppEnv = 'development' | 'preview' | 'production';
+
+/**
+ * Which build profile produced this binary. Set by app.config.ts from
+ * APP_ENV; falls back to 'development' for bundles built before it existed.
+ */
+export const APP_ENV: AppEnv =
+  (Constants.expoConfig?.extra?.appEnv as AppEnv | undefined) ?? 'development';
 
 // ─── Base URLs ─────────────────────────────────────────────────
 
@@ -64,11 +75,12 @@ export const WS_URL: string = configuredWsUrl
 /**
  * Enforce on-device face verification during onboarding.
  *
- *   false (default) — a failed match is shown but onboarding continues.
- *   true            — a failed match blocks until the user retakes.
+ *   false — a failed match is shown but onboarding continues.
+ *   true  — a failed match blocks until the user retakes.
  *
- * Set with EXPO_PUBLIC_PRODUCTION_POSE=true, or app.json extra.productionPose.
- * Both are build-time values — changing either needs a rebuild.
+ * Defaults to true when APP_ENV=production, false otherwise. Override either
+ * way with EXPO_PUBLIC_PRODUCTION_POSE — a build-time value, so changing it
+ * needs a rebuild.
  *
  * A TECHNICAL failure (TFLite/ML Kit unavailable, model missing) never blocks
  * in either mode: a broken build must not stop every signup. Only a genuine
@@ -79,6 +91,7 @@ export const PRODUCTION_POSE: boolean =
   Constants.expoConfig?.extra?.productionPose === true;
 
 if (typeof __DEV__ !== 'undefined' && __DEV__) {
+  console.log('[Config] APP_ENV:', APP_ENV);
   console.log('[Config] API_URL:', API_URL);
   console.log('[Config] WS_URL:', WS_URL);
   console.log('[Config] PRODUCTION_POSE:', PRODUCTION_POSE);

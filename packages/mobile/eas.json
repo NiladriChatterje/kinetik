@@ -13,17 +13,36 @@
       "ios": {
         "simulator": true
       },
-      "channel": "development"
+      "channel": "development",
+      "env": {
+        "APP_ENV": "development"
+      }
     },
     "preview": {
       "distribution": "internal",
       "android": {
         "buildType": "apk"
       },
-      "channel": "preview"
+      "channel": "preview",
+      "env": {
+        "APP_ENV": "preview",
+        "EXPO_PUBLIC_API_URL": "https://staging.example.invalid"
+      }
     },
     "production": {
-      "channel": "production"
+      "distribution": "store",
+      "autoIncrement": true,
+      "android": {
+        "buildType": "app-bundle"
+      },
+      "channel": "production",
+      "env": {
+        "APP_ENV": "production",
+        "EXPO_PUBLIC_API_URL": "https://api.example.invalid"
+      }
     }
+  },
+  "submit": {
+    "production": {}
   }
 }

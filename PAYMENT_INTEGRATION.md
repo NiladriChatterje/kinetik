@@ -23,7 +23,7 @@ The legacy one-off endpoints (`/payments/create-order`, `/payments/verify`) cont
 
 | Variable (`.env`) | Meaning |
 |---|---|
-| `GOOGLE_PAY_ENVIRONMENT` | `TEST` (works immediately, fake cards) or `PRODUCTION`. Note: the mobile sheet's environment is separate — see `GOOGLE_PAY_ENVIRONMENT` in `packages/mobile/android/gradle.properties` (build-time). |
+| `GOOGLE_PAY_ENVIRONMENT` | `TEST` (works immediately, fake cards) or `PRODUCTION`. Note: the mobile sheet's environment is separate — it is baked into the app at build time from the same-named variable in the *build* environment, via `packages/mobile/plugins/withGooglePayEnvironment.js`. |
 | `GOOGLE_PAY_MERCHANT_ID` | Your merchant id from the Google Pay & Wallet Console (`BCR2DN...`). Optional in TEST, **required** in PRODUCTION. |
 | `GOOGLE_PAY_MERCHANT_NAME` | Name shown on the payment sheet. |
 | `GOOGLE_PAY_GATEWAY` | Your PSP's Google Pay gateway identifier (e.g. `example` in TEST). |
@@ -91,7 +91,7 @@ This is the only code change left between you and real money movement.
 
 ### 8. Test end-to-end in TEST mode
 
-- With `GOOGLE_PAY_ENVIRONMENT=TEST` (both `.env` and `packages/mobile/android/gradle.properties`), the payment sheet serves Google's fake **test card suite** — join the test-cards group per https://developers.google.com/pay/api/android/guides/resources/test-card-suite
+- With `GOOGLE_PAY_ENVIRONMENT=TEST` on the server (`.env`) and on the app build (the default — nothing to set), the payment sheet serves Google's fake **test card suite** — join the test-cards group per https://developers.google.com/pay/api/android/guides/resources/test-card-suite
 - Run the whole flow: subscribe → sheet → token → `/subscription/activate` → premium granted → cancel → auto-renew off.
 
 ### 9. Pass Google's integration checklist and request production access
@@ -101,7 +101,9 @@ This is the only code change left between you and real money movement.
 
 ### 10. Flip to production
 
-- Set `GOOGLE_PAY_ENVIRONMENT=PRODUCTION` in **both** `.env` (server) and `packages/mobile/android/gradle.properties` (rebuild the release APK, signed with your release key).
+- Set `GOOGLE_PAY_ENVIRONMENT=PRODUCTION` in **both** places:
+  - `.env` (server), and
+  - the **app build environment**, then re-run `npx expo prebuild --platform android --clean` and rebuild signed with your release key. The value is written into `android/gradle.properties` by `packages/mobile/plugins/withGooglePayEnvironment.js`; editing that file by hand does not survive a prebuild.
 - Ship via the Play Store (Google requires Play distribution for production Google Pay API apps).
 
 > ⚠️ **Play Store policy caveat — read before step 9.** Google Play requires apps sold through the Play Store to use **Google Play Billing** for *digital* goods and subscriptions (which a dating-app premium tier is): the Google Pay API is intended for physical goods/services, and Google's own setup guide says digital-goods sellers should use Play In-app Billing. Approval in step 9 may be refused on these grounds. If it is, the fallback is Play Billing subscriptions (`react-native-iap` or Expo IAP) — the server webhook/ledger structure built here (activate → renew → cancel) maps 1:1 onto Play's Real-Time Developer Notifications, so the backend survives that swap mostly intact.
