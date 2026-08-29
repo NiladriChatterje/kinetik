@@ -142,7 +142,7 @@ export const PhotoUploadScreen: React.FC<{ navigation: any }> = ({ navigation })
 
     toast.showSuccess('Photos saved', 'All uploaded.');
     await api.updateOnboardingStep('photos');
-    navigation.navigate('PoseVerification');
+    navigation.navigate('FaceVerification');
   };
 
   return (

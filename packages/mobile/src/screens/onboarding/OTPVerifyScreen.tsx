@@ -92,12 +92,14 @@ export const OTPVerifyScreen: React.FC<{ navigation: any }> = ({ navigation }) =
         } else if (currentStep === 'identity') {
           // Identity data already exists — skip to About
           navigation.navigate('About');
-        } else if (currentStep === 'about' || currentStep === 'location' || currentStep === 'photos' || currentStep === 'pose' || currentStep === 'kyc') {
+        } else if (currentStep === 'about' || currentStep === 'location' || currentStep === 'photos' || currentStep === 'face' || currentStep === 'pose' || currentStep === 'kyc') {
           // User is further along — determine next screen based on step
           const screenMap: Record<string, string> = {
             about: 'Location',
             location: 'Photos',
-            photos: 'PoseVerification',
+            photos: 'FaceVerification',
+            face: 'KYC',
+            // Legacy value: rows written before migration 019 renamed the step.
             pose: 'KYC',
             kyc: 'KYC',
           };

@@ -14,7 +14,11 @@
  * Match: cosine similarity between the selfie embedding and each profile
  * photo embedding. confidence = 0.7·best + 0.3·avg, threshold 0.55, and at
  * least 2 profile photos must contain a detectable face — same rules the
- * old server-side pose-service enforced.
+ * old server-side face service enforced.
+ *
+ * This is an identity match only: it answers "is this the same person as the
+ * uploaded photos?". It is NOT a liveness or anti-spoofing check — a printed
+ * photo of the right person passes.
  */
 
 import FaceDetection, { Face } from '@react-native-ml-kit/face-detection';
@@ -32,7 +36,10 @@ async function getFastTflite() {
   return fastTflite;
 }
 
-// ─── Tunables (parity with the retired pose-service) ─────────────
+// ─── Tunables (parity with the retired server-side face service) ─
+// The two head-angle limits are an image-quality guard, not a pose challenge:
+// a face turned far from the camera yields an unreliable embedding, so the
+// selfie is rejected as unusable rather than judged as a mismatch.
 const MAX_HEAD_YAW_DEG = 30; // |rotationY| — left/right turn
 const MAX_HEAD_PITCH_DEG = 25; // |rotationX| — up/down nod
 const MIN_MATCH_THRESHOLD = 0.55; // cosine similarity on MobileFaceNet embeddings

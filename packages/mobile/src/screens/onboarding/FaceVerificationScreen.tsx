@@ -11,7 +11,7 @@ import * as ImageManipulator from 'expo-image-manipulator';
 import { Button } from '../../components/common/Button';
 import { useToast } from '../../hooks/useToast';
 import { api } from '../../services/api';
-import { resolveUrl, PRODUCTION_POSE } from '../../config';
+import { resolveUrl, PRODUCTION_FACE_VERIFICATION } from '../../config';
 import { embedProfilePhotos, verifySelfie, MIN_PROFILE_FACES } from '../../services/faceVerification';
 import { hapticSuccess } from '../../utils/haptics';
 import { colors, typography, spacing, radius } from '../../theme';
@@ -26,7 +26,7 @@ type Phase = 'camera' | 'preview' | 'uploading' | 'success';
 /** How much of the camera's zoom range (0–1) one full pinch spread covers */
 const PINCH_ZOOM_SPEED = 0.4;
 
-export const PoseVerificationScreen: React.FC<{ navigation: any }> = ({ navigation }) => {
+export const FaceVerificationScreen: React.FC<{ navigation: any }> = ({ navigation }) => {
   const [permission, requestPermission] = useCameraPermissions();
   const [phase, setPhase] = useState<Phase>('camera');
   const [verified, setVerified] = useState(false);
@@ -65,7 +65,7 @@ export const PoseVerificationScreen: React.FC<{ navigation: any }> = ({ navigati
           : [];
         return await embedProfilePhotos(urls);
       } catch (err) {
-        console.warn('[pose] Failed to prepare profile embeddings:', err);
+        console.warn('[face] Failed to prepare profile embeddings:', err);
         return [];
       }
     })();
@@ -121,14 +121,14 @@ export const PoseVerificationScreen: React.FC<{ navigation: any }> = ({ navigati
       // Enforce only a mismatch the user can fix by retaking. Too few profile
       // photos with faces is not retakeable — blocking on it would dead-end.
       const retakeable = result.profileFacesDetected >= MIN_PROFILE_FACES;
-      setBlocked(PRODUCTION_POSE && !result.verified && retakeable);
+      setBlocked(PRODUCTION_FACE_VERIFICATION && !result.verified && retakeable);
 
       if (result.verified) {
         hapticSuccess();
         toast.showSuccess('Face verified!', 'Selfie matches your photos.');
       } else {
-        console.log('[pose] Not verified:', result.rejectionReasons.join('; '));
-        if (PRODUCTION_POSE && retakeable) {
+        console.log('[face] Not verified:', result.rejectionReasons.join('; '));
+        if (PRODUCTION_FACE_VERIFICATION && retakeable) {
           toast.showError('Face not matched', 'Retake your selfie to continue.');
         } else {
           toast.showSuccess('Selfie submitted', 'Continue onboarding.');
@@ -137,12 +137,12 @@ export const PoseVerificationScreen: React.FC<{ navigation: any }> = ({ navigati
 
       // Self-report the on-device result (fire-and-forget on failure)
       api
-        .reportPoseVerification({ verified: result.verified, confidence: result.confidence })
-        .catch((err) => console.warn('[pose] Failed to report verification:', err));
+        .reportFaceVerification({ verified: result.verified, confidence: result.confidence })
+        .catch((err) => console.warn('[face] Failed to report verification:', err));
     } catch (err: any) {
-      // A technical failure never blocks, even under PRODUCTION_POSE — a
+      // A technical failure never blocks, even under PRODUCTION_FACE_VERIFICATION — a
       // broken model or unlinked ML Kit must not stop every signup.
-      console.warn('[pose] On-device verification failed:', err?.message || err);
+      console.warn('[face] On-device verification failed:', err?.message || err);
       setReasons([`Check failed: ${err?.message || 'unknown error'}`]);
       setBlocked(false);
       toast.showSuccess(
@@ -169,7 +169,7 @@ export const PoseVerificationScreen: React.FC<{ navigation: any }> = ({ navigati
    * Continue to next onboarding step.
    */
   const handleContinue = useCallback(async () => {
-    await api.updateOnboardingStep('pose');
+    await api.updateOnboardingStep('face');
     navigation.navigate('KYC');
   }, [navigation]);
 
@@ -212,7 +212,7 @@ export const PoseVerificationScreen: React.FC<{ navigation: any }> = ({ navigati
         <View style={styles.content}>
           <Text style={styles.step}>Step 5 of 6</Text>
           <Text style={styles.title}>Verify You're Real</Text>
-          <Text style={styles.subtitle}>Follow the prompts to complete liveness verification</Text>
+          <Text style={styles.subtitle}>We match your selfie against the photos you uploaded</Text>
 
           <View style={styles.successContainer}>
             <Ionicons
@@ -263,7 +263,7 @@ export const PoseVerificationScreen: React.FC<{ navigation: any }> = ({ navigati
         <View style={styles.content}>
           <Text style={styles.step}>Step 5 of 6</Text>
           <Text style={styles.title}>Verify You're Real</Text>
-          <Text style={styles.subtitle}>Follow the prompts to complete liveness verification</Text>
+          <Text style={styles.subtitle}>We match your selfie against the photos you uploaded</Text>
 
           <View style={styles.cameraContainer}>
             {capturedUri && (
@@ -317,7 +317,7 @@ export const PoseVerificationScreen: React.FC<{ navigation: any }> = ({ navigati
       <View style={styles.content}>
         <Text style={styles.step}>Step 5 of 6</Text>
         <Text style={styles.title}>Verify You're Real</Text>
-        <Text style={styles.subtitle}>Take a clear selfie for liveness verification</Text>
+        <Text style={styles.subtitle}>Take a clear selfie so we can match it to your photos</Text>
 
         <GestureDetector gesture={pinchGesture}>
           <View style={styles.cameraContainer}>
@@ -337,9 +337,9 @@ export const PoseVerificationScreen: React.FC<{ navigation: any }> = ({ navigati
               </View>
             )}
 
-            {/* Pose instruction overlay */}
-            <View style={styles.poseOverlay}>
-              <Text style={styles.poseText}>Take a selfie</Text>
+            {/* Capture instruction overlay */}
+            <View style={styles.captureOverlay}>
+              <Text style={styles.captureText}>Take a selfie</Text>
             </View>
 
             {/* Face guide frame */}
@@ -414,8 +414,8 @@ const styles = StyleSheet.create({
   },
   zoomBadgeText: { ...typography.caption, color: colors.textInverse, fontWeight: '600' },
 
-  // Pose overlay
-  poseOverlay: {
+  // Capture instruction overlay
+  captureOverlay: {
     position: 'absolute',
     bottom: 0,
     left: 0,
@@ -424,7 +424,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     backgroundColor: 'rgba(0,0,0,0.5)',
   },
-  poseText: { ...typography.h3, color: colors.textInverse },
+  captureText: { ...typography.h3, color: colors.textInverse },
 
   // Face guide corners — centered in the 9:16 frame
   faceGuide: {

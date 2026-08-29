@@ -27,6 +27,7 @@
  *   APP_ENV=development           → LAN backend over http:// (cleartext allowed)
  *   APP_ENV=preview|production    → EXPO_PUBLIC_API_URL required; production
  *                                   additionally must be https:// / wss://
+ *                                   and enforces the face-match gate
  *
  * EAS sets APP_ENV per build profile (`eas.json`). Every value below is
  * frozen into the binary at build time, so changing one needs a rebuild —
@@ -75,26 +76,29 @@ export const WS_URL: string = configuredWsUrl
 /**
  * Enforce on-device face verification during onboarding.
  *
+ * The check confirms only that the selfie shows the same person as the
+ * profile photos the user uploaded. There is no liveness or pose challenge.
+ *
  *   false — a failed match is shown but onboarding continues.
  *   true  — a failed match blocks until the user retakes.
  *
  * Defaults to true when APP_ENV=production, false otherwise. Override either
- * way with EXPO_PUBLIC_PRODUCTION_POSE — a build-time value, so changing it
- * needs a rebuild.
+ * way with EXPO_PUBLIC_PRODUCTION_FACE_VERIFICATION — a build-time value, so
+ * changing it needs a rebuild.
  *
  * A TECHNICAL failure (TFLite/ML Kit unavailable, model missing) never blocks
  * in either mode: a broken build must not stop every signup. Only a genuine
  * mismatch the user can fix by retaking is enforced.
  */
-export const PRODUCTION_POSE: boolean =
-  String(process.env.EXPO_PUBLIC_PRODUCTION_POSE ?? '').toLowerCase() === 'true' ||
-  Constants.expoConfig?.extra?.productionPose === true;
+export const PRODUCTION_FACE_VERIFICATION: boolean =
+  String(process.env.EXPO_PUBLIC_PRODUCTION_FACE_VERIFICATION ?? '').toLowerCase() === 'true' ||
+  Constants.expoConfig?.extra?.productionFaceVerification === true;
 
 if (typeof __DEV__ !== 'undefined' && __DEV__) {
   console.log('[Config] APP_ENV:', APP_ENV);
   console.log('[Config] API_URL:', API_URL);
   console.log('[Config] WS_URL:', WS_URL);
-  console.log('[Config] PRODUCTION_POSE:', PRODUCTION_POSE);
+  console.log('[Config] PRODUCTION_FACE_VERIFICATION:', PRODUCTION_FACE_VERIFICATION);
 }
 
 // ─── URL Resolution ────────────────────────────────────────────

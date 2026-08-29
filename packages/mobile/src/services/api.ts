@@ -868,14 +868,14 @@ class ApiClient {
     });
   }
 
-  // ─── Pose Verification (on-device, self-reported) ───────
+  // ─── Face Verification (on-device, self-reported) ───────
   /**
    * Report the result of the on-device face verification. The face matching
    * itself runs on the device (see services/faceVerification.ts) — the server
    * only records the outcome.
    */
-  async reportPoseVerification(payload: { verified: boolean; confidence?: number }) {
-    return this.request<{ status: string }>('/api/v1/users/pose-verification', {
+  async reportFaceVerification(payload: { verified: boolean; confidence?: number }) {
+    return this.request<{ status: string }>('/api/v1/users/face-verification', {
       method: 'POST',
       body: JSON.stringify(payload),
     });

@@ -155,7 +155,7 @@ export const useAuthStore = create<AuthState>((set, get) => ({
           let onboardingStep = d.onboardingComplete ? 'complete' : (d.onboardingStep || 'splash');
 
           // If step would send user to the Photos screen, check if they already
-          // have at least 2 photos and skip ahead to pose verification.
+          // have at least 2 photos and skip ahead to face verification.
           if (!d.onboardingComplete && onboardingStep === 'location') {
             try {
               const photosRes = await api.getPhotos();
@@ -298,7 +298,7 @@ export const useAuthStore = create<AuthState>((set, get) => ({
               }
 
               // If step would send user to the Photos screen, check if they already
-              // have at least 2 photos and skip ahead to pose verification.
+              // have at least 2 photos and skip ahead to face verification.
               if (step === 'location') {
                 try {
                   const photosRes = await api.getPhotos();
