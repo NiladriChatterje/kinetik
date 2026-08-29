@@ -180,6 +180,27 @@ const ACTIVITY_GROUPS: {
   },
 ];
 
+// ─── Date Planner: Notes ────────────────────────────────
+// Bounded so planner_data stays small — the whole blob is rewritten on
+// every save, so an unbounded notes field grows the row without limit.
+const MAX_NOTES = 5;
+const MAX_NOTE_LEN = 200;
+
+/**
+ * Notes used to be one free-text string. Accept both shapes when loading so
+ * plans saved before the change still open, and clamp to the current limits.
+ */
+function normalizeNotes(raw: unknown): string[] {
+  if (Array.isArray(raw)) {
+    return raw
+      .filter((n): n is string => typeof n === 'string' && n.trim().length > 0)
+      .map((n) => n.trim().slice(0, MAX_NOTE_LEN))
+      .slice(0, MAX_NOTES);
+  }
+  if (typeof raw === 'string' && raw.trim()) return [raw.trim().slice(0, MAX_NOTE_LEN)];
+  return [];
+}
+
 // ─── Icebreaker Prompts ─────────────────────────────────
 const ICEBREAKERS = [
   'What is the last show you binge-watched?',
@@ -241,7 +262,8 @@ export const ChatScreen: React.FC<{ navigation: any; route: any }> = ({ navigati
   const [calendarMonth, setCalendarMonth] = useState(() => TODAY.getMonth());
   const [calendarYear, setCalendarYear] = useState(() => TODAY.getFullYear());
   const [plannerActivities, setPlannerActivities] = useState<string[]>([]);
-  const [plannerNotes, setPlannerNotes] = useState('');
+  const [plannerNotes, setPlannerNotes] = useState<string[]>([]);
+  const [newNoteText, setNewNoteText] = useState('');
   const [savingPlanner, setSavingPlanner] = useState(false);
 
   // ─── Icebreaker State ──────────────────────────────────
@@ -389,22 +411,45 @@ export const ChatScreen: React.FC<{ navigation: any; route: any }> = ({ navigati
         const pd = res.data.plannerData;
         setPlannerDate(pd.date || null);
         setPlannerActivities(pd.activities || []);
-        setPlannerNotes(pd.notes || '');
+        setPlannerNotes(normalizeNotes(pd.notes));
       }
     } catch {
       // Silent
     }
   }, [matchId]);
 
+  // ─── Add one planner note ───────────────────────────────
+  const addPlannerNote = useCallback(() => {
+    const text = newNoteText.trim();
+    if (!text) return;
+    setPlannerNotes((prev) =>
+      prev.length >= MAX_NOTES ? prev : [...prev, text.slice(0, MAX_NOTE_LEN)],
+    );
+    setNewNoteText('');
+  }, [newNoteText]);
+
   // ─── Save planner data to server ────────────────────────
   const savePlanner = useCallback(async () => {
     if (savingPlanner) return;
     setSavingPlanner(true);
+
+    // Flush a note that was typed but never added with +, so closing the
+    // planner does not silently discard it.
+    const pending = newNoteText.trim();
+    const notes =
+      pending && plannerNotes.length < MAX_NOTES
+        ? [...plannerNotes, pending.slice(0, MAX_NOTE_LEN)]
+        : plannerNotes;
+    if (notes !== plannerNotes) {
+      setPlannerNotes(notes);
+      setNewNoteText('');
+    }
+
     try {
       const data = {
         date: plannerDate,
         activities: plannerActivities,
-        notes: plannerNotes,
+        notes,
       };
       await api.updateMatchPlanner(matchId, data);
     } catch {
@@ -412,7 +457,7 @@ export const ChatScreen: React.FC<{ navigation: any; route: any }> = ({ navigati
     } finally {
       setSavingPlanner(false);
     }
-  }, [matchId, plannerDate, plannerActivities, plannerNotes, savingPlanner]);
+  }, [matchId, plannerDate, plannerActivities, plannerNotes, newNoteText, savingPlanner]);
 
   // ─── Fetch & merge message history ─────────────────────
   // Merges server history with what's already in state (live-arrived
@@ -554,7 +599,7 @@ export const ChatScreen: React.FC<{ navigation: any; route: any }> = ({ navigati
       if (data.plannerData) {
         setPlannerDate(data.plannerData.date || null);
         setPlannerActivities(data.plannerData.activities || []);
-        setPlannerNotes(data.plannerData.notes || '');
+        setPlannerNotes(normalizeNotes(data.plannerData.notes));
       }
     };
 
@@ -1991,10 +2036,10 @@ export const ChatScreen: React.FC<{ navigation: any; route: any }> = ({ navigati
 
               {/* Activities */}
               <View style={styles.plannerContent}>
-                  <View style={styles.activitiesHeader}>
+                  <View style={styles.plannerRowHeader}>
                     <Text style={styles.plannerSectionLabel}>What to do</Text>
                     {plannerActivities.length > 0 && (
-                      <Text style={styles.activitiesCount}>{plannerActivities.length} picked</Text>
+                      <Text style={styles.plannerRowCount}>{plannerActivities.length} picked</Text>
                     )}
                   </View>
 
@@ -2035,17 +2080,70 @@ export const ChatScreen: React.FC<{ navigation: any; route: any }> = ({ navigati
                     </View>
                   ))}
 
-                  {/* Notes */}
-                  <Text style={[styles.plannerSectionLabel, { marginTop: spacing.md }]}>Notes</Text>
-                  <TextInput
-                    style={styles.plannerNotesInput}
-                    placeholder="Add details like time, meeting point..."
-                    placeholderTextColor={colors.textMuted}
-                    value={plannerNotes}
-                    onChangeText={setPlannerNotes}
-                    multiline
-                    maxLength={500}
-                  />
+                  {/* Notes — up to MAX_NOTES short entries */}
+                  <View style={[styles.plannerRowHeader, { marginTop: spacing.md }]}>
+                    <Text style={styles.plannerSectionLabel}>Notes</Text>
+                    <Text style={styles.plannerRowCount}>
+                      {plannerNotes.length}/{MAX_NOTES}
+                    </Text>
+                  </View>
+
+                  {plannerNotes.length > 0 && (
+                    <View style={styles.noteList}>
+                      {plannerNotes.map((note, i) => (
+                        <View key={`${i}-${note}`} style={styles.noteItem}>
+                          <Text style={styles.noteText}>{note}</Text>
+                          <TouchableOpacity
+                            onPress={() =>
+                              setPlannerNotes((prev) => prev.filter((_, j) => j !== i))
+                            }
+                            hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+                          >
+                            <Ionicons name="close" size={14} color={colors.textMuted} />
+                          </TouchableOpacity>
+                        </View>
+                      ))}
+                    </View>
+                  )}
+
+                  {plannerNotes.length < MAX_NOTES ? (
+                    <>
+                      <View style={styles.noteAddRow}>
+                        <TextInput
+                          style={styles.noteAddInput}
+                          placeholder="Time, meeting point, what to bring..."
+                          placeholderTextColor={colors.textMuted}
+                          value={newNoteText}
+                          onChangeText={setNewNoteText}
+                          maxLength={MAX_NOTE_LEN}
+                          multiline
+                          returnKeyType="done"
+                          blurOnSubmit
+                          onSubmitEditing={addPlannerNote}
+                        />
+                        <TouchableOpacity
+                          style={[
+                            styles.noteAddBtn,
+                            !newNoteText.trim() && styles.noteAddBtnDisabled,
+                          ]}
+                          onPress={addPlannerNote}
+                          disabled={!newNoteText.trim()}
+                          activeOpacity={0.7}
+                        >
+                          <Ionicons name="add" size={18} color={colors.textInverse} />
+                        </TouchableOpacity>
+                      </View>
+                      {newNoteText.length > 0 && (
+                        <Text style={styles.noteCharCount}>
+                          {newNoteText.length}/{MAX_NOTE_LEN}
+                        </Text>
+                      )}
+                    </>
+                  ) : (
+                    <Text style={styles.noteCharCount}>
+                      That is all {MAX_NOTES} notes. Remove one to add another.
+                    </Text>
+                  )}
               </View>
 
             </ScrollView>
@@ -2818,12 +2916,12 @@ const styles = StyleSheet.create({
     flex: 1,
   },
   plannerContent: {},
-  activitiesHeader: {
+  plannerRowHeader: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
   },
-  activitiesCount: {
+  plannerRowCount: {
     ...typography.caption,
     color: colors.textMuted,
     marginBottom: spacing.sm,
@@ -2867,15 +2965,55 @@ const styles = StyleSheet.create({
   activityCheck: {
     marginLeft: 'auto',
   },
-  plannerNotesInput: {
+  noteList: {
+    gap: spacing.sm,
+    marginBottom: spacing.sm,
+  },
+  noteItem: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    gap: spacing.sm,
+    backgroundColor: colors.surfaceHighlight,
+    borderRadius: radius.md,
+    paddingHorizontal: spacing.md,
+    paddingVertical: spacing.sm,
+  },
+  noteText: {
+    ...typography.body2,
+    color: colors.textPrimary,
+    flex: 1,
+  },
+  noteAddRow: {
+    flexDirection: 'row',
+    alignItems: 'flex-end',
+    gap: spacing.sm,
+  },
+  noteAddInput: {
+    flex: 1,
     backgroundColor: colors.surfaceHighlight,
     borderRadius: radius.md,
     paddingHorizontal: spacing.md,
     paddingVertical: spacing.sm,
     ...typography.body2,
     color: colors.textPrimary,
-    minHeight: 60,
+    minHeight: 40,
+    maxHeight: 96,
     textAlignVertical: 'top',
+  },
+  noteAddBtn: {
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    backgroundColor: colors.textPrimary,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  noteAddBtnDisabled: { opacity: 0.4 },
+  noteCharCount: {
+    ...typography.caption,
+    color: colors.textMuted,
+    textAlign: 'right',
+    marginTop: spacing.xs,
   },
   // ─── Icebreaker Bar ──────────────────────────────────
   icebreakerBar: {
