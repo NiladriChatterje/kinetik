@@ -241,10 +241,7 @@ export const ChatScreen: React.FC<{ navigation: any; route: any }> = ({ navigati
   const [calendarMonth, setCalendarMonth] = useState(() => TODAY.getMonth());
   const [calendarYear, setCalendarYear] = useState(() => TODAY.getFullYear());
   const [plannerActivities, setPlannerActivities] = useState<string[]>([]);
-  const [plannerTodos, setPlannerTodos] = useState<{ id: string; text: string; done: boolean; addedBy: string }[]>([]);
   const [plannerNotes, setPlannerNotes] = useState('');
-  const [plannerTab, setPlannerTab] = useState<'activities' | 'checklist'>('activities');
-  const [newTodoText, setNewTodoText] = useState('');
   const [savingPlanner, setSavingPlanner] = useState(false);
 
   // ─── Icebreaker State ──────────────────────────────────
@@ -299,8 +296,7 @@ export const ChatScreen: React.FC<{ navigation: any; route: any }> = ({ navigati
   const plannerOverlayOpacity = useRef(new Animated.Value(0)).current;
   const plannerContentScale = useRef(new Animated.Value(1)).current;
 
-  const openDatePicker = (tab?: 'activities' | 'checklist') => {
-    if (tab) setPlannerTab(tab);
+  const openDatePicker = () => {
     setShowDatePicker(true);
     Animated.parallel([
       Animated.timing(plannerOverlayOpacity, { toValue: 1, duration: 250, useNativeDriver: true }),
@@ -393,7 +389,6 @@ export const ChatScreen: React.FC<{ navigation: any; route: any }> = ({ navigati
         const pd = res.data.plannerData;
         setPlannerDate(pd.date || null);
         setPlannerActivities(pd.activities || []);
-        setPlannerTodos(pd.todos || []);
         setPlannerNotes(pd.notes || '');
       }
     } catch {
@@ -409,7 +404,6 @@ export const ChatScreen: React.FC<{ navigation: any; route: any }> = ({ navigati
       const data = {
         date: plannerDate,
         activities: plannerActivities,
-        todos: plannerTodos,
         notes: plannerNotes,
       };
       await api.updateMatchPlanner(matchId, data);
@@ -418,7 +412,7 @@ export const ChatScreen: React.FC<{ navigation: any; route: any }> = ({ navigati
     } finally {
       setSavingPlanner(false);
     }
-  }, [matchId, plannerDate, plannerActivities, plannerTodos, plannerNotes, savingPlanner]);
+  }, [matchId, plannerDate, plannerActivities, plannerNotes, savingPlanner]);
 
   // ─── Fetch & merge message history ─────────────────────
   // Merges server history with what's already in state (live-arrived
@@ -560,7 +554,6 @@ export const ChatScreen: React.FC<{ navigation: any; route: any }> = ({ navigati
       if (data.plannerData) {
         setPlannerDate(data.plannerData.date || null);
         setPlannerActivities(data.plannerData.activities || []);
-        setPlannerTodos(data.plannerData.todos || []);
         setPlannerNotes(data.plannerData.notes || '');
       }
     };
@@ -1446,10 +1439,10 @@ export const ChatScreen: React.FC<{ navigation: any; route: any }> = ({ navigati
             <Text style={styles.headerName}>{partnerName}</Text>
           </View>
 
-          {/* Date Planner — opens the planner modal with activities + checklist */}
+          {/* Date Planner — opens the planner modal */}
           <TouchableOpacity
             style={styles.callBtn}
-            onPress={() => openDatePicker('activities')}
+            onPress={() => openDatePicker()}
             activeOpacity={0.7}
           >
             <Ionicons name="calendar-outline" size={20} color={colors.textPrimary} />
@@ -1487,12 +1480,12 @@ export const ChatScreen: React.FC<{ navigation: any; route: any }> = ({ navigati
         {scheduledDate && scheduledDate >= todayDateStr() && (
           <TouchableOpacity
             style={styles.dateBanner}
-            onPress={() => openDatePicker('checklist')}
+            onPress={() => openDatePicker()}
             activeOpacity={0.7}
           >
             <Ionicons name="rose" size={15} color={ROSE} />
             <Text style={styles.dateBannerText}>
-              {plannerActivities.length > 0 || plannerTodos.length > 0
+              {plannerActivities.length > 0
                 ? 'Plan set for ' + formatScheduledDate(scheduledDate)
                 : 'Date fixed for ' + formatScheduledDate(scheduledDate)}
             </Text>
@@ -1910,31 +1903,7 @@ export const ChatScreen: React.FC<{ navigation: any; route: any }> = ({ navigati
               </TouchableOpacity>
             </View>
 
-            {/* Tab Switcher */}
-            <View style={styles.plannerTabBar}>
-              <TouchableOpacity
-                style={[styles.plannerTab, plannerTab === 'activities' && styles.plannerTabActive]}
-                onPress={() => setPlannerTab('activities')}
-                activeOpacity={0.7}
-              >
-                <Ionicons name="compass-outline" size={14} color={plannerTab === 'activities' ? colors.textInverse : colors.textSecondary} />
-                <Text style={[styles.plannerTabText, plannerTab === 'activities' && styles.plannerTabTextActive]}>
-                  Activities
-                </Text>
-              </TouchableOpacity>
-              <TouchableOpacity
-                style={[styles.plannerTab, plannerTab === 'checklist' && styles.plannerTabActive]}
-                onPress={() => setPlannerTab('checklist')}
-                activeOpacity={0.7}
-              >
-                <Ionicons name="checkmark-circle-outline" size={14} color={plannerTab === 'checklist' ? colors.textInverse : colors.textSecondary} />
-                <Text style={[styles.plannerTabText, plannerTab === 'checklist' && styles.plannerTabTextActive]}>
-                  Checklist
-                </Text>
-              </TouchableOpacity>
-            </View>
-
-            {/* Scrollable content: date picker + activities/checklist */}
+            {/* Scrollable content: date picker + activities */}
             <ScrollView style={styles.plannerScroll} showsVerticalScrollIndicator={false} bounces={false}>
 
               {/* Date Picker — month calendar */}
@@ -2020,9 +1989,8 @@ export const ChatScreen: React.FC<{ navigation: any; route: any }> = ({ navigati
                 })()}
               </View>
 
-              {/* Activities Tab */}
-              {plannerTab === 'activities' && (
-                <View style={styles.plannerContent}>
+              {/* Activities */}
+              <View style={styles.plannerContent}>
                   <View style={styles.activitiesHeader}>
                     <Text style={styles.plannerSectionLabel}>What to do</Text>
                     {plannerActivities.length > 0 && (
@@ -2078,103 +2046,7 @@ export const ChatScreen: React.FC<{ navigation: any; route: any }> = ({ navigati
                     multiline
                     maxLength={500}
                   />
-                </View>
-              )}
-
-              {/* Checklist Tab */}
-              {plannerTab === 'checklist' && (
-                <View style={styles.plannerContent}>
-                  {plannerTodos.length === 0 ? (
-                    <View style={styles.plannerEmpty}>
-                      <Ionicons name="checkmark-done-outline" size={32} color={colors.textMuted} />
-                      <Text style={styles.plannerEmptyText}>No items yet. Add something to plan together.</Text>
-                    </View>
-                  ) : (
-                    <View style={styles.todoList}>
-                      {plannerTodos.map((todo) => (
-                        <View key={todo.id} style={styles.todoItem}>
-                          <TouchableOpacity
-                            onPress={() => {
-                              setPlannerTodos((prev) =>
-                                prev.map((t) => (t.id === todo.id ? { ...t, done: !t.done } : t))
-                              );
-                            }}
-                            hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
-                          >
-                            <Ionicons
-                              name={todo.done ? 'checkmark-circle' : 'ellipse-outline'}
-                              size={20}
-                              color={todo.done ? colors.primary : colors.textMuted}
-                            />
-                          </TouchableOpacity>
-                          <Text
-                            style={[styles.todoText, todo.done && styles.todoTextDone]}
-                            numberOfLines={2}
-                          >
-                            {todo.text}
-                          </Text>
-                          <TouchableOpacity
-                            onPress={() => {
-                              setPlannerTodos((prev) => prev.filter((t) => t.id !== todo.id));
-                            }}
-                            hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
-                          >
-                            <Ionicons name="close" size={14} color={colors.textMuted} />
-                          </TouchableOpacity>
-                        </View>
-                      ))}
-                    </View>
-                  )}
-
-                  {/* Add Todo Input */}
-                  <View style={styles.todoAddRow}>
-                    <TextInput
-                      style={styles.todoAddInput}
-                      placeholder="Add an item..."
-                      placeholderTextColor={colors.textMuted}
-                      value={newTodoText}
-                      onChangeText={setNewTodoText}
-                      maxLength={100}
-                      onSubmitEditing={() => {
-                        if (newTodoText.trim()) {
-                          setPlannerTodos((prev) => [
-                            ...prev,
-                            {
-                              id: `todo-${Date.now()}`,
-                              text: newTodoText.trim(),
-                              done: false,
-                              addedBy: authUser?.id || '',
-                            },
-                          ]);
-                          setNewTodoText('');
-                        }
-                      }}
-                      returnKeyType="done"
-                    />
-                    <TouchableOpacity
-                      style={[styles.todoAddBtn, !newTodoText.trim() && styles.todoAddBtnDisabled]}
-                      onPress={() => {
-                        if (newTodoText.trim()) {
-                          setPlannerTodos((prev) => [
-                            ...prev,
-                            {
-                              id: `todo-${Date.now()}`,
-                              text: newTodoText.trim(),
-                              done: false,
-                              addedBy: authUser?.id || '',
-                            },
-                          ]);
-                          setNewTodoText('');
-                        }
-                      }}
-                      disabled={!newTodoText.trim()}
-                      activeOpacity={0.7}
-                    >
-                      <Ionicons name="add" size={18} color={colors.textInverse} />
-                    </TouchableOpacity>
-                  </View>
-                </View>
-              )}
+              </View>
 
             </ScrollView>
 
@@ -2934,30 +2806,6 @@ const styles = StyleSheet.create({
     gap: spacing.sm,
   },
   plannerTitle: { ...typography.h3, color: colors.textPrimary },
-  plannerTabBar: {
-    flexDirection: 'row',
-    gap: spacing.sm,
-    marginBottom: spacing.lg,
-  },
-  plannerTab: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: spacing.xs,
-    paddingHorizontal: spacing.md,
-    paddingVertical: spacing.sm,
-    borderRadius: radius.full,
-    backgroundColor: colors.surfaceHighlight,
-  },
-  plannerTabActive: {
-    backgroundColor: colors.textPrimary,
-  },
-  plannerTabText: {
-    ...typography.buttonSmall,
-    color: colors.textSecondary,
-  },
-  plannerTabTextActive: {
-    color: colors.textInverse,
-  },
   plannerDateSection: {
     marginBottom: spacing.md,
   },
@@ -2970,16 +2818,6 @@ const styles = StyleSheet.create({
     flex: 1,
   },
   plannerContent: {},
-  plannerEmpty: {
-    alignItems: 'center',
-    paddingVertical: spacing.xxl,
-    gap: spacing.sm,
-  },
-  plannerEmptyText: {
-    ...typography.body2,
-    color: colors.textMuted,
-    textAlign: 'center',
-  },
   activitiesHeader: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -3039,51 +2877,6 @@ const styles = StyleSheet.create({
     minHeight: 60,
     textAlignVertical: 'top',
   },
-  todoList: {
-    gap: spacing.sm,
-    marginBottom: spacing.md,
-  },
-  todoItem: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: spacing.sm,
-    backgroundColor: colors.surfaceHighlight,
-    borderRadius: radius.md,
-    paddingHorizontal: spacing.md,
-    paddingVertical: spacing.sm,
-  },
-  todoText: {
-    ...typography.body2,
-    color: colors.textPrimary,
-    flex: 1,
-  },
-  todoTextDone: {
-    textDecorationLine: 'line-through',
-    color: colors.textMuted,
-  },
-  todoAddRow: {
-    flexDirection: 'row',
-    gap: spacing.sm,
-  },
-  todoAddInput: {
-    flex: 1,
-    backgroundColor: colors.surfaceHighlight,
-    borderRadius: radius.md,
-    paddingHorizontal: spacing.md,
-    paddingVertical: spacing.sm,
-    ...typography.body2,
-    color: colors.textPrimary,
-  },
-  todoAddBtn: {
-    width: 36,
-    height: 36,
-    borderRadius: 18,
-    backgroundColor: colors.textPrimary,
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  todoAddBtnDisabled: { opacity: 0.4 },
-
   // ─── Icebreaker Bar ──────────────────────────────────
   icebreakerBar: {
     flexDirection: 'row',
