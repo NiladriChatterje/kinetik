@@ -4,7 +4,7 @@ export type GenderIdentity = 'male' | 'female' | 'non_binary' | 'other' | 'prefe
 export type MatchStatus = 'pending' | 'matched' | 'passed' | 'expired';
 export type SubscriptionTier = 'free' | 'premium' | 'infinite';
 export type VerificationStatus = 'unverified' | 'pending' | 'verified' | 'rejected';
-export type OnboardingStep = 'splash' | 'identity' | 'about' | 'location' | 'photos' | 'pose' | 'kyc' | 'complete';
+export type OnboardingStep = 'splash' | 'identity' | 'about' | 'location' | 'photos' | 'face' | 'kyc' | 'complete';
 export type InteractionAction = 'like' | 'pass' | 'super_like';
 export type AuthProvider = 'phone' | 'google' | 'apple';
 export type DatingCategory = 'casual' | 'serious' | 'intimacy';
@@ -26,7 +26,7 @@ export interface User {
   education?: string;
   isVerified: boolean;
   kycStatus: VerificationStatus;
-  livenessStatus: VerificationStatus;
+  faceVerificationStatus: VerificationStatus;
   latitude?: number;
   longitude?: number;
   h3Index?: string;

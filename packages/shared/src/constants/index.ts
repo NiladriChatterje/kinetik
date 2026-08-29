@@ -192,7 +192,7 @@ export const ONBOARDING_STEPS: readonly string[] = [
   'about',
   'location',
   'photos',
-  'pose',
+  'face',
   'kyc',
   'complete',
 ] as const;

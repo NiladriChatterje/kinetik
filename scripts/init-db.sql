@@ -38,7 +38,8 @@ CREATE TABLE users (
     phone_verified  BOOLEAN DEFAULT FALSE,
     email_verified  BOOLEAN DEFAULT FALSE,
     kyc_status      verification_status DEFAULT 'unverified',
-    liveness_status verification_status DEFAULT 'unverified',
+    -- Selfie matches the uploaded profile photos (on-device face match)
+    face_verification_status verification_status DEFAULT 'unverified',
     is_verified     BOOLEAN DEFAULT FALSE,
 
     -- Location
