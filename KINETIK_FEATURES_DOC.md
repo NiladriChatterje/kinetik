@@ -15,7 +15,7 @@
 | Identity Setup (Step 1/5) | ✅ Implemented | DOB (DD/MM/YYYY format, 18+ validation), gender selector, pronouns |
 | Location Permission (Step 2/5) | ✅ Implemented | GPS permission request, H3 hex grid visualization, background updates |
 | Photo Upload (Step 3/5) | ✅ Implemented | Camera/gallery pick, compress & upload pipeline, 2-photo minimum, 6 slots |
-| Pose Verification (Step 4/5) | ✅ Implemented | Front-facing camera selfie, preview/retake, face guide overlay; face match against profile photos runs fully on-device (ML Kit + MobileFaceNet TFLite), result self-reported to the API — see POSE_VERIFICATION_ONDEVICE.md |
+| Face Verification (Step 4/5) | ✅ Implemented | Front-facing camera selfie, preview/retake, face guide overlay; face match against profile photos runs fully on-device (ML Kit + MobileFaceNet TFLite), result self-reported to the API. Identity match only — no liveness or anti-spoofing check. See FACE_VERIFICATION_ONDEVICE.md |
 | KYC Document Upload (Step 5/5) | ✅ Implemented | Passport/license/national ID picker, PDF/JPG/PNG, 20MB limit, upload & skip |
 | **KYC Face Verification (Document vs Profile)** | ✅ **New** | **Free MediaPipe-based pipeline: extracts face from uploaded ID (JPEG/PNG/PDF), compares against profile photos via landmark-based cosine similarity, updates kyc_status to 'verified' on match** |
 | **KYC Verification in Settings** | ✅ **New** | **"KYC Verification" option in ProfileLedgerScreen with status badge (Verified/Pending/Not Verified), navigates to KYCScreen from settings** |

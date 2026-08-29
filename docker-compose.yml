@@ -354,7 +354,7 @@ services:
     logging: *default-logging
 
   # ─── Pose / Face Service (Python / MediaPipe) ──────────────
-  # DISABLED — selfie pose/liveness verification runs on-device in the
+  # DISABLED — selfie face verification runs on-device in the
   # mobile app via TFLite.  Only uncomment this if you need server-side
   # KYC document face matching.
   # pose-service:

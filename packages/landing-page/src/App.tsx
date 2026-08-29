@@ -1116,7 +1116,7 @@ function Terms() {
           <h3>Eligibility</h3>
           <p>
             You must be at least 18 years old to use Kinetik. Accounts are verified with photo and
-            liveness checks; impersonation and fake profiles are removed without notice.
+            face-match checks; impersonation and fake profiles are removed without notice.
           </p>
           <h3>Premium subscription</h3>
           <ul>

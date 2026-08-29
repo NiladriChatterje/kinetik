@@ -22,9 +22,11 @@ unedited `*.invalid` placeholder from `eas.json` each stop the build with a
 message naming the key to fix.
 
 Override the face-verification gate in any environment with
-`EXPO_PUBLIC_PRODUCTION_POSE=true|false`. A *technical* failure (ML Kit or
-TFLite unavailable) never blocks a user in either mode — only a genuine
-mismatch they can fix by retaking. See `src/services/faceVerification.ts`.
+`EXPO_PUBLIC_PRODUCTION_FACE_VERIFICATION=true|false`. A *technical* failure
+(ML Kit or TFLite unavailable) never blocks a user in either mode — only a
+genuine mismatch they can fix by retaking. The check confirms that the selfie
+matches the uploaded profile photos; it is not a liveness or anti-spoofing
+check. See `src/services/faceVerification.ts`.
 
 ## The native project is committed
 

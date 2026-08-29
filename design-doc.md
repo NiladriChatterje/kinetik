@@ -213,7 +213,7 @@ Here is the complete catalog of UI screens required to build and scale **Kinetik
 | **Core Identity Setup** | `SCR-ONB-002` | Input field matrix for basic structural parameters (Legal Name, DOB, Pronouns, and Gender Identity parameters). |
 | **Geospatial Permission** | `SCR-ONB-003` | System permission modal for high-precision GPS tracking required to anchor the user into an explicit Uber H3 hexagonal spatial node. |
 | **Biometric Photo Upload** | `SCR-ONB-004` | Canvas interface for uploading a primary high-resolution profile portrait used to compile vector embeddings and late-stage call unmasking. |
-| **3D Pose Verification** | `SCR-ONB-005` | Real-time, anti-spoofing camera UI requiring the user to mimic a randomized 3D facial motion path to confirm liveness. |
+| **Face Verification** | `SCR-ONB-005` | Selfie capture whose face is matched on-device against the uploaded profile photos, confirming the photos belong to the account holder. Identity match only — no liveness or anti-spoofing challenge. |
 | **Secure KYC Dashboard** | `SCR-ONB-006` | Document capture scanner interface (Government ID/Passport OCR extraction) to verify genuine unique user status and prevent automated sybil network duplication. |
 
 ---

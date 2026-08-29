@@ -181,7 +181,7 @@ Free: 512 MB RAM, one web service, no card. One account is enough.
 ## 9. pose-service (KYC document face match) — skip it, on purpose
 
 Selfie verification now runs **entirely on the phone** (ML Kit + MobileFaceNet — see
-POSE_VERIFICATION_ONDEVICE.md), so this service is only needed for the opt-in KYC
+FACE_VERIFICATION_ONDEVICE.md), so this service is only needed for the opt-in KYC
 document face check. It needs ~1 GB of memory; every no-card free tier tops out at 512 MB.
 The app is built to work without it: onboarding never blocks on it.
 

@@ -1,8 +1,8 @@
 """
 Kinetik Face Service — KYC document face matching.
 
-Selfie liveness / pose verification now runs entirely on-device in the mobile
-app (see POSE_VERIFICATION_ONDEVICE.md). This service remains for the one
+Selfie face verification now runs entirely on-device in the mobile
+app (see FACE_VERIFICATION_ONDEVICE.md). This service remains for the one
 check that can't run on the device: comparing the face on an uploaded KYC
 document (government ID) against the user's profile photos.
 

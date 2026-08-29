@@ -1,8 +1,8 @@
 """
-Pose Verifier — MediaPipe Tasks API face detection + face comparison.
+Face Verifier — MediaPipe Tasks API face detection + face comparison.
 
-Used by the KYC document face-match endpoint. Selfie liveness / pose
-verification now runs on-device in the mobile app (POSE_VERIFICATION_ONDEVICE.md).
+Used by the KYC document face-match endpoint. Selfie face verification now
+runs on-device in the mobile app (FACE_VERIFICATION_ONDEVICE.md).
 
 Face comparison (photo match):
   1. Detect and extract landmarks in each image
