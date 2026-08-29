@@ -149,9 +149,9 @@ function HeroRadarSVG() {
       <div className="container">
         <span className="hero-badge">VERIFIED PROFILES &middot; REAL PLANS</span>
         <h1>
-          If you can talk,
+          Just talk.
           <br />
-          you can date.
+          Then walk.
         </h1>
         <p>
           No compatibility scores. No algorithm deciding who you'd get along with.
@@ -248,7 +248,7 @@ const STEPS = [
   {
     num: '01',
     title: 'Explore',
-    body: 'Browse a gallery of verified profiles in your area. Real photos, real people, no bots.',
+    body: 'Browse people near you. Everyone takes a selfie to get in, checked against their own photos on their own phone.',
   },
   {
     num: '02',
@@ -278,7 +278,7 @@ function PipelineSVG() {
         <span className="section-label">HOW IT WORKS</span>
         <h2 className="section-title">From swipe to date</h2>
         <p className="section-sub">
-          No endless loops. No dead-end chats. Just a straight path from discovery to real life.
+          Four steps from stranger to Saturday. No loops, no dead ends, no maybe-next-week.
         </p>
 
         <div className="pipeline">
@@ -397,11 +397,12 @@ function CommunitySVG() {
     <section className="section" id="community" ref={ref}>
       <div className="container center-text">
         <span className="section-label">EXPLORE</span>
-        <h2 className="section-title">A gallery, not a roulette</h2>
+        <h2 className="section-title">Zero bots. Not one.</h2>
         <p className="section-sub">
-          Browse real profiles near you and decide for yourself. We filter by age,
-          distance and who you're looking for — nothing else. No match percentage,
-          no compatibility score, no shared-interest maths.
+          And not out of virtue — out of arithmetic. Fake profiles cost money to build,
+          servers to run and people to babysit, and all that spend buys you a chat that
+          can never end in a date. Why would we burn cash on that? Everyone here took a
+          selfie to get in.
         </p>
         <div className="community-visual">
           <svg viewBox="0 0 400 300" className="community-svg" fill="none">
