@@ -1,4 +1,13 @@
 import React, { useEffect, useRef, useState } from 'react';
+import type { IconType } from 'react-icons';
+import {
+  FiCalendar,
+  FiMessageSquare,
+  FiZap,
+  FiUserCheck,
+  FiHeart,
+  FiShuffle,
+} from 'react-icons/fi';
 
 /* ─── Kinetik Landing Page ──────────────────────────────────
    One-page SPA for Google Play / Pay Console approval.
@@ -783,34 +792,36 @@ function DatePlannerSVG() {
 }
 
 /* ─── Features Grid ──────────────────────────────────────── */
-const FEATURES = [
+/* Feather icons — single-weight strokes, inherit currentColor, so the grid
+   stays monochrome instead of dragging emoji colour into a black-and-white page. */
+const FEATURES: { Icon: IconType; title: string; body: string }[] = [
   {
-    icon: '📅',
+    Icon: FiCalendar,
     title: 'Fix the date in the chat',
     body: 'Pin a day to the conversation, pick the activity, and share a checklist you both tick off. The plan stays where you made it.',
   },
   {
-    icon: '💬',
+    Icon: FiMessageSquare,
     title: 'Reply suggestions',
     body: 'Three ready replies above the keyboard, built from the last few messages on your phone. Tap to insert — never sent for you.',
   },
   {
-    icon: '⚡',
+    Icon: FiZap,
     title: 'Real-time chat',
     body: 'Read receipts, typing indicators and push notifications, plus voice notes, view-once photos and in-app calls.',
   },
   {
-    icon: '🔒',
+    Icon: FiUserCheck,
     title: 'Face-verified profiles',
     body: 'A selfie is matched against your profile photos on your own device — the check never uploads your face. ID verification is available too.',
   },
   {
-    icon: '👤',
+    Icon: FiHeart,
     title: 'See who liked you',
     body: 'Free accounts see that someone liked them. Premium unblurs exactly who, so you can match back instantly.',
   },
   {
-    icon: '🎲',
+    Icon: FiShuffle,
     title: 'No matching algorithm',
     body: 'Age, distance, and who you\'re looking for. That\'s the whole filter — no compatibility score deciding it for you.',
   },
@@ -829,7 +840,9 @@ function Features() {
         <div className={`grid stagger ${visible ? 'visible' : ''}`}>
           {FEATURES.map((f, i) => (
             <div className="card" key={f.title} style={{ animationDelay: `${i * 0.08}s` }}>
-              <div className="card-icon">{f.icon}</div>
+              <div className="card-icon">
+                <f.Icon size={21} strokeWidth={2} aria-hidden />
+              </div>
               <h3>{f.title}</h3>
               <p>{f.body}</p>
             </div>
