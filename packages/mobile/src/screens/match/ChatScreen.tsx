@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef, useCallback } from 'react';
+import React, { useState, useEffect, useRef, useCallback, useMemo } from 'react';
 import {
   View, Text, StyleSheet, FlatList, TextInput, TouchableOpacity,
   Image, KeyboardAvoidingView, Platform, Keyboard, ActivityIndicator,
@@ -6,6 +6,7 @@ import {
   StatusBar, Animated, ScrollView, Easing,
 } from 'react-native';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
+import Svg, { Path } from 'react-native-svg';
 import { useAudioRecorder, createAudioPlayer, AudioPlayer, setAudioModeAsync, requestRecordingPermissionsAsync, RecordingPresets } from 'expo-audio';
 import { usePreventScreenCapture } from 'expo-screen-capture';
 
@@ -239,59 +240,129 @@ const MIN_INPUT_BOTTOM_GAP = spacing.xxl;
 // Both are purely decorative and hold no recording state, so they cannot
 // affect capture — they only mount while `isRecording` is already true.
 
-const WAVEFORM_BARS = 24;
-const WAVEFORM_HEIGHT = 24;
-/** Scale floor, so a quiet bar is still a visible tick rather than nothing. */
-const WAVEFORM_MIN_SCALE = 0.18;
+const WAVEFORM_HEIGHT = 26;
+/** Spikes per tile. Must be even so the two tiles meet without a kink. */
+const SPIKES_PER_TILE = 28;
+/** Time for the trace to travel exactly one tile. */
+const WAVEFORM_SCROLL_MS = 1700;
 
 /**
- * Live waveform for an in-progress voice note.
+ * Build a seamless two-tile spike trace as an SVG path.
  *
- * Each bar jumps to a fresh random height on its own schedule, which reads as
- * live input. It is not driven by real amplitude — the recorder exposes no
- * metering here — so treat it as an activity indicator, not a signal display.
+ * The same spike heights are laid down twice end to end, and the path closes
+ * on the value it opened with. Scrolling by exactly one tile width therefore
+ * lands on an identical picture, so the loop has no visible seam.
+ */
+function buildSpikePath(tileWidth: number, height: number, amps: number[]): string {
+  const mid = height / 2;
+  const peak = mid - 1; // keep the stroke inside the box rather than clipped
+  const step = tileWidth / amps.length;
+  // Alternating direction is what makes it read as spikes rather than a wave.
+  const yAt = (i: number) => mid + (i % 2 === 0 ? -1 : 1) * amps[i] * peak;
+
+  let d = `M0 ${yAt(0).toFixed(1)}`;
+  for (let tile = 0; tile < 2; tile++) {
+    for (let i = tile === 0 ? 1 : 0; i < amps.length; i++) {
+      d += ` L${(tile * tileWidth + i * step).toFixed(1)} ${yAt(i).toFixed(1)}`;
+    }
+  }
+  return `${d} L${(2 * tileWidth).toFixed(1)} ${yAt(0).toFixed(1)}`;
+}
+
+/**
+ * Live spike trace for an in-progress voice note.
  *
- * Only `scaleY` is animated, so every bar runs on the native driver and the JS
- * thread stays free for the recording itself.
+ * A jagged SVG path scrolls right to left while its amplitude breathes, which
+ * reads as a recording being drawn. It is not driven by real amplitude — the
+ * recorder exposes no metering here — so treat it as an activity indicator,
+ * not a signal display.
  *
- * Memoised because the parent re-renders once a second as the timer ticks;
- * without it each tick would rebuild the Animated.Value array just for useRef
- * to discard it.
+ * The path itself is static; all motion is `translateX` and `scaleY` on the
+ * wrapper, so it runs entirely on the native driver. Animating the `d`
+ * attribute instead would re-render on the JS thread every frame while a
+ * recording is in flight, which is exactly what this screen cannot afford.
+ *
+ * Memoised because the parent re-renders once a second as the timer ticks.
  */
 const RecordingWaveform: React.FC = React.memo(() => {
-  const bars = useRef(
-    Array.from({ length: WAVEFORM_BARS }, () => new Animated.Value(WAVEFORM_MIN_SCALE)),
+  const [width, setWidth] = useState(0);
+  const scrollX = useRef(new Animated.Value(0)).current;
+  const amplitude = useRef(new Animated.Value(0.7)).current;
+
+  // Fixed for the life of the bar — the movement comes from scrolling, so a
+  // fresh set of heights per take is enough to keep takes from looking alike.
+  const amps = useRef(
+    Array.from({ length: SPIKES_PER_TILE }, () => 0.25 + Math.random() * 0.75),
   ).current;
 
+  const path = useMemo(
+    () => (width > 0 ? buildSpikePath(width, WAVEFORM_HEIGHT, amps) : ''),
+    [width, amps],
+  );
+
+  // Scroll one tile, then snap back to an identical frame and repeat.
+  useEffect(() => {
+    if (width <= 0) return;
+    scrollX.setValue(0);
+    const scroll = Animated.loop(
+      Animated.timing(scrollX, {
+        toValue: -width,
+        duration: WAVEFORM_SCROLL_MS,
+        easing: Easing.linear,
+        useNativeDriver: true,
+      }),
+    );
+    scroll.start();
+    return () => scroll.stop();
+  }, [width, scrollX]);
+
+  // Independent amplitude jumps, so the trace does not look like a loop.
   useEffect(() => {
     let cancelled = false;
-
-    const pulse = (bar: Animated.Value) => {
+    const breathe = () => {
       if (cancelled) return;
-      Animated.timing(bar, {
-        toValue: WAVEFORM_MIN_SCALE + Math.random() * (1 - WAVEFORM_MIN_SCALE),
-        duration: 130 + Math.random() * 190,
+      Animated.timing(amplitude, {
+        toValue: 0.4 + Math.random() * 0.6,
+        duration: 170 + Math.random() * 230,
         easing: Easing.out(Easing.quad),
         useNativeDriver: true,
       }).start(({ finished }) => {
-        if (finished) pulse(bar);
+        if (finished) breathe();
       });
     };
-
-    // Stagger the starts so the row ripples to life instead of flashing at once.
-    bars.forEach((bar, i) => setTimeout(() => pulse(bar), i * 18));
-
+    breathe();
     return () => {
       cancelled = true;
-      bars.forEach((bar) => bar.stopAnimation());
+      amplitude.stopAnimation();
     };
-  }, [bars]);
+  }, [amplitude]);
 
   return (
-    <View style={styles.waveform} pointerEvents="none">
-      {bars.map((bar, i) => (
-        <Animated.View key={i} style={[styles.waveformBar, { transform: [{ scaleY: bar }] }]} />
-      ))}
+    <View
+      style={styles.waveform}
+      onLayout={(e) => setWidth(Math.round(e.nativeEvent.layout.width))}
+      pointerEvents="none"
+    >
+      {width > 0 && (
+        <Animated.View
+          style={{
+            width: width * 2,
+            height: WAVEFORM_HEIGHT,
+            transform: [{ translateX: scrollX }, { scaleY: amplitude }],
+          }}
+        >
+          <Svg width={width * 2} height={WAVEFORM_HEIGHT}>
+            <Path
+              d={path}
+              stroke="#FF6B6B"
+              strokeWidth={2}
+              strokeLinecap="round"
+              strokeLinejoin="round"
+              fill="none"
+            />
+          </Svg>
+        </Animated.View>
+      )}
     </View>
   );
 });
@@ -2414,20 +2485,12 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     gap: 3,
   },
-  // Waveform bars scale from their centre, so the row reads as a symmetric
-  // waveform around the midline.
+  // Clips the double-width trace so only one tile is ever on screen.
   waveform: {
-    flexDirection: 'row',
-    alignItems: 'center',
     alignSelf: 'stretch',
     height: WAVEFORM_HEIGHT,
-    gap: 2,
-  },
-  waveformBar: {
-    flex: 1,
-    height: WAVEFORM_HEIGHT,
-    borderRadius: 1.5,
-    backgroundColor: '#FF6B6B',
+    overflow: 'hidden',
+    justifyContent: 'center',
   },
   recordingIndicator: {
     flexDirection: 'row',
