@@ -78,15 +78,20 @@ pipeline in release builds only.
 
 ## Push notifications
 
-`google-services.json` in this directory is an empty placeholder. `app.config.ts`
-detects that and omits it, which keeps the Google Services Gradle plugin out of
-the build — that plugin hard-fails on a file with no client matching
-`com.kinetik.app`.
+Android push is not set up, and there is no `google-services.json` in this
+directory. `app.config.ts` only declares one when a real Firebase config for
+`com.kinetik.app` is present, which keeps the Google Services Gradle plugin out
+of the build — that plugin hard-fails on a missing or non-matching file.
 
-Android push therefore does not work. To enable it: download the real
-`google-services.json` from the Firebase console, replace the placeholder, and
-run `npx eas init` to create the `extra.eas.projectId` that `expo-notifications`
-needs for push tokens.
+Nothing in the app depends on it: `notificationStore` already gives up when
+`extra.eas.projectId` is absent, so only socket-driven in-app updates work.
+
+To enable push you need both halves:
+
+1. Download the real `google-services.json` from the Firebase console into this
+   directory. It is picked up automatically — no config edit needed.
+2. Run `npx eas init` to create the `extra.eas.projectId` that
+   `expo-notifications` needs to mint a push token.
 
 ## Google Pay
 

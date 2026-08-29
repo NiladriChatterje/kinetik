@@ -116,10 +116,14 @@ function resolveProductionFaceVerification(appEnv: AppEnv): boolean {
 }
 
 /**
- * Use `google-services.json` only when it is a real Firebase config for this
- * package. The repo ships an empty placeholder, and the Google Services Gradle
- * plugin hard-fails on one ("No matching client found for package name"), which
- * would break every Android build. Returning undefined keeps the plugin out.
+ * Wire up `google-services.json` only when a real Firebase config for this
+ * package is present. There is none by default: Android push is not set up,
+ * and the Google Services Gradle plugin hard-fails on a missing or non-matching
+ * file ("No matching client found for package name"), which would break every
+ * Android build. Returning undefined keeps the plugin out of Gradle entirely.
+ *
+ * Drop the real file in from the Firebase console and it is picked up
+ * automatically — nothing else needs editing.
  */
 function resolveGoogleServicesFile(
   projectRoot: string,
