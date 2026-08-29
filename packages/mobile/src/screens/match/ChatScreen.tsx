@@ -121,19 +121,63 @@ function getMonthDays(year: number, month: number): { date: Date; dateStr: strin
 const ROSE = '#FF6B6B';
 
 // ─── Date Planner: Activity Suggestions ──────────────────
-const ACTIVITIES = [
-  { id: 'coffee', label: 'Coffee', icon: 'cafe-outline' as const },
-  { id: 'dinner', label: 'Dinner', icon: 'restaurant-outline' as const },
-  { id: 'walk', label: 'Walk', icon: 'walk-outline' as const },
-  { id: 'movie', label: 'Movie', icon: 'film-outline' as const },
-  { id: 'museum', label: 'Museum', icon: 'library-outline' as const },
-  { id: 'park', label: 'Park', icon: 'leaf-outline' as const },
-  { id: 'music', label: 'Live Music', icon: 'musical-notes-outline' as const },
-  { id: 'shopping', label: 'Shopping', icon: 'bag-outline' as const },
-  { id: 'sports', label: 'Sports', icon: 'football-outline' as const },
-  { id: 'cooking', label: 'Cooking', icon: 'nutrition-outline' as const },
-  { id: 'art', label: 'Art', icon: 'color-palette-outline' as const },
-  { id: 'beach', label: 'Beach', icon: 'water-outline' as const },
+// Grouped so a long list stays scannable. Every id from the original flat
+// list is preserved — planner data already saved on the server stores ids,
+// so renaming or dropping one would orphan an existing plan.
+const ACTIVITY_GROUPS: {
+  title: string;
+  items: { id: string; label: string; icon: keyof typeof Ionicons.glyphMap }[];
+}[] = [
+  {
+    title: 'The classics',
+    items: [
+      { id: 'coffee', label: 'Coffee', icon: 'cafe-outline' },
+      { id: 'dinner', label: 'Dinner', icon: 'restaurant-outline' },
+      { id: 'walk', label: 'Walk', icon: 'walk-outline' },
+      { id: 'movie', label: 'Movie', icon: 'film-outline' },
+      { id: 'cooking', label: 'Cooking', icon: 'nutrition-outline' },
+      { id: 'streetfood', label: 'Street Food', icon: 'fast-food-outline' },
+      { id: 'icecream', label: 'Ice Cream', icon: 'ice-cream-outline' },
+    ],
+  },
+  {
+    title: 'Out and about',
+    items: [
+      { id: 'park', label: 'Park', icon: 'leaf-outline' },
+      { id: 'beach', label: 'Beach', icon: 'water-outline' },
+      { id: 'museum', label: 'Museum', icon: 'library-outline' },
+      { id: 'art', label: 'Art', icon: 'color-palette-outline' },
+      { id: 'shopping', label: 'Shopping', icon: 'bag-outline' },
+      { id: 'sports', label: 'Sports', icon: 'football-outline' },
+      { id: 'fleamarket', label: 'Flea Market', icon: 'pricetags-outline' },
+      { id: 'cycling', label: 'Cycling', icon: 'bicycle-outline' },
+      { id: 'daytrip', label: 'Day Trip', icon: 'train-outline' },
+    ],
+  },
+  {
+    title: 'After dark',
+    items: [
+      { id: 'music', label: 'Live Music', icon: 'musical-notes-outline' },
+      { id: 'karaoke', label: 'Karaoke', icon: 'mic-outline' },
+      { id: 'comedy', label: 'Comedy Night', icon: 'happy-outline' },
+      { id: 'stargazing', label: 'Stargazing', icon: 'moon-outline' },
+      { id: 'bonfire', label: 'Bonfire', icon: 'bonfire-outline' },
+      { id: 'longdrive', label: 'Long Drive', icon: 'car-outline' },
+    ],
+  },
+  {
+    title: 'Off the beaten path',
+    items: [
+      { id: 'bookstore', label: 'Bookstore', icon: 'book-outline' },
+      { id: 'arcade', label: 'Arcade', icon: 'game-controller-outline' },
+      { id: 'boardgames', label: 'Board Games', icon: 'dice-outline' },
+      { id: 'photowalk', label: 'Photo Walk', icon: 'camera-outline' },
+      { id: 'pottery', label: 'Pottery', icon: 'brush-outline' },
+      { id: 'picnic', label: 'Picnic', icon: 'basket-outline' },
+      { id: 'sunrise', label: 'Sunrise', icon: 'sunny-outline' },
+      { id: 'rainwalk', label: 'Rain Walk', icon: 'rainy-outline' },
+    ],
+  },
 ];
 
 // ─── Icebreaker Prompts ─────────────────────────────────
@@ -1957,49 +2001,71 @@ export const ChatScreen: React.FC<{ navigation: any; route: any }> = ({ navigati
                   })}
                 </View>
 
-                {/* Selected date label */}
-                {plannerDate && (
-                  <Text style={styles.calSelectedLabel}>
-                    {new Date(plannerDate + 'T12:00:00').toLocaleDateString(undefined, { weekday: 'long', month: 'long', day: 'numeric', year: 'numeric' })}
-                  </Text>
-                )}
+                {/* Selected date — centred readout, echoes the black selected day cell */}
+                {plannerDate && (() => {
+                  const picked = new Date(plannerDate + 'T12:00:00');
+                  return (
+                    <View style={styles.calSelectedWrap}>
+                      <View style={styles.calSelectedCard}>
+                        <Text style={styles.calSelectedWeekday}>
+                          {picked.toLocaleDateString(undefined, { weekday: 'long' }).toUpperCase()}
+                        </Text>
+                        <Text style={styles.calSelectedDay}>{picked.getDate()}</Text>
+                        <Text style={styles.calSelectedMonth}>
+                          {picked.toLocaleDateString(undefined, { month: 'long', year: 'numeric' })}
+                        </Text>
+                      </View>
+                    </View>
+                  );
+                })()}
               </View>
 
               {/* Activities Tab */}
               {plannerTab === 'activities' && (
                 <View style={styles.plannerContent}>
-                  <Text style={styles.plannerSectionLabel}>What to do</Text>
-                  <View style={styles.activitiesGrid}>
-                    {ACTIVITIES.map((activity) => {
-                      const selected = plannerActivities.includes(activity.id);
-                      return (
-                        <TouchableOpacity
-                          key={activity.id}
-                          style={[styles.activityCard, selected && styles.activityCardActive]}
-                          onPress={() => {
-                            setPlannerActivities((prev) =>
-                              selected
-                                ? prev.filter((a) => a !== activity.id)
-                                : [...prev, activity.id]
-                            );
-                          }}
-                          activeOpacity={0.7}
-                        >
-                          <Ionicons
-                            name={activity.icon}
-                            size={20}
-                            color={selected ? colors.textInverse : colors.textSecondary}
-                          />
-                          <Text style={[styles.activityLabel, selected && styles.activityLabelActive]}>
-                            {activity.label}
-                          </Text>
-                          {selected && (
-                            <Ionicons name="checkmark" size={12} color={colors.textInverse} style={styles.activityCheck} />
-                          )}
-                        </TouchableOpacity>
-                      );
-                    })}
+                  <View style={styles.activitiesHeader}>
+                    <Text style={styles.plannerSectionLabel}>What to do</Text>
+                    {plannerActivities.length > 0 && (
+                      <Text style={styles.activitiesCount}>{plannerActivities.length} picked</Text>
+                    )}
                   </View>
+
+                  {ACTIVITY_GROUPS.map((group) => (
+                    <View key={group.title} style={styles.activityGroup}>
+                      <Text style={styles.activityGroupTitle}>{group.title}</Text>
+                      <View style={styles.activitiesGrid}>
+                        {group.items.map((activity) => {
+                          const selected = plannerActivities.includes(activity.id);
+                          return (
+                            <TouchableOpacity
+                              key={activity.id}
+                              style={[styles.activityCard, selected && styles.activityCardActive]}
+                              onPress={() => {
+                                setPlannerActivities((prev) =>
+                                  selected
+                                    ? prev.filter((a) => a !== activity.id)
+                                    : [...prev, activity.id]
+                                );
+                              }}
+                              activeOpacity={0.7}
+                            >
+                              <Ionicons
+                                name={activity.icon}
+                                size={20}
+                                color={selected ? colors.textInverse : colors.textSecondary}
+                              />
+                              <Text style={[styles.activityLabel, selected && styles.activityLabelActive]}>
+                                {activity.label}
+                              </Text>
+                              {selected && (
+                                <Ionicons name="checkmark" size={12} color={colors.textInverse} style={styles.activityCheck} />
+                              )}
+                            </TouchableOpacity>
+                          );
+                        })}
+                      </View>
+                    </View>
+                  ))}
 
                   {/* Notes */}
                   <Text style={[styles.plannerSectionLabel, { marginTop: spacing.md }]}>Notes</Text>
@@ -2799,11 +2865,36 @@ const styles = StyleSheet.create({
   calDayTodayText: {
     fontWeight: '700',
   },
-  calSelectedLabel: {
-    ...typography.caption,
-    color: colors.textSecondary,
-    textAlign: 'center',
-    marginTop: spacing.sm,
+  calSelectedWrap: {
+    alignItems: 'center',
+    marginTop: spacing.lg,
+  },
+  calSelectedCard: {
+    backgroundColor: colors.textPrimary,
+    borderRadius: radius.lg,
+    paddingVertical: spacing.lg,
+    paddingHorizontal: spacing.huge,
+    alignItems: 'center',
+  },
+  calSelectedWeekday: {
+    ...typography.label,
+    color: colors.textInverse,
+    opacity: 0.55,
+    letterSpacing: 2.5,
+  },
+  calSelectedDay: {
+    fontFamily: typography.h1.fontFamily,
+    fontSize: 46,
+    lineHeight: 52,
+    fontWeight: '700',
+    color: colors.textInverse,
+    letterSpacing: -1.5,
+    marginVertical: 2,
+  },
+  calSelectedMonth: {
+    ...typography.body2,
+    color: colors.textInverse,
+    opacity: 0.7,
   },
   dateConfirmBtn: {
     backgroundColor: colors.textPrimary,
@@ -2888,6 +2979,26 @@ const styles = StyleSheet.create({
     ...typography.body2,
     color: colors.textMuted,
     textAlign: 'center',
+  },
+  activitiesHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+  },
+  activitiesCount: {
+    ...typography.caption,
+    color: colors.textMuted,
+    marginBottom: spacing.sm,
+  },
+  activityGroup: {
+    marginBottom: spacing.lg,
+  },
+  activityGroupTitle: {
+    ...typography.caption,
+    color: colors.textMuted,
+    letterSpacing: 1.2,
+    textTransform: 'uppercase',
+    marginBottom: spacing.sm,
   },
   activitiesGrid: {
     flexDirection: 'row',
