@@ -1086,21 +1086,14 @@ function Refunds() {
             full Premium access until the cycle ends.
           </p>
           <p>
-            We will refund in full, regardless of cycle status, when:
+            Payment disputes and chargebacks are handled by Google through your Google Pay
+            account, not by Kinetik. If you believe you were charged in error, raise it there.
           </p>
-          <ul>
-            <li>You were charged after you already cancelled (a billing error on our side);</li>
-            <li>You were charged more than once for the same cycle (duplicate charge);</li>
-            <li>
-              You were charged without an active mandate or without your authorisation; or
-            </li>
-            <li>The service was materially unavailable for the entire billing cycle.</li>
-          </ul>
           <p>
-            To request a refund, email{' '}
+            If something looks wrong with your subscription, still write to us at{' '}
             <a href={`mailto:${SUPPORT_EMAIL}`}>{SUPPORT_EMAIL}</a> with your transaction ID and
-            the date of the charge. Approved refunds are processed within{' '}
-            <strong>5–7 business days</strong> to the original payment method.
+            the date of the charge — we can cancel the mandate and correct your account status
+            straight away.
           </p>
         </div>
       </div>
