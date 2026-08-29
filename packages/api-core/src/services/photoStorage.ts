@@ -116,7 +116,7 @@ export async function savePhoto(
 
   // ── Generate full-res WebP ───────────────────────────────
   // Lossy: lossless effort-6 cost minutes of CPU per photo, and its only
-  // consumer (server-side pose verification) moved on-device.
+  // consumer (server-side face verification) moved on-device.
   const fullKey = `${userId}/${photoId}.webp`;
   const fullBuffer = await sharp(fileBuffer)
     .webp({ quality: opts.lossless === false ? 82 : 88, effort: 4 })

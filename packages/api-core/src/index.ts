@@ -18,7 +18,7 @@ import { duoRoutes } from './routes/duo';
 import { webhookRoutes } from './routes/webhooks';
 import { notificationRoutes } from './routes/notifications';
 import { photoRoutes } from './routes/photos';
-import { poseVerificationRoutes } from './routes/poseVerification';
+import { faceVerificationRoutes } from './routes/faceVerification';
 import { kycRoutes } from './routes/kyc';
 import { errorHandler } from './middleware/errorHandler';
 import { eventBus } from './services/eventBus';
@@ -112,7 +112,7 @@ async function bootstrap() {
   await app.register(webhookRoutes, { prefix: '/api/v1/webhooks' });
   await app.register(notificationRoutes, { prefix: API_ROUTES.NOTIFICATIONS_PREFIX });
   await app.register(photoRoutes, { prefix: '/api/v1/users/photos' });
-  await app.register(poseVerificationRoutes, { prefix: '/api/v1/users/pose-verification' });
+  await app.register(faceVerificationRoutes, { prefix: '/api/v1/users/face-verification' });
   await app.register(kycRoutes, { prefix: '/api/v1/kyc' });
 
   // ─── Start ───────────────────────────────────────────

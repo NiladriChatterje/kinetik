@@ -581,7 +581,7 @@ export async function authRoutes(app: FastifyInstance) {
              phone_verified = FALSE,
              email_verified = FALSE,
              kyc_status = 'unverified',
-             liveness_status = 'unverified',
+             face_verification_status = 'unverified',
              is_verified = FALSE
            WHERE id = $1`,
           [userId],

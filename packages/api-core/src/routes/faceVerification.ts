@@ -2,7 +2,7 @@ import { FastifyInstance, FastifyRequest, FastifyReply } from 'fastify';
 import { ERROR_CODES } from '@kinetik/shared';
 import { query, TABLES } from '../services/database';
 
-export async function poseVerificationRoutes(app: FastifyInstance) {
+export async function faceVerificationRoutes(app: FastifyInstance) {
   // All routes require authentication
   app.addHook('preHandler', async (request: FastifyRequest, reply: FastifyReply) => {
     try {
@@ -16,11 +16,12 @@ export async function poseVerificationRoutes(app: FastifyInstance) {
   });
 
   // ─── Report On-Device Face Verification Result ──────────
-  // Face detection and selfie ↔ profile-photo matching run entirely on the
-  // device (mobile: services/faceVerification.ts — ML Kit + MobileFaceNet).
-  // The client self-reports the outcome here; the selfie never reaches the
-  // server. This is a UX signal, not a security guarantee — see
-  // POSE_VERIFICATION_ONDEVICE.md.
+  // Confirms only that the selfie shows the same person as the photos the
+  // user uploaded. There is no liveness or pose challenge. Detection and
+  // matching run entirely on the device (mobile: services/faceVerification.ts
+  // — ML Kit + MobileFaceNet); the client self-reports the outcome here and
+  // the selfie never reaches the server. A UX signal, not a security
+  // guarantee — see FACE_VERIFICATION_ONDEVICE.md.
   app.post('/', async (request: FastifyRequest, reply: FastifyReply) => {
     const { sub: userId } = request.user as any;
     const { verified, confidence } = (request.body ?? {}) as {
@@ -37,16 +38,16 @@ export async function poseVerificationRoutes(app: FastifyInstance) {
 
     if (verified) {
       await query(
-        `UPDATE ${TABLES.USERS} SET is_verified = TRUE, liveness_status = 'verified' WHERE id = $1`,
+        `UPDATE ${TABLES.USERS} SET is_verified = TRUE, face_verification_status = 'verified' WHERE id = $1`,
         [userId],
       );
       console.log(
-        `[pose-verification] User ${userId} verified on-device (confidence=${confidence ?? 'n/a'})`,
+        `[face-verification] User ${userId} verified on-device (confidence=${confidence ?? 'n/a'})`,
       );
     } else {
       // Not verified — leave status untouched; user proceeds with onboarding
       console.log(
-        `[pose-verification] On-device verification not confirmed for user ${userId} (confidence=${confidence ?? 'n/a'})`,
+        `[face-verification] On-device verification not confirmed for user ${userId} (confidence=${confidence ?? 'n/a'})`,
       );
     }
 

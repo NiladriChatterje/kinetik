@@ -82,7 +82,7 @@ export async function findUserById(id: string) {
     const result = await query(
       `      SELECT u.id, u.phone, u.email, u.display_name, u.date_of_birth, u.gender,
               u.pronouns, u.bio, u.occupation, u.education,
-              u.is_verified, u.kyc_status, u.liveness_status,
+              u.is_verified, u.kyc_status, u.face_verification_status,
               u.latitude, u.longitude, u.h3_index, u.dating_category, u.about_answers,
               u.is_active, u.is_banned, u.deleted_at,
               u.onboarding_complete, u.onboarding_step,
