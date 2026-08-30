@@ -6,47 +6,53 @@ x-logging: &default-logging
 
 services:
   # ─── PostgreSQL ───────────────────────────────────────────
-  postgres:
-    image: postgres:16-alpine
-    container_name: kinetik-postgres
-    restart: unless-stopped
-    environment:
-      POSTGRES_USER: ${POSTGRES_USER:-kinetik}
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-kinetik_dev_2024}
-      POSTGRES_DB: ${POSTGRES_DB:-kinetik}
-      PGDATA: /var/lib/postgresql/data/pgdata
-    ports:
-      - "${POSTGRES_PORT:-5432}:5432"
-    volumes:
-      - postgres-data:/var/lib/postgresql/data
-      - ./scripts/init-db.sql:/docker-entrypoint-initdb.d/init-db.sql
-    deploy:
-      resources:
-        limits:
-          cpus: "1.0"
-          memory: 384M
-        reservations:
-          memory: 256M
-    healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-kinetik} -d ${POSTGRES_DB:-kinetik}"]
-      interval: 10s
-      timeout: 5s
-      retries: 5
-    logging: *default-logging
+  # postgres:
+  #   image: postgres:16-alpine
+  #   container_name: kinetik-postgres
+  #   restart: unless-stopped
+  #   environment:
+  #     POSTGRES_USER: ${POSTGRES_USER:-kinetik}
+  #     POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-kinetik_dev_2024}
+  #     POSTGRES_DB: ${POSTGRES_DB:-kinetik}
+  #     PGDATA: /var/lib/postgresql/data/pgdata
+  #   ports:
+  #     - "${POSTGRES_PORT:-5432}:5432"
+  #   volumes:
+  #     - postgres-data:/var/lib/postgresql/data
+  #     - ./scripts/init-db.sql:/docker-entrypoint-initdb.d/init-db.sql
+  #   deploy:
+  #     resources:
+  #       limits:
+  #         cpus: "1.0"
+  #         memory: 384M
+  #       reservations:
+  #         memory: 256M
+  #   healthcheck:
+  #     test: [ "CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-kinetik} -d ${POSTGRES_DB:-kinetik}" ]
+  #     interval: 10s
+  #     timeout: 5s
+  #     retries: 5
+  #   logging: *default-logging
 
   # ─── Database Migration Runner (one-shot) ────────────────
-  # Applies all pending migration SQL files against PostgreSQL
-  # on every stack start. Idempotent — safe to run repeatedly.
+  # Applies all pending migration SQL files against the managed
+  # Postgres named by POSTGRES_HOST on every stack start.
+  # Idempotent — safe to run repeatedly.
   migration-runner:
     image: postgres:16-alpine
     container_name: kinetik-migration-runner
     restart: "no"
     environment:
-      DB_HOST: postgres
-      DB_PORT: 5432
+      DB_HOST: ${POSTGRES_HOST:-postgres}
+      DB_PORT: ${POSTGRES_PORT:-5432}
       DB_USER: ${POSTGRES_USER:-kinetik}
       DB_PASSWORD: ${POSTGRES_PASSWORD:-kinetik_dev_2024}
       DB_NAME: ${POSTGRES_DB:-kinetik}
+      # psql picks this up from the environment on every connection it opens.
+      # `prefer` is psql's own default: it negotiates TLS when the server
+      # offers it and falls back to plaintext for the local container, which
+      # is built without SSL support. .env sets `require` for managed Postgres.
+      PGSSLMODE: ${POSTGRES_SSLMODE:-prefer}
       MIGRATIONS_DIR: /app/scripts/migrations
     volumes:
       - ./scripts:/app/scripts:ro
@@ -55,9 +61,9 @@ services:
       - -c
       - |
         exec /app/scripts/run-migrations.sh
-    depends_on:
-      postgres:
-        condition: service_healthy
+    # depends_on:
+    #   postgres:
+    #     condition: service_healthy
     logging: *default-logging
 
   # ─── Redis (Caching + Socket.IO adapter + presence) ─────
@@ -165,7 +171,11 @@ services:
     environment:
       NODE_ENV: ${NODE_ENV:-development}
       PORT: 3001
-      DATABASE_URL: postgresql://${POSTGRES_USER:-kinetik}:${POSTGRES_PASSWORD:-kinetik_dev_2024}@postgres:5432/${POSTGRES_DB:-kinetik}
+      # Managed Postgres when .env sets DATABASE_URL; otherwise the local
+      # `postgres` container. Comment the DB block out of .env, uncomment the
+      # postgres service, and the whole stack falls back to local with no
+      # further edits here.
+      DATABASE_URL: ${DATABASE_URL:-postgresql://${POSTGRES_USER:-kinetik}:${POSTGRES_PASSWORD:-kinetik_dev_2024}@postgres:5432/${POSTGRES_DB:-kinetik}}
       REDIS_HOST: redis
       REDIS_PORT: 6379
       REDIS_PASSWORD: ${REDIS_PASSWORD:-kinetik_redis_2024}
@@ -214,11 +224,11 @@ services:
       MINIO_PUBLIC_URL: /uploads/
       # KYC document face matching only — selfie verification runs on-device
       # POSE_SERVICE_URL: http://pose-service:3004
-    depends_on:
-      postgres:
-        condition: service_healthy
-      migration-runner:
-        condition: service_completed_successfully
+      # depends_on:
+      # postgres:
+      #   condition: service_healthy
+      # migration-runner:
+      #   condition: service_completed_successfully
     deploy:
       resources:
         limits:
@@ -240,7 +250,8 @@ services:
     environment:
       NODE_ENV: ${NODE_ENV:-development}
       PORT: 3002
-      DATABASE_URL: postgresql://${POSTGRES_USER:-kinetik}:${POSTGRES_PASSWORD:-kinetik_dev_2024}@postgres:5432/${POSTGRES_DB:-kinetik}
+      # See api-core: managed Postgres via .env, local container otherwise.
+      DATABASE_URL: ${DATABASE_URL:-postgresql://${POSTGRES_USER:-kinetik}:${POSTGRES_PASSWORD:-kinetik_dev_2024}@postgres:5432/${POSTGRES_DB:-kinetik}}
       REDIS_HOST: redis
       REDIS_PORT: 6379
       REDIS_PASSWORD: ${REDIS_PASSWORD:-kinetik_redis_2024}
@@ -255,15 +266,15 @@ services:
       LIVEKIT_HOST: livekit:7880
       LIVEKIT_API_KEY: ${LIVEKIT_API_KEY:-kinetik_livekit_key}
       LIVEKIT_API_SECRET: ${LIVEKIT_API_SECRET:-kinetik_livekit_secret_2024_dev_xyz}
-    depends_on:
+      # depends_on:
       # redis:
       #   condition: service_healthy
       # redis-events:
       #   condition: service_healthy
       # livekit:
       #   condition: service_started
-      migration-runner:
-        condition: service_completed_successfully
+      # migration-runner:
+      #   condition: service_completed_successfully
     deploy:
       resources:
         limits:
@@ -288,7 +299,7 @@ services:
     volumes:
       - minio-data:/data
     healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:9000/minio/health/live"]
+      test: [ "CMD", "curl", "-f", "http://localhost:9000/minio/health/live" ]
       interval: 10s
       timeout: 5s
       retries: 5
@@ -306,7 +317,7 @@ services:
     image: minio/mc:latest
     container_name: kinetik-minio-init
     restart: "no"
-    entrypoint: ["/bin/sh", "-c"]
+    entrypoint: [ "/bin/sh", "-c" ]
     environment:
       MINIO_ROOT_USER: ${MINIO_ROOT_USER:-minioadmin}
       MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD:-minioadmin}
@@ -352,7 +363,6 @@ services:
         reservations:
           memory: 32M
     logging: *default-logging
-
   # ─── Pose / Face Service (Python / MediaPipe) ──────────────
   # DISABLED — selfie face verification runs on-device in the
   # mobile app via TFLite.  Only uncomment this if you need server-side
@@ -385,6 +395,6 @@ services:
   #   logging: *default-logging
 
 volumes:
-  postgres-data:
-  # redis-data:
+  postgres-data: # redis-data:
+
   minio-data:
