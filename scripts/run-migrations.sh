@@ -74,6 +74,58 @@ psql -1 -q -c "
 echo "  Tracking table ready."
 echo ""
 
+# ── First-run baseline ─────────────────────────────────────
+# init-db.sql holds the CURRENT full schema, not the original one — some
+# migrations have been folded back into it over time. So on the very first
+# run against a database (nothing recorded in _migrations yet) we:
+#
+#   1. create the schema from init-db.sql, unless it is already there —
+#      the local postgres container builds it via docker-entrypoint-initdb.d,
+#      a hosted database starts empty and needs it applied here;
+#   2. record the migrations listed in BASELINE_APPLIED as done WITHOUT
+#      running them, because init-db.sql already contains their changes and
+#      replaying them would error out (a column that already exists, a
+#      rename whose source column was never created).
+#
+# Every other migration still runs normally. They all use IF NOT EXISTS /
+# IF EXISTS, so they are harmless no-ops wherever init-db.sql already
+# covers them, and they do the real work where it does not.
+#
+# If you ever fold a new migration back into init-db.sql, add its filename
+# to BASELINE_APPLIED. Forgetting is safe in the recoverable direction: the
+# migration simply runs instead of being skipped.
+BASELINE_FILE="${BASELINE_FILE:-$SCRIPT_DIR/init-db.sql}"
+BASELINE_APPLIED="015_add_razorpay_subscription_id.sql
+016_rename_razorpay_columns_to_gateway.sql
+017_add_country_code.sql
+019_rename_liveness_to_face_verification.sql"
+
+recorded=$(psql -t -A -c "SELECT COUNT(*) FROM _migrations;")
+if [ "$recorded" = "0" ]; then
+  if [ "$(psql -t -A -c "SELECT to_regclass('public.users') IS NULL;")" = "t" ]; then
+    if [ ! -f "$BASELINE_FILE" ]; then
+      echo "  [ERROR] Database is empty but the baseline schema is missing:"
+      echo "          $BASELINE_FILE"
+      exit 1
+    fi
+    echo "  Empty database — creating the schema from $BASELINE_FILE"
+    psql -1 -q -f "$BASELINE_FILE"
+    echo "  Schema created."
+  else
+    echo "  Schema already present — recording the baseline only."
+  fi
+
+  for filename in $BASELINE_APPLIED; do
+    [ -f "$MIGRATIONS_DIR/$filename" ] || continue
+    checksum=$(sha256sum "$MIGRATIONS_DIR/$filename" 2>/dev/null | cut -d' ' -f1 || echo "unknown")
+    psql -1 -q -c "INSERT INTO _migrations (filename, checksum)
+                   VALUES ('$filename', '$checksum')
+                   ON CONFLICT (filename) DO NOTHING;"
+    echo "  ⏭  [BASE]  $filename — already contained in init-db.sql"
+  done
+  echo ""
+fi
+
 # ── Apply pending migrations ───────────────────────────────
 count_applied=0
 count_skipped=0
