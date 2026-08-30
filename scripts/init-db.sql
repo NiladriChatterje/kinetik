@@ -2,7 +2,9 @@
 -- PostgreSQL 16
 
 -- ─── Extensions ───────────────────────────────────────────
-CREATE EXTENSION IF NOT EXISTS "uuid-ossp";
+-- No uuid-ossp: UUID defaults use gen_random_uuid(), built into
+-- PostgreSQL 13+, so no extension is needed. Managed Postgres providers
+-- commonly do not offer uuid-ossp at all.
 CREATE EXTENSION IF NOT EXISTS "pgcrypto";
 CREATE EXTENSION IF NOT EXISTS "cube";          -- For vector operations fallback
 CREATE EXTENSION IF NOT EXISTS "earthdistance";  -- For geo queries fallback
@@ -15,7 +17,7 @@ CREATE TYPE verification_status AS ENUM ('unverified', 'pending', 'verified', 'r
 
 -- ─── Users Table ──────────────────────────────────────────
 CREATE TABLE users (
-    id              UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    id              UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     phone           VARCHAR(20) UNIQUE,
     country_code    VARCHAR(10),
     email           VARCHAR(255) UNIQUE,
@@ -77,7 +79,7 @@ CREATE INDEX idx_users_active ON users(is_active, last_active_at);
 
 -- ─── Profile Photos ───────────────────────────────────────
 CREATE TABLE profile_photos (
-    id              UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    id              UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     user_id         UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
     url             TEXT NOT NULL,
     thumbnail_url   TEXT,
@@ -91,7 +93,7 @@ CREATE INDEX idx_profile_photos_user ON profile_photos(user_id);
 
 -- ─── User Preferences (Hard Filters) ─────────────────────
 CREATE TABLE user_preferences (
-    id                  UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    id                  UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     user_id             UUID UNIQUE NOT NULL REFERENCES users(id) ON DELETE CASCADE,
 
     -- Filter boundaries
@@ -128,7 +130,7 @@ CREATE TABLE user_preferences (
 
 -- ─── User Interests / Tags ────────────────────────────────
 CREATE TABLE interests (
-    id              UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    id              UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     name            VARCHAR(100) UNIQUE NOT NULL,
     category        VARCHAR(50),
     emoji           VARCHAR(10)
@@ -143,7 +145,7 @@ CREATE TABLE user_interests (
 
 -- ─── Matches ──────────────────────────────────────────────
 CREATE TABLE matches (
-    id              UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    id              UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     user_a_id       UUID NOT NULL REFERENCES users(id),
     user_b_id       UUID NOT NULL REFERENCES users(id),
     matched_at      TIMESTAMPTZ NOT NULL DEFAULT NOW(),
@@ -206,7 +208,7 @@ CREATE INDEX idx_chat_media_sender  ON chat_media(sender_id);
 
 -- ─── Venues (B2B) ─────────────────────────────────────────
 CREATE TABLE venues (
-    id              UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    id              UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     name            VARCHAR(255) NOT NULL,
     category        VARCHAR(50),       -- 'cafe', 'bar', 'lounge', 'restaurant'
     description     TEXT,
@@ -224,7 +226,7 @@ CREATE TABLE venues (
 
 -- ─── Reservations ─────────────────────────────────────────
 CREATE TABLE reservations (
-    id              UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    id              UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     match_id        UUID NOT NULL REFERENCES matches(id),
     venue_id        UUID NOT NULL REFERENCES venues(id),
     booked_at       TIMESTAMPTZ NOT NULL DEFAULT NOW(),
@@ -236,7 +238,7 @@ CREATE TABLE reservations (
 
 -- ─── Duo Crews (Viral) ────────────────────────────────────
 CREATE TABLE duo_crews (
-    id              UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    id              UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     creator_id      UUID NOT NULL REFERENCES users(id),
     invitee_id      UUID REFERENCES users(id),
     invite_code     VARCHAR(20) UNIQUE NOT NULL,
@@ -250,7 +252,7 @@ CREATE INDEX idx_duo_crews_invite ON duo_crews(invite_code);
 
 -- ─── Subscriptions & Payments (Google Pay) ────────────────
 CREATE TABLE subscription_ledger (
-    id                      UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    id                      UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     user_id                 UUID UNIQUE NOT NULL REFERENCES users(id) ON DELETE CASCADE,
     tier                    subscription_tier DEFAULT 'free',
     swipe_allowance         INT DEFAULT 50,          -- Daily swipe limit
@@ -270,7 +272,7 @@ CREATE INDEX idx_subscription_user ON subscription_ledger(user_id);
 
 -- ─── Transactions ─────────────────────────────────────────
 CREATE TABLE transactions (
-    id                      UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    id                      UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     user_id                 UUID NOT NULL REFERENCES users(id),
     gateway_payment_id      VARCHAR(255),
     gateway_order_id        VARCHAR(255),
@@ -287,7 +289,7 @@ CREATE INDEX idx_transactions_user ON transactions(user_id);
 
 -- ─── User Interactions (Likes/Fans) ──────────────────────
 CREATE TABLE user_interactions (
-    id              UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    id              UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     actor_id        UUID NOT NULL REFERENCES users(id),
     target_id       UUID NOT NULL REFERENCES users(id),
     action          VARCHAR(20) NOT NULL,    -- 'like', 'pass', 'super_like'
@@ -305,7 +307,7 @@ CREATE INDEX idx_interactions_likes_received
 
 -- ─── KYC Documents ────────────────────────────────────────
 CREATE TABLE kyc_documents (
-    id              UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    id              UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     user_id         UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
     document_type   VARCHAR(50),             -- 'passport', 'drivers_license', 'national_id'
     document_url    TEXT NOT NULL,
@@ -319,7 +321,7 @@ CREATE INDEX idx_kyc_user ON kyc_documents(user_id);
 
 -- ─── Push Notification Tokens ────────────────────────────
 CREATE TABLE push_tokens (
-    id              UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    id              UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     user_id         UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
     token           TEXT NOT NULL,
     platform        VARCHAR(10),       -- 'ios', 'android', 'web'
@@ -334,7 +336,7 @@ CREATE INDEX idx_push_tokens_active ON push_tokens(is_active);
 
 -- ─── Audit Log ────────────────────────────────────────────
 CREATE TABLE audit_log (
-    id              UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    id              UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     user_id         UUID REFERENCES users(id),
     action          VARCHAR(100) NOT NULL,
     entity_type     VARCHAR(50),
