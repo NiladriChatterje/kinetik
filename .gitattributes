@@ -1,0 +1,5 @@
+# Shell scripts must keep LF endings. They are executed inside Linux
+# containers, and a CRLF shebang makes the kernel look for `/bin/sh\r`,
+# which fails with a bare "not found". On Windows checkouts core.autocrlf
+# would otherwise convert them.
+*.sh text eol=lf
