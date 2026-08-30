@@ -224,11 +224,11 @@ services:
       MINIO_PUBLIC_URL: /uploads/
       # KYC document face matching only — selfie verification runs on-device
       # POSE_SERVICE_URL: http://pose-service:3004
-      # depends_on:
+    depends_on:
       # postgres:
       #   condition: service_healthy
-      # migration-runner:
-      #   condition: service_completed_successfully
+      migration-runner:
+        condition: service_completed_successfully
     deploy:
       resources:
         limits:
@@ -266,15 +266,15 @@ services:
       LIVEKIT_HOST: livekit:7880
       LIVEKIT_API_KEY: ${LIVEKIT_API_KEY:-kinetik_livekit_key}
       LIVEKIT_API_SECRET: ${LIVEKIT_API_SECRET:-kinetik_livekit_secret_2024_dev_xyz}
-      # depends_on:
+    depends_on:
       # redis:
       #   condition: service_healthy
       # redis-events:
       #   condition: service_healthy
       # livekit:
       #   condition: service_started
-      # migration-runner:
-      #   condition: service_completed_successfully
+      migration-runner:
+        condition: service_completed_successfully
     deploy:
       resources:
         limits:
