@@ -16,6 +16,7 @@
  *   MINIO_SECRET_KEY — Secret key (default: minioadmin)
  *   MINIO_USE_SSL   — Set to "true" for HTTPS (default: false)
  *   MINIO_BUCKET    — Bucket name (default: kinetik-photos)
+ *   MINIO_REGION    — S3 region; "auto" for Cloudflare R2 (default: us-east-1)
  *   MINIO_PUBLIC_URL — Public-facing URL for photos (default: /uploads/)
  */
 
@@ -32,6 +33,8 @@ const ACCESS_KEY = process.env.MINIO_ACCESS_KEY || 'minioadmin';
 const SECRET_KEY = process.env.MINIO_SECRET_KEY || 'minioadmin';
 const USE_SSL = process.env.MINIO_USE_SSL === 'true';
 const BUCKET = process.env.MINIO_BUCKET || 'kinetik-photos';
+/** MinIO ignores the region but the S3 SDK demands one. Cloudflare R2 wants "auto". */
+const REGION = process.env.MINIO_REGION || 'us-east-1';
 /** Public URL prefix for serving images (via nginx or MinIO console) */
 const PUBLIC_URL = process.env.MINIO_PUBLIC_URL || '/uploads/';
 
@@ -68,7 +71,7 @@ function getS3Client(): S3Client {
   if (!s3Client) {
     s3Client = new S3Client({
       endpoint: `http${USE_SSL ? 's' : ''}://${ENDPOINT}`,
-      region: 'us-east-1', // MinIO ignores region but S3 SDK requires it
+      region: REGION,
       credentials: {
         accessKeyId: ACCESS_KEY,
         secretAccessKey: SECRET_KEY,
