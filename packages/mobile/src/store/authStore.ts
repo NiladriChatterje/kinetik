@@ -1,5 +1,6 @@
 import { create } from 'zustand';
 import * as SecureStore from 'expo-secure-store';
+import Toast from 'react-native-toast-message';
 import { Socket } from 'socket.io-client';
 import { api } from '../services/api';
 import { closeCallSocket, getChatSocket } from '../services/callSocket';
@@ -190,19 +191,47 @@ export const useAuthStore = create<AuthState>((set, get) => ({
           get().fetchUnreadChatCount();
         } else {
           // Profile fetch failed. Only treat it as a stale/expired session when
-          // the server explicitly rejected the token (401/403). A 502/5xx from
-          // a gateway or a network error means the server is temporarily
-          // unavailable — keep the token so a transient outage doesn't log the
-          // user out (the offline banner covers that UX).
+          // the server explicitly rejected the token (401/403), or when the
+          // token is perfectly valid but the account behind it is gone (404):
+          // the user deleted their account elsewhere, or the database the API
+          // talks to was replaced. A 502/5xx from a gateway or a network error
+          // means the server is temporarily unavailable — keep the token so a
+          // transient outage doesn't log the user out (the offline banner
+          // covers that UX).
           const status = profileRes.error?.status;
           const isAuthFailure =
             profileRes.error?.code === 'UNAUTHORIZED' ||
             status === 401 ||
             status === 403;
-          if (isAuthFailure) {
-            await SecureStore.deleteItemAsync('auth_token');
+          const isMissingAccount =
+            profileRes.error?.code === 'NOT_FOUND' || status === 404;
+
+          if (isAuthFailure || isMissingAccount) {
+            // setToken/setRefreshToken clear SecureStore *and* the in-memory
+            // copy the client sends on every request.
             api.setToken(null);
+            api.setRefreshToken(null);
+            set({
+              user: null,
+              token: null,
+              isAuthenticated: false,
+              onboardingStep: 'splash',
+            });
           }
+
+          if (isMissingAccount) {
+            // The user did nothing wrong and there is nothing for them to fix,
+            // so never surface "User not found". From their side this is just
+            // a session that ended: land on the welcome screen with a soft
+            // nudge instead of an error.
+            Toast.show({
+              type: 'glass',
+              text1: 'Session ended',
+              text2: 'Please sign in again to continue.',
+              visibilityTime: 3000,
+            });
+          }
+
           set({ isLoading: false });
         }
       } else {
