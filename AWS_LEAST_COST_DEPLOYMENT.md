@@ -191,12 +191,16 @@ server {
 }
 ```
 
-Auto-renewal, reloading nginx inside the container:
+Auto-renewal. `--standalone` needs port 80 to itself and the nginx container
+publishes it, so nginx must be stopped for the renewal and restarted after —
+a `--deploy-hook` alone never runs, because renewal fails first:
 
 ```bash
-echo '0 3 * * * root certbot renew --quiet --deploy-hook "docker restart kinetik-nginx"' \
+echo '0 3 * * * root certbot renew --quiet --pre-hook "docker stop kinetik-nginx" --post-hook "docker start kinetik-nginx"' \
   | sudo tee /etc/cron.d/certbot-renew
 ```
+
+Verify with `sudo certbot renew --dry-run --pre-hook "docker stop kinetik-nginx" --post-hook "docker start kinetik-nginx"`.
 
 > The `proxy_read_timeout 86400s` and `proxy_buffering off` already set on `/socket.io/` are
 > what keep Socket.IO alive through the proxy. Don't drop them when you move the block.
@@ -229,7 +233,8 @@ Beyond the `FREE_HOSTING_GUIDE.md` §12 list, change these for a public deployme
 NODE_ENV=production
 JWT_SECRET=<long random string>              # must be byte-identical in both services
 MESSAGE_ENCRYPTION_KEY=<random 32+ chars>    # changing it makes existing messages unreadable
-PAYMENT_WEBHOOK_SECRET=<from your PSP>
+GOOGLE_PLAY_SERVICE_ACCOUNT_FILE=/run/secrets/play-service-account.json
+GOOGLE_PLAY_RTDN_SECRET=<openssl rand -hex 32>
 ```
 
 ⚠️ `docker-compose.yml` ships development fallbacks for `JWT_SECRET` and

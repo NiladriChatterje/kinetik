@@ -11,17 +11,24 @@ Cost: **$0/mo**, plus a domain if you want a nice URL (§6).
 
 ## 1. What you get, and what actually fits
 
-Always Free ARM allowance: **4 OCPU + 24 GB RAM**, 200 GB block storage, 10 TB/month egress.
+Always Free ARM allowance: **2 OCPU + 12 GB RAM**, 200 GB block storage, 10 TB/month egress.
 Take it all in **one instance** — there's no benefit to splitting it.
+
+> ⚠️ **This was 4 OCPU / 24 GB until 15 June 2026**, when Oracle halved it with no
+> announcement — just a documentation edit. Instances above the new limit had to be
+> resized by 18 August 2026 or were terminated automatically. Oracle's fine print also
+> warns that a grandfathered instance, once terminated for any reason, cannot be
+> recreated above the current limit. Treat the published numbers as the truth on the day
+> you read them, and re-check before relying on them.
 
 | Container | Memory | |
 |---|---|---|
 | `api-core` | 256 MB | Fastify REST API, port 3001 |
 | `realtime` | 256 MB | Socket.IO, port 3002 |
 | `nginx` | 64 MB | Reverse proxy + TLS, ports 80/443 |
-| **Total** | **~576 MB** | **out of 24 GB** |
+| **Total** | **~576 MB** | **out of 12 GB** |
 
-You will use roughly 3% of the machine. No swap needed, and unlike a 1 GB VPS you can build
+You will use roughly 5% of the machine. No swap needed, and unlike a 1 GB VPS you can build
 both images at once without any risk of an out-of-memory kill.
 
 > **ARM is fine.** The images are `node:20-alpine` and `nginx:alpine`, both multi-arch, and the
@@ -36,8 +43,13 @@ both images at once without any risk of an out-of-memory kill.
    resources only exist there. Choose the one nearest your users *and* your Layerbase/Aiven
    regions — every API call makes a database round trip.
 2. Compute → **Create instance**.
-3. **Image:** Ubuntu 24.04 (Canonical). **Shape:** change it → **Ampere** →
-   `VM.Standard.A1.Flex` → **4 OCPUs, 24 GB memory**. Confirm it says **Always Free Eligible**.
+3. **Image:** Canonical Ubuntu **24.04**, and pick the **`aarch64`** build — the
+   `x86_64` images can't boot on Ampere, and choosing one silently restricts the
+   shape list to paid AMD instances. Avoid the **Minimal** variant: the standard
+   image already ships `netfilter-persistent`, which §3b needs.
+   **Shape:** change it → **Ampere** → `VM.Standard.A1.Flex` → **2 OCPUs, 12 GB
+   memory**. Confirm it says **Always Free Eligible** — that badge, not any number
+   written here, is what decides whether you are billed.
 4. Boot volume: the default (~50 GB) is fine — you have 200 GB of allowance.
 5. Add your SSH **public** key. There is no password login.
 6. Create.
@@ -48,7 +60,7 @@ This is normal, not a mistake you made. ARM capacity in popular regions is genui
 
 - Try each **availability domain** in the dropdown (AD-1, AD-2, AD-3) — they have separate pools.
 - Try again at a different hour. Capacity frees up unpredictably.
-- Ask for **less**: 2 OCPU / 12 GB often succeeds where 4 / 24 fails, and is still 15× what
+- Ask for **less**: 1 OCPU / 6 GB often succeeds where 2 / 12 fails, and is still 10× what
   this stack needs. You can't resize an A1 later, but you can destroy and recreate.
 
 ---
@@ -106,7 +118,7 @@ sudo usermod -aG docker ubuntu && newgrp docker
 sudo apt update && sudo apt install -y git unattended-upgrades
 ```
 
-No swap step. You have 24 GB.
+No swap step. You have 12 GB.
 
 ---
 
@@ -185,11 +197,20 @@ server {
 > Keep `proxy_read_timeout 86400s` and `proxy_buffering off` on `/socket.io/`. Those are what
 > hold WebSockets open through the proxy — drop them and chat dies after 60 seconds.
 
-Auto-renewal:
+Auto-renewal. `--standalone` needs port 80 to itself, and the nginx container
+publishes it — so nginx must be stopped for the renewal and started again after.
+A `--deploy-hook` alone is not enough; renewal would fail before ever reaching it:
 
 ```bash
-echo '0 3 * * * root certbot renew --quiet --deploy-hook "docker restart kinetik-nginx"' \
+echo '0 3 * * * root certbot renew --quiet --pre-hook "docker stop kinetik-nginx" --post-hook "docker start kinetik-nginx"' \
   | sudo tee /etc/cron.d/certbot-renew
+```
+
+Verify it now rather than discovering it in 60 days:
+
+```bash
+sudo certbot renew --dry-run \
+  --pre-hook "docker stop kinetik-nginx" --post-hook "docker start kinetik-nginx"
 ```
 
 Reload nginx after editing the config: `docker compose restart nginx`.
@@ -204,7 +225,8 @@ Start from `FREE_HOSTING_GUIDE.md` §12, then override for production:
 NODE_ENV=production
 JWT_SECRET=<long random string>              # byte-identical in both services
 MESSAGE_ENCRYPTION_KEY=<random 32+ chars>    # changing it makes old messages unreadable
-PAYMENT_WEBHOOK_SECRET=<from your PSP>
+GOOGLE_PLAY_SERVICE_ACCOUNT_FILE=/run/secrets/play-service-account.json
+GOOGLE_PLAY_RTDN_SECRET=<openssl rand -hex 32>
 ```
 
 ⚠️ `docker-compose.yml` ships development fallbacks for `JWT_SECRET` and
@@ -276,7 +298,7 @@ into R2 is what stands between you and a bad afternoon.
 
 ## 11. Later: consolidate onto this box
 
-With 24 GB you could stop paying rent to anyone. `docker-compose.yml` still contains the
+With 12 GB you could stop paying rent to anyone. `docker-compose.yml` still contains the
 commented-out `postgres`, `redis`, `redis-events` and `livekit` services — uncomment them, move
 `DATABASE_URL` and the Redis variables back to local hostnames, and the whole stack runs on one
 machine with no external dependencies and no cross-region latency on every query.
