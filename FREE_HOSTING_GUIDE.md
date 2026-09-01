@@ -32,7 +32,7 @@ Each part of the app gets a free home. "Sleeps" means the free host pauses the s
 
 ## 2. Code changes you must make first (~10 minutes, one time)
 
-**No new SDKs or libraries need to be installed.** The app already speaks the right "languages": Neon is plain PostgreSQL, Aiven's Valkey is plain Redis protocol, R2 is storage the app's existing S3 client understands, and the LiveKit / Expo / Google Pay SDKs are already in the code. The only edits are tiny settings tweaks:
+**No new SDKs or libraries need to be installed.** The app already speaks the right "languages": Neon is plain PostgreSQL, Aiven's Valkey is plain Redis protocol, R2 is storage the app's existing S3 client understands, and the LiveKit / Expo / Play Billing SDKs are already in the code. The only edits are tiny settings tweaks:
 
 ### 2a. Tell Redis connections to use encryption (TLS)
 
@@ -197,13 +197,13 @@ The app is built to work without it: onboarding never blocks on it.
 | Push notifications | Expo Push | free | `EXPO_ACCESS_TOKEN` (optional) |
 | Address lookup | Geoapify | 3,000/day | `GEOAPIFY_API` |
 | SMS login codes | deferred | — | `SMS_DISABLED=true` |
-| Payments | Google Pay | TEST environment free forever | `GOOGLE_PAY_MERCHANT_ID`, `GOOGLE_PAY_GATEWAY*` (+ see `PAYMENT_INTEGRATION.md`) |
+| Payments | Google Play Billing | No hosting cost; Google takes a service fee per sale | `GOOGLE_PLAY_SERVICE_ACCOUNT_*`, `GOOGLE_PLAY_RTDN_SECRET` (+ see `PAYMENT_INTEGRATION.md`) |
 | Error alerts | Sentry | 5k errors/month | — |
 | Log storage | Better Stack | 100k logs/month | — |
 
 **SMS note:** the login code is currently hardcoded to `123456` for everyone (`generateOtp()` in `routes/auth.ts`). Keep `SMS_DISABLED=true` until launch; real SMS always costs per message (~₹0.2–0.7), on any provider.
 
-**Payments note:** the Google Pay TEST environment is free forever. Going live needs Google Pay & Wallet Console approval plus a payment gateway (PSP) account with per-transaction fees — a payment fee, not a hosting fee.
+**Payments note:** Play Billing costs nothing to host — Google is the merchant of record and there is no PSP. Licence testers can buy without being charged. Going live needs a verified Play payments profile and an app published to a track; Google's service fee comes out of each sale — a payment fee, not a hosting fee.
 
 ---
 
@@ -251,11 +251,10 @@ MINIO_BUCKET=kinetik-photos
 MINIO_USE_SSL=true
 MINIO_PUBLIC_URL=https://pub-<hash>.r2.dev/
 GEOAPIFY_API=<geoapify-key>
-GOOGLE_PAY_ENVIRONMENT=TEST
-GOOGLE_PAY_MERCHANT_ID=                  # Google Pay & Wallet Console id (optional in TEST)
-GOOGLE_PAY_GATEWAY=example               # PSP tokenization ids (TEST defaults)
-GOOGLE_PAY_GATEWAY_MERCHANT_ID=exampleGatewayMerchantId
-PAYMENT_WEBHOOK_SECRET=                  # set when you add the webhook (PAYMENT_INTEGRATION.md)
+GOOGLE_PLAY_PACKAGE_NAME=com.kinetik.app
+GOOGLE_PLAY_SUBSCRIPTION_PRODUCT_ID=kinetik_premium_monthly
+GOOGLE_PLAY_SERVICE_ACCOUNT_JSON=        # Play Console → Setup → API access
+GOOGLE_PLAY_RTDN_SECRET=                 # secret on the Pub/Sub push URL
 SMS_DISABLED=true
 EXPO_ACCESS_TOKEN=                       # optional
 POSE_SERVICE_URL=                        # leave empty

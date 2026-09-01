@@ -1,125 +1,173 @@
-# Payment Integration — Google Pay Subscriptions (Autopay Mandate)
+# Payment Integration — Google Play Billing Subscriptions
 
-Kinetik Premium (₹149/month, the single global plan) is billed through the **Google Pay API**. Razorpay was removed because its React Native SDK is being discontinued.
+Kinetik Premium (₹149/month, a single plan) is sold as a **Google Play Billing subscription**.
+
+Google is the **merchant of record**. It shows the purchase sheet, takes whatever payment method
+the user has on their Google account — UPI Autopay, card, Play balance — holds the recurring
+mandate, charges monthly, retries failures, handles grace periods and refunds, and pays out
+minus its service fee. **There is no PSP, and nothing in this repo charges anyone.**
+
+> Play policy requires digital goods and services consumed in the app to be sold through Play
+> Billing. Premium unlocks in-app features, so this is the required route — not the Google Pay
+> API, which is for physical goods and was removed in this migration.
 
 | Layer | Where |
 |---|---|
-| Mobile checkout | `packages/mobile/src/screens/wallet/SubscriptionCheckoutScreen.tsx` using [`@google/react-native-make-payment`](https://github.com/google-pay/react-native-make-payment) (Google's official RN library, per the [React Native codelab](https://codelabs.developers.google.com/codelabs/pay-react-native)) |
-| Server | `packages/api-core/src/services/googlePay.ts`, `routes/payments.ts`, `routes/webhooks.ts` |
-| Config | `.env` at repo root (template: `.env.example`) → forwarded to api-core by docker-compose; plus one Android build flag in `packages/mobile/android/gradle.properties` |
+| Mobile checkout | `packages/mobile/src/screens/wallet/SubscriptionCheckoutScreen.tsx` using [`expo-iap`](https://hyochan.github.io/expo-iap/) |
+| Play API client | `packages/api-core/src/services/playBilling.ts` |
+| Entitlement writer | `packages/api-core/src/services/subscriptionEntitlement.ts` |
+| Routes | `packages/api-core/src/routes/payments.ts`, `routes/webhooks.ts` |
+| Config | `.env` at repo root (template: `.env.example`) → forwarded to api-core by docker-compose |
 
-## How the recurring flow works
+## How it works
 
-1. **Create** — `POST /api/v1/payments/subscription` creates a pending subscription (id stored on the subscription ledger) and returns the Google Pay sheet configuration (merchant + gateway ids) plus the price in the user's local currency.
-2. **Payment sheet** — the app builds a `PaymentRequest` (`supportedMethods: 'google_pay'`) and shows the native Google Pay sheet. The user approves the **recurring autopay mandate** — UPI Autopay in India, a tokenized card elsewhere — and the sheet returns a gateway payment token (`paymentMethodData.tokenizationData.token`).
-3. **Activate** — `POST /api/v1/payments/subscription/activate` confirms the subscription belongs to the calling user, registers the token with the payment gateway as a recurring mandate (first charge included), then grants premium for one month.
-4. **Renewals / cancellation** — the gateway executes the monthly mandate charges and posts `subscription.charged`, `subscription.activated`, `subscription.cancelled`, and `payment.captured` to `POST /api/v1/webhooks/payments` (HMAC-SHA256 over the raw body in the `x-payment-signature` header, payment-id dedupe). Cancellation revokes the mandate and stops auto-renew; the user keeps Premium until the paid cycle ends. Deleting the account revokes the mandate immediately.
+1. **Purchase** — the app connects to Play (`initConnection`), reads the product and its base-plan
+   offer token (`fetchProducts`), and opens the sheet (`requestPurchase`). Google takes the money.
+2. **Verify** — the purchase arrives on `purchaseUpdatedListener` with a `purchaseToken`. The app
+   posts it to `POST /api/v1/payments/subscription/verify`. The server calls
+   [`purchases.subscriptionsv2.get`](https://developers.google.com/android-publisher/api-ref/rest/v3/purchases.subscriptionsv2/get),
+   mirrors the result onto `subscription_ledger`, and **acknowledges** the purchase.
+3. **Finish** — only after the server confirms does the app call `finishTransaction`. Doing it
+   earlier would tell Play the purchase was handled while the user has no Premium.
+4. **Renewals and everything after** — Google pushes a
+   [real-time developer notification](https://developer.android.com/google/play/billing/rtdn-reference)
+   to `POST /api/v1/webhooks/play?secret=…` on every state change. The handler treats it purely as
+   a signal, re-reads the authoritative state, and applies it. Renewal, cancellation, expiry,
+   account hold, refund and recovery all converge on that one path.
 
-The legacy one-off endpoints (`/payments/create-order`, `/payments/verify`) contain dev stubs and are not called anywhere by the app.
+Both entry points share `applyPlayEntitlement()`, so there is exactly one place that decides
+whether a user is Premium.
 
-> **Important:** Google Pay only returns a *payment token* — it does not move money itself. The actual charging (mandate registration, monthly renewals) is executed by your **payment service provider (PSP)** using that token. `registerAutopayMandate` / `revokeAutopayMandate` in `services/googlePay.ts` are dev stubs today; wiring your PSP's recurring-payments API there is step 6 of the NEED list below.
+### Entitlement rule
+
+Entitled when `subscriptionState` is `ACTIVE`, `IN_GRACE_PERIOD` or `CANCELED` **and** `expiryTime`
+is still in the future. `CANCELED` is included on purpose — the user turned off renewal but paid
+through the end of the cycle. `ON_HOLD` and `PAUSED` are excluded: Google has suspended the
+subscription and access should stop until it recovers.
 
 ## Configuration reference
 
 | Variable (`.env`) | Meaning |
 |---|---|
-| `GOOGLE_PAY_ENVIRONMENT` | `TEST` (works immediately, fake cards) or `PRODUCTION`. Note: the mobile sheet's environment is separate — it is baked into the app at build time from the same-named variable in the *build* environment, via `packages/mobile/plugins/withGooglePayEnvironment.js`. |
-| `GOOGLE_PAY_MERCHANT_ID` | Your merchant id from the Google Pay & Wallet Console (`BCR2DN...`). Optional in TEST, **required** in PRODUCTION. |
-| `GOOGLE_PAY_MERCHANT_NAME` | Name shown on the payment sheet. |
-| `GOOGLE_PAY_GATEWAY` | Your PSP's Google Pay gateway identifier (e.g. `example` in TEST). |
-| `GOOGLE_PAY_GATEWAY_MERCHANT_ID` | Your merchant id **at the PSP** (e.g. `exampleGatewayMerchantId` in TEST). |
-| `GOOGLE_PAY_COUNTRY_CODE` | Merchant country for `transactionInfo` (default `IN`). |
-| `PAYMENT_WEBHOOK_SECRET` | HMAC secret shared with the PSP for `POST /api/v1/webhooks/payments`; leave empty only in dev. |
+| `GOOGLE_PLAY_PACKAGE_NAME` | Android package name; must match the Play Console listing. Default `com.kinetik.app`. |
+| `GOOGLE_PLAY_SUBSCRIPTION_PRODUCT_ID` | Subscription product id from Play Console. Default `kinetik_premium_monthly`. |
+| `GOOGLE_PLAY_SERVICE_ACCOUNT_JSON` | Service-account key as inline JSON. |
+| `GOOGLE_PLAY_SERVICE_ACCOUNT_FILE` | …or a path to the key file. Preferred under Docker. |
+| `GOOGLE_PLAY_RTDN_SECRET` | Shared secret on the Pub/Sub push URL. Without it the RTDN endpoint rejects everything. |
 
-Nothing secret lives on the mobile side — the app receives merchant/gateway ids from the server at checkout time.
+Until a service account is configured, `/subscription/verify` returns **503** and the paywall says
+payments aren't set up. Nothing secret reaches the app.
 
-## NEED: everything you must set up to accept real payments
+## NEED: everything to set up in Play Console
 
-Do these **in order**. Steps 1–3 are pure console/account work, 4–7 are config + one code wiring task, 8–10 are Google's approval gate.
+### 1. Payments profile — do this first, it has the longest lead time
 
-### 1. Create your Google Pay & Wallet Console account (→ Merchant ID)
+**Setup → Payments profile.** Legal entity, PAN, GST if applicable, bank account, tax forms.
+No paid product can be created until this verifies. Days to weeks.
 
-- Go to **https://pay.google.com/business/console** and sign in with the Google account that will own the merchant profile (use a company account, not a personal one — ownership transfers are painful).
-- Complete the **Business profile**: legal business name, address, website, and business description. Accept the Google Pay API Terms of Service.
-- Your **Merchant ID** (format `BCR2DN...`) appears in the top-right of the console / under Business profile. Copy it into `GOOGLE_PAY_MERCHANT_ID` in `.env`.
+### 2. Create the app
 
-### 2. Sign up with a PSP that supports Google Pay + recurring in India
+Package name must be exactly `com.kinetik.app` (see `packages/mobile/app.json`). **It is immutable
+after the first upload.** Then complete the blocking declarations — privacy policy URL, Data
+safety, content rating, target audience, store listing — or no track will publish.
 
-Google Pay hands you a token; a PSP charges it. Pick one from Google's **participating processors** list — https://developers.google.com/pay/api#participating-processors — that supports **INR, UPI Autopay / recurring mandates** (e.g. Cashfree, PayU, Paytm, Juspay — verify current recurring support with their sales/docs before signing).
+### 3. Upload a signed build
 
-From the PSP you need **four things**:
-- Their **gateway identifier** for Google Pay tokenization → `GOOGLE_PAY_GATEWAY` (each PSP documents its exact string, e.g. `cashfree`, `payu`)
-- Your **gateway merchant id** at the PSP → `GOOGLE_PAY_GATEWAY_MERCHANT_ID`
-- Their **server API key/secret** (used by `services/googlePay.ts` to register/charge/cancel mandates — this never goes to the app)
-- A **webhook signing secret** → `PAYMENT_WEBHOOK_SECRET`
+Upload an **AAB** to **internal testing** with **Play App Signing** enabled.
 
-This also requires completing the PSP's **merchant KYC** (business PAN, bank account, etc.) and asking them to **enable recurring payments / UPI Autopay** on your account — it is usually an opt-in product, not on by default.
+> ⚠️ Play Billing does not work in a locally-built debug APK. The app must be installed **from
+> Play**, signed with the key Play knows. `assembleDebug` builds cannot test purchases at all.
 
-### 3. Register the Android app in the console
+### 4. Create the subscription
 
-- In the Google Pay & Wallet Console → **Google Pay API** → **Integrations**, add your Android app (package name `com.…` from `packages/mobile/app.json` / the Android manifest).
-- Reference: https://developers.google.com/pay/api/android/guides/test-and-deploy/publish-your-integration
+**Monetise → Products → Subscriptions → Create subscription.**
 
-### 4. Fill in `.env` (server) and restart api-core
+- Product ID — must equal `GOOGLE_PLAY_SUBSCRIPTION_PRODUCT_ID`. Permanent; choose carefully.
+- Add a **base plan**: auto-renewing, billing period `P1M`.
+- Price ₹149 for India; set or auto-convert other regions.
+- Set **grace period** and **account hold** — without them a single failed UPI charge cancels
+  the subscription outright instead of retrying.
+- **Activate the base plan.** Creating it is not enough; an inactive plan is invisible to the app
+  and `fetchProducts` returns nothing.
 
-```bash
-GOOGLE_PAY_ENVIRONMENT=TEST            # keep TEST until step 10
-GOOGLE_PAY_MERCHANT_ID=BCR2DN...       # from step 1
-GOOGLE_PAY_MERCHANT_NAME=Kinetik
-GOOGLE_PAY_GATEWAY=<psp-gateway-id>    # from step 2
-GOOGLE_PAY_GATEWAY_MERCHANT_ID=<your-id-at-psp>
-GOOGLE_PAY_COUNTRY_CODE=IN
-PAYMENT_WEBHOOK_SECRET=<psp-webhook-secret>
-```
+### 5. Licence testing
 
-### 5. Point the PSP's webhook at your server
+**Setup → Licence testing** — add your Gmail accounts. Testers are not charged and renewals are
+accelerated (a monthly plan renews in minutes), which is the only practical way to exercise
+renewal, cancellation and expiry.
 
-In the PSP dashboard, register `https://<your-api-domain>/api/v1/webhooks/payments` for payment-captured / subscription-charged / subscription-cancelled events, signed with `PAYMENT_WEBHOOK_SECRET` (HMAC-SHA256 hex over the raw body, sent in the `x-payment-signature` header — adapt the header name in `routes/webhooks.ts` if your PSP can't customize theirs).
+### 6. Service account for server verification
 
-### 6. Wire the PSP's recurring API into the two stubs
+1. **Google Cloud Console:** enable the **Google Play Android Developer API**.
+2. **Play Console → Setup → API access:** link that GCP project, create a service account, grant
+   it *View financial data* and *Manage orders and subscriptions*.
+3. Download the JSON key → `GOOGLE_PLAY_SERVICE_ACCOUNT_JSON` (inline) or mount it and set
+   `GOOGLE_PLAY_SERVICE_ACCOUNT_FILE`.
 
-In `packages/api-core/src/services/googlePay.ts`:
-- `registerAutopayMandate()` → call the PSP's "create mandate / subscription with Google Pay token" API (first charge included).
-- `revokeAutopayMandate()` → call the PSP's mandate-cancellation API.
+Permission changes can take a few hours to propagate; a fresh service account often returns 401
+for a while.
 
-This is the only code change left between you and real money movement.
+### 7. Real-time developer notifications
 
-### 7. Verify the mobile build requirements
+1. Create a Pub/Sub topic in the same GCP project.
+2. Grant **Publisher** on it to `google-play-developer-notifications@system.gserviceaccount.com`.
+3. **Play Console → Monetise → Monetisation setup:** paste the topic name, then **Send test
+   notification** — the handler logs `Test notification received`.
+4. Create a **push** subscription on that topic pointing at
+   `https://<your-api-domain>/api/v1/webhooks/play?secret=<GOOGLE_PLAY_RTDN_SECRET>`.
 
-- The app must be built as a **dev client / release APK** (`npx expo prebuild` already done — `android/` exists); the library is a native module, so Expo Go won't work.
-- Min SDK 23+, and the device needs **Google Wallet** installed with a payment method. Setup reference: https://developers.google.com/pay/api/android/guides/setup
+Generate the secret with `openssl rand -hex 32`. The endpoint returns 401 without it.
 
-### 8. Test end-to-end in TEST mode
+### 8. Test end-to-end
 
-- With `GOOGLE_PAY_ENVIRONMENT=TEST` on the server (`.env`) and on the app build (the default — nothing to set), the payment sheet serves Google's fake **test card suite** — join the test-cards group per https://developers.google.com/pay/api/android/guides/resources/test-card-suite
-- Run the whole flow: subscribe → sheet → token → `/subscription/activate` → premium granted → cancel → auto-renew off.
+Install from the internal-testing link with a licence-tester account, then:
+subscribe → sheet → verify → Premium granted → renewal (accelerated) → cancel in Play →
+`SUBSCRIPTION_CANCELED` arrives → Premium persists until expiry → expires → back to free.
 
-### 9. Pass Google's integration checklist and request production access
+## Gotchas that will cost you money or time
 
-- Work through https://developers.google.com/pay/api/android/guides/test-and-deploy/integration-checklist (branding rules, `isReadyToPay` gating, final price shown before charge).
-- In the Google Pay & Wallet Console → your app integration → **upload screenshots of the working TEST integration** and **submit for approval**. Google's onboarding team reviews it; production access is granted per app.
-
-### 10. Flip to production
-
-- Set `GOOGLE_PAY_ENVIRONMENT=PRODUCTION` in **both** places:
-  - `.env` (server), and
-  - the **app build environment**, then re-run `npx expo prebuild --platform android --clean` and rebuild signed with your release key. The value is written into `android/gradle.properties` by `packages/mobile/plugins/withGooglePayEnvironment.js`; editing that file by hand does not survive a prebuild.
-- Ship via the Play Store (Google requires Play distribution for production Google Pay API apps).
-
-> ⚠️ **Play Store policy caveat — read before step 9.** Google Play requires apps sold through the Play Store to use **Google Play Billing** for *digital* goods and subscriptions (which a dating-app premium tier is): the Google Pay API is intended for physical goods/services, and Google's own setup guide says digital-goods sellers should use Play In-app Billing. Approval in step 9 may be refused on these grounds. If it is, the fallback is Play Billing subscriptions (`react-native-iap` or Expo IAP) — the server webhook/ledger structure built here (activate → renew → cancel) maps 1:1 onto Play's Real-Time Developer Notifications, so the backend survives that swap mostly intact.
+- **Acknowledge within 3 days.** Google auto-refunds and revokes anything unacknowledged. The
+  server acknowledges immediately after granting, and the RTDN path retries if that failed.
+- **UPI Autopay can return `SUBSCRIPTION_STATE_PENDING`.** The mandate is not confirmed when the
+  sheet closes. `/subscription/verify` responds `pending: true` and grants nothing; the app leaves
+  the transaction unfinished and Premium arrives via RTDN once the bank confirms.
+- **Cancellation is not a server operation.** There is no API to stop renewals. The app deep-links
+  to `https://play.google.com/store/account/subscriptions?sku=…&package=…`
+  (`GET /subscription/manage-url`). The resulting notification updates the ledger.
+- **Account deletion cannot cancel a Play subscription** — it belongs to the Google account, not
+  the Kinetik one. `POST /auth/delete-account` therefore **refuses with 409** while renewal is
+  still on, returning the manage URL, so nobody is billed for an account that no longer exists.
+- **Price must come from the store.** `/payments/pricing` returns a fallback derived from the
+  user's phone country; Play charges its own regionally-set price. The paywall shows
+  `product.displayPrice` and falls back only before the store connection is ready.
+- **Restore on reinstall.** The screen calls `getAvailablePurchases()` on mount and re-verifies
+  anything it finds, so a reinstall doesn't cost the user a second subscription.
+- **Amounts on renewals are blank.** `subscriptionsv2` does not report the amount charged, so
+  RTDN-driven rows record no amount and the billing history renders `—`. Play Console holds the
+  real financial reports.
 
 ## Database
 
-Migration `scripts/migrations/016_rename_razorpay_columns_to_gateway.sql` renames the `razorpay_*` columns on `subscription_ledger` and `transactions` to gateway-neutral `gateway_*` names. Run it against existing databases before deploying this version.
+`scripts/migrations/020_play_billing_purchase_tokens.sql`:
+
+- Widens `gateway_subscription_id`, `gateway_payment_id`, `gateway_order_id` to `TEXT`. Play
+  purchase tokens routinely exceed `VARCHAR(255)` and would fail on the first real purchase.
+- Indexes `subscription_ledger.gateway_subscription_id` — RTDN carries only a purchase token, so
+  that column is how a notification finds its user.
+- Adds a unique partial index on `transactions.gateway_payment_id` so redelivered notifications
+  can't double-record a charge. Deduplicates existing rows first.
+
+Run it against any existing database before deploying.
 
 ## Quick link index
 
 | What | URL |
 |---|---|
-| Google Pay & Wallet Console (merchant id, approvals) | https://pay.google.com/business/console |
-| Android setup guide (prereqs, SDK) | https://developers.google.com/pay/api/android/guides/setup |
-| Publish / go-live steps | https://developers.google.com/pay/api/android/guides/test-and-deploy/publish-your-integration |
-| Integration checklist (pre-approval) | https://developers.google.com/pay/api/android/guides/test-and-deploy/integration-checklist |
-| Test card suite | https://developers.google.com/pay/api/android/guides/resources/test-card-suite |
-| Participating PSPs | https://developers.google.com/pay/api#participating-processors |
-| React Native library + codelab | https://github.com/google-pay/react-native-make-payment · https://codelabs.developers.google.com/codelabs/pay-react-native |
+| Play Console | https://play.google.com/console |
+| Play Billing subscription lifecycle | https://developer.android.com/google/play/billing/lifecycle/subscriptions |
+| RTDN reference | https://developer.android.com/google/play/billing/rtdn-reference |
+| `purchases.subscriptionsv2.get` | https://developers.google.com/android-publisher/api-ref/rest/v3/purchases.subscriptionsv2/get |
+| `purchases.subscriptions.acknowledge` | https://developers.google.com/android-publisher/api-ref/rest/v3/purchases.subscriptions/acknowledge |
+| Fight fraud and abuse | https://developer.android.com/google/play/billing/security |
+| expo-iap docs | https://hyochan.github.io/expo-iap/ |
+| Expo in-app purchases guide | https://docs.expo.dev/guides/in-app-purchases/ |
