@@ -73,6 +73,7 @@ export const SubscriptionCheckoutScreen: React.FC = () => {
   const [storeReady, setStoreReady] = useState(false);
   const [loading, setLoading] = useState(true);
   const [subscribing, setSubscribing] = useState(false);
+  const [cancelling, setCancelling] = useState(false);
 
   // The purchase listener fires outside React's lifecycle (including for
   // purchases completed while the app was closed), so it reads these through a
@@ -219,26 +220,43 @@ export const SubscriptionCheckoutScreen: React.FC = () => {
   const isPremium = status?.tier === 'premium';
   const isAutoRenew = Boolean(status?.autoRenew);
 
-  /** Play's own subscription centre is the only place a subscription can be cancelled. */
-  const handleManage = useCallback(async () => {
-    let url = status?.manageUrl;
-    if (!url) {
-      const res = await api.getManageSubscriptionUrl();
-      url = res.success ? res.data?.manageUrl : undefined;
-    }
-    if (!url) {
-      toast.showError('Unavailable', 'Open Google Play → Payments & subscriptions.');
-      return;
-    }
+  const handleCancel = useCallback(() => {
+    if (cancelling) return;
+    const until = formatDate(status?.expiresAt ?? null);
     Alert.alert(
-      'Manage in Google Play',
-      'Subscriptions are billed by Google Play, so cancelling happens there. You will keep Premium until the end of the period you have paid for.',
+      'Cancel subscription?',
+      `You will keep Premium${until ? ` until ${until}` : ''}, but it will not renew afterwards.`,
       [
-        { text: 'Not now', style: 'cancel' },
-        { text: 'Open Google Play', onPress: () => Linking.openURL(url!).catch(() => {}) },
+        { text: 'Keep subscription', style: 'cancel' },
+        {
+          text: 'Cancel subscription',
+          style: 'destructive',
+          onPress: async () => {
+            setCancelling(true);
+            try {
+              const res = await api.cancelSubscription();
+              if (!res.success) {
+                throw new Error(res.error?.message || 'Could not cancel subscription');
+              }
+              toast.showSuccess('Cancelled', 'Premium active until cycle ends.');
+              await fetchStatus();
+            } catch (error: any) {
+              toast.showError('Failed', error?.message || 'Try again.');
+            } finally {
+              setCancelling(false);
+            }
+          },
+        },
       ],
     );
-  }, [status, toast]);
+  }, [cancelling, status, toast, fetchStatus]);
+
+  /** Play's subscription centre, for restoring renewal or changing payment method. */
+  const handleOpenPlay = useCallback(() => {
+    const url = status?.manageUrl;
+    if (!url) return;
+    Linking.openURL(url).catch(() => {});
+  }, [status]);
 
   const handleSubscribe = useCallback(async () => {
     if (subscribing) return;
@@ -353,24 +371,34 @@ export const SubscriptionCheckoutScreen: React.FC = () => {
               style={styles.subscribeBtn}
             />
 
-            {isPremium && (
+            {isPremium && isAutoRenew && (
               <Button
-                title="Manage in Google Play"
-                onPress={handleManage}
+                title="Cancel subscription"
+                onPress={handleCancel}
+                loading={cancelling}
                 variant="outline"
                 fullWidth
                 style={styles.cancelBtn}
               />
             )}
 
-            {/* Deleting the account cannot stop a Play subscription — Google
-                bills the Google account, not the Kinetik one. Say so plainly. */}
+            {isPremium && !isAutoRenew && (
+              <Button
+                title="Manage in Google Play"
+                onPress={handleOpenPlay}
+                variant="outline"
+                fullWidth
+                style={styles.cancelBtn}
+              />
+            )}
+
+            {/* Deleting the account cancels the subscription at Play first, and
+                aborts if that call fails — so this promise is actually kept. */}
             <View style={styles.assuranceBox}>
-              <Ionicons name="information-circle" size={20} color={colors.warning} />
+              <Ionicons name="shield-checkmark" size={20} color={colors.success} />
               <Text style={styles.assuranceText}>
-                Your subscription lives in Google Play, not in Kinetik. If you want to delete your
-                Kinetik account, cancel the subscription in Google Play first — otherwise it keeps
-                renewing.
+                If you ever delete your Kinetik account, your subscription is cancelled
+                automatically — you will never be charged after leaving.
               </Text>
             </View>
 
@@ -453,7 +481,7 @@ const styles = StyleSheet.create({
     borderRadius: radius.md,
     backgroundColor: colors.surfaceHighlight,
     borderWidth: 1,
-    borderColor: colors.warning,
+    borderColor: colors.success,
   },
   assuranceText: { ...typography.caption, color: colors.textSecondary, flex: 1, lineHeight: 18 },
   historySummary: { ...typography.body2, color: colors.textSecondary, marginBottom: spacing.md },

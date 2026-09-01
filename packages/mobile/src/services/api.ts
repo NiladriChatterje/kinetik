@@ -521,15 +521,16 @@ class ApiClient {
   }
 
   /**
-   * Where to cancel. A Play subscription can only be stopped by the user in
-   * Play's own subscription centre — there is no server-side cancel — so this
-   * returns the deep link the app opens.
+   * Stops the subscription renewing at Google Play. The user keeps Premium
+   * until the end of the period already paid for, and can restore renewal
+   * from Play without buying again.
    */
-  async getManageSubscriptionUrl() {
+  async cancelSubscription() {
     return this.request<{
-      manageUrl: string;
+      cancelled: boolean;
       expiresAt: string | null;
-    }>('/api/v1/payments/subscription/manage-url');
+      manageUrl: string;
+    }>('/api/v1/payments/subscription/cancel', { method: 'POST' });
   }
 
   // ─── Duo Crew ───────────────────────────────────────

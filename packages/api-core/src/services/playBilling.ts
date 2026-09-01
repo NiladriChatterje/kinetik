@@ -193,6 +193,44 @@ export async function acknowledgeSubscription(purchaseToken: string): Promise<vo
   }
 }
 
+/**
+ * Stops a subscription renewing, server-side. The user keeps access until the
+ * end of the period they already paid for — this is not a refund.
+ *
+ * `USER_REQUESTED_STOP_RENEWALS` is restorable: the user can turn renewal back
+ * on from Play. `DEVELOPER_REQUESTED_STOP_PAYMENTS` is not, which is what
+ * account deletion wants — there will be no account left to restore into.
+ *
+ * https://developers.google.com/android-publisher/api-ref/rest/v3/purchases.subscriptionsv2/cancel
+ */
+export async function cancelSubscription(
+  purchaseToken: string,
+  cancellationType:
+    | 'USER_REQUESTED_STOP_RENEWALS'
+    | 'DEVELOPER_REQUESTED_STOP_PAYMENTS' = 'USER_REQUESTED_STOP_RENEWALS',
+): Promise<void> {
+  const headers = await getAuthorizedHeaders();
+  const url =
+    `${ANDROID_PUBLISHER}/applications/${encodeURIComponent(getPackageName())}` +
+    `/purchases/subscriptionsv2/tokens/${encodeURIComponent(purchaseToken)}:cancel`;
+
+  const response = await fetch(url, {
+    method: 'POST',
+    headers,
+    body: JSON.stringify({ cancellationContext: { cancellationType } }),
+  });
+
+  if (!response.ok) {
+    const body = await response.text().catch(() => '');
+    // An already-cancelled or already-expired subscription is the state we
+    // wanted, so don't turn it into a failure the caller has to handle.
+    if (response.status === 400 && /already|not active|expired/i.test(body)) {
+      return;
+    }
+    throw new Error(`Play cancel failed (${response.status}): ${body.slice(0, 300)}`);
+  }
+}
+
 // ─── Real-time developer notifications ────────────────────
 
 export interface DeveloperNotification {

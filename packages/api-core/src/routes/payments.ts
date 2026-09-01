@@ -8,6 +8,7 @@ import {
   getManageSubscriptionUrl,
   getSubscriptionPurchase,
   acknowledgeSubscription,
+  cancelSubscription,
   PREMIUM_PLAN_PERIOD,
 } from '../services/playBilling';
 import { applyPlayEntitlement, findUserByPurchaseToken } from '../services/subscriptionEntitlement';
@@ -286,24 +287,56 @@ export async function paymentRoutes(app: FastifyInstance) {
     });
   });
 
-  // ─── Where to cancel ─────────────────────────────────
-  // A Play subscription can ONLY be cancelled by the user, in Play's own
-  // subscription centre — there is no server-side API to stop renewals, and
-  // silently flipping auto_renew here would leave the ledger claiming
-  // something Google would happily contradict at the next renewal.
+  // ─── Cancel Subscription ─────────────────────────────
+  // Stops the subscription renewing at Play. The user keeps Premium until the
+  // end of the period they already paid for — this is not a refund.
   //
-  // So this returns the deep link the app opens, and nothing is written. The
-  // resulting SUBSCRIPTION_CANCELED notification updates the ledger.
-  app.get('/subscription/manage-url', async (request: FastifyRequest, reply: FastifyReply) => {
+  // USER_REQUESTED_STOP_RENEWALS keeps it restorable, so the user can turn
+  // renewal back on from Play without buying again.
+  //
+  // The ledger is NOT written here. Play is the source of truth, and the
+  // SUBSCRIPTION_CANCELED notification that follows updates it — writing both
+  // would risk the two disagreeing if the cancel succeeded but the write
+  // failed. The response re-reads Play so the app can update immediately.
+  app.post('/subscription/cancel', async (request: FastifyRequest, reply: FastifyReply) => {
     const { sub: userId } = request.user as any;
+
     const ledger = await getSubscription(userId);
+    const purchaseToken = ledger?.gateway_subscription_id;
+    if (!ledger || !purchaseToken) {
+      return reply.status(400).send({
+        success: false,
+        error: { code: ERROR_CODES.PAYMENT_FAILED, message: 'No active subscription to cancel' },
+      });
+    }
+
+    try {
+      await cancelSubscription(purchaseToken, 'USER_REQUESTED_STOP_RENEWALS');
+    } catch (error: any) {
+      console.error('[payments] Failed to cancel subscription:', error?.message || error);
+      return reply.status(502).send({
+        success: false,
+        error: {
+          code: ERROR_CODES.PAYMENT_FAILED,
+          message: 'Could not cancel the subscription. Please try again.',
+        },
+      });
+    }
+
+    // Best-effort refresh so the screen shows the new state without waiting
+    // for the notification to arrive.
+    let expiresAt = ledger.expires_at ? new Date(ledger.expires_at).toISOString() : null;
+    try {
+      const playSub = await getSubscriptionPurchase(purchaseToken);
+      await applyPlayEntitlement(userId, purchaseToken, playSub);
+      expiresAt = playSub.expiresAt ? playSub.expiresAt.toISOString() : expiresAt;
+    } catch (error: any) {
+      console.warn('[payments] Cancelled, but could not refresh state:', error?.message || error);
+    }
 
     return reply.send({
       success: true,
-      data: {
-        manageUrl: getManageSubscriptionUrl(),
-        expiresAt: ledger?.expires_at ? new Date(ledger.expires_at).toISOString() : null,
-      },
+      data: { cancelled: true, expiresAt, manageUrl: getManageSubscriptionUrl() },
     });
   });
 }

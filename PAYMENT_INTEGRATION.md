@@ -131,12 +131,16 @@ subscribe → sheet → verify → Premium granted → renewal (accelerated) →
 - **UPI Autopay can return `SUBSCRIPTION_STATE_PENDING`.** The mandate is not confirmed when the
   sheet closes. `/subscription/verify` responds `pending: true` and grants nothing; the app leaves
   the transaction unfinished and Premium arrives via RTDN once the bank confirms.
-- **Cancellation is not a server operation.** There is no API to stop renewals. The app deep-links
-  to `https://play.google.com/store/account/subscriptions?sku=…&package=…`
-  (`GET /subscription/manage-url`). The resulting notification updates the ledger.
-- **Account deletion cannot cancel a Play subscription** — it belongs to the Google account, not
-  the Kinetik one. `POST /auth/delete-account` therefore **refuses with 409** while renewal is
-  still on, returning the manage URL, so nobody is billed for an account that no longer exists.
+- **Cancellation is a server operation**, via
+  [`subscriptionsv2.cancel`](https://developers.google.com/android-publisher/api-ref/rest/v3/purchases.subscriptionsv2/cancel).
+  `POST /subscription/cancel` uses `USER_REQUESTED_STOP_RENEWALS`, which stops the next renewal
+  and stays restorable from Play. The user keeps Premium until the period they paid for ends —
+  it is not a refund. The ledger is not written by the cancel call itself; the
+  `SUBSCRIPTION_CANCELED` notification is what updates it.
+- **Account deletion cancels the subscription first.** `POST /auth/delete-account` calls
+  `subscriptionsv2.cancel` with `DEVELOPER_REQUESTED_STOP_PAYMENTS` (non-restorable — there will
+  be no account to restore into) and **aborts the deletion with 502 if that call fails**, so
+  nobody is ever billed for an account that no longer exists.
 - **Price must come from the store.** `/payments/pricing` returns a fallback derived from the
   user's phone country; Play charges its own regionally-set price. The paywall shows
   `product.displayPrice` and falls back only before the store connection is ready.
@@ -168,6 +172,7 @@ Run it against any existing database before deploying.
 | RTDN reference | https://developer.android.com/google/play/billing/rtdn-reference |
 | `purchases.subscriptionsv2.get` | https://developers.google.com/android-publisher/api-ref/rest/v3/purchases.subscriptionsv2/get |
 | `purchases.subscriptions.acknowledge` | https://developers.google.com/android-publisher/api-ref/rest/v3/purchases.subscriptions/acknowledge |
+| `purchases.subscriptionsv2.cancel` | https://developers.google.com/android-publisher/api-ref/rest/v3/purchases.subscriptionsv2/cancel |
 | Fight fraud and abuse | https://developer.android.com/google/play/billing/security |
 | expo-iap docs | https://hyochan.github.io/expo-iap/ |
 | Expo in-app purchases guide | https://docs.expo.dev/guides/in-app-purchases/ |
