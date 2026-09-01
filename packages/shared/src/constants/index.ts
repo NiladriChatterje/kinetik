@@ -106,17 +106,16 @@ export const API_ROUTES = {
   VENUES_PREFIX: '/api/v1/venues',
   VENUES_NEARBY: '/api/v1/venues/nearby',
 
-  // Payments
+  // Payments (Google Play Billing)
   PAYMENTS_PREFIX: '/api/v1/payments',
-  PAYMENTS_CREATE_ORDER: '/api/v1/payments/create-order',
-  PAYMENTS_VERIFY: '/api/v1/payments/verify',
-  PAYMENTS_SUBSCRIPTION: '/api/v1/payments/subscription',
-  PAYMENTS_SUBSCRIPTION_ACTIVATE: '/api/v1/payments/subscription/activate',
+  PAYMENTS_PRICING: '/api/v1/payments/pricing',
+  PAYMENTS_SUBSCRIPTION_VERIFY: '/api/v1/payments/subscription/verify',
   PAYMENTS_SUBSCRIPTION_STATUS: '/api/v1/payments/subscription/status',
-  PAYMENTS_SUBSCRIPTION_CANCEL: '/api/v1/payments/subscription/cancel',
+  PAYMENTS_SUBSCRIPTION_HISTORY: '/api/v1/payments/subscription/history',
+  PAYMENTS_SUBSCRIPTION_MANAGE_URL: '/api/v1/payments/subscription/manage-url',
 
-  // Webhooks
-  WEBHOOK_PAYMENTS: '/api/v1/webhooks/payments',
+  // Webhooks — Play real-time developer notifications (Pub/Sub push)
+  WEBHOOK_PLAY_RTDN: '/api/v1/webhooks/play',
 
   // Duo Crew
   DUO_PREFIX: '/api/v1/duo',
