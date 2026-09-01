@@ -191,7 +191,7 @@ export default ({ config }: ConfigContext): ExpoConfig => {
   // Plugins this file owns. Filter any copy out of the app.json list first so
   // that `expo install expo-build-properties` (which appends a bare entry
   // there) can't produce a duplicate registration.
-  const MANAGED_PLUGINS = ['expo-build-properties', './plugins/withGooglePayEnvironment'];
+  const MANAGED_PLUGINS = ['expo-build-properties'];
   const plugins = (config.plugins ?? []).filter((plugin) => {
     const name = Array.isArray(plugin) ? plugin[0] : plugin;
     return typeof name !== 'string' || !MANAGED_PLUGINS.includes(name);
@@ -222,7 +222,6 @@ export default ({ config }: ConfigContext): ExpoConfig => {
           },
         },
       ],
-      './plugins/withGooglePayEnvironment',
     ],
     extra: {
       ...config.extra,

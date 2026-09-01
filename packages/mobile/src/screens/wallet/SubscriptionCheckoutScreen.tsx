@@ -1,8 +1,17 @@
-import React, { useCallback, useEffect, useState } from 'react';
-import { View, Text, StyleSheet, ScrollView, ActivityIndicator, Alert } from 'react-native';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
+import { View, Text, StyleSheet, ScrollView, ActivityIndicator, Alert, Linking } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
-import { PaymentRequest } from '@google/react-native-make-payment';
+import {
+  initConnection,
+  endConnection,
+  fetchProducts,
+  requestPurchase,
+  finishTransaction,
+  getAvailablePurchases,
+  purchaseUpdatedListener,
+  purchaseErrorListener,
+} from 'expo-iap';
 import { Card } from '../../components/common/Card';
 import { Button } from '../../components/common/Button';
 import { useToast } from '../../hooks/useToast';
@@ -15,13 +24,16 @@ interface PricingInfo {
   amount: number;
   amountMinor: number;
   label: string;
+  productId: string;
+  period: string;
 }
 
 interface SubscriptionStatus {
   tier: string;
   autoRenew: boolean;
   expiresAt: string | null;
-  subscriptionId: string | null;
+  hasPurchase: boolean;
+  manageUrl: string;
 }
 
 interface SubscriptionPayment {
@@ -39,7 +51,10 @@ const FEATURES = [
   { icon: 'eye-off-outline' as const, label: 'See who liked you — no blur' },
 ];
 
-const PAYMENT_METHODS = ['Google Pay — UPI Autopay (recurring mandate)', 'Google Pay — Credit / Debit Card'];
+const PAYMENT_METHODS = [
+  'UPI Autopay, cards, and anything else saved in Google Play',
+  'Managed entirely by Google Play — cancel any time',
+];
 
 function formatDate(iso: string | null): string {
   if (!iso) return '';
@@ -54,9 +69,16 @@ export const SubscriptionCheckoutScreen: React.FC = () => {
   const [status, setStatus] = useState<SubscriptionStatus | null>(null);
   const [pricing, setPricing] = useState<PricingInfo | null>(null);
   const [history, setHistory] = useState<{ payments: SubscriptionPayment[]; monthsPaid: number } | null>(null);
+  const [product, setProduct] = useState<any | null>(null);
+  const [storeReady, setStoreReady] = useState(false);
   const [loading, setLoading] = useState(true);
   const [subscribing, setSubscribing] = useState(false);
-  const [cancelling, setCancelling] = useState(false);
+
+  // The purchase listener fires outside React's lifecycle (including for
+  // purchases completed while the app was closed), so it reads these through a
+  // ref rather than closing over stale state.
+  const pricingRef = useRef<PricingInfo | null>(null);
+  pricingRef.current = pricing;
 
   const fetchStatus = useCallback(async () => {
     try {
@@ -74,151 +96,191 @@ export const SubscriptionCheckoutScreen: React.FC = () => {
       if (priceRes.success && priceRes.data) {
         setPricing(priceRes.data as PricingInfo);
       }
+      return priceRes.success ? (priceRes.data as PricingInfo) : null;
     } catch {
       // Leave status null — the screen falls back to the "not subscribed" state
+      return null;
     } finally {
       setLoading(false);
     }
   }, []);
 
+  /**
+   * Sends a purchase token to the server for verification and, once the server
+   * has durably granted the entitlement, finishes the transaction with Play.
+   *
+   * finishTransaction must not run before the server confirms: it is what tells
+   * Play the purchase was handled, and doing it early on a request that failed
+   * would leave the user charged with no Premium.
+   */
+  const redeemPurchase = useCallback(
+    async (purchase: any, { silent }: { silent?: boolean } = {}) => {
+      const price = pricingRef.current;
+      const res = await api.verifyPlayPurchase({
+        purchaseToken: purchase.purchaseToken,
+        productId: purchase.productId,
+        priceAmount: price?.amount,
+        priceCurrency: price?.currency,
+      });
+
+      if (!res.success) {
+        throw new Error(res.error?.message || 'Could not verify the purchase');
+      }
+
+      // A pending UPI Autopay mandate is not an error — Play will notify the
+      // server when it resolves. Leave the transaction unfinished so Play
+      // re-delivers it once the state changes.
+      if (res.data?.pending) {
+        if (!silent) {
+          toast.showSuccess('Almost there', 'Waiting for your bank to confirm the mandate.');
+        }
+        return;
+      }
+
+      await finishTransaction({ purchase, isConsumable: false });
+
+      if (res.data?.activated && !silent) {
+        toast.showSuccess('Premium active!', 'Subscription is live.');
+      }
+      await fetchStatus();
+    },
+    [toast, fetchStatus],
+  );
+
+  // ─── Store connection, product lookup, and restore ────
   useEffect(() => {
-    fetchStatus();
-  }, [fetchStatus]);
+    let cancelled = false;
+
+    const purchaseSub = purchaseUpdatedListener(async (purchase: any) => {
+      // Android reports 'pending' for a purchase awaiting a UPI mandate; only
+      // a completed one is worth sending to the server.
+      if (purchase?.purchaseState && purchase.purchaseState !== 'purchased') return;
+      try {
+        await redeemPurchase(purchase);
+      } catch (error: any) {
+        toast.showError('Verification failed', error?.message || 'Please reopen this screen.');
+      } finally {
+        if (!cancelled) setSubscribing(false);
+      }
+    });
+
+    const errorSub = purchaseErrorListener((error: any) => {
+      if (!cancelled) setSubscribing(false);
+      const code = error?.code || '';
+      if (/cancel/i.test(code) || /cancel/i.test(error?.message || '')) {
+        toast.showError('Cancelled', 'Try again any time.');
+      } else {
+        toast.showError('Purchase failed', error?.message || 'Try again.');
+      }
+    });
+
+    (async () => {
+      const price = await fetchStatus();
+      const productId = price?.productId;
+
+      try {
+        await initConnection();
+        if (cancelled) return;
+        setStoreReady(true);
+
+        if (productId) {
+          const products = await fetchProducts({ skus: [productId], type: 'subs' });
+          if (!cancelled && products?.length) setProduct(products[0]);
+        }
+
+        // Reinstalled the app, or switched device: Play still knows about an
+        // active subscription, so re-send it rather than making the user pay
+        // again. Silent because this runs on every visit to the screen.
+        const owned = await getAvailablePurchases();
+        for (const purchase of owned ?? []) {
+          if (productId && purchase?.productId !== productId) continue;
+          try {
+            await redeemPurchase(purchase, { silent: true });
+          } catch {
+            // Another account may own it, or the network is down — the
+            // subscribe button still works.
+          }
+        }
+      } catch (error: any) {
+        if (!cancelled) {
+          console.warn('[subscription] Store unavailable:', error?.message || error);
+        }
+      }
+    })();
+
+    return () => {
+      cancelled = true;
+      purchaseSub?.remove?.();
+      errorSub?.remove?.();
+      endConnection().catch(() => {});
+    };
+  }, [fetchStatus, redeemPurchase, toast]);
 
   const isPremium = status?.tier === 'premium';
   const isAutoRenew = Boolean(status?.autoRenew);
 
-  const handleCancel = useCallback(() => {
-    if (cancelling) return;
-    const until = formatDate(status?.expiresAt ?? null);
+  /** Play's own subscription centre is the only place a subscription can be cancelled. */
+  const handleManage = useCallback(async () => {
+    let url = status?.manageUrl;
+    if (!url) {
+      const res = await api.getManageSubscriptionUrl();
+      url = res.success ? res.data?.manageUrl : undefined;
+    }
+    if (!url) {
+      toast.showError('Unavailable', 'Open Google Play → Payments & subscriptions.');
+      return;
+    }
     Alert.alert(
-      'Cancel subscription?',
-      `You will keep Premium${until ? ` until ${until}` : ''}, but it will not renew afterwards.`,
+      'Manage in Google Play',
+      'Subscriptions are billed by Google Play, so cancelling happens there. You will keep Premium until the end of the period you have paid for.',
       [
-        { text: 'Keep subscription', style: 'cancel' },
-        {
-          text: 'Cancel subscription',
-          style: 'destructive',
-          onPress: async () => {
-            setCancelling(true);
-            try {
-              const res = await api.cancelGooglePaySubscription();
-              if (!res.success) {
-                throw new Error(res.error?.message || 'Could not cancel subscription');
-              }
-              toast.showSuccess('Cancelled', 'Premium active until cycle ends.');
-              await fetchStatus();
-            } catch (error: any) {
-              toast.showError('Failed', error?.message || 'Try again.');
-            } finally {
-              setCancelling(false);
-            }
-          },
-        },
+        { text: 'Not now', style: 'cancel' },
+        { text: 'Open Google Play', onPress: () => Linking.openURL(url!).catch(() => {}) },
       ],
     );
-  }, [cancelling, status, toast, fetchStatus]);
+  }, [status, toast]);
 
   const handleSubscribe = useCallback(async () => {
     if (subscribing) return;
+
+    const productId = pricing?.productId;
+    if (!storeReady || !product || !productId) {
+      toast.showError('Store unavailable', 'Google Play is not ready. Try again in a moment.');
+      return;
+    }
+
     setSubscribing(true);
     try {
-      // 1. Create the pending subscription + Google Pay config on the server
-      const createRes = await api.createGooglePaySubscription();
-      if (!createRes.success || !createRes.data) {
-        throw new Error(createRes.error?.message || 'Could not start checkout');
-      }
-      const { subscriptionId, googlePay, amount, currency, label } = createRes.data;
-      const totalPrice = Number(amount).toFixed(2);
+      // Play requires the offer token for the base plan being purchased; a
+      // subscription with no offers cannot be bought.
+      const offers = (product.subscriptionOffers ?? [])
+        .filter((o: any) => o?.offerTokenAndroid)
+        .map((o: any) => ({ sku: product.id ?? productId, offerToken: o.offerTokenAndroid }));
 
-      // 2. Show the Google Pay payment sheet — the user approves the
-      //    recurring autopay mandate (UPI Autopay / tokenized card) and the
-      //    sheet returns a gateway payment token.
-      const paymentRequest = new PaymentRequest(
-        [
-          {
-            supportedMethods: 'google_pay',
-            // TEST vs PRODUCTION is a build-time setting: the
-            // GOOGLE_PAY_ENVIRONMENT property in android/gradle.properties.
-            data: {
-              apiVersion: 2,
-              apiVersionMinor: 0,
-              merchantInfo: {
-                merchantId: googlePay.merchantId,
-                merchantName: googlePay.merchantName,
-              },
-              allowedPaymentMethods: [
-                {
-                  type: 'CARD',
-                  parameters: {
-                    allowedAuthMethods: googlePay.allowedAuthMethods,
-                    allowedCardNetworks: googlePay.allowedCardNetworks,
-                  },
-                  tokenizationSpecification: {
-                    type: 'PAYMENT_GATEWAY',
-                    parameters: {
-                      gateway: googlePay.gateway,
-                      gatewayMerchantId: googlePay.gatewayMerchantId,
-                    },
-                  },
-                },
-              ],
-              transactionInfo: {
-                totalPriceStatus: 'FINAL',
-                totalPrice,
-                currencyCode: currency,
-                countryCode: googlePay.countryCode,
-              },
-            },
-          },
-        ],
-        {
-          total: {
-            label: `Kinetik Premium — ${label}`,
-            amount: { currency, value: totalPrice },
-          },
-        },
-      );
-
-      if (!(await paymentRequest.canMakePayment())) {
-        throw new Error('Google Pay is not available on this device');
+      if (!offers.length) {
+        throw new Error('This plan is not available on your account yet');
       }
 
-      const response = await paymentRequest.show();
-      const paymentToken: string | undefined =
-        (response as any)?.details?.paymentMethodData?.tokenizationData?.token;
-      if (!paymentToken) {
-        throw new Error('Google Pay returned an incomplete response');
-      }
-
-      // 3. Server-side mandate registration + premium activation
-      const activateRes = await api.activateGooglePaySubscription({
-        subscriptionId,
-        paymentToken,
+      // Resolution arrives on purchaseUpdatedListener, which clears `subscribing`.
+      await requestPurchase({
+        request: { google: { skus: [productId], subscriptionOffers: offers } },
+        type: 'subs',
       });
-
-      if (!activateRes.success) {
-        throw new Error(activateRes.error?.message || 'Payment could not be verified');
-      }
-
-      if (activateRes.data?.activated) {
-        toast.showSuccess('Premium active!', 'Subscription is live.');
-      } else {
-        toast.showSuccess('Approved', 'Activating shortly.');
-      }
-      await fetchStatus();
     } catch (error: any) {
-      const message = error?.message || error?.description;
-      // Payment sheet dismissed by the user is expected — show a neutral message
-      if (error?.name === 'AbortError' || /cancelled|cancel/i.test(message || '')) {
+      setSubscribing(false);
+      const message = error?.message || '';
+      if (/cancel/i.test(message)) {
         toast.showError('Cancelled', 'Try again any time.');
       } else {
         toast.showError('Failed', message || 'Try again.');
       }
-    } finally {
-      setSubscribing(false);
     }
-  }, [subscribing, toast, fetchStatus]);
+  }, [subscribing, storeReady, product, pricing, toast]);
+
+  // Play sets the real price per region; the server figure is only a fallback
+  // for the moment before the store connection is up.
+  const displayPrice: string =
+    product?.displayPrice ?? product?.localizedPrice ?? pricing?.label ?? '₹149/month';
 
   return (
     <SafeAreaView style={styles.container}>
@@ -239,9 +301,9 @@ export const SubscriptionCheckoutScreen: React.FC = () => {
                 <Text style={styles.planBadgeText}>PREMIUM</Text>
               </View>
               <View style={styles.priceRow}>
-                <Text style={styles.price}>{pricing?.label ?? '₹149/month'}</Text>
+                <Text style={styles.price}>{displayPrice}</Text>
               </View>
-              <Text style={styles.planNote}>Recurring — cancel any time from Kinetik or the Google Pay app</Text>
+              <Text style={styles.planNote}>Recurring — cancel any time in Google Play</Text>
 
               {isPremium && (
                 <View style={styles.activeBox}>
@@ -252,7 +314,7 @@ export const SubscriptionCheckoutScreen: React.FC = () => {
                   />
                   <Text style={styles.activeText}>
                     {isAutoRenew
-                      ? `Active · auto-renews on ${formatDate(status?.expiresAt ?? null)}`
+                      ? `Active · renews on ${formatDate(status?.expiresAt ?? null)}`
                       : `Cancelled · active until ${formatDate(status?.expiresAt ?? null)}`}
                   </Text>
                 </View>
@@ -269,7 +331,7 @@ export const SubscriptionCheckoutScreen: React.FC = () => {
             ))}
 
             {/* Payment methods */}
-            <Text style={styles.sectionTitle}>Payment methods</Text>
+            <Text style={styles.sectionTitle}>Payment</Text>
             {PAYMENT_METHODS.map((m) => (
               <View key={m} style={styles.featureRow}>
                 <Ionicons name="card-outline" size={20} color={colors.secondary} />
@@ -277,37 +339,38 @@ export const SubscriptionCheckoutScreen: React.FC = () => {
               </View>
             ))}
             <Text style={styles.disclaimer}>
-              Subscriptions are billed through Google Pay in {pricing?.currency ?? 'INR'}. You approve a
-              recurring autopay mandate once, and {pricing?.label ?? '₹149'} is charged each month; Google Pay
-              notifies you before every charge.
+              Billed by Google Play. Your subscription renews automatically each month using the
+              payment method on your Google account, and Google notifies you before every charge.
+              Manage or cancel it any time in Google Play → Payments &amp; subscriptions.
             </Text>
 
             <Button
-              title={isPremium && !isAutoRenew ? 'Renew subscription' : `Subscribe for ${pricing?.label ?? '₹149/month'}`}
+              title={isPremium && !isAutoRenew ? 'Resubscribe' : `Subscribe — ${displayPrice}`}
               onPress={handleSubscribe}
               loading={subscribing}
-              disabled={isPremium && isAutoRenew}
+              disabled={(isPremium && isAutoRenew) || !storeReady}
               fullWidth
               style={styles.subscribeBtn}
             />
 
-            {isPremium && isAutoRenew && (
+            {isPremium && (
               <Button
-                title="Cancel subscription"
-                onPress={handleCancel}
-                loading={cancelling}
+                title="Manage in Google Play"
+                onPress={handleManage}
                 variant="outline"
                 fullWidth
                 style={styles.cancelBtn}
               />
             )}
 
-            {/* Reassurance: deleting the account never leaves a running mandate */}
+            {/* Deleting the account cannot stop a Play subscription — Google
+                bills the Google account, not the Kinetik one. Say so plainly. */}
             <View style={styles.assuranceBox}>
-              <Ionicons name="shield-checkmark" size={20} color={colors.success} />
+              <Ionicons name="information-circle" size={20} color={colors.warning} />
               <Text style={styles.assuranceText}>
-                If you ever delete your Kinetik account, your subscription and payment mandate
-                are cancelled automatically — you will never be charged after leaving.
+                Your subscription lives in Google Play, not in Kinetik. If you want to delete your
+                Kinetik account, cancel the subscription in Google Play first — otherwise it keeps
+                renewing.
               </Text>
             </View>
 
@@ -390,7 +453,7 @@ const styles = StyleSheet.create({
     borderRadius: radius.md,
     backgroundColor: colors.surfaceHighlight,
     borderWidth: 1,
-    borderColor: colors.success,
+    borderColor: colors.warning,
   },
   assuranceText: { ...typography.caption, color: colors.textSecondary, flex: 1, lineHeight: 18 },
   historySummary: { ...typography.body2, color: colors.textSecondary, marginBottom: spacing.md },

@@ -449,7 +449,12 @@ class ApiClient {
     }>('/api/v1/payments/limits');
   }
 
-  /** Get the subscription price in the user's local currency. */
+  /**
+   * Fallback pricing, in the user's local currency, plus the Play product id.
+   * The price actually charged is set in Play Console per region — the paywall
+   * must show what the store reports and only fall back to this before the
+   * store connection is ready.
+   */
   async getPricing() {
     return this.request<{
       currency: string;
@@ -457,57 +462,34 @@ class ApiClient {
       amount: number;
       amountMinor: number;
       label: string;
+      productId: string;
+      period: string;
     }>('/api/v1/payments/pricing');
   }
 
-  async createPaymentOrder(amount: number, description?: string) {
-    return this.request('/api/v1/payments/create-order', {
-      method: 'POST',
-      body: JSON.stringify({ amount, description }),
-    });
-  }
-
   /**
-   * Creates a pending recurring subscription (₹149/month premium plan) and
-   * returns the Google Pay sheet configuration needed to approve the
-   * autopay mandate.
+   * Hands a Google Play purchase token to the server, which reads the real
+   * subscription state from the Play Developer API, grants Premium, and
+   * acknowledges the purchase (Google refunds anything unacknowledged after
+   * three days). Safe to call again with the same token.
+   *
+   * `pending` comes back true when a UPI Autopay mandate has not been
+   * confirmed yet — Premium is granted later, via a Play notification.
    */
-  async createGooglePaySubscription() {
-    return this.request<{
-      subscriptionId: string;
-      googlePay: {
-        environment: 'TEST' | 'PRODUCTION';
-        merchantId: string;
-        merchantName: string;
-        gateway: string;
-        gatewayMerchantId: string;
-        countryCode: string;
-        allowedAuthMethods: string[];
-        allowedCardNetworks: string[];
-      };
-      amount: number;
-      amountMinor: number;
-      currency: string;
-      label: string;
-      period: string;
-    }>('/api/v1/payments/subscription', { method: 'POST' });
-  }
-
-  /**
-   * Sends the Google Pay payment token to the server, which registers the
-   * recurring autopay mandate with the gateway and activates premium.
-   */
-  async activateGooglePaySubscription(payload: {
-    subscriptionId: string;
-    paymentToken: string;
+  async verifyPlayPurchase(payload: {
+    purchaseToken: string;
+    productId?: string;
+    priceAmount?: number;
+    priceCurrency?: string;
   }) {
     return this.request<{
       verified: boolean;
       activated: boolean;
+      pending: boolean;
       tier?: string;
-      expiresAt?: string;
-      status?: string;
-    }>('/api/v1/payments/subscription/activate', {
+      expiresAt?: string | null;
+      state?: string;
+    }>('/api/v1/payments/subscription/verify', {
       method: 'POST',
       body: JSON.stringify(payload),
     });
@@ -519,7 +501,8 @@ class ApiClient {
       tier: string;
       autoRenew: boolean;
       expiresAt: string | null;
-      subscriptionId: string | null;
+      hasPurchase: boolean;
+      manageUrl: string;
     }>('/api/v1/payments/subscription/status');
   }
 
@@ -538,17 +521,15 @@ class ApiClient {
   }
 
   /**
-   * Cancels the recurring subscription (revokes the autopay mandate). The user
-   * keeps Premium until the end of the current billing cycle, then it stops
-   * renewing.
+   * Where to cancel. A Play subscription can only be stopped by the user in
+   * Play's own subscription centre — there is no server-side cancel — so this
+   * returns the deep link the app opens.
    */
-  async cancelGooglePaySubscription() {
+  async getManageSubscriptionUrl() {
     return this.request<{
-      cancelled: boolean;
-      status: string;
-      subscriptionId: string;
+      manageUrl: string;
       expiresAt: string | null;
-    }>('/api/v1/payments/subscription/cancel', { method: 'POST' });
+    }>('/api/v1/payments/subscription/manage-url');
   }
 
   // ─── Duo Crew ───────────────────────────────────────
