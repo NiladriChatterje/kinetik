@@ -1,171 +1,94 @@
 import { FastifyInstance, FastifyRequest, FastifyReply } from 'fastify';
-import { Readable } from 'stream';
-import { FREE_SWIPE_LIMIT } from '@kinetik/shared';
-import { query, TABLES } from '../services/database';
-import { eventBus } from '../services/eventBus';
-import { getRedis } from '../services/redis';
-import { verifyWebhookSignature } from '../services/googlePay';
+import {
+  decodeRtdnMessage,
+  verifyRtdnSecret,
+  getSubscriptionPurchase,
+  acknowledgeSubscription,
+  SUBSCRIPTION_NOTIFICATION_TYPES,
+} from '../services/playBilling';
+import { applyPlayEntitlement, findUserByPurchaseToken } from '../services/subscriptionEntitlement';
 
 export async function webhookRoutes(app: FastifyInstance) {
-  // Capture the raw request body so we can verify the webhook signature.
-  // Signature is computed over the exact bytes the gateway sent, so we buffer
-  // the stream in a preParsing hook (scoped to this plugin) and hand Fastify a
-  // fresh stream to parse normally.
-  app.addHook('preParsing', async (request: any, _reply: any, payload: any) => {
-    const chunks: Buffer[] = [];
-    for await (const chunk of payload) {
-      chunks.push(Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk));
-    }
-    request.rawBody = Buffer.concat(chunks);
-    return Readable.from([request.rawBody]);
-  });
-
-  // ─── Payments Webhook ────────────────────────────────
-  // Posted by the payment gateway that executes the Google Pay autopay
-  // mandate charges. Events we care about:
-  //   payment.captured       – one-off or subscription charge captured
-  //   subscription.charged   – recurring renewal succeeded (grant/refresh premium)
-  //   subscription.activated – mandate registered / initial activation
-  //   subscription.cancelled – user cancelled / mandate revoked
-  // Expected payload shape (flat, gateway-neutral):
-  //   { event, payload: { userId, subscriptionId?, paymentId?, orderId?,
-  //                       amount?, currency?, currentEnd? } }
-  // Signature: hex hmac_sha256(rawBody, PAYMENT_WEBHOOK_SECRET) in the
-  // `x-payment-signature` header, verified when the secret is configured.
-  app.post('/payments', async (request: FastifyRequest, reply: FastifyReply) => {
-    const webhookSecret = process.env.PAYMENT_WEBHOOK_SECRET;
-    const signature = request.headers['x-payment-signature'] as string | undefined;
-
-    if (webhookSecret) {
-      if (!verifyWebhookSignature((request as any).rawBody, signature)) {
-        return reply.status(400).send({ success: false, message: 'Invalid webhook signature' });
-      }
-    } else {
-      // Dev fallback: without a webhook secret we cannot authenticate the
-      // payload. Log loudly so this never silently ships to production.
-      console.warn('[webhooks] PAYMENT_WEBHOOK_SECRET is not set — skipping signature verification');
+  // ─── Google Play Real-time Developer Notifications ───
+  // Cloud Pub/Sub pushes here whenever a subscription changes state: renewed,
+  // cancelled, expired, recovered from account hold, refunded, and so on.
+  //
+  // The notification itself carries almost nothing — a type and a purchase
+  // token. Google's guidance is to treat it purely as a signal and re-read the
+  // authoritative state from the Developer API, which is what we do, so every
+  // event type converges on the same code path and unknown future types are
+  // handled correctly by default.
+  //
+  // https://developer.android.com/google/play/billing/rtdn-reference
+  app.post('/play', async (request: FastifyRequest, reply: FastifyReply) => {
+    // Pub/Sub push subscriptions can carry a shared secret in the URL. Without
+    // it anyone who finds this path could drive entitlement changes.
+    const provided = (request.query as any)?.secret as string | undefined;
+    if (!verifyRtdnSecret(provided)) {
+      return reply.status(401).send({ success: false, message: 'Unauthorized' });
     }
 
-    const event = request.body as any;
-
-    if (!event || !event.event) {
-      return reply.status(400).send({ success: false, message: 'Invalid webhook payload' });
+    const decoded = decodeRtdnMessage(request.body);
+    if (!decoded) {
+      // Malformed — 400 so Pub/Sub stops redelivering it.
+      return reply.status(400).send({ success: false, message: 'Unreadable notification' });
     }
 
-    const { event: eventType, payload } = event;
-    const data = payload || {};
+    const { notification, messageId } = decoded;
+
+    // Sent from Play Console when you first wire the topic up.
+    if (notification.testNotification) {
+      console.log('[rtdn] Test notification received — Pub/Sub delivery is working');
+      return reply.send({ success: true });
+    }
+
+    const purchaseToken =
+      notification.subscriptionNotification?.purchaseToken ??
+      notification.voidedPurchaseNotification?.purchaseToken;
+
+    if (!purchaseToken) {
+      // A one-time product or a type we don't sell. Ack it so it isn't retried.
+      return reply.send({ success: true });
+    }
+
+    const typeName = notification.subscriptionNotification
+      ? SUBSCRIPTION_NOTIFICATION_TYPES[notification.subscriptionNotification.notificationType] ??
+        `UNKNOWN_${notification.subscriptionNotification.notificationType}`
+      : 'VOIDED_PURCHASE';
 
     try {
-      switch (eventType) {
-        case 'payment.captured': {
-          const { userId, paymentId } = data;
-          if (!userId || !paymentId) break;
-
-          // Store transaction (dedupe: the gateway may retry webhook delivery)
-          await query(
-            `INSERT INTO ${TABLES.TRANSACTIONS}
-             (user_id, gateway_payment_id, gateway_order_id, gateway_subscription_id, amount, currency, status)
-             SELECT $1, $2, $3, $4, $5, $6, 'completed'
-             WHERE NOT EXISTS (
-               SELECT 1 FROM ${TABLES.TRANSACTIONS} WHERE gateway_payment_id = $2
-             )`,
-            [userId, paymentId, data.orderId || null, data.subscriptionId || null,
-             data.amount ?? null, data.currency || 'INR'],
-          );
-
-          await eventBus.sendPaymentEvent({
-            type: 'payment.captured',
-            payload: data,
-          });
-          break;
-        }
-
-        case 'subscription.charged': {
-          const { userId, subscriptionId } = data;
-          if (!userId || !subscriptionId) break;
-
-          const currentEnd = data.currentEnd ? new Date(data.currentEnd) : null;
-
-          // Grant / refresh premium until the end of the current billing cycle
-          await query(
-            `UPDATE ${TABLES.SUBSCRIPTION_LEDGER}
-             SET tier = 'premium', gateway_subscription_id = $1,
-                 expires_at = COALESCE($2, expires_at), auto_renew = TRUE,
-                 updated_at = NOW()
-             WHERE user_id = $3`,
-            [subscriptionId, currentEnd, userId],
-          );
-
-          // Record the recurring charge
-          if (data.paymentId) {
-            await query(
-              `INSERT INTO ${TABLES.TRANSACTIONS}
-               (user_id, gateway_payment_id, gateway_subscription_id, amount, currency, status, description)
-               SELECT $1, $2, $3, $4, $5, 'completed', $6
-               WHERE NOT EXISTS (
-                 SELECT 1 FROM ${TABLES.TRANSACTIONS} WHERE gateway_payment_id = $2
-               )`,
-              [userId, data.paymentId, subscriptionId,
-               data.amount ?? null, data.currency || 'INR', 'Kinetik Premium — monthly renewal'],
-            );
-          }
-
-          // Clear swipe cache so the allowance applies immediately
-          const redis = getRedis();
-          await redis.del(`user:${userId}:swipes:daily`);
-
-          await eventBus.sendPaymentEvent({
-            type: 'subscription.charged',
-            payload: { userId, subscriptionId, currentEnd },
-          });
-          break;
-        }
-
-        case 'subscription.activated': {
-          const { userId, subscriptionId } = data;
-          if (userId && subscriptionId) {
-            const currentEnd = data.currentEnd ? new Date(data.currentEnd) : null;
-            await query(
-              `UPDATE ${TABLES.SUBSCRIPTION_LEDGER}
-               SET tier = 'premium', gateway_subscription_id = $1,
-                   expires_at = COALESCE($2, expires_at), auto_renew = TRUE, updated_at = NOW()
-               WHERE user_id = $3`,
-              [subscriptionId, currentEnd, userId],
-            );
-
-            // Clear swipe cache
-            const redis = getRedis();
-            await redis.del(`user:${userId}:swipes:daily`);
-          }
-
-          await eventBus.sendPaymentEvent({
-            type: 'subscription.activated',
-            payload: data,
-          });
-          break;
-        }
-
-        case 'subscription.cancelled': {
-          if (data.userId) {
-            await query(
-              `UPDATE ${TABLES.SUBSCRIPTION_LEDGER}
-               SET tier = 'free', swipe_allowance = $2, auto_renew = FALSE, updated_at = NOW()
-               WHERE user_id = $1`,
-              [data.userId, FREE_SWIPE_LIMIT],
-            );
-          }
-          break;
-        }
-
-        default:
-          console.log(`Unhandled webhook event: ${eventType}`);
+      const userId = await findUserByPurchaseToken(purchaseToken);
+      if (!userId) {
+        // The purchase exists at Google but no account claims it yet — the app
+        // may not have called /subscription/verify. Nothing to update; that
+        // call will read the current state itself.
+        console.warn(`[rtdn] ${typeName} for an unknown purchase token (message ${messageId})`);
+        return reply.send({ success: true });
       }
 
+      const playSub = await getSubscriptionPurchase(purchaseToken);
+      await applyPlayEntitlement(userId, purchaseToken, playSub);
+
+      // A purchase that completes after a pending UPI mandate still has to be
+      // acknowledged within three days, and this notification may be the first
+      // time it is acknowledgeable.
+      if (playSub.entitled && playSub.needsAcknowledgement) {
+        try {
+          await acknowledgeSubscription(purchaseToken);
+        } catch (error: any) {
+          console.error('[rtdn] Acknowledgement failed:', error?.message || error);
+        }
+      }
+
+      console.log(
+        `[rtdn] ${typeName} → user ${userId} is now ${playSub.entitled ? 'premium' : 'free'} (${playSub.state})`,
+      );
       return reply.send({ success: true });
-    } catch (error) {
-      console.error('Webhook processing error:', error);
-      // Always return 200 to acknowledge receipt
-      return reply.send({ success: true, error: 'Processing error, event queued' });
+    } catch (error: any) {
+      console.error(`[rtdn] Failed to process ${typeName}:`, error?.message || error);
+      // 500 makes Pub/Sub redeliver with backoff, which is what we want for a
+      // transient Play API or database failure — the handler is idempotent.
+      return reply.status(500).send({ success: false, message: 'Processing failed' });
     }
   });
 }

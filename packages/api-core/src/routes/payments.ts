@@ -2,31 +2,23 @@ import { FastifyInstance, FastifyRequest, FastifyReply } from 'fastify';
 import { z } from 'zod';
 import { ERROR_CODES, FREE_SWIPE_LIMIT, FREE_CHAT_LIMIT, PREMIUM_SWIPE_LIMIT, PREMIUM_CHAT_LIMIT, getPricingForPhone } from '@kinetik/shared';
 import { query, TABLES, getSubscription } from '../services/database';
-import { eventBus } from '../services/eventBus';
 import {
-  isGooglePayConfigured,
-  getGooglePayClientConfig,
-  createSubscriptionId,
-  registerAutopayMandate,
-  revokeAutopayMandate,
+  isPlayBillingConfigured,
+  getSubscriptionProductId,
+  getManageSubscriptionUrl,
+  getSubscriptionPurchase,
+  acknowledgeSubscription,
   PREMIUM_PLAN_PERIOD,
-} from '../services/googlePay';
+} from '../services/playBilling';
+import { applyPlayEntitlement, findUserByPurchaseToken } from '../services/subscriptionEntitlement';
 
-const CreateOrderSchema = z.object({
-  amount: z.number().positive(),
-  currency: z.string().length(3).default('INR'),
-  description: z.string().optional(),
-});
-
-const VerifyPaymentSchema = z.object({
-  paymentId: z.string(),
-  orderId: z.string(),
-});
-
-const ActivateSubscriptionSchema = z.object({
-  subscriptionId: z.string(),
-  // Opaque token from the Google Pay sheet: paymentMethodData.tokenizationData.token
-  paymentToken: z.string().min(1),
+const VerifyPurchaseSchema = z.object({
+  // Opaque token from the Play purchase: Purchase.purchaseToken
+  purchaseToken: z.string().min(1),
+  productId: z.string().min(1).optional(),
+  // Localized price the Play sheet showed, for the billing history row.
+  priceAmount: z.number().nonnegative().optional(),
+  priceCurrency: z.string().length(3).optional(),
 });
 
 export async function paymentRoutes(app: FastifyInstance) {
@@ -39,90 +31,6 @@ export async function paymentRoutes(app: FastifyInstance) {
         error: { code: ERROR_CODES.UNAUTHORIZED, message: 'Authentication required' },
       });
     }
-  });
-
-  // ─── Create Payment Order (one-off) ──────────────────
-  app.post('/create-order', async (request: FastifyRequest, reply: FastifyReply) => {
-    const validation = CreateOrderSchema.safeParse(request.body);
-    if (!validation.success) {
-      return reply.status(400).send({
-        success: false,
-        error: {
-          code: ERROR_CODES.VALIDATION_ERROR,
-          message: 'Invalid payment details',
-          details: validation.error.flatten(),
-        },
-      });
-    }
-
-    const { sub: userId } = request.user as any;
-    const { amount, currency, description } = validation.data;
-
-    // Store pending order in DB
-    const result = await query(
-      `INSERT INTO ${TABLES.TRANSACTIONS} (user_id, amount, currency, status, description)
-       VALUES ($1, $2, $3, 'created', $4)
-       RETURNING id, amount, currency, status, created_at`,
-      [userId, amount, currency, description || 'Payment'],
-    );
-
-    return reply.send({
-      success: true,
-      data: {
-        transactionId: result.rows[0].id,
-        amount: result.rows[0].amount,
-        currency: result.rows[0].currency,
-        orderId: `order_${result.rows[0].id}`,
-        googlePay: getGooglePayClientConfig(),
-      },
-    });
-  });
-
-  // ─── Verify Payment (one-off) ────────────────────────
-  app.post('/verify', async (request: FastifyRequest, reply: FastifyReply) => {
-    const validation = VerifyPaymentSchema.safeParse(request.body);
-    if (!validation.success) {
-      return reply.status(400).send({
-        success: false,
-        error: {
-          code: ERROR_CODES.VALIDATION_ERROR,
-          message: 'Invalid verification data',
-          details: validation.error.flatten(),
-        },
-      });
-    }
-
-    const { sub: userId } = request.user as any;
-    const { paymentId, orderId } = validation.data;
-
-    // In production, confirm the charge with the payment gateway before
-    // marking the transaction complete.
-    const isValid = true; // Simplified for dev
-
-    if (!isValid) {
-      return reply.status(400).send({
-        success: false,
-        error: { code: ERROR_CODES.PAYMENT_FAILED, message: 'Payment verification failed' },
-      });
-    }
-
-    // Update transaction
-    await query(
-      `UPDATE ${TABLES.TRANSACTIONS}
-       SET gateway_payment_id = $1, gateway_order_id = $2, status = 'completed'
-       WHERE gateway_order_id = $2`,
-      [paymentId, orderId],
-    );
-
-    await eventBus.sendPaymentEvent({
-      type: 'payment.completed',
-      payload: { userId, paymentId, orderId },
-    });
-
-    return reply.send({
-      success: true,
-      data: { verified: true, paymentId },
-    });
   });
 
   // ─── Get Usage Limits ───────────────────────────────
@@ -189,20 +97,37 @@ export async function paymentRoutes(app: FastifyInstance) {
         amount: pricing.amountMajor,
         amountMinor: pricing.amountMinor,
         label: pricing.label,
+        // Advisory only — Play charges its own regionally-set price, and the
+        // app must display what the store reports, not this. Kept so the
+        // paywall can show something before the store connection is ready.
+        productId: getSubscriptionProductId(),
+        period: PREMIUM_PLAN_PERIOD,
       },
     });
   });
 
-  // ─── Create Subscription (Google Pay recurring) ───────
-  // Creates a pending premium subscription in the user's local currency and
-  // returns the Google Pay sheet configuration. The client then shows the
-  // Google Pay payment sheet so the user can approve the recurring mandate
-  // (UPI Autopay / tokenized card) and calls /subscription/activate with the
-  // returned payment token.
-  app.post('/subscription', async (request: FastifyRequest, reply: FastifyReply) => {
-    const { sub: userId } = request.user as any;
+  // ─── Verify a Play purchase ───────────────────────────
+  // Called by the app right after the Play purchase sheet returns a token.
+  // Google is the merchant of record, so nothing is charged here — we ask the
+  // Play Developer API what the subscription's real state is, mirror it onto
+  // the ledger, and acknowledge the purchase so Google doesn't refund it.
+  //
+  // This endpoint is idempotent: replaying the same token re-reads Play and
+  // converges on the same ledger state.
+  app.post('/subscription/verify', async (request: FastifyRequest, reply: FastifyReply) => {
+    const validation = VerifyPurchaseSchema.safeParse(request.body);
+    if (!validation.success) {
+      return reply.status(400).send({
+        success: false,
+        error: {
+          code: ERROR_CODES.VALIDATION_ERROR,
+          message: 'Invalid purchase data',
+          details: validation.error.flatten(),
+        },
+      });
+    }
 
-    if (!isGooglePayConfigured()) {
+    if (!isPlayBillingConfigured()) {
       return reply.status(503).send({
         success: false,
         error: {
@@ -212,145 +137,86 @@ export async function paymentRoutes(app: FastifyInstance) {
       });
     }
 
-    try {
-      // Fetch user's phone to detect currency
-      const userResult = await query(`SELECT phone FROM ${TABLES.USERS} WHERE id = $1`, [userId]);
-      const phone = userResult.rows[0]?.phone;
-      const pricing = getPricingForPhone(phone || '');
-
-      const subscriptionId = createSubscriptionId();
-
-      // Remember the subscription on the ledger so /subscription/activate can
-      // confirm it actually belongs to this user, and status shows 'pending'.
-      await query(
-        `INSERT INTO ${TABLES.SUBSCRIPTION_LEDGER} (user_id, gateway_subscription_id, updated_at)
-         VALUES ($1, $2, NOW())
-         ON CONFLICT (user_id) DO UPDATE SET gateway_subscription_id = $2, updated_at = NOW()`,
-        [userId, subscriptionId],
-      );
-
-      return reply.send({
-        success: true,
-        data: {
-          subscriptionId,
-          googlePay: getGooglePayClientConfig(),
-          amount: pricing.amountMajor,
-          amountMinor: pricing.amountMinor,
-          currency: pricing.currency,
-          label: pricing.label,
-          period: PREMIUM_PLAN_PERIOD,
-        },
-      });
-    } catch (error: any) {
-      console.error('[payments] Failed to create subscription:', error?.message || error);
-      return reply.status(502).send({
-        success: false,
-        error: {
-          code: ERROR_CODES.PAYMENT_FAILED,
-          message: 'Could not start the subscription. Please try again.',
-        },
-      });
-    }
-  });
-
-  // ─── Activate Subscription ────────────────────────────
-  // Called by the app after the Google Pay sheet returns. We confirm the
-  // subscription belongs to this user, register the payment token with the
-  // gateway as a recurring mandate (first charge included), then grant
-  // premium. Renewals arrive on the payments webhook each month.
-  app.post('/subscription/activate', async (request: FastifyRequest, reply: FastifyReply) => {
-    const validation = ActivateSubscriptionSchema.safeParse(request.body);
-    if (!validation.success) {
-      return reply.status(400).send({
-        success: false,
-        error: {
-          code: ERROR_CODES.VALIDATION_ERROR,
-          message: 'Invalid activation data',
-          details: validation.error.flatten(),
-        },
-      });
-    }
-
     const { sub: userId } = request.user as any;
-    const { subscriptionId, paymentToken } = validation.data;
+    const { purchaseToken, productId, priceAmount, priceCurrency } = validation.data;
 
-    // The subscription must be one we created for this user.
-    const ledger = await getSubscription(userId);
-    if (!ledger || ledger.gateway_subscription_id !== subscriptionId) {
+    // Only the plan we actually sell is accepted.
+    const expectedProduct = getSubscriptionProductId();
+    if (productId && productId !== expectedProduct) {
       return reply.status(400).send({
         success: false,
-        error: { code: ERROR_CODES.PAYMENT_FAILED, message: 'Subscription does not match this account' },
+        error: { code: ERROR_CODES.PAYMENT_FAILED, message: 'Unknown subscription product' },
       });
     }
 
-    // Price in the user's currency — the mandate is registered for this amount.
-    const userResult = await query(`SELECT phone FROM ${TABLES.USERS} WHERE id = $1`, [userId]);
-    const pricing = getPricingForPhone(userResult.rows[0]?.phone || '');
-
-    let mandate: { status: string; paymentId: string };
-    try {
-      mandate = await registerAutopayMandate({
-        subscriptionId,
-        userId,
-        paymentToken,
-        amountMinor: pricing.amountMinor,
-        currency: pricing.currency,
-      });
-    } catch (error: any) {
-      console.error('[payments] Failed to register autopay mandate:', error?.message || error);
-      return reply.status(502).send({
+    // A purchase token belongs to exactly one account. Without this check a
+    // token could be replayed to grant Premium on a second account.
+    const owner = await findUserByPurchaseToken(purchaseToken);
+    if (owner && owner !== userId) {
+      return reply.status(409).send({
         success: false,
         error: {
           code: ERROR_CODES.PAYMENT_FAILED,
-          message: 'Could not confirm the payment. Please try again.',
+          message: 'This purchase is already linked to another Kinetik account.',
         },
       });
     }
 
-    if (mandate.status !== 'active') {
-      return reply.send({
-        success: true,
-        data: { verified: true, activated: false, status: mandate.status },
+    let playSub;
+    try {
+      playSub = await getSubscriptionPurchase(purchaseToken);
+    } catch (error: any) {
+      console.error('[payments] Play verification failed:', error?.message || error);
+      return reply.status(502).send({
+        success: false,
+        error: {
+          code: ERROR_CODES.PAYMENT_FAILED,
+          message: 'Could not confirm the purchase with Google Play. Please try again.',
+        },
       });
     }
 
-    const expiresAt = (() => { const d = new Date(); d.setMonth(d.getMonth() + 1); return d; })();
+    // UPI Autopay mandates are not always confirmed when the sheet closes.
+    // Granting Premium here would hand out a free month if the mandate then
+    // fails — wait for the RTDN that resolves it.
+    if (playSub.state === 'SUBSCRIPTION_STATE_PENDING') {
+      return reply.send({
+        success: true,
+        data: { verified: true, activated: false, pending: true, state: playSub.state },
+      });
+    }
 
-    // Grant premium entitlement
-    await query(
-      `INSERT INTO ${TABLES.SUBSCRIPTION_LEDGER}
-         (user_id, tier, swipe_allowance, fast_passes_remaining, rain_checks_remaining,
-          gateway_subscription_id, expires_at, auto_renew, updated_at)
-       VALUES ($1, 'premium', $2, 5, 3, $3, $4, TRUE, NOW())
-       ON CONFLICT (user_id) DO UPDATE SET
-         tier = 'premium',
-         swipe_allowance = $2,
-         fast_passes_remaining = 5,
-         rain_checks_remaining = 3,
-         gateway_subscription_id = $3,
-         expires_at = $4,
-         auto_renew = TRUE,
-         updated_at = NOW()`,
-      [userId, PREMIUM_SWIPE_LIMIT, subscriptionId, expiresAt.toISOString()],
+    await applyPlayEntitlement(
+      userId,
+      purchaseToken,
+      playSub,
+      priceAmount != null && priceCurrency
+        ? { amount: priceAmount, currency: priceCurrency }
+        : undefined,
     );
 
-    // Record the first transaction
-    await query(
-      `INSERT INTO ${TABLES.TRANSACTIONS}
-         (user_id, gateway_payment_id, gateway_subscription_id, amount, currency, status, description)
-       VALUES ($1, $2, $3, $4, $5, 'completed', $6)`,
-      [userId, mandate.paymentId, subscriptionId, pricing.amountMajor, pricing.currency,
-       `Kinetik Premium — ${pricing.label}`],
-    );
-
-    await eventBus.sendPaymentEvent({
-      type: 'subscription.activated',
-      payload: { userId, tier: 'premium', expiresAt, subscriptionId },
-    });
+    // Acknowledge only after the entitlement is durably granted. Google
+    // auto-refunds and revokes anything unacknowledged after three days.
+    // A failure here is logged, not surfaced: the user has their subscription,
+    // and the RTDN for this purchase gives us another chance.
+    if (playSub.entitled && playSub.needsAcknowledgement) {
+      try {
+        await acknowledgeSubscription(purchaseToken);
+      } catch (error: any) {
+        console.error('[payments] Play acknowledgement failed:', error?.message || error);
+      }
+    }
 
     return reply.send({
       success: true,
-      data: { verified: true, activated: true, tier: 'premium', expiresAt: expiresAt.toISOString() },
+      data: {
+        verified: true,
+        activated: playSub.entitled,
+        pending: false,
+        tier: playSub.entitled ? 'premium' : 'free',
+        expiresAt: playSub.expiresAt ? playSub.expiresAt.toISOString() : null,
+        state: playSub.state,
+      },
     });
   });
 
@@ -363,7 +229,13 @@ export async function paymentRoutes(app: FastifyInstance) {
     if (!ledger || !ledger.gateway_subscription_id) {
       return reply.send({
         success: true,
-        data: { tier: 'free', autoRenew: false, expiresAt: null, subscriptionId: null },
+        data: {
+          tier: 'free',
+          autoRenew: false,
+          expiresAt: null,
+          hasPurchase: false,
+          manageUrl: getManageSubscriptionUrl(),
+        },
       });
     }
 
@@ -373,7 +245,10 @@ export async function paymentRoutes(app: FastifyInstance) {
         tier: ledger.tier,
         autoRenew: Boolean(ledger.auto_renew),
         expiresAt: ledger.expires_at ? new Date(ledger.expires_at).toISOString() : null,
-        subscriptionId: ledger.gateway_subscription_id,
+        // The purchase token itself is deliberately NOT returned — the app has
+        // no use for it and it is the credential Play verification turns on.
+        hasPurchase: true,
+        manageUrl: getManageSubscriptionUrl(),
       },
     });
   });
@@ -411,53 +286,24 @@ export async function paymentRoutes(app: FastifyInstance) {
     });
   });
 
-  // ─── Cancel Subscription ─────────────────────────────
-  // Revokes the autopay mandate at the gateway and stops auto-renew. The user
-  // keeps Premium until the date they already paid for; the payments webhook
-  // (subscription.cancelled) flips the tier to free when the cycle ends.
-  app.post('/subscription/cancel', async (request: FastifyRequest, reply: FastifyReply) => {
+  // ─── Where to cancel ─────────────────────────────────
+  // A Play subscription can ONLY be cancelled by the user, in Play's own
+  // subscription centre — there is no server-side API to stop renewals, and
+  // silently flipping auto_renew here would leave the ledger claiming
+  // something Google would happily contradict at the next renewal.
+  //
+  // So this returns the deep link the app opens, and nothing is written. The
+  // resulting SUBSCRIPTION_CANCELED notification updates the ledger.
+  app.get('/subscription/manage-url', async (request: FastifyRequest, reply: FastifyReply) => {
     const { sub: userId } = request.user as any;
-
     const ledger = await getSubscription(userId);
-    const subscriptionId = ledger?.gateway_subscription_id;
-    if (!ledger || !subscriptionId) {
-      return reply.status(400).send({
-        success: false,
-        error: { code: ERROR_CODES.PAYMENT_FAILED, message: 'No active subscription to cancel' },
-      });
-    }
 
-    try {
-      const { status } = await revokeAutopayMandate(subscriptionId);
-
-      // Keep premium until the end of the paid cycle; stop auto-renew
-      await query(
-        `UPDATE ${TABLES.SUBSCRIPTION_LEDGER}
-         SET auto_renew = FALSE, updated_at = NOW()
-         WHERE user_id = $1`,
-        [userId],
-      );
-
-      const expiresAt = ledger.expires_at ? new Date(ledger.expires_at).toISOString() : null;
-
-      await eventBus.sendPaymentEvent({
-        type: 'subscription.cancelled',
-        payload: { userId, subscriptionId, status },
-      });
-
-      return reply.send({
-        success: true,
-        data: { cancelled: true, status, subscriptionId, expiresAt },
-      });
-    } catch (error: any) {
-      console.error('[payments] Failed to cancel subscription:', error?.message || error);
-      return reply.status(502).send({
-        success: false,
-        error: {
-          code: ERROR_CODES.PAYMENT_FAILED,
-          message: 'Could not cancel the subscription. Please try again.',
-        },
-      });
-    }
+    return reply.send({
+      success: true,
+      data: {
+        manageUrl: getManageSubscriptionUrl(),
+        expiresAt: ledger?.expires_at ? new Date(ledger.expires_at).toISOString() : null,
+      },
+    });
   });
 }

@@ -5,7 +5,11 @@ import { z } from 'zod';
 import { ERROR_CODES, transaction, TABLES } from '@kinetik/shared';
 import { createUser, findUserByPhone, findUserByEmail, findUserById, createSubscription, updateUser, getSubscription, query } from '../services/database';
 import { deleteAllUserPhotos, deleteChatFile } from '../services/photoStorage';
-import { isGooglePayConfigured, revokeAutopayMandate } from '../services/googlePay';
+import {
+  isPlayBillingConfigured,
+  getSubscriptionPurchase,
+  getManageSubscriptionUrl,
+} from '../services/playBilling';
 import { eventBus } from '../services/eventBus';
 import { sendOtpSms } from '../services/sms';
 
@@ -495,21 +499,34 @@ export async function authRoutes(app: FastifyInstance) {
       });
     }
 
-    // The account is about to cease to exist — its recurring autopay
-    // mandate MUST stop charging. Revoke it at the gateway immediately (not
-    // at cycle end). If the gateway can't be reached, abort the deletion so
-    // the user retries rather than leaving a live mandate on a dead account.
+    // A Play subscription belongs to the user's Google account, not to this
+    // one, and there is no server-side API that can stop it renewing. Deleting
+    // the account here would therefore leave Google billing a person who no
+    // longer has anything to be billed for.
+    //
+    // So deletion is refused while renewal is still on, and the app sends the
+    // user to Play's subscription centre first. Once they cancel, the
+    // SUBSCRIPTION_CANCELED notification clears auto_renew and this passes.
     const ledger = await getSubscription(userId);
-    if (ledger?.gateway_subscription_id && isGooglePayConfigured()) {
+    if (ledger?.gateway_subscription_id && isPlayBillingConfigured()) {
+      let stillRenewing = Boolean(ledger.auto_renew);
       try {
-        await revokeAutopayMandate(ledger.gateway_subscription_id);
+        // Trust Play over our own row — the ledger can lag a notification.
+        const playSub = await getSubscriptionPurchase(ledger.gateway_subscription_id);
+        stillRenewing = playSub.autoRenewing;
       } catch (err: any) {
-        console.error(`[DeleteAccount] Failed to cancel subscription for ${userId}:`, err?.message || err);
-        return reply.status(502).send({
+        console.error(`[DeleteAccount] Could not read Play subscription for ${userId}:`, err?.message || err);
+      }
+
+      if (stillRenewing) {
+        return reply.status(409).send({
           success: false,
           error: {
             code: ERROR_CODES.PAYMENT_FAILED,
-            message: 'Could not cancel your subscription. Please try again.',
+            message:
+              'Cancel your Kinetik Premium subscription in Google Play first, then delete your account. ' +
+              'We cannot cancel it for you, and leaving it active would keep charging you.',
+            details: { manageUrl: getManageSubscriptionUrl() },
           },
         });
       }
