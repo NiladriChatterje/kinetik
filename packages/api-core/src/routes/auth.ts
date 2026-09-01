@@ -507,6 +507,15 @@ export async function authRoutes(app: FastifyInstance) {
     // If Play can't be reached, abort the deletion so the user retries rather
     // than ending up with a live subscription on a dead account.
     const ledger = await getSubscription(userId);
+    if (ledger?.gateway_subscription_id && !isPlayBillingConfigured()) {
+      // Deletion still proceeds — blocking it would strand the user — but this
+      // is the one path where a subscription can outlive its account, so it
+      // must never happen quietly.
+      console.error(
+        `[DeleteAccount] Play billing is NOT configured; deleting ${userId} WITHOUT cancelling ` +
+          `their subscription. Cancel purchase token ${ledger.gateway_subscription_id} manually.`,
+      );
+    }
     if (ledger?.gateway_subscription_id && isPlayBillingConfigured()) {
       try {
         await cancelSubscription(ledger.gateway_subscription_id, 'DEVELOPER_REQUESTED_STOP_PAYMENTS');
