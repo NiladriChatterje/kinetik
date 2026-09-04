@@ -63,7 +63,7 @@ With Postgres and Redis remote, only three containers stay up:
 | `migration-runner` | — | One-shot, exits immediately after migrating |
 | **Total** | **~576 MB** | Plus ~200 MB for Ubuntu and the Docker daemon |
 
-`postgres`, `redis`, `redis-events`, `livekit`, and `pose-service` are already commented out
+`postgres`, `redis`, `redis-events`, and `pose-service` are already commented out
 in `docker-compose.yml` — leave them that way. `minio` is the one judgement call: see §6.
 
 ~776 MB of steady-state usage fits a 1 GB box **at runtime**. Building is the problem, not

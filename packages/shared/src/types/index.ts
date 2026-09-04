@@ -287,15 +287,6 @@ export enum WsEvent {
   CHAT_MESSAGE = 'chat:message',
   CHAT_TYPING = 'chat:typing',
   CHAT_READ = 'chat:read',
-
-  // 1:1 Calls (LiveKit signaling)
-  CALL_INVITE = 'call:invite',
-  CALL_ACCEPT = 'call:accept',
-  CALL_DECLINE = 'call:decline',
-  CALL_CANCEL = 'call:cancel',
-  CALL_BUSY = 'call:busy',
-  CALL_ACTIVE_JOIN = 'call:active_join',
-  CALL_ACTIVE_LEAVE = 'call:active_leave',
 }
 
 // ─── API Response Types ───────────────────────────────────

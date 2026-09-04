@@ -18,7 +18,6 @@ Your Docker Compose stack runs 8 services. Here's what each needs at 10K scale:
 | API Core (Node.js) | 1–2 | 512 MB–1 GB | REST endpoints |
 | Realtime (Socket.IO) | 1–2 | 512 MB–1 GB | 1K+ persistent WS connections |
 | Pose Service (Python/MediaPipe) | 2–4 | 1–2 GB | **CPU bottleneck** — ML inference |
-| LiveKit (WebRTC SFU) | 0.5–1 | 256–512 MB | Video/audio calls |
 | Nginx | 0.25 | 64 MB | Reverse proxy |
 | MinIO | 0.5 | 512 MB | Object storage (photos) |
 | **Total** | **6–10** | **5–8 GB** | |
@@ -156,7 +155,6 @@ MediaPipe face landmark extraction on CPU takes **200–500ms per image**. At pe
 │  │ ├── API Core                │    │
 │  │ ├── Realtime (Socket.IO)    │    │
 │  │ ├── Pose Service            │    │
-│  │ ├── LiveKit                 │    │
 │  │ ├── MinIO                   │    │
 │  │ └── Nginx                   │    │
 │  └─────────────────────────────┘    │
@@ -177,7 +175,6 @@ MediaPipe face landmark extraction on CPU takes **200–500ms per image**. At pe
 │                   │     │  │ ├── API Core     │ │
 │  ~$15–20/mo       │     │  │ ├── Realtime     │ │
 └──────────────────┘     │  │ ├── Pose Service  │ │
-                          │  │ ├── LiveKit       │ │
 ┌──────────────────┐     │  │ ├── MinIO         │ │
 │ Managed Redis     │     │  │ └── Nginx        │ │
 │ (Hetzner/Digital  │◄───►│  └──────────────────┘ │

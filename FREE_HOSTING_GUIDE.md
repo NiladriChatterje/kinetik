@@ -16,15 +16,14 @@ Each part of the app gets a free home. "Sleeps" means the free host pauses the s
 | Database (PostgreSQL) | **Neon** | ✅ | Naps after 5 min, wakes in ~0.3 s (our app pings it anyway) |
 | Redis — cache + chat plumbing + internal events | **Aiven for Valkey** (one instance, both roles) | ✅ | Only if fully idle — normal traffic + pings keep it on |
 | Photo / media storage | **Cloudflare R2** | ✅ | Never |
-| Voice & video calls | **LiveKit Cloud** (Build plan) | ✅ | Never |
 | api-core (the main server) | **Render** free web service | ✅ | After 15 min → ping keeps it awake |
 | realtime (chat sockets) | **Koyeb** free account | ✅ | After 1 h → ping keeps it awake |
-| pose-service (selfie check) | **Not deployed** — optional, see §9 | ✅ | — |
+| pose-service (selfie check) | **Not deployed** — optional, see §8 | ✅ | — |
 | Push notifications | Expo Push | ✅ | Never |
 | Address lookup (geocoding) | Geoapify (3,000/day) | ✅ | Never |
 | Uptime pings + error logs | UptimeRobot, Sentry, Better Stack | ✅ | Never |
 
-**Accounts you'll create:** Neon, Aiven, Cloudflare, LiveKit, Render (1), Koyeb (1), UptimeRobot. All free, none ask for a card.
+**Accounts you'll create:** Neon, Aiven, Cloudflare, Render (1), Koyeb (1), UptimeRobot. All free, none ask for a card.
 
 > The Python match-engine and the flash-window feature were both retired — matching happens through swipes/likes in api-core, so there's no separate matching service to host at all.
 
@@ -32,7 +31,7 @@ Each part of the app gets a free home. "Sleeps" means the free host pauses the s
 
 ## 2. Code changes you must make first (~10 minutes, one time)
 
-**No new SDKs or libraries need to be installed.** The app already speaks the right "languages": Neon is plain PostgreSQL, Aiven's Valkey is plain Redis protocol, R2 is storage the app's existing S3 client understands, and the LiveKit / Expo / Play Billing SDKs are already in the code. The only edits are tiny settings tweaks:
+**No new SDKs or libraries need to be installed.** The app already speaks the right "languages": Neon is plain PostgreSQL, Aiven's Valkey is plain Redis protocol, R2 is storage the app's existing S3 client understands, and the Expo / Play Billing SDKs are already in the code. The only edits are tiny settings tweaks:
 
 ### 2a. Tell Redis connections to use encryption (TLS)
 
@@ -43,7 +42,7 @@ Aiven (and the Upstash fallback) only accept encrypted connections. Add **one li
 3. `packages/api-core/src/index.ts` (the Redis passed to the rate limiter)
 4. `packages/realtime/src/index.ts` — **two spots**: the `pubClient` and the `eventBusClient` (the `eventBusPub` and `subClient` are duplicates and inherit it)
 
-That's everything. All other "changes" are just filling in web addresses and passwords (environment variables, §12).
+That's everything. All other "changes" are just filling in web addresses and passwords (environment variables, §11).
 
 ---
 
@@ -91,10 +90,10 @@ cache keys and event-bus channels have distinct names and never collide.
    - **Host** (`valkey-xxxx-yyyy.aivencloud.com`)
    - **Port** — ⚠️ Aiven assigns a custom port (e.g. `12691`), **not** `6379`
    - **Password** (the `default` user's password — password-only auth works)
-3. Fill **both** variable sets with the same values (§12): `REDIS_*` **and** `REDIS_EVENTS_*`.
+3. Fill **both** variable sets with the same values (§11): `REDIS_*` **and** `REDIS_EVENTS_*`.
 
 > ⚠️ Aiven powers off free services that go **fully idle**. Real app traffic plus the
-> UptimeRobot-driven health checks (§13) count as activity, so this doesn't bite a live
+> UptimeRobot-driven health checks (§12) count as activity, so this doesn't bite a live
 > deployment — but if you pause the project for weeks, expect to power it back on from
 > the dashboard (one click; cache/pub-sub data is disposable anyway).
 
@@ -131,26 +130,7 @@ MINIO_PUBLIC_URL=https://pub-<hash>.r2.dev/
 
 ---
 
-## 6. Calls → LiveKit Cloud
-
-Free "Build" plan: 50 GB traffic + 5,000 call minutes per month, no card.
-
-1. Sign up at [livekit.io](https://livekit.io) → create a project.
-2. **Settings → Keys** → copy the host, API key, and API secret:
-   ```
-   LIVEKIT_HOST=wss://<project>.livekit.cloud
-   LIVEKIT_API_KEY=APIxxx
-   LIVEKIT_API_SECRET=<secret>
-   LIVEKIT_PUBLIC_URL=wss://<project>.livekit.cloud
-   ```
-
-> Don't try to self-host LiveKit on a free tier — calls need network features only a real server has. The free cloud plan is the right answer.
-
-> **Testing calls on your own Wi-Fi with Docker?** Set `LIVEKIT_RTC_NODE_IP=<your PC's LAN IP>` in `.env`, or calls will connect but stay silent/black.
-
----
-
-## 7. Main server (api-core) → Render
+## 6. Main server (api-core) → Render
 
 Free: 512 MB RAM, 750 hours/month — exactly enough to keep **one** service awake all month.
 
@@ -163,22 +143,22 @@ Free: 512 MB RAM, 750 hours/month — exactly enough to keep **one** service awa
    - Build command: `npm install && npm run build -w packages/shared && npm run build -w packages/api-core`
    - Start command: `node packages/api-core/dist/index.js`
    - Instance type: **Free** · Health check path: `/health`
-4. Add the api-core variables from §12 (don't set `PORT` — Render sets it).
+4. Add the api-core variables from §11 (don't set `PORT` — Render sets it).
 5. Deploy → your address is `https://<name>.onrender.com`.
 
 ---
 
-## 8. Chat server (realtime) → Koyeb
+## 7. Chat server (realtime) → Koyeb
 
 Free: 512 MB RAM, one web service, no card. One account is enough.
 
 - Build: `npm install && npm run build -w packages/shared && npm run build -w packages/realtime`
 - Run: `node packages/realtime/dist/index.js` · Port: `3002`
-- Variables: §12. **`JWT_SECRET` must be exactly the same as api-core's** — otherwise every chat connection is rejected.
+- Variables: §11. **`JWT_SECRET` must be exactly the same as api-core's** — otherwise every chat connection is rejected.
 
 ---
 
-## 9. pose-service (KYC document face match) — skip it, on purpose
+## 8. pose-service (KYC document face match) — skip it, on purpose
 
 Selfie verification now runs **entirely on the phone** (ML Kit + MobileFaceNet — see
 FACE_VERIFICATION_ONDEVICE.md), so this service is only needed for the opt-in KYC
@@ -190,7 +170,7 @@ The app is built to work without it: onboarding never blocks on it.
 
 ---
 
-## 10. Third-party freebies
+## 9. Third-party freebies
 
 | Need | Service | Free tier | Variables |
 |---|---|---|---|
@@ -207,7 +187,7 @@ The app is built to work without it: onboarding never blocks on it.
 
 ---
 
-## 11. The mobile app
+## 10. The mobile app
 
 Point it at your new addresses — `packages/mobile/app.json` → `expo.extra`:
 
@@ -225,7 +205,7 @@ Build & share (free):
 
 ---
 
-## 12. All environment variables in one place
+## 11. All environment variables in one place
 
 ### api-core (Render)
 ```
@@ -240,10 +220,6 @@ REDIS_PASSWORD=<aiven-password>
 REDIS_EVENTS_HOST=<same as REDIS_HOST>
 REDIS_EVENTS_PORT=<same as REDIS_PORT>
 REDIS_EVENTS_PASSWORD=<same as REDIS_PASSWORD>
-LIVEKIT_HOST=wss://<project>.livekit.cloud
-LIVEKIT_API_KEY=APIxxx
-LIVEKIT_API_SECRET=<secret>
-LIVEKIT_PUBLIC_URL=wss://<project>.livekit.cloud
 MINIO_ENDPOINT=<account-id>.r2.cloudflarestorage.com   # no https:// prefix
 MINIO_ACCESS_KEY=<r2-access-key-id>
 MINIO_SECRET_KEY=<r2-secret>
@@ -270,7 +246,7 @@ REDIS_EVENTS_HOST / REDIS_EVENTS_PORT / REDIS_EVENTS_PASSWORD = same as api-core
 
 ---
 
-## 13. Keep everything awake — UptimeRobot
+## 12. Keep everything awake — UptimeRobot
 
 Free: 50 monitors, checks every 5 minutes. These pings double as health checks:
 
@@ -281,22 +257,21 @@ Free: 50 monitors, checks every 5 minutes. These pings double as health checks:
 
 ---
 
-## 14. Deployment checklist
+## 13. Deployment checklist
 
 - [ ] Code tweaks (§2): 5 Node TLS lines
 - [ ] Neon: project → **pooled** `DATABASE_URL` → run migrations
 - [ ] Aiven: free Valkey service → copy host + custom port + password (fills both `REDIS_*` and `REDIS_EVENTS_*`)
 - [ ] Cloudflare R2: bucket → API token → public access → CORS
-- [ ] LiveKit Cloud: project → host + key + secret
 - [ ] Render: deploy api-core → env vars → note the URL
 - [ ] Koyeb: deploy realtime → env vars → note the URL
-- [ ] UptimeRobot: 2 monitors (§13) — this is what keeps everything awake
+- [ ] UptimeRobot: 2 monitors (§12) — this is what keeps everything awake
 - [ ] Mobile: `apiUrl`/`wsUrl` in `app.json` → `eas build` → APK to GitHub Releases
-- [ ] Test the loop: signup (code `123456`) → onboarding → photo upload → like → match → chat → call
+- [ ] Test the loop: signup (code `123456`) → onboarding → photo upload → like → match → chat
 
 ---
 
-## 15. Growing out of free (nothing is a dead end)
+## 14. Growing out of free (nothing is a dead end)
 
 The repo's `docker-compose.yml` runs the entire stack unchanged, so upgrading is just moving:
 
@@ -308,7 +283,7 @@ The repo's `docker-compose.yml` runs the entire stack unchanged, so upgrading is
 
 ---
 
-## 16. What genuinely can't be free
+## 15. What genuinely can't be free
 
 | Item | Why | Today's workaround |
 |---|---|---|
@@ -316,11 +291,11 @@ The repo's `docker-compose.yml` runs the entire stack unchanged, so upgrading is
 | Custom domain | ~$10/year | free `.onrender.com` / `.koyeb.app` addresses |
 | Real SMS | per-message fees | login code stays `123456` in dev |
 | Live payments | ~2% per transaction | test keys free forever |
-| Selfie verification hosting | needs 1 GB RAM | optional by design (§9) |
+| Selfie verification hosting | needs 1 GB RAM | optional by design (§8) |
 
 ---
 
-## 17. Gotchas (learned the hard way)
+## 16. Gotchas (learned the hard way)
 
 1. **Render = one awake service per account.** Two services will suspend each other mid-month.
 2. **Always use Neon's `-pooler` address** — the app opens up to 20 connections; the plain address can't handle it.

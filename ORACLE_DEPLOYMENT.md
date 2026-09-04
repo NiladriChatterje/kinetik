@@ -299,7 +299,7 @@ into R2 is what stands between you and a bad afternoon.
 ## 11. Later: consolidate onto this box
 
 With 12 GB you could stop paying rent to anyone. `docker-compose.yml` still contains the
-commented-out `postgres`, `redis`, `redis-events` and `livekit` services — uncomment them, move
+commented-out `postgres`, `redis` and `redis-events` services — uncomment them, move
 `DATABASE_URL` and the Redis variables back to local hostnames, and the whole stack runs on one
 machine with no external dependencies and no cross-region latency on every query.
 

@@ -17,23 +17,6 @@ interface ChatTypingPayload {
   isTyping: boolean;
 }
 
-interface CallInvitePayload {
-  matchId: string;
-  partnerId: string;
-  callerName?: string;
-  callerPhotoUrl?: string;
-}
-
-interface CallRespondPayload {
-  matchId: string;
-  callerId: string;
-}
-
-interface CallCancelPayload {
-  matchId: string;
-  partnerId: string;
-}
-
 interface MessagePayload {
   id: string;
   matchId: string;
@@ -75,14 +58,6 @@ interface MessagePayload {
 
 export class ChatHandler {
   private userMatches: Map<string, Set<string>> = new Map(); // userId -> Set<matchId>
-  // NOTE: per-instance in-memory (same pattern as userMatches). With the
-  // Redis adapter's horizontal scaling, a busy user on another instance won't
-  // be seen here — mitigated by nginx ip_hash sticky sessions which pin a
-  // match's users to the same instance.
-  // Tracked per-SOCKET because a user holds several sockets at once (the
-  // shared call socket + per-screen chat sockets) — only the socket that
-  // emitted call:active_join may clear busy on disconnect.
-  private busyUsers: Map<string, Set<string>> = new Map(); // userId -> socketIds in an active call
 
   constructor(
     private nsp: Namespace,
@@ -105,12 +80,11 @@ export class ChatHandler {
       REDIS_KEYS.CHAT_TYPING_CHANNEL,
       REDIS_KEYS.CHAT_READ_CHANNEL,
       REDIS_KEYS.CHAT_MEDIA_EVENTS_CHANNEL,
-      REDIS_KEYS.CHAT_CALL_CHANNEL,
       (err) => {
         if (err) {
           console.error('[Chat] Failed to subscribe to cross-instance channels:', err.message);
         } else {
-          console.log(`[Chat] Subscribed to cross-instance channels: messages, typing, read, media, call`);
+          console.log(`[Chat] Subscribed to cross-instance channels: messages, typing, read, media`);
         }
       },
     );
@@ -134,10 +108,6 @@ export class ChatHandler {
 
           case REDIS_KEYS.CHAT_MEDIA_EVENTS_CHANNEL:
             this.handleIncomingMediaEvent(payload);
-            break;
-
-          case REDIS_KEYS.CHAT_CALL_CHANNEL:
-            this.handleIncomingCallEvent(payload);
             break;
         }
       } catch (err) {
@@ -242,40 +212,6 @@ export class ChatHandler {
     }
   }
 
-  // ─── Handle incoming 1:1 call signaling from Redis pub/sub ─
-  // Delivered ONLY via the Redis subscriber (same pattern as messages)
-  // so each instance emits exactly once — no double-ring on the same
-  // instance. The event is routed to the target user's PERSONAL room
-  // (`user:<id>`), which every socket joins on connection, so a call
-  // invite reaches the callee no matter which screen they're on.
-  private handleIncomingCallEvent(payload: any) {
-    const { type, targetUserId, event } = payload || {};
-    if (!type || !targetUserId || !event) return;
-
-    // Reuses emitToLocalRoom with the personal room (`user:<id>`) — every
-    // socket joins it on connect, so the target receives the event regardless
-    // of which screen they're on. NOTE: this is best-effort ring signaling;
-    // the real 1:1 security boundary is the LiveKit token endpoint in api-core.
-    const room = `user:${targetUserId}`;
-    switch (type) {
-      case 'invite':
-        this.emitToLocalRoom(room, WsEvent.CALL_INVITE, event);
-        break;
-      case 'accept':
-        this.emitToLocalRoom(room, WsEvent.CALL_ACCEPT, event);
-        break;
-      case 'decline':
-        this.emitToLocalRoom(room, WsEvent.CALL_DECLINE, event);
-        break;
-      case 'cancel':
-        this.emitToLocalRoom(room, WsEvent.CALL_CANCEL, event);
-        break;
-      case 'busy':
-        this.emitToLocalRoom(room, WsEvent.CALL_BUSY, event);
-        break;
-    }
-  }
-
   // ─── Local-only broadcast helpers ──────────────────────────
   // These emit directly to sockets on the CURRENT instance only,
   // bypassing the Socket.IO Redis adapter entirely. This is critical
@@ -298,8 +234,8 @@ export class ChatHandler {
   /**
    * True if the user still has at least one live local socket in the room.
    * A user holds several /chat sockets at once (chat-list, per-DM, unread
-   * badge, call signaling) — userMatches tracking may only be dropped once
-   * the LAST of them has left the match room.
+   * badge) — userMatches tracking may only be dropped once the LAST of them
+   * has left the match room.
    */
   private userHasLocalSocketInRoom(userId: string, room: string): boolean {
     const socketIds = this.nsp.adapter.rooms.get(room);
@@ -308,30 +244,6 @@ export class ChatHandler {
       if ((this.nsp.sockets.get(id) as any)?.userId === userId) return true;
     }
     return false;
-  }
-
-  /**
-   * Remove a socket from a user's busy set. Busy is cleared only when the
-   * LAST socket that joined the active call leaves/disconnects — a secondary
-   * chat socket dropping must not clear busy mid-call.
-   */
-  private removeBusySocket(userId: string, socketId: string) {
-    const sockets = this.busyUsers.get(userId);
-    if (!sockets) return;
-    sockets.delete(socketId);
-    if (sockets.size === 0) {
-      this.busyUsers.delete(userId);
-    }
-  }
-
-  /** Publish a 1:1 call signaling event for cross-instance delivery. */
-  private publishCallEvent(type: string, targetUserId: string, event: any) {
-    this.pubClient.publish(
-      REDIS_KEYS.CHAT_CALL_CHANNEL,
-      JSON.stringify({ type, targetUserId, event }),
-    ).catch((err: Error) => {
-      console.error('[Chat] Failed to publish call event:', err.message);
-    });
   }
 
   // ─── Socket Event Handlers ─────────────────────────────────
@@ -346,9 +258,8 @@ export class ChatHandler {
       // Join conversation room
       // Only the two participants of an ACTIVE match may join its room. Without
       // this check any authenticated user could join any `match:<id>` room and
-      // (a) eavesdrop on that match's chat and (b) pass the userMatches gate on
-      // CALL_INVITE to ring arbitrary users. Fails open on DB errors so a
-      // transient Postgres blip doesn't break chat for everyone.
+      // eavesdrop on that match's chat. Fails open on DB errors so a transient
+      // Postgres blip doesn't break chat for everyone.
       socket.on(WsEvent.CHAT_JOIN, async (data: { matchId: string }) => {
         const { matchId } = data;
         if (!matchId) return;
@@ -385,7 +296,7 @@ export class ChatHandler {
 
         // Drop tracking only if no OTHER socket of this user is still in the
         // room (leave() above already removed this one) — e.g. the DM screen
-        // closing must not untrack a match the call socket still uses.
+        // closing must not untrack a match the shared app socket still uses.
         const matches = this.userMatches.get(userId);
         if (matches && !this.userHasLocalSocketInRoom(userId, `match:${matchId}`)) {
           matches.delete(matchId);
@@ -438,84 +349,6 @@ export class ChatHandler {
         });
       });
 
-      // ── 1:1 call signaling (LiveKit) ──
-      // Invite/accept/decline/cancel/busy are routed to the target user's
-      // PERSONAL room via the Redis subscriber (exactly-once per instance).
-
-      socket.on(WsEvent.CALL_INVITE, (data: CallInvitePayload) => {
-        const { matchId, partnerId, callerName, callerPhotoUrl } = data || {};
-        if (!matchId || !partnerId || partnerId === userId) return;
-
-        // Caller must be a participant of the match (joined it via chat:join)
-        if (!this.userMatches.get(userId)?.has(matchId)) return;
-
-        // If the callee is already in another call, auto-reply busy instead
-        // of ringing. Busy state is set via call:active_join (see below) and
-        // cleared on call:active_leave or socket disconnect.
-        if (this.busyUsers.has(partnerId)) {
-          this.publishCallEvent('busy', userId, {
-            matchId,
-            calleeId: partnerId,
-            timestamp: new Date().toISOString(),
-          });
-          return;
-        }
-
-        this.publishCallEvent('invite', partnerId, {
-          matchId,
-          callerId: userId,
-          callerName: callerName || '',
-          callerPhotoUrl: callerPhotoUrl || '',
-          timestamp: new Date().toISOString(),
-        });
-      });
-
-      // Mark the user as in an active 1:1 call (busy). Emitted by the mobile
-      // CallScreen on mount and cleared on unmount / disconnect.
-      socket.on(WsEvent.CALL_ACTIVE_JOIN, () => {
-        if (!this.busyUsers.has(userId)) {
-          this.busyUsers.set(userId, new Set());
-        }
-        this.busyUsers.get(userId)!.add(socket.id);
-      });
-
-      socket.on(WsEvent.CALL_ACTIVE_LEAVE, () => {
-        this.removeBusySocket(userId, socket.id);
-      });
-
-      socket.on(WsEvent.CALL_ACCEPT, (data: CallRespondPayload) => {
-        const { matchId, callerId } = data || {};
-        if (!matchId || !callerId || callerId === userId) return;
-
-        this.publishCallEvent('accept', callerId, {
-          matchId,
-          calleeId: userId,
-          timestamp: new Date().toISOString(),
-        });
-      });
-
-      socket.on(WsEvent.CALL_DECLINE, (data: CallRespondPayload) => {
-        const { matchId, callerId } = data || {};
-        if (!matchId || !callerId || callerId === userId) return;
-
-        this.publishCallEvent('decline', callerId, {
-          matchId,
-          calleeId: userId,
-          timestamp: new Date().toISOString(),
-        });
-      });
-
-      socket.on(WsEvent.CALL_CANCEL, (data: CallCancelPayload) => {
-        const { matchId, partnerId } = data || {};
-        if (!matchId || !partnerId || partnerId === userId) return;
-
-        this.publishCallEvent('cancel', partnerId, {
-          matchId,
-          callerId: userId,
-          timestamp: new Date().toISOString(),
-        });
-      });
-
       // ── Mark messages as read ──
       // Uses local-only emit + Redis pub/sub (same pattern as typing indicators).
       socket.on(WsEvent.CHAT_READ, async (data: { matchId: string }) => {
@@ -542,7 +375,7 @@ export class ChatHandler {
         console.log(`[Chat] User ${userId} disconnected`);
         // Prune only the matches no surviving socket of this user is still
         // joined to — one socket dropping (of the several a user holds) must
-        // not wipe tracking for the DMs/calls the others are still in.
+        // not wipe tracking for the DMs the others are still in.
         // (Socket.IO removes this socket from nsp.sockets before emitting
         // 'disconnect', so it no longer counts as "in the room" here.)
         const matches = this.userMatches.get(userId);
@@ -556,7 +389,6 @@ export class ChatHandler {
             this.userMatches.delete(userId);
           }
         }
-        this.removeBusySocket(userId, socket.id);
       });
     });
   }
