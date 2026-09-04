@@ -1,6 +1,5 @@
 import React, { useEffect } from 'react';
 import { LogBox, Platform } from 'react-native';
-import Constants from 'expo-constants';
 import { StatusBar } from 'expo-status-bar';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
@@ -14,26 +13,6 @@ import { RootNavigator } from './navigation/RootNavigator';
 import { useAuthStore } from './store/authStore';
 import { useNotifications } from './hooks/useNotifications';
 import { colors } from './theme';
-
-// Set up WebRTC globals (RTCPeerConnection, mediaDevices, etc.) required by
-// LiveKit before any call screen is rendered.
-//
-// react-native-webrtc is a native module that only exists in development /
-// production builds — it is NOT bundled in Expo Go. Importing
-// @livekit/react-native there throws "WebRTC native module not found" at
-// module load, which crashes the whole app before it can render. Guard the
-// import so the app boots everywhere and only the voice/video call feature
-// degrades (same pattern as services/notifications.ts).
-try {
-  if (Constants.executionEnvironment !== 'storeClient') {
-    // eslint-disable-next-line @typescript-eslint/no-var-requires
-    const { registerGlobals } = require('@livekit/react-native');
-    registerGlobals();
-  }
-  // Expo Go: silently skip — Voice/video calls are unavailable here
-} catch {
-  // Native module not available — silent fallback
-}
 
 // Suppress InteractionManager deprecation warnings from third-party libraries
 // (react-navigation v6, react-native-screens, etc. use it internally)

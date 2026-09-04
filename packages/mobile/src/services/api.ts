@@ -835,14 +835,6 @@ class ApiClient {
     throw new Error(body?.error?.message || `Upload failed (HTTP ${result.status})`);
   }
 
-  // ─── 1:1 Voice/Video Calls (LiveKit) ─────────────────
-  async getCallToken(matchId: string) {
-    return this.request<{ url: string; token: string; room: string; expiresIn: number }>(
-      `/api/v1/matches/${matchId}/call/token`,
-      { method: 'POST' },
-    );
-  }
-
   // ─── Mark One-Time View Media as Viewed ───────────────
   async markMediaViewed(mediaId: string): Promise<ApiResponse<{ viewedAt: string }>> {
     return this.request<{ viewedAt: string }>(`/api/v1/matches/media/${mediaId}/view`, {

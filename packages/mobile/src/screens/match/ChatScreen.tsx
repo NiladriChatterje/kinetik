@@ -17,7 +17,7 @@ import * as DocumentPicker from 'expo-document-picker';
 import { Socket } from 'socket.io-client';
 import { api } from '../../services/api';
 import { compressPhoto } from '../../services/photoService';
-import { getChatSocket } from '../../services/callSocket';
+import { getChatSocket } from '../../services/chatSocket';
 import { useAuthStore } from '../../store/authStore';
 import { useToast } from '../../hooks/useToast';
 import { DmSuggestionChips } from '../../components/chat/DmSuggestionChips';
@@ -388,7 +388,7 @@ const RecordingDot: React.FC = React.memo(() => {
 RecordingDot.displayName = 'RecordingDot';
 
 export const ChatScreen: React.FC<{ navigation: any; route: any }> = ({ navigation, route }) => {
-  const { matchId, partnerName: pName, partnerId: pId, partnerPhotoUrl: pPhoto } = route.params || {};
+  const { matchId, partnerName: pName, partnerPhotoUrl: pPhoto } = route.params || {};
   const toast = useToast();
   const insets = useSafeAreaInsets();
   const [messages, setMessages] = useState<Message[]>([]);
@@ -1675,23 +1675,6 @@ export const ChatScreen: React.FC<{ navigation: any; route: any }> = ({ navigati
             activeOpacity={0.7}
           >
             <Ionicons name="calendar-outline" size={20} color={colors.textPrimary} />
-          </TouchableOpacity>
-
-          {/* 1:1 voice/video call (private date call) */}
-          <TouchableOpacity
-            style={styles.callBtn}
-            onPress={() =>
-              navigation.navigate('Call', {
-                matchId,
-                partnerName,
-                partnerPhotoUrl: pPhoto,
-                partnerId: pId,
-                mode: 'caller',
-              })
-            }
-            activeOpacity={0.7}
-          >
-            <Ionicons name="call" size={20} color={colors.textPrimary} />
           </TouchableOpacity>
 
           {/* Unmatch menu */}

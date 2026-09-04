@@ -3,7 +3,7 @@ import * as SecureStore from 'expo-secure-store';
 import Toast from 'react-native-toast-message';
 import { Socket } from 'socket.io-client';
 import { api } from '../services/api';
-import { closeCallSocket, getChatSocket } from '../services/callSocket';
+import { closeChatSocket, getChatSocket } from '../services/chatSocket';
 import { closePresenceSocket, getPresenceSocket } from '../services/presenceSocket';
 
 // Badge listeners attached to the shared /chat socket, kept for detaching
@@ -404,8 +404,8 @@ export const useAuthStore = create<AuthState>((set, get) => ({
     const token = api.getToken();
     if (!token) return;
 
-    // Shared app-wide /chat socket (also used by call signaling and the chat
-    // screens) — attach badge listeners, don't open another connection
+    // Shared app-wide /chat socket (also used by the chat screens) — attach
+    // badge listeners, don't open another connection
     const socket = getChatSocket();
 
     // Join every conversation room so incoming messages reach this socket.
@@ -451,7 +451,7 @@ export const useAuthStore = create<AuthState>((set, get) => ({
 
   disconnectChatsSocket: () => {
     // Detach only the badge listeners — the shared /chat socket itself is
-    // torn down by closeCallSocket() in logout/deleteAccount
+    // torn down by closeChatSocket() in logout/deleteAccount
     if (chatsSocketHandlers) {
       const { socket, joinAllRooms, onChatMessage, onMatchNew } = chatsSocketHandlers;
       socket.off('connect', joinAllRooms);
@@ -491,7 +491,7 @@ export const useAuthStore = create<AuthState>((set, get) => ({
   logout: () => {
     get().disconnectLikesSocket();
     get().disconnectChatsSocket();
-    closeCallSocket();
+    closeChatSocket();
     countedUnreadMatchIds.clear();
     api.setToken(null);
     api.setRefreshToken(null);
@@ -510,7 +510,7 @@ export const useAuthStore = create<AuthState>((set, get) => ({
       if (response.success) {
         get().disconnectLikesSocket();
         get().disconnectChatsSocket();
-        closeCallSocket();
+        closeChatSocket();
         countedUnreadMatchIds.clear();
         api.setToken(null);
         api.setRefreshToken(null);

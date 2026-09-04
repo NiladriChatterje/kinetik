@@ -7,7 +7,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { Socket } from 'socket.io-client';
 import { api } from '../../services/api';
-import { getChatSocket } from '../../services/callSocket';
+import { getChatSocket } from '../../services/chatSocket';
 import { useToast } from '../../hooks/useToast';
 import { useAuthStore } from '../../store/authStore';
 import { resolveUrl } from '../../config';
