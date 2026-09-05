@@ -1,5 +1,5 @@
-import React, { useState } from 'react';
-import { View, Text, StyleSheet } from 'react-native';
+import React, { useEffect, useRef, useState } from 'react';
+import { View, Text, StyleSheet, AppState, Linking, Platform } from 'react-native';
 import * as Location from 'expo-location';
 import { Ionicons } from '@expo/vector-icons';
 import { SafeAreaView } from 'react-native-safe-area-context';
@@ -9,16 +9,43 @@ import { useToast } from '../../hooks/useToast';
 import { api } from '../../services/api';
 import { colors, typography, spacing } from '../../theme';
 
+/**
+ * pending      — nothing asked yet
+ * denied       — user tapped "Don't allow" but the OS will ask again → Retry
+ * blocked      — OS will not show the prompt again → must be enabled in Settings
+ * services_off — permission is fine but the phone's location toggle is off
+ * granted      — coordinates saved, moving on
+ */
+type PermissionState = 'pending' | 'granted' | 'denied' | 'blocked' | 'services_off';
+
 export const LocationPermissionScreen: React.FC<{ navigation: any }> = ({ navigation }) => {
   const [loading, setLoading] = useState(false);
-  const [permissionStatus, setPermissionStatus] = useState<'pending' | 'granted' | 'denied'>('pending');
+  const [permissionStatus, setPermissionStatus] = useState<PermissionState>('pending');
   const [resolvedLocation, setResolvedLocation] = useState<string | null>(null);
   const toast = useToast();
+  // Set when we send the user to Settings, so coming back retries automatically
+  const awaitingSettingsRef = useRef(false);
 
   const requestLocation = async () => {
     setLoading(true);
-    const { status } = await Location.requestForegroundPermissionsAsync();
-    if (status === 'granted') {
+    try {
+      const { status, canAskAgain } = await Location.requestForegroundPermissionsAsync();
+      if (status !== 'granted') {
+        // Android after two refusals, or iOS after any refusal, stops showing
+        // the prompt — a second "Retry" would silently do nothing.
+        setPermissionStatus(canAskAgain ? 'denied' : 'blocked');
+        toast.showError('Location needed', 'Required to find matches nearby.');
+        return;
+      }
+
+      // Permission is granted but the phone-wide location toggle may be off;
+      // getCurrentPositionAsync would throw and strand the screen.
+      if (!(await Location.hasServicesEnabledAsync())) {
+        setPermissionStatus('services_off');
+        toast.showError('Location is turned off', 'Turn on location services to continue.');
+        return;
+      }
+
       setPermissionStatus('granted');
       const loc = await Location.getCurrentPositionAsync({});
       const res = await api.updateLocation(loc.coords.latitude, loc.coords.longitude);
@@ -31,12 +58,47 @@ export const LocationPermissionScreen: React.FC<{ navigation: any }> = ({ naviga
       }
       await api.updateOnboardingStep('location');
       setTimeout(() => navigation.navigate('Photos'), 1200);
-    } else {
+    } catch {
+      // A GPS fix or the network call failed — let the user try again
       setPermissionStatus('denied');
-      toast.showError('Location needed', 'Required to find matches nearby.');
+      toast.showError('Could not get your location', 'Check your connection and retry.');
+    } finally {
+      setLoading(false);
     }
-    setLoading(false);
   };
+
+  // Permanently blocked: only the OS settings page can flip it back on.
+  const openSettings = async () => {
+    awaitingSettingsRef.current = true;
+    await Linking.openSettings();
+  };
+
+  // Location services off: Android can raise the system "turn on location"
+  // dialog in place; iOS has no such API, so fall back to Settings.
+  const turnOnLocationServices = async () => {
+    if (Platform.OS === 'android') {
+      try {
+        await Location.enableNetworkProviderAsync();
+        await requestLocation();
+      } catch {
+        // User dismissed the system dialog — stay on this state, Retry remains
+      }
+    } else {
+      await openSettings();
+    }
+  };
+
+  // Back from Settings → retry without another tap
+  useEffect(() => {
+    const sub = AppState.addEventListener('change', (state) => {
+      if (state === 'active' && awaitingSettingsRef.current) {
+        awaitingSettingsRef.current = false;
+        requestLocation();
+      }
+    });
+    return () => sub.remove();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   return (
     <SafeAreaView style={styles.container}>
@@ -85,6 +147,21 @@ export const LocationPermissionScreen: React.FC<{ navigation: any }> = ({ naviga
             <Ionicons name="checkmark-circle" size={20} color={colors.textPrimary} />
             <Text style={styles.grantedText}> Location access granted</Text>
           </View>
+        ) : permissionStatus === 'blocked' ? (
+          <>
+            <Text style={styles.hint}>Location was turned off for Kinetik. Allow it in Settings, then come back — we will retry for you.</Text>
+            <Button title="Open Settings" onPress={openSettings} fullWidth loading={loading} icon={<Ionicons name="settings-outline" size={20} color={colors.textPrimary} />} />
+          </>
+        ) : permissionStatus === 'services_off' ? (
+          <>
+            <Text style={styles.hint}>Your phone's location is switched off. Turn it on to find people nearby.</Text>
+            <Button title="Turn on location" onPress={turnOnLocationServices} fullWidth loading={loading} icon={<Ionicons name="navigate-outline" size={20} color={colors.textPrimary} />} />
+          </>
+        ) : permissionStatus === 'denied' ? (
+          <>
+            <Text style={styles.hint}>No worries — tap Retry and choose Allow when your phone asks.</Text>
+            <Button title="Retry" onPress={requestLocation} fullWidth loading={loading} icon={<Ionicons name="refresh-outline" size={20} color={colors.textPrimary} />} />
+          </>
         ) : (
           <Button title="Enable Location" onPress={requestLocation} fullWidth loading={loading} icon={<Ionicons name="location-outline" size={20} color={colors.textPrimary} />} />
         )}
@@ -111,6 +188,7 @@ const styles = StyleSheet.create({
   permissionTitle: { ...typography.body1, color: colors.textPrimary },
   permissionDesc: { ...typography.caption, color: colors.textSecondary },
   footer: { padding: spacing.xxl, paddingBottom: spacing.huge },
+  hint: { ...typography.caption, color: colors.textSecondary, textAlign: 'center', marginBottom: spacing.md },
   grantedRow: { flexDirection: 'row', justifyContent: 'center', alignItems: 'center' },
   grantedText: { ...typography.body1, color: colors.textPrimary, textAlign: 'center' },
 });
