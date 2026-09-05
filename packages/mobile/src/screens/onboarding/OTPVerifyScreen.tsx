@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef, useCallback } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import {
   View, Text, StyleSheet, TouchableOpacity,
   TextInput, Platform,
@@ -30,24 +30,12 @@ export const OTPVerifyScreen: React.FC<{ navigation: any }> = ({ navigation }) =
       : null;
   const isEmail = !!pendingEmail;
 
-  // Auto-send OTP on mount. Depends on the identifier strings, not the target
-  // object, so a re-render never re-sends the code. On failure the cooldown is
-  // released so the user can hit "Resend" straight away.
-  const triggerSendOtp = useCallback(async () => {
-    const t: OtpTarget | null = pendingEmail
-      ? { email: pendingEmail }
-      : pendingPhone
-        ? { phone: pendingPhone }
-        : null;
-    if (!t) return;
-    setCountdown(RESEND_COOLDOWN);
-    const result = await sendOtp(t);
-    if (!result.success) setCountdown(0);
-  }, [pendingEmail, pendingPhone, sendOtp]);
-
+  // The login route already emailed the code before navigating here, so the
+  // screen only starts the resend cooldown — sending again on mount would be
+  // rejected by the server's 30 s cooldown and waste a Brevo send.
   useEffect(() => {
-    triggerSendOtp();
-  }, [triggerSendOtp]);
+    setCountdown(RESEND_COOLDOWN);
+  }, []);
 
   // Countdown timer for resend
   useEffect(() => {
