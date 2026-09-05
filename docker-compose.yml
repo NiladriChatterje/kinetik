@@ -156,6 +156,14 @@ services:
       TWILIO_AUTH_TOKEN: ${TWILIO_AUTH_TOKEN:-}
       TWILIO_PHONE_NUMBER: ${TWILIO_PHONE_NUMBER:-}
 
+      # Email one-time codes via Brevo (free plan: 300/day, hard-stops at the
+      # cap). Blank means codes are only logged and fixed to 123456.
+      BREVO_API_KEY: ${BREVO_API_KEY:-}
+      BREVO_SENDER_EMAIL: ${BREVO_SENDER_EMAIL:-}
+      BREVO_SENDER_NAME: ${BREVO_SENDER_NAME:-Kinetik}
+      # Set to "true" to skip Brevo entirely and only log OTPs.
+      EMAIL_DISABLED: ${EMAIL_DISABLED:-}
+
       # Message encryption key (AES-256-GCM, any string)
       MESSAGE_ENCRYPTION_KEY: ${MESSAGE_ENCRYPTION_KEY:-kinetik_msg_enc_key_2024_dev}
 
