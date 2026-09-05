@@ -19,6 +19,11 @@ if (!twilioClient) {
   }
 }
 
+/** True when a real SMS is sent for each OTP, false when codes are only logged. */
+export function isSmsConfigured(): boolean {
+  return twilioClient !== null && !!TWILIO_PHONE_NUMBER;
+}
+
 // ─── Send OTP via SMS ──────────────────────────────────
 export async function sendOtpSms(phone: string, otp: string): Promise<void> {
   if (twilioClient && TWILIO_PHONE_NUMBER) {

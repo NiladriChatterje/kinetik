@@ -7,7 +7,8 @@ import { createUser, findUserByPhone, findUserByEmail, findUserById, createSubsc
 import { deleteAllUserPhotos, deleteChatFile } from '../services/photoStorage';
 import { isPlayBillingConfigured, cancelSubscription } from '../services/playBilling';
 import { eventBus } from '../services/eventBus';
-import { sendOtpSms } from '../services/sms';
+import { sendOtpSms, isSmsConfigured } from '../services/sms';
+import { sendOtpEmail, isEmailConfigured, maskEmail } from '../services/email';
 
 /**
  * Extract a MinIO storage key from a chat media URL so the file can be
@@ -28,34 +29,88 @@ function chatMediaKeyFromUrl(url: string): string | null {
 }
 
 // ─── In-memory OTP store (dev only; replace with Redis in production) ──
-const otpStore = new Map<string, { otp: string; expiresAt: number }>();
+// A code is addressed to a channel + identifier pair: email (Brevo) or phone
+// (Twilio). Entries are keyed "email:alice@example.com" / "phone:+9199…" so
+// the two channels never collide.
+type OtpChannel = 'email' | 'phone';
+interface OtpTarget {
+  channel: OtpChannel;
+  value: string;
+}
+
+const otpStore = new Map<string, { otp: string; expiresAt: number; attempts: number }>();
 const OTP_TTL_MS = 5 * 60 * 1000; // 5 minutes
 const RESEND_COOLDOWN_MS = 30 * 1000; // 30 seconds
+// Six digits is a million possibilities; without a cap the 5-minute window is
+// enough to brute-force. After this many wrong guesses the code is discarded.
+const OTP_MAX_ATTEMPTS = 5;
 
-function generateOtp(): string {
-  return '123456';
+function otpKey(target: OtpTarget): string {
+  return `${target.channel}:${target.value}`;
 }
 
-async function storeOtp(phone: string): Promise<string> {
-  const otp = generateOtp();
-  otpStore.set(phone, { otp, expiresAt: Date.now() + OTP_TTL_MS });
-  // Send OTP via SMS (falls back to console.log in dev mode)
-  await sendOtpSms(phone, otp);
-  return otp;
+/** Lowercase + trim so "Alice@Example.com " and "alice@example.com" are one account. */
+function normalizeEmail(email: string): string {
+  return email.trim().toLowerCase();
 }
 
-function verifyStoredOtp(phone: string, otp: string): boolean {
-  const entry = otpStore.get(phone);
+/**
+ * Random 6-digit code when a real delivery provider is configured for the
+ * channel. With no provider the code is only logged, so it stays the fixed
+ * 123456 documented in FREE_HOSTING_GUIDE.md for local testing.
+ */
+function generateOtp(channel: OtpChannel): string {
+  const live = channel === 'email' ? isEmailConfigured() : isSmsConfigured();
+  if (!live) return '123456';
+  return crypto.randomInt(0, 1_000_000).toString().padStart(6, '0');
+}
+
+/**
+ * Generate, store and deliver a code. Resolves false when delivery failed
+ * (Brevo cap reached, network error) — the entry is dropped so a stale code
+ * cannot linger, and the caller should ask the user to retry.
+ */
+async function storeOtp(target: OtpTarget): Promise<boolean> {
+  const otp = generateOtp(target.channel);
+  const key = otpKey(target);
+  otpStore.set(key, { otp, expiresAt: Date.now() + OTP_TTL_MS, attempts: 0 });
+
+  let sent: boolean;
+  if (target.channel === 'email') {
+    sent = await sendOtpEmail(target.value, otp);
+  } else {
+    // SMS falls back to console.log in dev mode and never reports failure
+    await sendOtpSms(target.value, otp);
+    sent = true;
+  }
+
+  if (!sent) otpStore.delete(key);
+  return sent;
+}
+
+function verifyStoredOtp(target: OtpTarget, otp: string): boolean {
+  const key = otpKey(target);
+  const entry = otpStore.get(key);
   if (!entry) return false;
   if (Date.now() > entry.expiresAt) {
-    otpStore.delete(phone);
+    otpStore.delete(key);
     return false;
   }
-  return entry.otp === otp;
+
+  entry.attempts += 1;
+  const expected = Buffer.from(entry.otp);
+  const given = Buffer.from(otp);
+  const matches = expected.length === given.length && crypto.timingSafeEqual(expected, given);
+
+  if (!matches && entry.attempts >= OTP_MAX_ATTEMPTS) {
+    // Too many wrong guesses: the user has to request a fresh code
+    otpStore.delete(key);
+  }
+  return matches;
 }
 
-function canResendOtp(phone: string): boolean {
-  const entry = otpStore.get(phone);
+function canResendOtp(target: OtpTarget): boolean {
+  const entry = otpStore.get(otpKey(target));
   if (!entry) return true;
   return Date.now() - (entry.expiresAt - OTP_TTL_MS) >= RESEND_COOLDOWN_MS;
 }
@@ -64,6 +119,23 @@ function maskPhone(phone: string): string {
   if (phone.length <= 6) return phone;
   return phone.slice(0, 4) + '***' + phone.slice(-2);
 }
+
+/**
+ * Resolve the OTP target from a request body carrying `email` or `phone`.
+ * Email is normalized here so every lookup and store uses the same key.
+ */
+function otpTargetFromBody(body: { email?: string; phone?: string }): OtpTarget {
+  if (body.email) return { channel: 'email', value: normalizeEmail(body.email) };
+  return { channel: 'phone', value: body.phone! };
+}
+
+const OTP_SEND_FAILED = {
+  success: false,
+  error: {
+    code: ERROR_CODES.INTERNAL_ERROR,
+    message: 'Could not send the verification code right now. Please try again in a minute.',
+  },
+};
 
 // ─── Refresh Token Helpers ───────────────────────────────────
 const REFRESH_TOKEN_TTL_DAYS = 30;
@@ -131,28 +203,55 @@ async function revokeAllRefreshTokens(userId: string): Promise<void> {
   );
 }
 
-const RegisterSchema = z.object({
-  phone: z.string().min(8).max(20).optional(),
-  email: z.string().email().optional(),
-  password: z.string().min(8).max(128).optional(),
-  authProvider: z.enum(['phone', 'google', 'apple']),
-  authProviderId: z.string().optional(),
-  displayName: z.string().min(1).max(100).optional(),
-  countryCode: z.string().optional(),
-});
+const EmailSchema = z.string().trim().toLowerCase().email().max(255);
+const PhoneSchema = z.string().min(8).max(20);
+
+const RegisterSchema = z
+  .object({
+    phone: PhoneSchema.optional(),
+    email: EmailSchema.optional(),
+    password: z.string().min(8).max(128).optional(),
+    authProvider: z.enum(['phone', 'email', 'google', 'apple']),
+    authProviderId: z.string().optional(),
+    displayName: z.string().min(1).max(100).optional(),
+    countryCode: z.string().optional(),
+  })
+  .refine((d) => !!d.phone || !!d.email, {
+    message: 'Provide an email address or a phone number',
+    path: ['email'],
+  });
 
 const LoginSchema = z.object({
-  phone: z.string().min(8).max(20).optional(),
-  email: z.string().email().optional(),
+  phone: PhoneSchema.optional(),
+  email: EmailSchema.optional(),
   password: z.string().optional(),
-  authProvider: z.enum(['phone', 'google', 'apple']).optional(),
+  authProvider: z.enum(['phone', 'email', 'google', 'apple']).optional(),
   authProviderId: z.string().optional(),
 });
 
-const VerifyOtpSchema = z.object({
-  phone: z.string().min(8).max(20),
-  otp: z.string().length(6),
-});
+// Exactly one of email / phone identifies where the code goes.
+const OtpTargetSchema = z
+  .object({
+    email: EmailSchema.optional(),
+    phone: PhoneSchema.optional(),
+  })
+  .refine((d) => (d.email ? 1 : 0) + (d.phone ? 1 : 0) === 1, {
+    message: 'Provide either an email address or a phone number',
+    path: ['email'],
+  });
+
+const SendOtpSchema = OtpTargetSchema;
+
+const VerifyOtpSchema = z
+  .object({
+    email: EmailSchema.optional(),
+    phone: PhoneSchema.optional(),
+    otp: z.string().length(6),
+  })
+  .refine((d) => (d.email ? 1 : 0) + (d.phone ? 1 : 0) === 1, {
+    message: 'Provide either an email address or a phone number',
+    path: ['email'],
+  });
 
 export async function authRoutes(app: FastifyInstance) {
   // ─── Register ────────────────────────────────────────
@@ -248,13 +347,24 @@ export async function authRoutes(app: FastifyInstance) {
 
     const data = validation.data;
 
-    // Phone/Password login
-    if (data.phone && data.password) {
-      const user = await findUserByPhone(data.phone);
+    // Password login (email or phone) — valid credentials still require a
+    // one-time code on the same channel before a session is issued.
+    if ((data.email || data.phone) && data.password) {
+      const target = otpTargetFromBody(data);
+      const user =
+        target.channel === 'email'
+          ? await findUserByEmail(target.value)
+          : await findUserByPhone(target.value);
       if (!user) {
         return reply.status(401).send({
           success: false,
-          error: { code: ERROR_CODES.USER_NOT_FOUND, message: 'No account found with this phone number' },
+          error: {
+            code: ERROR_CODES.USER_NOT_FOUND,
+            message:
+              target.channel === 'email'
+                ? 'No account found with this email address'
+                : 'No account found with this phone number',
+          },
         });
       }
 
@@ -275,13 +385,16 @@ export async function authRoutes(app: FastifyInstance) {
       }
 
       // Credentials are valid — generate OTP and require verification
-      await storeOtp(user.phone);
+      const sent = await storeOtp(target);
+      if (!sent) return reply.status(503).send(OTP_SEND_FAILED);
 
       return reply.send({
         success: true,
         data: {
           requiresOtp: true,
-          phone: maskPhone(user.phone),
+          ...(target.channel === 'email'
+            ? { email: maskEmail(target.value) }
+            : { phone: maskPhone(target.value) }),
           userId: user.id,
         },
       });
@@ -314,87 +427,114 @@ export async function authRoutes(app: FastifyInstance) {
   });
 
   // ─── Send OTP (resend) ─────────────────────────────────
-  app.post('/send-otp', async (request: FastifyRequest, reply: FastifyReply) => {
-    const schema = z.object({ phone: z.string().min(8).max(20) });
-    const validation = schema.safeParse(request.body);
-    if (!validation.success) {
-      return reply.status(400).send({
-        success: false,
-        error: { code: ERROR_CODES.VALIDATION_ERROR, message: 'Invalid phone number' },
+  // Sending is free for the caller to trigger but spends the Brevo daily
+  // quota (300 on the free plan), so this route is throttled per IP on top of
+  // the per-identifier cooldown below.
+  app.post(
+    '/send-otp',
+    { config: { rateLimit: { max: 5, timeWindow: '15 minutes' } } },
+    async (request: FastifyRequest, reply: FastifyReply) => {
+      const validation = SendOtpSchema.safeParse(request.body);
+      if (!validation.success) {
+        return reply.status(400).send({
+          success: false,
+          error: {
+            code: ERROR_CODES.VALIDATION_ERROR,
+            message: 'Invalid email address or phone number',
+            details: validation.error.flatten(),
+          },
+        });
+      }
+
+      const target = otpTargetFromBody(validation.data);
+
+      // Rate limit: check cooldown
+      if (!canResendOtp(target)) {
+        return reply.status(429).send({
+          success: false,
+          error: { code: ERROR_CODES.RATE_LIMITED, message: 'Please wait 30 seconds before requesting a new code.' },
+        });
+      }
+
+      const sent = await storeOtp(target);
+      if (!sent) return reply.status(503).send(OTP_SEND_FAILED);
+
+      return reply.send({
+        success: true,
+        data: { message: 'Verification code sent.' },
       });
-    }
-
-    const { phone } = validation.data;
-
-    // Rate limit: check cooldown
-    if (!canResendOtp(phone)) {
-      return reply.status(429).send({
-        success: false,
-        error: { code: ERROR_CODES.RATE_LIMITED, message: 'Please wait 30 seconds before requesting a new code.' },
-      });
-    }
-
-    await storeOtp(phone);
-
-    return reply.send({
-      success: true,
-      data: { message: 'Verification code sent.' },
-    });
-  });
+    },
+  );
 
   // ─── Verify OTP ──────────────────────────────────────
-  app.post('/verify-otp', async (request: FastifyRequest, reply: FastifyReply) => {
-    const validation = VerifyOtpSchema.safeParse(request.body);
-    if (!validation.success) {
-      return reply.status(400).send({
-        success: false,
-        error: {
-          code: ERROR_CODES.VALIDATION_ERROR,
-          message: 'Invalid input',
-          details: validation.error.flatten(),
+  app.post(
+    '/verify-otp',
+    { config: { rateLimit: { max: 20, timeWindow: '15 minutes' } } },
+    async (request: FastifyRequest, reply: FastifyReply) => {
+      const validation = VerifyOtpSchema.safeParse(request.body);
+      if (!validation.success) {
+        return reply.status(400).send({
+          success: false,
+          error: {
+            code: ERROR_CODES.VALIDATION_ERROR,
+            message: 'Invalid input',
+            details: validation.error.flatten(),
+          },
+        });
+      }
+
+      const { otp } = validation.data;
+      const target = otpTargetFromBody(validation.data);
+
+      // Verify OTP against stored value
+      if (!verifyStoredOtp(target, otp)) {
+        return reply.status(400).send({
+          success: false,
+          error: { code: ERROR_CODES.INVALID_OTP, message: 'Invalid or expired verification code.' },
+        });
+      }
+
+      // OTP is valid — clear it and issue JWT
+      otpStore.delete(otpKey(target));
+
+      // Find or create the user behind the verified identifier
+      let user =
+        target.channel === 'email'
+          ? await findUserByEmail(target.value)
+          : await findUserByPhone(target.value);
+      if (!user) {
+        user =
+          target.channel === 'email'
+            ? await createUser({ email: target.value, authProvider: 'email' })
+            : await createUser({ phone: target.value, authProvider: 'phone' });
+        await createSubscription(user.id, 'free');
+      }
+
+      // Mark the channel as verified
+      await updateUser(user.id, target.channel === 'email' ? { email_verified: true } : { phone_verified: true });
+
+      const token = app.jwt.sign({ sub: user.id, phone: user.phone });
+
+      // Generate refresh token
+      const refreshToken = crypto.randomBytes(64).toString('hex');
+      const familyId = crypto.randomUUID();
+      await storeRefreshToken(user.id, hashToken(refreshToken), familyId);
+
+      return reply.send({
+        success: true,
+        data: {
+          user: {
+            id: user.id,
+            phone: user.phone,
+            email: user.email,
+            onboardingComplete: user.onboarding_complete,
+          },
+          token,
+          refreshToken,
         },
       });
-    }
-
-    const { phone, otp } = validation.data;
-
-    // Verify OTP against stored value
-    if (!verifyStoredOtp(phone, otp)) {
-      return reply.status(400).send({
-        success: false,
-        error: { code: ERROR_CODES.INVALID_OTP, message: 'Invalid or expired verification code.' },
-      });
-    }
-
-    // OTP is valid — clear it and issue JWT
-    otpStore.delete(phone);
-
-    // Find or create user by phone
-    let user = await findUserByPhone(phone);
-    if (!user) {
-      user = await createUser({ phone, authProvider: 'phone' });
-      await createSubscription(user.id, 'free');
-    }
-
-    // Mark phone as verified
-    await updateUser(user.id, { phone_verified: true });
-
-    const token = app.jwt.sign({ sub: user.id, phone: user.phone });
-
-    // Generate refresh token
-    const refreshToken = crypto.randomBytes(64).toString('hex');
-    const familyId = crypto.randomUUID();
-    await storeRefreshToken(user.id, hashToken(refreshToken), familyId);
-
-    return reply.send({
-      success: true,
-      data: {
-        user: { id: user.id, phone: user.phone, onboardingComplete: user.onboarding_complete },
-        token,
-        refreshToken,
-      },
-    });
-  });
+    },
+  );
 
   // ─── Refresh Token ───────────────────────────────────
   // Rotates the refresh token: revokes the old one, issues a new access + refresh pair.
