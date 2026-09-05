@@ -19,7 +19,7 @@ CREATE TYPE verification_status AS ENUM ('unverified', 'pending', 'verified', 'r
 CREATE TABLE users (
     id              UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     phone           VARCHAR(20) UNIQUE,
-    country_code    VARCHAR(10),
+    country_code    VARCHAR(10),       -- ISO 3166-1 alpha-2 from signup (older rows: phone dial code)
     email           VARCHAR(255) UNIQUE,
     password_hash   VARCHAR(255),
     auth_provider   VARCHAR(50),       -- 'phone', 'google', 'apple'
@@ -50,11 +50,19 @@ CREATE TABLE users (
     h3_index        VARCHAR(15),       -- Uber H3 hexagon index
     location_updated_at TIMESTAMPTZ,
 
-    -- Reverse-geocoded location names (from migration 002)
+    -- Reverse-geocoded location names (from migration 002). Seeded from the
+    -- signup city until the first GPS update.
     city            VARCHAR(100),
     county          VARCHAR(100),
     region          VARCHAR(100),
     country         VARCHAR(100),
+
+    -- Optional "search from here" city chosen on the profile page (from
+    -- migration 021). NULL = centre the feed on the user's own location.
+    preferred_country_code VARCHAR(2),
+    preferred_city         VARCHAR(100),
+    preferred_latitude     DOUBLE PRECISION,
+    preferred_longitude    DOUBLE PRECISION,
 
     -- Dating category (required during onboarding)
     dating_category VARCHAR(20) CHECK (dating_category IN ('casual', 'serious', 'intimacy')),
