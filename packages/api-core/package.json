@@ -21,6 +21,7 @@
     "@kinetik/shared": "0.1.0",
     "bcrypt": "^5.1.1",
     "blurhash": "^2.0.5",
+    "country-state-city": "^3.2.1",
     "expo-server-sdk": "^6.1.0",
     "fastify": "^4.25.2",
     "google-auth-library": "^9.15.0",

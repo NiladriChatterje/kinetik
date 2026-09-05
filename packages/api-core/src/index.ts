@@ -19,6 +19,7 @@ import { notificationRoutes } from './routes/notifications';
 import { photoRoutes } from './routes/photos';
 import { faceVerificationRoutes } from './routes/faceVerification';
 import { kycRoutes } from './routes/kyc';
+import { locationRoutes } from './routes/locations';
 import { errorHandler } from './middleware/errorHandler';
 import { eventBus } from './services/eventBus';
 import { initializeRedis } from './services/redis';
@@ -112,6 +113,7 @@ async function bootstrap() {
   await app.register(photoRoutes, { prefix: '/api/v1/users/photos' });
   await app.register(faceVerificationRoutes, { prefix: '/api/v1/users/face-verification' });
   await app.register(kycRoutes, { prefix: '/api/v1/kyc' });
+  await app.register(locationRoutes, { prefix: '/api/v1/locations' });
 
   // ─── Start ───────────────────────────────────────────
   try {
