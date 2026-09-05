@@ -5,6 +5,7 @@ import { query, TABLES, findUserById, updateUser, getPreferences, upsertPreferen
 import { eventBus } from '../services/eventBus';
 import { getRedis } from '../services/redis';
 import { reverseGeocode } from '../services/geocoding';
+import { resolveCity } from '../services/locations';
 
 const UpdateProfileSchema = z.object({
   displayName: z.string().min(1).max(100).optional(),
@@ -20,6 +21,16 @@ const UpdateProfileSchema = z.object({
   latitude: z.number().min(-90).max(90).optional(),
   longitude: z.number().min(-180).max(180).optional(),
   datingCategory: z.enum(['casual', 'serious', 'intimacy']).optional(),
+  // "Search from here" city for the feed. null = back to the default (own
+  // location). Resolved server-side against the dataset, never stored as text.
+  preferredLocation: z
+    .object({
+      countryCode: z.string().trim().length(2),
+      city: z.string().trim().min(1).max(100),
+      stateCode: z.string().trim().max(10).optional(),
+    })
+    .nullable()
+    .optional(),
   // 'Knowing more about you' answers — each question is an array of
   // selected chips (suggestions + custom entries). Max 8 per question.
   aboutAnswers: z.object({
@@ -102,6 +113,16 @@ export async function userRoutes(app: FastifyInstance) {
         county: user.county || null,
         region: user.region || null,
         country: user.country || null,
+        countryCode: user.country_code || null,
+        // null = feed centred on the user's own location
+        preferredLocation: user.preferred_city
+          ? {
+              countryCode: user.preferred_country_code,
+              city: user.preferred_city,
+              latitude: user.preferred_latitude,
+              longitude: user.preferred_longitude,
+            }
+          : null,
         datingCategory: user.dating_category || null,
         aboutAnswers: user.about_answers || null,
         onboardingComplete: user.onboarding_complete,
@@ -176,9 +197,28 @@ export async function userRoutes(app: FastifyInstance) {
       });
     }
 
-    const data = validation.data;
+    const { preferredLocation, ...data } = validation.data;
 
     const updateData: Record<string, any> = {};
+    if (preferredLocation === null) {
+      updateData.preferred_country_code = null;
+      updateData.preferred_city = null;
+      updateData.preferred_latitude = null;
+      updateData.preferred_longitude = null;
+    } else if (preferredLocation) {
+      const loc = resolveCity(preferredLocation.countryCode, preferredLocation.city, preferredLocation.stateCode);
+      if (!loc) {
+        return reply.status(400).send({
+          success: false,
+          error: { code: ERROR_CODES.VALIDATION_ERROR, message: 'Unknown city for the selected country' },
+        });
+      }
+      updateData.preferred_country_code = loc.countryCode;
+      updateData.preferred_city = loc.name;
+      updateData.preferred_latitude = loc.latitude;
+      updateData.preferred_longitude = loc.longitude;
+    }
+
     const fieldMap: Record<string, string> = {
       displayName: 'display_name',
       dateOfBirth: 'date_of_birth',

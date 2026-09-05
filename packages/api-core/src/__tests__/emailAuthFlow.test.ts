@@ -24,6 +24,12 @@ vi.mock('../services/database', () => ({
       password_hash: data.passwordHash ?? null,
       auth_provider: data.authProvider,
       display_name: data.displayName ?? null,
+      country_code: data.countryCode ?? null,
+      city: data.city ?? null,
+      country: data.country ?? null,
+      latitude: data.latitude ?? null,
+      longitude: data.longitude ?? null,
+      h3_index: data.h3Index ?? null,
       onboarding_complete: false,
       onboarding_step: 'splash',
       created_at: new Date(),
@@ -64,6 +70,14 @@ vi.mock('../services/email', () => ({
   isEmailConfigured: () => true,
   maskEmail: (e: string) => `**${e.slice(e.indexOf('@'))}`,
 }));
+vi.mock('../services/locations', () => ({
+  resolveCity: (countryCode: string, city: string) =>
+    countryCode.toUpperCase() === 'IN' && city.toLowerCase() === 'kolkata'
+      ? { countryCode: 'IN', countryName: 'India', name: 'Kolkata', stateCode: 'WB', latitude: 22.56, longitude: 88.36 }
+      : null,
+}));
+
+const SIGNUP_CITY = { countryCode: 'IN', city: 'Kolkata' };
 
 // ─── App ──────────────────────────────────────────────────────────
 
@@ -86,7 +100,7 @@ beforeEach(() => {
   mockSendOtpSms.mockReset();
 });
 
-function post(url: string, payload: unknown) {
+function post(url: string, payload: object) {
   return app.inject({ method: 'POST', url: `/api/v1/auth${url}`, payload });
 }
 
@@ -109,6 +123,7 @@ describe('email signup → login → emailed code → session', () => {
       password: PASSWORD,
       displayName: 'New',
       authProvider: 'email',
+      ...SIGNUP_CITY,
     });
 
     expect(res.statusCode).toBe(201);
@@ -118,17 +133,37 @@ describe('email signup → login → emailed code → session', () => {
     expect(body.data.user.phone).toBeNull();
     expect(body.data.token).toBeTypeOf('string');
     expect(body.data.refreshToken).toBeTypeOf('string');
+
+    // The signup city seeds the location columns so the feed has an origin
+    const row = users.get(body.data.user.id);
+    expect(row.country_code).toBe('IN');
+    expect(row.city).toBe('Kolkata');
+    expect(row.country).toBe('India');
+    expect(row.latitude).toBe(22.56);
+    expect(row.longitude).toBe(88.36);
+    expect(row.h3_index).toMatch(/^87/); // resolution-7 cell
   });
 
   it('rejects a second registration with the same email in different casing', async () => {
-    const res = await post('/register', { email: 'NEW.USER@example.com', password: PASSWORD, authProvider: 'email' });
+    const res = await post('/register', { email: 'NEW.USER@example.com', password: PASSWORD, authProvider: 'email', ...SIGNUP_CITY });
     expect(res.statusCode).toBe(409);
     expect(res.json().error.code).toBe('EMAIL_EXISTS');
   });
 
   it('rejects registration with neither email nor phone', async () => {
-    const res = await post('/register', { password: PASSWORD, authProvider: 'email' });
+    const res = await post('/register', { password: PASSWORD, authProvider: 'email', ...SIGNUP_CITY });
     expect(res.statusCode).toBe(400);
+  });
+
+  it('rejects registration without a country and city', async () => {
+    const res = await post('/register', { email: 'other@example.com', password: PASSWORD, authProvider: 'email' });
+    expect(res.statusCode).toBe(400);
+  });
+
+  it('rejects a city the dataset does not know', async () => {
+    const res = await post('/register', { email: 'other@example.com', password: PASSWORD, authProvider: 'email', countryCode: 'IN', city: 'Atlantis' });
+    expect(res.statusCode).toBe(400);
+    expect(res.json().error.message).toMatch(/Unknown city/);
   });
 
   it('login with email + password emails a code and asks for verification', async () => {

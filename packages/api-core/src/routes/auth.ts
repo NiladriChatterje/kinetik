@@ -2,13 +2,14 @@ import { FastifyInstance, FastifyRequest, FastifyReply } from 'fastify';
 import bcrypt from 'bcrypt';
 import crypto from 'crypto';
 import { z } from 'zod';
-import { ERROR_CODES, transaction, TABLES } from '@kinetik/shared';
+import { ERROR_CODES, transaction, TABLES, geoToH3 } from '@kinetik/shared';
 import { createUser, findUserByPhone, findUserByEmail, findUserById, createSubscription, updateUser, getSubscription, query } from '../services/database';
 import { deleteAllUserPhotos, deleteChatFile } from '../services/photoStorage';
 import { isPlayBillingConfigured, cancelSubscription } from '../services/playBilling';
 import { eventBus } from '../services/eventBus';
 import { sendOtpSms, isSmsConfigured } from '../services/sms';
 import { sendOtpEmail, isEmailConfigured, maskEmail } from '../services/email';
+import { resolveCity } from '../services/locations';
 
 /**
  * Extract a MinIO storage key from a chat media URL so the file can be
@@ -214,7 +215,11 @@ const RegisterSchema = z
     authProvider: z.enum(['phone', 'email', 'google', 'apple']),
     authProviderId: z.string().optional(),
     displayName: z.string().min(1).max(100).optional(),
-    countryCode: z.string().optional(),
+    // Where the user lives, from the country → city picker. Required: it is
+    // the feed origin until GPS is granted.
+    countryCode: z.string().trim().length(2),
+    city: z.string().trim().min(1).max(100),
+    stateCode: z.string().trim().max(10).optional(),
   })
   .refine((d) => !!d.phone || !!d.email, {
     message: 'Provide an email address or a phone number',
@@ -297,6 +302,16 @@ export async function authRoutes(app: FastifyInstance) {
       passwordHash = await bcrypt.hash(data.password, 10);
     }
 
+    // Signup city → coordinates. Seeds the location columns so the feed has an
+    // origin before (or without) GPS; the first location update overwrites them.
+    const location = resolveCity(data.countryCode, data.city, data.stateCode);
+    if (!location) {
+      return reply.status(400).send({
+        success: false,
+        error: { code: ERROR_CODES.VALIDATION_ERROR, message: 'Unknown city for the selected country' },
+      });
+    }
+
     const user = await createUser({
       phone: data.phone,
       email: data.email,
@@ -304,7 +319,12 @@ export async function authRoutes(app: FastifyInstance) {
       authProvider: data.authProvider,
       authProviderId: data.authProviderId,
       displayName: data.displayName,
-      countryCode: data.countryCode,
+      countryCode: location.countryCode,
+      city: location.name,
+      country: location.countryName,
+      latitude: location.latitude,
+      longitude: location.longitude,
+      h3Index: geoToH3(location.latitude, location.longitude, 7),
     });
 
     // Generate JWT access token

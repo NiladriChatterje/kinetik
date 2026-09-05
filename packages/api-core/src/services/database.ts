@@ -19,14 +19,26 @@ export async function createUser(data: {
   authProviderId?: string;
   displayName?: string;
   dateOfBirth?: string;
+  /** ISO 3166-1 alpha-2 from the signup picker */
   countryCode?: string;
+  // Signup city: seeds the location columns so the feed works before GPS
+  city?: string;
+  country?: string;
+  latitude?: number;
+  longitude?: number;
+  h3Index?: string;
 }) {
   try {
     const result = await query(
-      `INSERT INTO ${TABLES.USERS} (phone, email, password_hash, auth_provider, auth_provider_id, display_name, date_of_birth, country_code)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+      `INSERT INTO ${TABLES.USERS} (phone, email, password_hash, auth_provider, auth_provider_id, display_name, date_of_birth, country_code,
+                                    city, country, latitude, longitude, h3_index)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)
        RETURNING id, phone, email, display_name, created_at`,
-      [data.phone, data.email, data.passwordHash, data.authProvider, data.authProviderId, data.displayName, data.dateOfBirth || null, data.countryCode || null],
+      [
+        data.phone, data.email, data.passwordHash, data.authProvider, data.authProviderId, data.displayName,
+        data.dateOfBirth || null, data.countryCode || null,
+        data.city || null, data.country || null, data.latitude ?? null, data.longitude ?? null, data.h3Index || null,
+      ],
     );
     return result.rows[0];
   } catch (error: any) {
@@ -84,6 +96,8 @@ export async function findUserById(id: string) {
               u.pronouns, u.bio, u.occupation, u.education,
               u.is_verified, u.kyc_status, u.face_verification_status,
               u.latitude, u.longitude, u.h3_index, u.dating_category, u.about_answers,
+              u.country_code, u.city, u.county, u.region, u.country,
+              u.preferred_country_code, u.preferred_city, u.preferred_latitude, u.preferred_longitude,
               u.is_active, u.is_banned, u.deleted_at,
               u.onboarding_complete, u.onboarding_step,
               u.last_active_at, u.created_at, u.updated_at,
