@@ -28,6 +28,20 @@ describe('services/locations', () => {
     expect(searchCities('in', '', 3)).toHaveLength(3);
   });
 
+  it('pages with offset and never overlaps between pages', () => {
+    const first = searchCities('IN', '', 3, 0);
+    const second = searchCities('IN', '', 3, 3);
+    expect(second).toHaveLength(3);
+    const firstKeys = new Set(first.map((c) => `${c.stateCode}:${c.name}:${c.latitude}`));
+    for (const c of second) expect(firstKeys.has(`${c.stateCode}:${c.name}:${c.latitude}`)).toBe(false);
+    // Same for a filtered search
+    const p1 = searchCities('IN', 'ra', 5, 0);
+    const p2 = searchCities('IN', 'ra', 5, 5);
+    expect(p1).toHaveLength(5);
+    expect(p2.length).toBeGreaterThan(0);
+    expect(p2[0]).not.toEqual(p1[0]);
+  });
+
   it('resolves a city case-insensitively to coordinates', () => {
     const loc = resolveCity('in', 'kolkata');
     expect(loc).not.toBeNull();

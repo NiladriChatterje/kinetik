@@ -52,11 +52,16 @@ export function listCountries(): CountryOption[] {
   return COUNTRIES;
 }
 
-/** Typeahead: prefix matches first, then substring matches, capped at `limit`. */
-export function searchCities(countryCode: string, q: string, limit = 20): CityOption[] {
+/**
+ * Typeahead page: prefix matches first, then substring matches, returning
+ * rows [offset, offset + limit). The app asks for the next page as the list
+ * scrolls, so it never holds more than it has shown.
+ */
+export function searchCities(countryCode: string, q: string, limit = 20, offset = 0): CityOption[] {
   const all = citiesOf(countryCode);
   const needle = q.trim().toLowerCase();
-  if (!needle) return all.slice(0, limit);
+  const end = offset + limit;
+  if (!needle) return all.slice(offset, end);
 
   const starts: CityOption[] = [];
   const contains: CityOption[] = [];
@@ -64,12 +69,12 @@ export function searchCities(countryCode: string, q: string, limit = 20): CityOp
     const name = c.name.toLowerCase();
     if (name.startsWith(needle)) {
       starts.push(c);
-      if (starts.length >= limit) break;
-    } else if (contains.length < limit && name.includes(needle)) {
+      if (starts.length >= end) break;
+    } else if (contains.length < end && name.includes(needle)) {
       contains.push(c);
     }
   }
-  return [...starts, ...contains].slice(0, limit);
+  return [...starts, ...contains].slice(offset, end);
 }
 
 /**
