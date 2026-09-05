@@ -344,8 +344,9 @@ class ApiClient {
     return this.request<{ code: string; name: string; flag: string }[]>('/api/v1/locations/countries');
   }
 
-  async searchCities(countryCode: string, q: string) {
-    const qs = `country=${encodeURIComponent(countryCode)}&q=${encodeURIComponent(q)}`;
+  /** One page of the city typeahead; the picker requests further pages as the list scrolls. */
+  async searchCities(countryCode: string, q: string, offset = 0, limit = 30) {
+    const qs = `country=${encodeURIComponent(countryCode)}&q=${encodeURIComponent(q)}&offset=${offset}&limit=${limit}`;
     return this.request<{ name: string; stateCode: string; latitude: number; longitude: number }[]>(
       `/api/v1/locations/cities?${qs}`,
     );

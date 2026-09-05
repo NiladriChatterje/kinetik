@@ -1,8 +1,13 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
-import { View, Text, TouchableOpacity, StyleSheet, ActivityIndicator } from 'react-native';
+import { View, Text, TouchableOpacity, StyleSheet, ActivityIndicator, FlatList, LogBox } from 'react-native';
 import { Input } from './Input';
 import { api } from '../../services/api';
 import { colors, typography, spacing, radius } from '../../theme';
+
+// The dropdowns are FlatLists (windowed) with a fixed max height, nested in
+// the screen's ScrollView. RN warns about that nesting even though the inner
+// list scrolls on its own and only renders the visible rows.
+LogBox.ignoreLogs(['VirtualizedLists should never be nested']);
 
 /** A picked place. `countryName` is display-only and optional when hydrating from the server. */
 export interface LocationSelection {
@@ -15,7 +20,7 @@ export interface LocationSelection {
 interface CountryOption { code: string; name: string; flag: string }
 interface CityOption { name: string; stateCode: string; latitude: number; longitude: number }
 
-// Countries never change — fetch once per app session
+// Countries never change — fetch once per app session (~250 small rows)
 let countriesPromise: Promise<CountryOption[]> | null = null;
 function loadCountries(): Promise<CountryOption[]> {
   if (!countriesPromise) {
@@ -30,8 +35,9 @@ function loadCountries(): Promise<CountryOption[]> {
   return countriesPromise;
 }
 
-const MAX_SUGGESTIONS = 6;
+const CITY_PAGE = 30;
 const CITY_DEBOUNCE_MS = 250;
+const LIST_MAX_HEIGHT = 240;
 
 interface Props {
   value: LocationSelection | null;
@@ -43,7 +49,9 @@ interface Props {
 /**
  * Two typeable dropdowns: country first, then a city of that country. Both
  * lists come from the server's offline dataset, so a selection always maps
- * to coordinates the feed can use.
+ * to coordinates the feed can use. Lists are windowed, and cities are paged
+ * from the server as the user scrolls, so a country with tens of thousands
+ * of places costs the app only the rows on screen.
  */
 export const LocationPicker: React.FC<Props> = ({ value, onChange, required }) => {
   const [countries, setCountries] = useState<CountryOption[]>([]);
@@ -53,8 +61,12 @@ export const LocationPicker: React.FC<Props> = ({ value, onChange, required }) =
   const [cityQuery, setCityQuery] = useState('');
   const [cities, setCities] = useState<CityOption[]>([]);
   const [cityOpen, setCityOpen] = useState(false);
+  const [cityHasMore, setCityHasMore] = useState(false);
   const [loadingCities, setLoadingCities] = useState(false);
+  const [loadingMore, setLoadingMore] = useState(false);
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  // Increments per search so a slow earlier page cannot overwrite a newer one
+  const searchIdRef = useRef(0);
 
   useEffect(() => {
     loadCountries().then(setCountries);
@@ -73,17 +85,43 @@ export const LocationPicker: React.FC<Props> = ({ value, onChange, required }) =
     setCityQuery(value.city);
   }, [value?.countryCode, value?.city, value?.countryName, countries]);
 
-  const fetchCities = useCallback(async (countryCode: string, q: string) => {
+  /** First page of a (new) search. */
+  const searchCities = useCallback(async (countryCode: string, q: string) => {
+    const id = ++searchIdRef.current;
     setLoadingCities(true);
     try {
-      const res = await api.searchCities(countryCode, q);
-      setCities(res.success && Array.isArray(res.data) ? res.data : []);
+      const res = await api.searchCities(countryCode, q, 0, CITY_PAGE);
+      if (id !== searchIdRef.current) return; // superseded by a newer keystroke
+      const page = res.success && Array.isArray(res.data) ? res.data : [];
+      setCities(page);
+      setCityHasMore(page.length === CITY_PAGE);
     } catch {
-      setCities([]);
+      if (id === searchIdRef.current) {
+        setCities([]);
+        setCityHasMore(false);
+      }
     } finally {
-      setLoadingCities(false);
+      if (id === searchIdRef.current) setLoadingCities(false);
     }
   }, []);
+
+  /** Next page of the current search, appended as the list nears its end. */
+  const loadMoreCities = useCallback(async () => {
+    if (!country || !cityHasMore || loadingCities || loadingMore) return;
+    const id = searchIdRef.current;
+    setLoadingMore(true);
+    try {
+      const res = await api.searchCities(country.code, cityQuery, cities.length, CITY_PAGE);
+      if (id !== searchIdRef.current) return;
+      const page = res.success && Array.isArray(res.data) ? res.data : [];
+      setCities((prev) => [...prev, ...page]);
+      setCityHasMore(page.length === CITY_PAGE);
+    } catch {
+      if (id === searchIdRef.current) setCityHasMore(false);
+    } finally {
+      if (id === searchIdRef.current) setLoadingMore(false);
+    }
+  }, [country, cityHasMore, loadingCities, loadingMore, cityQuery, cities.length]);
 
   const handleCountryText = (text: string) => {
     setCountryQuery(text);
@@ -102,7 +140,7 @@ export const LocationPicker: React.FC<Props> = ({ value, onChange, required }) =
     setCountryOpen(false);
     setCityQuery('');
     setCityOpen(true);
-    fetchCities(c.code, '');
+    searchCities(c.code, '');
   };
 
   const handleCityText = (text: string) => {
@@ -111,7 +149,7 @@ export const LocationPicker: React.FC<Props> = ({ value, onChange, required }) =
     if (value) onChange(null);
     if (!country) return;
     if (debounceRef.current) clearTimeout(debounceRef.current);
-    debounceRef.current = setTimeout(() => fetchCities(country.code, text), CITY_DEBOUNCE_MS);
+    debounceRef.current = setTimeout(() => searchCities(country.code, text), CITY_DEBOUNCE_MS);
   };
 
   const selectCity = (c: CityOption) => {
@@ -122,14 +160,14 @@ export const LocationPicker: React.FC<Props> = ({ value, onChange, required }) =
   };
 
   const needle = countryQuery.trim().toLowerCase();
-  const countrySuggestions = countryOpen && !country && needle
+  const countrySuggestions: CountryOption[] = countryOpen && !country && needle
     ? [
         ...countries.filter((c) => c.name.toLowerCase().startsWith(needle)),
         ...countries.filter((c) => !c.name.toLowerCase().startsWith(needle) && c.name.toLowerCase().includes(needle)),
-      ].slice(0, MAX_SUGGESTIONS)
+      ]
     : [];
 
-  const citySuggestions = cityOpen && country ? cities.slice(0, MAX_SUGGESTIONS) : [];
+  const showCityList = cityOpen && !!country && !loadingCities && cities.length > 0;
 
   return (
     <View>
@@ -143,13 +181,20 @@ export const LocationPicker: React.FC<Props> = ({ value, onChange, required }) =
         syncOnChange
       />
       {countrySuggestions.length > 0 && (
-        <View style={styles.list}>
-          {countrySuggestions.map((c) => (
-            <TouchableOpacity key={c.code} style={styles.row} onPress={() => selectCountry(c)}>
-              <Text style={styles.rowText}>{c.flag}  {c.name}</Text>
+        <FlatList
+          style={styles.list}
+          data={countrySuggestions}
+          keyExtractor={(c) => c.code}
+          renderItem={({ item }) => (
+            <TouchableOpacity style={styles.row} onPress={() => selectCountry(item)}>
+              <Text style={styles.rowText}>{item.flag}  {item.name}</Text>
             </TouchableOpacity>
-          ))}
-        </View>
+          )}
+          keyboardShouldPersistTaps="handled"
+          nestedScrollEnabled
+          initialNumToRender={8}
+          windowSize={3}
+        />
       )}
 
       {country && (
@@ -164,15 +209,28 @@ export const LocationPicker: React.FC<Props> = ({ value, onChange, required }) =
             syncOnChange
           />
           {loadingCities && <ActivityIndicator size="small" color={colors.textMuted} style={styles.spinner} />}
-          {!loadingCities && citySuggestions.length > 0 && (
-            <View style={styles.list}>
-              {citySuggestions.map((c) => (
-                <TouchableOpacity key={`${c.stateCode}-${c.name}-${c.latitude}`} style={styles.row} onPress={() => selectCity(c)}>
-                  <Text style={styles.rowText}>{c.name}</Text>
-                  {c.stateCode ? <Text style={styles.rowMeta}>{c.stateCode}</Text> : null}
+          {showCityList && (
+            <FlatList
+              style={styles.list}
+              data={cities}
+              keyExtractor={(c, i) => `${c.stateCode}-${c.name}-${c.latitude}-${i}`}
+              renderItem={({ item }) => (
+                <TouchableOpacity style={styles.row} onPress={() => selectCity(item)}>
+                  <Text style={styles.rowText}>{item.name}</Text>
+                  {item.stateCode ? <Text style={styles.rowMeta}>{item.stateCode}</Text> : null}
                 </TouchableOpacity>
-              ))}
-            </View>
+              )}
+              onEndReached={loadMoreCities}
+              onEndReachedThreshold={0.5}
+              ListFooterComponent={
+                loadingMore ? <ActivityIndicator size="small" color={colors.textMuted} style={styles.footer} /> : null
+              }
+              keyboardShouldPersistTaps="handled"
+              nestedScrollEnabled
+              initialNumToRender={8}
+              windowSize={3}
+              removeClippedSubviews
+            />
           )}
           {!loadingCities && cityOpen && cityQuery.trim() && cities.length === 0 && (
             <Text style={styles.empty}>No matching place found. Try a nearby town.</Text>
@@ -184,8 +242,10 @@ export const LocationPicker: React.FC<Props> = ({ value, onChange, required }) =
 };
 
 const styles = StyleSheet.create({
-  // Pulls up under the Input (which carries its own bottom margin)
+  // Pulls up under the Input (which carries its own bottom margin); the list
+  // scrolls inside this height instead of growing the screen
   list: {
+    maxHeight: LIST_MAX_HEIGHT,
     marginTop: -spacing.md,
     marginBottom: spacing.lg,
     backgroundColor: colors.surface,
@@ -206,5 +266,6 @@ const styles = StyleSheet.create({
   rowText: { ...typography.body2, color: colors.textPrimary },
   rowMeta: { ...typography.caption, color: colors.textMuted },
   spinner: { marginTop: -spacing.sm, marginBottom: spacing.lg },
+  footer: { paddingVertical: spacing.md },
   empty: { ...typography.caption, color: colors.textMuted, marginTop: -spacing.sm, marginBottom: spacing.lg },
 });
