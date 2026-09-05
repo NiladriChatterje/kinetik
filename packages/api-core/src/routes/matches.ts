@@ -73,15 +73,23 @@ export async function matchRoutes(app: FastifyInstance) {
     const ageMax = prefs.age_max ?? 60;
 
 
-    // Get the user's own H3 for distance filtering
+    // The viewer's own row: gender for the filter, and the feed origin.
     const userResult = await query(
-      `SELECT h3_index, date_of_birth, gender FROM ${TABLES.USERS} WHERE id = $1`,
+      `SELECT h3_index, date_of_birth, gender, latitude, longitude, preferred_latitude, preferred_longitude
+       FROM ${TABLES.USERS} WHERE id = $1`,
       [userId],
     );
     const userRow = userResult.rows[0];
     if (!userRow) {
       return reply.send({ success: true, data: { profiles: [] } });
     }
+
+    // Feed origin: the "preferred location" city if one is set, else the
+    // user's own location (GPS, or the signup city). No origin → no geo.
+    const originLat: number | null = userRow.preferred_latitude ?? userRow.latitude ?? null;
+    const originLng: number | null = userRow.preferred_longitude ?? userRow.longitude ?? null;
+    const hasOrigin = originLat != null && originLng != null;
+    const maxDistanceKm: number = prefs.max_distance_km ?? 50;
 
     // Calculate min birth date from age
     const now = new Date();
@@ -98,6 +106,27 @@ export async function matchRoutes(app: FastifyInstance) {
       genderParams.push([userRow.gender === 'male' ? 'female' : 'male']);
     }
 
+    // Great-circle km from the origin to each row (haversine on lat/lng, no
+    // extension needed). NULL when the viewer has no origin, so the column is
+    // always present and the ORDER BY below can name it.
+    let distanceExpr = 'NULL::double precision';
+    if (hasOrigin) {
+      const latP = `$${genderParams.length + 1}`;
+      const lngP = `$${genderParams.length + 2}`;
+      genderParams.push(originLat, originLng);
+      distanceExpr = `(6371 * acos(LEAST(1, GREATEST(-1,
+          cos(radians(${latP})) * cos(radians(u.latitude)) * cos(radians(u.longitude) - radians(${lngP}))
+          + sin(radians(${latP})) * sin(radians(u.latitude))))))`;
+    }
+
+    // Swipe deck: only people within the max-distance preference, nearest
+    // first. Without an origin it stays a random draw over everyone.
+    const swipeParams = hasOrigin ? [...genderParams, maxDistanceKm] : genderParams;
+    const swipeDistanceWhere = hasOrigin
+      ? `AND u.latitude IS NOT NULL AND u.longitude IS NOT NULL AND ${distanceExpr} <= $${swipeParams.length}`
+      : '';
+    const swipeOrderBy = hasOrigin ? 'ORDER BY distance_km ASC, RANDOM()' : 'ORDER BY RANDOM()';
+
     // Get profiles excluding already-interacted users and self
     const selectAndWhere = `
       SELECT
@@ -112,7 +141,8 @@ export async function matchRoutes(app: FastifyInstance) {
         u.about_answers,
         u.h3_index,
         u.latitude,
-        u.longitude
+        u.longitude,
+        ${distanceExpr} AS distance_km
       FROM %SOURCE% u
       WHERE u.id != $1
         AND u.is_active = TRUE
@@ -120,6 +150,7 @@ export async function matchRoutes(app: FastifyInstance) {
         AND u.date_of_birth >= $2
         AND u.date_of_birth <= $3
         ${genderFilter}
+        ${swipeDistanceWhere}
         AND u.id NOT IN (
           SELECT target_id FROM ${TABLES.USER_INTERACTIONS} WHERE actor_id = $1
           UNION
@@ -131,7 +162,7 @@ export async function matchRoutes(app: FastifyInstance) {
           UNION
           SELECT user_a_id FROM ${TABLES.MATCHES} WHERE user_b_id = $1 AND is_active = TRUE
         )
-      ORDER BY RANDOM()
+      ${swipeOrderBy}
       LIMIT 20
     `;
 
@@ -146,6 +177,7 @@ export async function matchRoutes(app: FastifyInstance) {
           u.id, u.display_name, u.date_of_birth, u.bio, u.occupation,
           u.education, u.pronouns, u.is_verified, u.about_answers,
           u.h3_index, u.latitude, u.longitude,
+          ${distanceExpr} AS distance_km,
           -- Pending incoming like from this profile — the Explore grid shows
           -- their card with a "Liked you" tag
           EXISTS (
@@ -166,13 +198,19 @@ export async function matchRoutes(app: FastifyInstance) {
             UNION
             SELECT user_a_id FROM ${TABLES.MATCHES} WHERE user_b_id = $1 AND is_active = TRUE
           )
-        ORDER BY u.created_at DESC, u.id
+        -- Explore browses everyone (no distance cut-off) but nearest first
+        -- when the viewer has an origin; profiles without a location go last.
+        ORDER BY ${hasOrigin ? 'distance_km ASC NULLS LAST, ' : ''}u.created_at DESC, u.id
         OFFSET $${genderParams.length + 1} LIMIT $${genderParams.length + 2}
       `;
       // Fetch one extra row to know whether another page exists
       profilesResult = await query(exploreSql, [...genderParams, exploreOffset, exploreLimit + 1]);
       hasMore = (profilesResult.rowCount ?? 0) > exploreLimit;
       profilesResult.rows = profilesResult.rows.slice(0, exploreLimit);
+    } else if (hasOrigin) {
+      // Nearest-first must see the whole pool, so no block sample here: the
+      // distance cut-off already keeps the candidate set small.
+      profilesResult = await query(selectAndWhere.replace('%SOURCE%', TABLES.USERS), swipeParams);
     } else {
       // Try a 10% block sample first — ORDER BY RANDOM() over the sample instead
       // of the whole table. If the sample can't fill 20 (small table, small
@@ -239,6 +277,9 @@ export async function matchRoutes(app: FastifyInstance) {
 
       return {
         approxLocation,
+        // Km from the feed origin (own or preferred location); undefined when
+        // the viewer has no origin. The app keeps this order when present.
+        distanceKm: row.distance_km != null ? Math.max(1, Math.round(Number(row.distance_km))) : undefined,
         userId: row.id,
         displayName: row.display_name,
         age,
