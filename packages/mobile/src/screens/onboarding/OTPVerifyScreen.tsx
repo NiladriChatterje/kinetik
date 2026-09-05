@@ -7,12 +7,13 @@ import { Ionicons } from '@expo/vector-icons';
 import { useAuthStore } from '../../store/authStore';
 import { useToast } from '../../hooks/useToast';
 import { Button } from '../../components/common/Button';
+import { OtpTarget } from '../../services/api';
 import { colors, typography, spacing, radius } from '../../theme';
 
 const RESEND_COOLDOWN = 30;
 
 export const OTPVerifyScreen: React.FC<{ navigation: any }> = ({ navigation }) => {
-  const { pendingPhone, verifyOtp, sendOtp, clearPendingOtp } = useAuthStore();
+  const { pendingEmail, pendingPhone, verifyOtp, sendOtp, clearPendingOtp } = useAuthStore();
   const toast = useToast();
 
   const [digits, setDigits] = useState<string[]>(['', '', '', '', '', '']);
@@ -21,12 +22,28 @@ export const OTPVerifyScreen: React.FC<{ navigation: any }> = ({ navigation }) =
 
   const inputRefs = useRef<(TextInput | null)[]>([]);
 
-  // Auto-send OTP on mount
+  // The code is delivered by email (Brevo) or, on the legacy path, by SMS.
+  const target: OtpTarget | null = pendingEmail
+    ? { email: pendingEmail }
+    : pendingPhone
+      ? { phone: pendingPhone }
+      : null;
+  const isEmail = !!pendingEmail;
+
+  // Auto-send OTP on mount. Depends on the identifier strings, not the target
+  // object, so a re-render never re-sends the code. On failure the cooldown is
+  // released so the user can hit "Resend" straight away.
   const triggerSendOtp = useCallback(async () => {
-    if (!pendingPhone) return;
+    const t: OtpTarget | null = pendingEmail
+      ? { email: pendingEmail }
+      : pendingPhone
+        ? { phone: pendingPhone }
+        : null;
+    if (!t) return;
     setCountdown(RESEND_COOLDOWN);
-    await sendOtp(pendingPhone);
-  }, [pendingPhone, sendOtp]);
+    const result = await sendOtp(t);
+    if (!result.success) setCountdown(0);
+  }, [pendingEmail, pendingPhone, sendOtp]);
 
   useEffect(() => {
     triggerSendOtp();
@@ -61,11 +78,11 @@ export const OTPVerifyScreen: React.FC<{ navigation: any }> = ({ navigation }) =
   };
 
   const handleResend = async () => {
-    if (countdown > 0 || !pendingPhone) return;
+    if (countdown > 0 || !target) return;
     setCountdown(RESEND_COOLDOWN);
-    const result = await sendOtp(pendingPhone);
+    const result = await sendOtp(target);
     if (result.success) {
-      toast.showSuccess('Code sent', 'Check your phone.');
+      toast.showSuccess('Code sent', isEmail ? 'Check your inbox.' : 'Check your phone.');
     } else {
       toast.showError('Failed', result.error || 'Could not resend.');
       setCountdown(0);
@@ -74,14 +91,14 @@ export const OTPVerifyScreen: React.FC<{ navigation: any }> = ({ navigation }) =
 
   const handleVerify = async () => {
     const code = digits.join('');
-    if (code.length !== 6 || !pendingPhone) {
+    if (code.length !== 6 || !target) {
       toast.showGlass('Enter code', 'Enter the 6-digit code.');
       return;
     }
 
     setLoading(true);
     try {
-      const result = await verifyOtp(pendingPhone, code);
+      const result = await verifyOtp(target, code);
       if (result.success) {
         toast.showSuccess('Verified!', 'You\'re all set.');
         // Read the latest onboardingStep directly from store (avoid stale closure)
@@ -130,8 +147,20 @@ export const OTPVerifyScreen: React.FC<{ navigation: any }> = ({ navigation }) =
     return phone.slice(0, 4) + '•••••' + phone.slice(-2);
   };
 
-  // Guard: no pending phone
-  if (!pendingPhone) {
+  const maskEmail = (email: string) => {
+    const at = email.indexOf('@');
+    if (at <= 0) return email;
+    return email.slice(0, Math.min(2, at)) + '•••' + email.slice(at);
+  };
+
+  const maskedTarget = pendingEmail
+    ? maskEmail(pendingEmail)
+    : pendingPhone
+      ? maskPhone(pendingPhone)
+      : '';
+
+  // Guard: no pending verification
+  if (!target) {
     return (
       <View style={styles.container}>
         <View style={styles.errorContainer}>
@@ -158,14 +187,15 @@ export const OTPVerifyScreen: React.FC<{ navigation: any }> = ({ navigation }) =
       <View style={styles.content}>
         {/* Icon */}
         <View style={styles.iconCircle}>
-          <Ionicons name="phone-portrait-outline" size={28} color={colors.textPrimary} />
+          <Ionicons name={isEmail ? 'mail-outline' : 'phone-portrait-outline'} size={28} color={colors.textPrimary} />
         </View>
 
         {/* Heading */}
         <Text style={styles.heading}>Enter verification code</Text>
         <Text style={styles.subtitle}>
           A code has been sent to{'\n'}
-          <Text style={styles.phone}>{maskPhone(pendingPhone)}</Text>
+          <Text style={styles.phone}>{maskedTarget}</Text>
+          {isEmail ? '\nIt can take a minute. Check your spam folder too.' : ''}
         </Text>
 
         {/* Digit boxes */}

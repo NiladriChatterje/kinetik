@@ -2,7 +2,7 @@ import { create } from 'zustand';
 import * as SecureStore from 'expo-secure-store';
 import Toast from 'react-native-toast-message';
 import { Socket } from 'socket.io-client';
-import { api } from '../services/api';
+import { api, OtpTarget } from '../services/api';
 import { closeChatSocket, getChatSocket } from '../services/chatSocket';
 import { closePresenceSocket, getPresenceSocket } from '../services/presenceSocket';
 
@@ -47,7 +47,8 @@ interface AuthState {
   connectionStatus: ConnectionStatus;
   connectionError: string | null;
 
-  // OTP verification flow
+  // OTP verification flow — the code goes to whichever of these is set
+  pendingEmail: string | null;
   pendingPhone: string | null;
   pendingUserId: string | null;
 
@@ -80,10 +81,10 @@ interface AuthState {
   // Actions
   initialize: () => Promise<void>;
   checkConnection: () => Promise<void>;
-  login: (phone: string, password: string) => Promise<AuthResult>;
+  login: (credentials: { email?: string; phone?: string }, password: string) => Promise<AuthResult>;
   register: (data: { phone?: string; email?: string; password?: string; displayName?: string; countryCode?: string }) => Promise<AuthResult>;
-  verifyOtp: (phone: string, otp: string) => Promise<AuthResult>;
-  sendOtp: (phone: string) => Promise<AuthResult>;
+  verifyOtp: (target: OtpTarget, otp: string) => Promise<AuthResult>;
+  sendOtp: (target: OtpTarget) => Promise<AuthResult>;
   clearPendingOtp: () => void;
   logout: () => void;
   deleteAccount: () => Promise<AuthResult>;
@@ -112,7 +113,7 @@ function getErrorResponse(response: {
         return { message: fieldErrors[firstField][0], code };
       }
     }
-    return { message: 'Invalid phone or password.', code };
+    return { message: 'Invalid email or password.', code };
   }
   return { message: msg, code };
 }
@@ -125,6 +126,7 @@ export const useAuthStore = create<AuthState>((set, get) => ({
   onboardingStep: 'splash',
   connectionStatus: 'checking' as ConnectionStatus,
   connectionError: null,
+  pendingEmail: null,
   pendingPhone: null,
   pendingUserId: null,
   unreadLikeCount: 0,
@@ -242,13 +244,14 @@ export const useAuthStore = create<AuthState>((set, get) => ({
     }
   },
 
-  login: async (phone, password) => {
+  login: async (credentials, password) => {
     try {
-      const response = await api.login({ phone, password });
+      const response = await api.login({ ...credentials, password });
       if (response.success && response.data) {
         if (response.data.requiresOtp) {
           set({
-            pendingPhone: phone,
+            pendingEmail: credentials.email ?? null,
+            pendingPhone: credentials.phone ?? null,
             pendingUserId: response.data.userId || null,
           });
           return { success: true, requiresOtp: true };
@@ -273,7 +276,7 @@ export const useAuthStore = create<AuthState>((set, get) => ({
 
   register: async (data) => {
     try {
-      const response = await api.register({ ...data, authProvider: 'phone' });
+      const response = await api.register({ ...data, authProvider: data.email ? 'email' : 'phone' });
       if (response.success && response.data) {
         return { success: true };
       }
@@ -284,9 +287,9 @@ export const useAuthStore = create<AuthState>((set, get) => ({
     }
   },
 
-  sendOtp: async (phone) => {
+  sendOtp: async (target) => {
     try {
-      const response = await api.sendOtp(phone);
+      const response = await api.sendOtp(target);
       if (response.success) {
         return { success: true };
       }
@@ -297,9 +300,9 @@ export const useAuthStore = create<AuthState>((set, get) => ({
     }
   },
 
-  verifyOtp: async (phone, otp) => {
+  verifyOtp: async (target, otp) => {
     try {
-      const response = await api.verifyOtp(phone, otp);
+      const response = await api.verifyOtp(target, otp);
       if (response.success && response.data) {
         api.setToken(response.data.token);
         api.setRefreshToken(response.data.refreshToken ?? null);
@@ -349,6 +352,7 @@ export const useAuthStore = create<AuthState>((set, get) => ({
           token: response.data.token,
           isAuthenticated: true,
           onboardingStep: step,
+          pendingEmail: null,
           pendingPhone: null,
           pendingUserId: null,
         });
@@ -366,7 +370,7 @@ export const useAuthStore = create<AuthState>((set, get) => ({
   },
 
   clearPendingOtp: () => {
-    set({ pendingPhone: null, pendingUserId: null });
+    set({ pendingEmail: null, pendingPhone: null, pendingUserId: null });
   },
 
   connectLikesSocket: () => {
@@ -497,7 +501,7 @@ export const useAuthStore = create<AuthState>((set, get) => ({
     api.setRefreshToken(null);
     set({
       user: null, token: null, isAuthenticated: false,
-      onboardingStep: 'splash', pendingPhone: null, pendingUserId: null,
+      onboardingStep: 'splash', pendingEmail: null, pendingPhone: null, pendingUserId: null,
       unreadLikeCount: 0, unreadChatCount: 0,
     });
   },
@@ -516,7 +520,7 @@ export const useAuthStore = create<AuthState>((set, get) => ({
         api.setRefreshToken(null);
         set({
           user: null, token: null, isAuthenticated: false,
-          onboardingStep: 'splash', pendingPhone: null, pendingUserId: null,
+          onboardingStep: 'splash', pendingEmail: null, pendingPhone: null, pendingUserId: null,
           unreadLikeCount: 0, unreadChatCount: 0,
         });
         return { success: true };

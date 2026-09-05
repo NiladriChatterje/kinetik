@@ -10,18 +10,19 @@ import { useAuthStore } from '../../store/authStore';
 import { useToast } from '../../hooks/useToast';
 import { Button } from '../../components/common/Button';
 import { Input } from '../../components/common/Input';
-import { PhoneInput, Country } from '../../components/common/PhoneInput';
 import { colors, typography, spacing, radius } from '../../theme';
 
 const { width: SCREEN_WIDTH } = Dimensions.get('window');
 const SEGMENT_WIDTH = SCREEN_WIDTH - spacing.xxl * 2;
 const SEGMENT_TAB_WIDTH = (SEGMENT_WIDTH - 4) / 2;
 
+// Loose shape check only — the server validates properly and the one-time
+// code proves the address is real.
+const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+
 export const SplashScreen: React.FC<{ navigation: any }> = ({ navigation }) => {
   const [mode, setMode] = useState<'login' | 'register'>('login');
-  const [phoneNumber, setPhoneNumber] = useState('');
-  const [countryCode, setCountryCode] = useState('+1');
-  const [selectedCountry, setSelectedCountry] = useState<Country>({ code: '+1', flag: '🇺🇸', name: 'United States' });
+  const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [firstName, setFirstName] = useState('');
   const [lastName, setLastName] = useState('');
@@ -79,8 +80,8 @@ export const SplashScreen: React.FC<{ navigation: any }> = ({ navigation }) => {
     }).start();
   }, [mode]);
 
-  // Phone number is sent as-is (no auto-prepend of country code).
-  // Country code is stored separately in the database.
+  // Email is the login identity: the one-time code is emailed through Brevo.
+  // The server lowercases and trims it, so casing here does not matter.
   const clearError = () => setErrorMsg('');
 
   const handleModeSwitch = (newMode: 'login' | 'register') => {
@@ -88,15 +89,20 @@ export const SplashScreen: React.FC<{ navigation: any }> = ({ navigation }) => {
     setMode(newMode);
     clearError();
     setPassword('');
-    setPhoneNumber('');
+    setEmail('');
     setFirstName('');
     setLastName('');
     setMiddleName('');
   };
 
   const handleSubmit = async () => {
-    if (!phoneNumber || !password) {
+    const trimmedEmail = email.trim();
+    if (!trimmedEmail || !password) {
       toast.showError('Missing fields', 'Fill in all required fields.');
+      return;
+    }
+    if (!EMAIL_PATTERN.test(trimmedEmail)) {
+      toast.showError('Invalid email', 'Enter a valid email address.');
       return;
     }
     if (mode === 'register' && !firstName) {
@@ -106,7 +112,7 @@ export const SplashScreen: React.FC<{ navigation: any }> = ({ navigation }) => {
     setLoading(true);
     try {
       if (mode === 'login') {
-        const result = await login(phoneNumber, password);
+        const result = await login({ email: trimmedEmail }, password);
         if (result.success) {
           if (result.requiresOtp) {
             navigation.navigate('OTPVerify');
@@ -120,23 +126,22 @@ export const SplashScreen: React.FC<{ navigation: any }> = ({ navigation }) => {
           }
         } else {
           console.log('[LOGIN] failed:', result.error || 'unknown');
-          toast.showError('Login failed', result.error || 'Invalid phone or password.');
+          toast.showError('Login failed', result.error || 'Invalid email or password.');
           setErrorMsg(result.error || 'Wrong credential. Please try again.');
         }
       } else if (mode === 'register') {
-        const payload: { phone: string; password: string; displayName?: string; countryCode: string } = { phone: phoneNumber, password, countryCode };
+        const payload: { email: string; password: string; displayName?: string } = { email: trimmedEmail, password };
         if (firstName) payload.displayName = firstName;
         const result = await register(payload);
         if (result.success) {
           toast.showSuccess('Account created', 'Please sign in.');
           setMode('login');
           setPassword('');
-          setPhoneNumber('');
           setFirstName('');
           setLastName('');
           setMiddleName('');
-        } else if (result.errorCode === 'PHONE_EXISTS') {
-          toast.showGlass('Phone exists', 'Try signing in instead.');
+        } else if (result.errorCode === 'EMAIL_EXISTS') {
+          toast.showGlass('Email exists', 'Try signing in instead.');
         } else {
           toast.showError('Signup failed', result.error || 'Please try again.');
         }
@@ -210,25 +215,16 @@ export const SplashScreen: React.FC<{ navigation: any }> = ({ navigation }) => {
             <Text style={styles.registerSubtext}>Create your account to get started</Text>
           )}
 
-          {mode === 'register' ? (
-            <PhoneInput
-              phoneNumber={phoneNumber}
-              onPhoneNumberChange={(t) => { setPhoneNumber(t); clearError(); }}
-              countryCode={countryCode}
-              onCountryCodeChange={(c) => { setCountryCode(c.code); setSelectedCountry(c); clearError(); }}
-              placeholder="5550123456"
-              required
-            />
-          ) : (
-            <Input
-              label="Phone Number"
-              value={phoneNumber}
-              onChangeText={(t) => { setPhoneNumber(t); clearError(); }}
-              placeholder="5550123456"
-              keyboardType="phone-pad"
-              required
-            />
-          )}
+          <Input
+            label="Email"
+            value={email}
+            onChangeText={(t) => { setEmail(t); clearError(); }}
+            placeholder="you@example.com"
+            keyboardType="email-address"
+            autoCapitalize="none"
+            textContentType={Platform.OS === 'ios' ? 'emailAddress' : undefined}
+            required
+          />
 
           <Input
             label="Password"

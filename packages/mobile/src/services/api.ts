@@ -5,6 +5,9 @@ import { API_URL, WS_URL } from '../config';
 // runtime, never at module init) — safe under Metro.
 import { rankByProximity } from '../utils/proximity';
 
+/** Where a one-time login code is delivered. Exactly one field is set. */
+export type OtpTarget = { email: string; phone?: undefined } | { phone: string; email?: undefined };
+
 interface ApiResponse<T = any> {
   success: boolean;
   data?: T;
@@ -304,23 +307,24 @@ class ApiClient {
   }
 
   async login(data: { phone?: string; email?: string; password?: string }) {
-    return this.request<{ user?: any; token?: string; requiresOtp?: boolean; phone?: string; userId?: string }>('/api/v1/auth/login', {
+    return this.request<{ user?: any; token?: string; requiresOtp?: boolean; phone?: string; email?: string; userId?: string }>('/api/v1/auth/login', {
       method: 'POST',
       body: JSON.stringify(data),
     });
   }
 
-  async sendOtp(phone: string) {
+  /** Where a one-time code is delivered: exactly one of email (Brevo) or phone (SMS). */
+  async sendOtp(target: OtpTarget) {
     return this.request<{ message: string }>('/api/v1/auth/send-otp', {
       method: 'POST',
-      body: JSON.stringify({ phone }),
+      body: JSON.stringify(target),
     });
   }
 
-  async verifyOtp(phone: string, otp: string) {
+  async verifyOtp(target: OtpTarget, otp: string) {
     return this.request<{ user: any; token: string; refreshToken: string }>('/api/v1/auth/verify-otp', {
       method: 'POST',
-      body: JSON.stringify({ phone, otp }),
+      body: JSON.stringify({ ...target, otp }),
     });
   }
 
