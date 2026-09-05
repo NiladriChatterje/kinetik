@@ -96,6 +96,11 @@ export function haversineKm(a: ApproxLocation, b: ApproxLocation): number {
 export async function rankByProximity<T extends Locatable>(profiles: T[]): Promise<T[]> {
   if (!profiles || profiles.length < 2) return profiles;
 
+  // The server already ranks by distance from the feed origin (own or
+  // preferred location) and ships distanceKm. Keep that order — re-ranking
+  // against the device position would undo a chosen preferred location.
+  if (profiles.some((p) => p.distanceKm != null)) return profiles;
+
   const me = await getOwnLocation();
   if (!me) return profiles;
 

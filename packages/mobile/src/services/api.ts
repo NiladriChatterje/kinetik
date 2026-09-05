@@ -299,7 +299,7 @@ class ApiClient {
   }
 
   // ─── Auth ───────────────────────────────────────────
-  async register(data: { phone?: string; email?: string; password?: string; authProvider: string; authProviderId?: string; displayName?: string; countryCode?: string }) {
+  async register(data: { phone?: string; email?: string; password?: string; authProvider: string; authProviderId?: string; displayName?: string; countryCode?: string; city?: string; stateCode?: string }) {
     return this.request<{ user: any; token: string; refreshToken: string }>('/api/v1/auth/register', {
       method: 'POST',
       body: JSON.stringify(data),
@@ -337,6 +337,18 @@ class ApiClient {
       method: 'DELETE',
       body: JSON.stringify({ confirm: true }),
     });
+  }
+
+  // ─── Locations (public; behind the country → city pickers) ──
+  async getCountries() {
+    return this.request<{ code: string; name: string; flag: string }[]>('/api/v1/locations/countries');
+  }
+
+  async searchCities(countryCode: string, q: string) {
+    const qs = `country=${encodeURIComponent(countryCode)}&q=${encodeURIComponent(q)}`;
+    return this.request<{ name: string; stateCode: string; latitude: number; longitude: number }[]>(
+      `/api/v1/locations/cities?${qs}`,
+    );
   }
 
   // ─── Users ─────────────────────────────────────────

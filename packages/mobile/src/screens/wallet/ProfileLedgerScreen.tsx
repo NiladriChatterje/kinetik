@@ -7,6 +7,7 @@ import * as ImagePicker from 'expo-image-picker';
 import { Card } from '../../components/common/Card';
 import { Avatar } from '../../components/common/Avatar';
 import { Button } from '../../components/common/Button';
+import { LocationPicker, LocationSelection } from '../../components/common/LocationPicker';
 import { PhotoOptionsModal } from '../../components/profile/PhotoOptionsModal';
 import { useToast } from '../../hooks/useToast';
 import { useAuthStore } from '../../store/authStore';
@@ -34,6 +35,8 @@ interface ProfileData {
   education?: string;
   city?: string;
   county?: string;
+  /** "Search from here" city; null = feed centred on the user's own location */
+  preferredLocation?: { countryCode: string; city: string } | null;
   isVerified: boolean;
   primaryPhoto?: { url: string; thumbnailUrl?: string } | null;
 }
@@ -78,6 +81,32 @@ export const ProfileLedgerScreen: React.FC = () => {
   const [kycStatus, setKycStatus] = useState<string | null>(null);
   const [deletingAccount, setDeletingAccount] = useState(false);
   const [deleteModalVisible, setDeleteModalVisible] = useState(false);
+  const [preferredLocation, setPreferredLocation] = useState<LocationSelection | null>(null);
+  const [savingLocation, setSavingLocation] = useState(false);
+
+  // Save the "search from here" city (or null to go back to own location).
+  // The picker only reports a full selection, so nothing is saved mid-typing.
+  const savePreferredLocation = useCallback(async (sel: LocationSelection | null) => {
+    setSavingLocation(true);
+    try {
+      const res = await api.updateProfile({
+        preferredLocation: sel ? { countryCode: sel.countryCode, city: sel.city, stateCode: sel.stateCode } : null,
+      });
+      if (res.success) {
+        setPreferredLocation(sel);
+        toast.showSuccess(
+          sel ? 'Location updated' : 'Back to your location',
+          sel ? `Showing people near ${sel.city}.` : 'Showing people near you.',
+        );
+      } else {
+        toast.showError('Could not save', res.error?.message || 'Try again.');
+      }
+    } catch {
+      toast.showError('Could not save', 'Check your connection and try again.');
+    } finally {
+      setSavingLocation(false);
+    }
+  }, [toast]);
   const [stats, setStats] = useState<ProfileStats | null>(null);
 
   // ─── Delete modal animations ─────────────────────────────
@@ -115,7 +144,11 @@ export const ProfileLedgerScreen: React.FC = () => {
         api.getProfileStats().catch(() => null),
       ]);
       if (profileRes.success && profileRes.data) {
-        setProfile(profileRes.data as ProfileData);
+        const data = profileRes.data as ProfileData;
+        setProfile(data);
+        setPreferredLocation(
+          data.preferredLocation ? { countryCode: data.preferredLocation.countryCode, city: data.preferredLocation.city } : null,
+        );
       }
       if (photosRes.success && Array.isArray(photosRes.data)) {
         setPhotos(photosRes.data as ProfilePhoto[]);
@@ -275,7 +308,9 @@ export const ProfileLedgerScreen: React.FC = () => {
   return (
     <SafeAreaView style={styles.container}>
       <Animated.View style={[styles.contentWrap, { transform: [{ scale: contentScale }] }]}>  
-      <ScrollView contentContainerStyle={styles.content}>
+      {/* keyboardShouldPersistTaps: a tap on a LocationPicker suggestion must
+          register while the keyboard is up, not just dismiss it */}
+      <ScrollView contentContainerStyle={styles.content} keyboardShouldPersistTaps="handled">
         {/* Profile Header */}
         <View style={styles.profileHeader}>
           <Avatar uri={avatarUri} size={80} isOnline />
@@ -377,6 +412,36 @@ export const ProfileLedgerScreen: React.FC = () => {
             )}
           </Card>
         )}
+
+        {/* Preferred location — where the feed is centred. Default is the
+            user's own location; picking a country + city overrides it. */}
+        <Text style={styles.sectionTitle}>Preferred location</Text>
+        <Card style={styles.infoCard}>
+          <View style={styles.infoRow}>
+            <Ionicons name="location-outline" size={16} color={colors.textSecondary} />
+            <Text style={styles.infoText}>
+              {preferredLocation
+                ? `Showing people near ${preferredLocation.city}`
+                : `Default: people near your current location${profile?.city ? ` (${profile.city})` : ''}`}
+            </Text>
+          </View>
+          <LocationPicker
+            // Remount on every saved change so "Use my current location"
+            // clears the inputs instead of leaving the old city text behind
+            key={preferredLocation ? `${preferredLocation.countryCode}:${preferredLocation.city}` : 'default'}
+            value={preferredLocation}
+            onChange={(sel) => { if (sel) savePreferredLocation(sel); }}
+          />
+          {preferredLocation && (
+            <Button
+              title="Use my current location"
+              variant="outline"
+              size="sm"
+              onPress={() => savePreferredLocation(null)}
+              loading={savingLocation}
+            />
+          )}
+        </Card>
 
         {/* Metrics — live values from the stats endpoint; '—' until loaded */}
         <View style={styles.metricsRow}>

@@ -10,6 +10,7 @@ import { useAuthStore } from '../../store/authStore';
 import { useToast } from '../../hooks/useToast';
 import { Button } from '../../components/common/Button';
 import { Input } from '../../components/common/Input';
+import { LocationPicker, LocationSelection } from '../../components/common/LocationPicker';
 import { colors, typography, spacing, radius } from '../../theme';
 
 const { width: SCREEN_WIDTH } = Dimensions.get('window');
@@ -27,6 +28,8 @@ export const SplashScreen: React.FC<{ navigation: any }> = ({ navigation }) => {
   const [firstName, setFirstName] = useState('');
   const [lastName, setLastName] = useState('');
   const [middleName, setMiddleName] = useState('');
+  // Where the user lives — seeds the feed origin until GPS is granted
+  const [location, setLocation] = useState<LocationSelection | null>(null);
   const [loading, setLoading] = useState(false);
   const [errorMsg, setErrorMsg] = useState('');
   const login = useAuthStore((s) => s.login);
@@ -93,6 +96,7 @@ export const SplashScreen: React.FC<{ navigation: any }> = ({ navigation }) => {
     setFirstName('');
     setLastName('');
     setMiddleName('');
+    setLocation(null);
   };
 
   const handleSubmit = async () => {
@@ -107,6 +111,10 @@ export const SplashScreen: React.FC<{ navigation: any }> = ({ navigation }) => {
     }
     if (mode === 'register' && !firstName) {
       toast.showError('Missing name', 'Enter your first name.');
+      return;
+    }
+    if (mode === 'register' && !location) {
+      toast.showError('Missing location', 'Select your country and city.');
       return;
     }
     setLoading(true);
@@ -129,8 +137,14 @@ export const SplashScreen: React.FC<{ navigation: any }> = ({ navigation }) => {
           toast.showError('Login failed', result.error || 'Invalid email or password.');
           setErrorMsg(result.error || 'Wrong credential. Please try again.');
         }
-      } else if (mode === 'register') {
-        const payload: { email: string; password: string; displayName?: string } = { email: trimmedEmail, password };
+      } else if (mode === 'register' && location) {
+        const payload: { email: string; password: string; displayName?: string; countryCode: string; city: string; stateCode?: string } = {
+          email: trimmedEmail,
+          password,
+          countryCode: location.countryCode,
+          city: location.city,
+          stateCode: location.stateCode,
+        };
         if (firstName) payload.displayName = firstName;
         const result = await register(payload);
         if (result.success) {
@@ -140,6 +154,7 @@ export const SplashScreen: React.FC<{ navigation: any }> = ({ navigation }) => {
           setFirstName('');
           setLastName('');
           setMiddleName('');
+          setLocation(null);
         } else if (result.errorCode === 'EMAIL_EXISTS') {
           toast.showGlass('Email exists', 'Try signing in instead.');
         } else {
@@ -260,6 +275,7 @@ export const SplashScreen: React.FC<{ navigation: any }> = ({ navigation }) => {
                 placeholder="Middle name"
                 autoCapitalize="words"
               />
+              <LocationPicker value={location} onChange={setLocation} required />
             </>
           )}
 

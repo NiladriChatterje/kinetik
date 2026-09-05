@@ -82,7 +82,7 @@ interface AuthState {
   initialize: () => Promise<void>;
   checkConnection: () => Promise<void>;
   login: (credentials: { email?: string; phone?: string }, password: string) => Promise<AuthResult>;
-  register: (data: { phone?: string; email?: string; password?: string; displayName?: string; countryCode?: string }) => Promise<AuthResult>;
+  register: (data: { phone?: string; email?: string; password?: string; displayName?: string; countryCode?: string; city?: string; stateCode?: string }) => Promise<AuthResult>;
   verifyOtp: (target: OtpTarget, otp: string) => Promise<AuthResult>;
   sendOtp: (target: OtpTarget) => Promise<AuthResult>;
   clearPendingOtp: () => void;
