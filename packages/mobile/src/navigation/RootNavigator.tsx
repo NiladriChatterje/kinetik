@@ -4,6 +4,8 @@ import { createNavigationContainerRef, NavigationContainer } from '@react-naviga
 import { createStackNavigator } from '@react-navigation/stack';
 import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
 import { Ionicons } from '@expo/vector-icons';
+import * as SecureStore from 'expo-secure-store';
+import Toast from 'react-native-toast-message';
 import { useAuthStore } from '../store/authStore';
 import { colors, typography } from '../theme';
 
@@ -212,7 +214,39 @@ const tabBarScreenOptions = {
   },
 };
 
+// Shown once per install, the first time the user reaches the main tabs, so
+// the first slow screen has an explanation. Never repeated after that; the
+// profile page footer carries the same note permanently.
+const FREE_SERVER_NOTICE_KEY = 'notice_free_server_shown';
+
+function useFreeServerNoticeOnce() {
+  React.useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      try {
+        if (await SecureStore.getItemAsync(FREE_SERVER_NOTICE_KEY)) return;
+        await SecureStore.setItemAsync(FREE_SERVER_NOTICE_KEY, '1');
+      } catch {
+        return;
+      }
+      if (cancelled) return;
+      // Small delay so it lands after the first screen has rendered.
+      setTimeout(() => {
+        if (cancelled) return;
+        Toast.show({
+          type: 'glass',
+          text1: 'Running on a free server',
+          text2: 'Things may feel slow at times. Thanks for your patience.',
+          visibilityTime: 5000,
+        });
+      }, 1200);
+    })();
+    return () => { cancelled = true; };
+  }, []);
+}
+
 const MainTabNavigator = React.memo(function MainTabNavigator() {
+  useFreeServerNoticeOnce();
   return (
     <MainTab.Navigator screenOptions={tabBarScreenOptions}>
       <MainTab.Screen

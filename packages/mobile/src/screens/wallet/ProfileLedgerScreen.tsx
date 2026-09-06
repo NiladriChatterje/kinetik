@@ -569,7 +569,7 @@ export const ProfileLedgerScreen: React.FC = () => {
         </View>
 
         <Text style={styles.footerNote}>
-          Kinetik is built by a solo college developer as a project. Rough edges are expected.
+          Kinetik is built by a solo college developer as a project and runs on a free server. Rough edges and the odd slow moment are expected.
         </Text>
       </ScrollView>
       </Animated.View>
