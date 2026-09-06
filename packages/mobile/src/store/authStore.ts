@@ -14,6 +14,42 @@ let chatsSocketHandlers: {
   onMatchNew: (data: any) => void;
 } | null = null;
 
+// ─── Session snapshot ────────────────────────────────────────
+// The last known user + onboarding step, written whenever they change while
+// signed in. On launch, if the server cannot be reached to confirm the
+// session, the app restores from this instead of showing the login screen.
+// The tokens themselves live under 'auth_token' / 'refresh_token' in api.ts.
+const SESSION_SNAPSHOT_KEY = 'auth_session';
+
+interface SessionSnapshot {
+  user: User;
+  onboardingStep: string;
+}
+
+async function readSessionSnapshot(): Promise<SessionSnapshot | null> {
+  try {
+    const raw = await SecureStore.getItemAsync(SESSION_SNAPSHOT_KEY);
+    if (!raw) return null;
+    const parsed = JSON.parse(raw);
+    if (!parsed?.user?.id || typeof parsed.onboardingStep !== 'string') return null;
+    return parsed as SessionSnapshot;
+  } catch {
+    return null;
+  }
+}
+
+function writeSessionSnapshot(snapshot: SessionSnapshot | null): void {
+  try {
+    if (snapshot) {
+      SecureStore.setItemAsync(SESSION_SNAPSHOT_KEY, JSON.stringify(snapshot));
+    } else {
+      SecureStore.deleteItemAsync(SESSION_SNAPSHOT_KEY);
+    }
+  } catch {
+    // Storage hiccup; the next change will try again.
+  }
+}
+
 // Bookkeeping for the chat badge: the badge counts DISTINCT conversations
 // (users) with unseen messages, so track which matchIds have already been
 // counted by the live socket handler. Rebuilt from server truth by
@@ -219,6 +255,25 @@ export const useAuthStore = create<AuthState>((set, get) => ({
               isAuthenticated: false,
               onboardingStep: 'splash',
             });
+          } else {
+            // Transient failure (5xx, timeout, no network, database waking
+            // up). The token was kept above; keep the session too. Restore the
+            // last known user so the app opens where it left off instead of
+            // on the login screen. Screens refetch their own data and the
+            // connection banner covers the outage.
+            const snapshot = await readSessionSnapshot();
+            if (snapshot) {
+              set({
+                token,
+                user: snapshot.user,
+                isAuthenticated: true,
+                onboardingStep: snapshot.onboardingStep,
+                isLoading: false,
+              });
+              get().connectLikesSocket();
+              get().connectChatsSocket();
+              return;
+            }
           }
 
           if (isMissingAccount) {
@@ -548,3 +603,21 @@ export const useAuthStore = create<AuthState>((set, get) => ({
   setUser: (user) => set({ user }),
   setOnboardingStep: (step) => set({ onboardingStep: step }),
 }));
+
+// Keep the on-device session snapshot in step with the store: written while
+// signed in, removed on sign out or account deletion. Doing it here, rather
+// than in every action that touches these fields, means no path is missed.
+useAuthStore.subscribe((state, prev) => {
+  if (
+    state.isAuthenticated === prev.isAuthenticated &&
+    state.user === prev.user &&
+    state.onboardingStep === prev.onboardingStep
+  ) {
+    return;
+  }
+  if (state.isAuthenticated && state.user) {
+    writeSessionSnapshot({ user: state.user, onboardingStep: state.onboardingStep });
+  } else if (!state.isAuthenticated) {
+    writeSessionSnapshot(null);
+  }
+});

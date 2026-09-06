@@ -14,11 +14,21 @@ interface ApiResponse<T = any> {
   error?: { code: string; message: string; details?: unknown; status?: number };
 }
 
+/**
+ * Outcome of a silent token refresh.
+ *  - refreshed:   new access token stored, retry the request
+ *  - rejected:    server said the refresh token is invalid or the account is
+ *                 gone (401/403/404). Tokens are cleared; the session is over.
+ *  - unavailable: could not reach the server or it answered 5xx. Tokens are
+ *                 kept; the session is still valid, the server is not.
+ */
+type RefreshOutcome = 'refreshed' | 'rejected' | 'unavailable';
+
 class ApiClient {
   private token: string | null = null;
   private refreshTokenValue: string | null = null;
   private isRefreshing = false;
-  private refreshPromise: Promise<boolean> | null = null;
+  private refreshPromise: Promise<RefreshOutcome> | null = null;
 
   async init() {
     this.token = await SecureStore.getItemAsync('auth_token');
@@ -56,8 +66,10 @@ class ApiClient {
    * Attempt to silently refresh the access token using the refresh token.
    * Deduplicates concurrent calls so only one refresh request fires.
    */
-  private async tryRefresh(): Promise<boolean> {
-    if (!this.refreshTokenValue) return false;
+  private async tryRefresh(): Promise<RefreshOutcome> {
+    // No refresh token at all (a session from before refresh tokens existed):
+    // nothing to retry with, the 401 stands.
+    if (!this.refreshTokenValue) return 'rejected';
 
     // Deduplicate concurrent refresh attempts
     if (this.isRefreshing && this.refreshPromise) {
@@ -65,7 +77,7 @@ class ApiClient {
     }
 
     this.isRefreshing = true;
-    this.refreshPromise = (async () => {
+    this.refreshPromise = (async (): Promise<RefreshOutcome> => {
       try {
         const controller = new AbortController();
         const timeout = setTimeout(() => controller.abort(), 10000);
@@ -82,14 +94,21 @@ class ApiClient {
           if (body.data.refreshToken) {
             this.setRefreshToken(body.data.refreshToken);
           }
-          return true;
+          return 'refreshed';
         }
-        // Refresh failed — tokens are compromised or expired, clear everything
-        this.setToken(null);
-        this.setRefreshToken(null);
-        return false;
+
+        // Only an explicit rejection ends the session. A 5xx, a gateway error
+        // page or a half-asleep database is the server's problem: keep the
+        // tokens and let the caller treat it as an outage.
+        if (res.status === 401 || res.status === 403 || res.status === 404) {
+          this.setToken(null);
+          this.setRefreshToken(null);
+          return 'rejected';
+        }
+        return 'unavailable';
       } catch {
-        return false;
+        // Timeout or no network: the session is fine, the connection is not.
+        return 'unavailable';
       } finally {
         this.isRefreshing = false;
         this.refreshPromise = null;
@@ -113,11 +132,24 @@ class ApiClient {
       (result.error?.code === 'UNAUTHORIZED' || result.error?.code === 'TOKEN_EXPIRED') &&
       result.error?.status === 401
     ) {
-      const refreshed = await this.tryRefresh();
-      if (refreshed) {
+      const outcome = await this.tryRefresh();
+      if (outcome === 'refreshed') {
         return this.request<T>(endpoint, options, true);
       }
-      // Refresh failed — propagate the error (auth store should handle logout)
+      if (outcome === 'unavailable') {
+        // The access token expired and the server could not be reached to
+        // renew it. Passing the 401 up would read as "session expired" and
+        // log the user out, so report it as the outage it is instead.
+        return {
+          success: false,
+          error: {
+            code: 'SERVER_ERROR',
+            status: 503,
+            message: 'Server is unavailable. Please try again later.',
+          },
+        };
+      }
+      // Rejected — propagate the 401 (auth store handles logout)
     }
 
     return result;
