@@ -2340,11 +2340,12 @@ export const ChatScreen: React.FC<{ navigation: any; route: any }> = ({ navigati
               disabled={savingPlanner}
               activeOpacity={0.7}
             >
-              {savingPlanner ? (
-                <ActivityIndicator size="small" color={colors.textInverse} />
-              ) : (
-                <Text style={styles.dateConfirmText}>Save Plan</Text>
+              {savingPlanner && (
+                <ActivityIndicator size="small" color={colors.textMuted} />
               )}
+              <Text style={[styles.dateConfirmText, savingPlanner && styles.dateConfirmTextDisabled]}>
+                Save Plan
+              </Text>
             </TouchableOpacity>
           </Animated.View>
         </Animated.View>
@@ -3073,11 +3074,15 @@ const styles = StyleSheet.create({
     backgroundColor: colors.textPrimary,
     borderRadius: radius.full,
     paddingVertical: spacing.md,
+    flexDirection: 'row',
+    gap: spacing.sm,
     alignItems: 'center',
+    justifyContent: 'center',
     marginTop: spacing.lg,
   },
-  dateConfirmBtnDisabled: { opacity: 0.4 },
+  dateConfirmBtnDisabled: { backgroundColor: colors.surfaceHighlight },
   dateConfirmText: { ...typography.button, color: colors.textInverse },
+  dateConfirmTextDisabled: { color: colors.textMuted },
 
   // ─── Date Planner Modal ─────────────────────────────
   plannerOverlay: {

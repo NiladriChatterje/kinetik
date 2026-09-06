@@ -575,15 +575,16 @@ export const ProfileLedgerScreen: React.FC = () => {
             </Text>
 
             <TouchableOpacity
-              style={styles.modalDeleteBtn}
+              style={[styles.modalDeleteBtn, deletingAccount && styles.modalDeleteBtnLoading]}
               onPress={() => confirmDeleteAccount()}
               disabled={deletingAccount}
             >
-              {deletingAccount ? (
-                <ActivityIndicator size="small" color={colors.textInverse} />
-              ) : (
-                <Text style={styles.modalDeleteBtnText}>Delete My Account</Text>
+              {deletingAccount && (
+                <ActivityIndicator size="small" color={colors.textMuted} />
               )}
+              <Text style={[styles.modalDeleteBtnText, deletingAccount && styles.modalDeleteBtnTextLoading]}>
+                Delete My Account
+              </Text>
             </TouchableOpacity>
 
             <TouchableOpacity
@@ -763,6 +764,8 @@ const styles = StyleSheet.create({
   },
   modalDeleteBtn: {
     width: '100%',
+    flexDirection: 'row',
+    gap: spacing.sm,
     paddingVertical: spacing.md + 2,
     backgroundColor: '#E53935',
     borderRadius: radius.lg,
@@ -770,9 +773,15 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     marginBottom: spacing.sm,
   },
+  modalDeleteBtnLoading: {
+    backgroundColor: colors.surfaceHighlight,
+  },
   modalDeleteBtnText: {
     ...typography.button,
     color: colors.textInverse,
+  },
+  modalDeleteBtnTextLoading: {
+    color: colors.textMuted,
   },
   modalCancel: {
     paddingVertical: spacing.md,

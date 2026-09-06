@@ -38,7 +38,17 @@ export const Button: React.FC<ButtonProps> = React.memo(({
   textStyle,
   fullWidth = false,
 }) => {
-  const isPrimary = variant === 'primary';
+  const isFilled = variant === 'primary' || variant === 'secondary' || variant === 'danger';
+
+  // While loading the label stays put so the button never reads as empty.
+  // The fill and text drop to grey and a small spinner sits beside the text.
+  const loadingContainerStyle = loading
+    ? isFilled
+      ? styles.loadingFilled
+      : variant === 'outline'
+        ? styles.loadingOutline
+        : null
+    : null;
 
   const buttonContent = (
     <TouchableOpacity
@@ -51,30 +61,31 @@ export const Button: React.FC<ButtonProps> = React.memo(({
         fullWidth && styles.fullWidth,
         disabled && styles.disabled,
         style,
+        loadingContainerStyle,
       ]}
       activeOpacity={0.8}
     >
       {loading ? (
         <ActivityIndicator
-          color={isPrimary ? colors.textPrimary : colors.primary}
+          color={colors.textMuted}
           size="small"
+          style={styles.loadingSpinner}
         />
       ) : (
-        <>
-          {icon}
-          <Text
-            style={[
-              styles.text,
-              styles[`text_${size}`],
-              styles[`text_${variant}`],
-              icon ? { marginLeft: spacing.sm } : {},
-              textStyle,
-            ]}
-          >
-            {title}
-          </Text>
-        </>
+        icon
       )}
+      <Text
+        style={[
+          styles.text,
+          styles[`text_${size}`],
+          styles[`text_${variant}`],
+          icon || loading ? { marginLeft: spacing.sm } : {},
+          textStyle,
+          loading && styles.textLoading,
+        ]}
+      >
+        {title}
+      </Text>
     </TouchableOpacity>
   );
 
@@ -94,6 +105,19 @@ const styles = StyleSheet.create({
   },
   disabled: {
     opacity: 0.5,
+  },
+  loadingFilled: {
+    backgroundColor: colors.surfaceHighlight,
+  },
+  loadingOutline: {
+    borderColor: colors.textMuted,
+  },
+  loadingSpinner: {
+    // Match the spinner's box to the text line so the row height is stable.
+    height: 20,
+  },
+  textLoading: {
+    color: colors.textMuted,
   },
 
   // Sizes
