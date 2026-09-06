@@ -1,5 +1,5 @@
 import React, { useEffect, useState, useCallback, useRef } from 'react';
-import { View, Text, StyleSheet, ScrollView, TouchableOpacity, Image, Alert, ActivityIndicator, Modal, Animated, Dimensions } from 'react-native';
+import { View, Text, StyleSheet, ScrollView, TouchableOpacity, Image, Alert, ActivityIndicator, Modal, Animated, Dimensions, Linking } from 'react-native';
 import { useNavigation } from '@react-navigation/native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
@@ -65,8 +65,10 @@ const SETTINGS = [
   { icon: 'shield-checkmark-outline' as const, label: 'KYC Verification', screen: 'KYCVerify' as const },
   { icon: 'lock-closed-outline' as const, label: 'Privacy', screen: undefined },
   { icon: 'card-outline' as const, label: 'Subscription', screen: 'SubscriptionCheckout' as const },
-  { icon: 'call-outline' as const, label: 'Support', screen: undefined },
+  { icon: 'mail-outline' as const, label: 'Support', screen: undefined, action: 'support' as const },
 ];
+
+const SUPPORT_EMAIL = 'kinetik.dating@gmail.com';
 
 export const ProfileLedgerScreen: React.FC = () => {
   const authUser = useAuthStore((s) => s.user);
@@ -180,13 +182,23 @@ export const ProfileLedgerScreen: React.FC = () => {
     return unsubscribe;
   }, [navigation, fetchProfileAndPhotos]);
 
+  const openSupportMail = useCallback(() => {
+    Linking.openURL(`mailto:${SUPPORT_EMAIL}?subject=Kinetik%20support`).catch(() => {
+      toast.showGlass('Support', `Write to ${SUPPORT_EMAIL}`);
+    });
+  }, [toast]);
+
   const handleSettingPress = useCallback(
-    (screen: string | undefined) => {
+    (screen: string | undefined, action?: 'support') => {
+      if (action === 'support') {
+        openSupportMail();
+        return;
+      }
       if (screen) {
         navigation.navigate(screen as never);
       }
     },
-    [navigation],
+    [navigation, openSupportMail],
   );
 
   // Primary photo for the avatar
@@ -476,8 +488,8 @@ export const ProfileLedgerScreen: React.FC = () => {
               <React.Fragment key={s.label}>
                 <TouchableOpacity
                   style={styles.settingRow}
-                  onPress={() => handleSettingPress(s.screen)}
-                  disabled={!s.screen}
+                  onPress={() => handleSettingPress(s.screen, 'action' in s ? s.action : undefined)}
+                  disabled={!s.screen && !('action' in s)}
                 >
                   <Ionicons name={s.icon} size={20} color={colors.textSecondary} />
                   <Text style={styles.settingText}>{s.label}</Text>
@@ -520,6 +532,18 @@ export const ProfileLedgerScreen: React.FC = () => {
           })}
         </Card>
 
+        {/* Support */}
+        <Text style={styles.sectionTitle}>Support</Text>
+        <Card style={styles.infoCard}>
+          <Text style={styles.supportText}>
+            Questions, problems or ideas to make Kinetik better? Drop a line.
+          </Text>
+          <TouchableOpacity style={styles.infoRow} onPress={openSupportMail} activeOpacity={0.7}>
+            <Ionicons name="mail-outline" size={16} color={colors.textPrimary} />
+            <Text style={styles.supportEmail}>{SUPPORT_EMAIL}</Text>
+          </TouchableOpacity>
+        </Card>
+
         <Button title="Sign Out" onPress={logout} variant="outline" fullWidth />
 
         {/* Delete Account — destructive, bottom of screen */}
@@ -543,6 +567,10 @@ export const ProfileLedgerScreen: React.FC = () => {
             Permanently removes your profile, photos, matches and all chats. This cannot be undone.
           </Text>
         </View>
+
+        <Text style={styles.footerNote}>
+          Kinetik is built by a solo college developer as a project. Rough edges are expected.
+        </Text>
       </ScrollView>
       </Animated.View>
 
@@ -729,6 +757,15 @@ const styles = StyleSheet.create({
     color: colors.textMuted,
     textAlign: 'center',
     marginTop: spacing.xs,
+    paddingHorizontal: spacing.xxl,
+  },
+  supportText: { ...typography.body2, color: colors.textSecondary, lineHeight: 19 },
+  supportEmail: { ...typography.body2, color: colors.textPrimary, fontWeight: '600' },
+  footerNote: {
+    ...typography.caption,
+    color: colors.textMuted,
+    textAlign: 'center',
+    marginTop: spacing.xxl,
     paddingHorizontal: spacing.xxl,
   },
 
