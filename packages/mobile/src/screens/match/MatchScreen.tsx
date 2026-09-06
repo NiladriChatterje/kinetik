@@ -14,6 +14,7 @@ import { resolveUrl } from '../../config';
 import { MatchPopup } from '../../components/common/MatchPopup';
 import { PaywallModal, PaywallReason } from '../../components/common/PaywallModal';
 import { ProgressiveImage } from '../../components/common/ProgressiveImage';
+import { DatingCategoryBadge, DatingCategory } from '../../components/common/DatingCategoryBadge';
 import { hapticSuccess, hapticImpact } from '../../utils/haptics';
 
 const SCREEN_WIDTH = Dimensions.get('window').width;
@@ -29,6 +30,7 @@ interface SwipeProfile {
   occupation?: string;
   education?: string;
   pronouns?: string;
+  datingCategory?: DatingCategory;
   photos: { id: string; url: string; thumbnailUrl?: string; isPrimary: boolean }[];
   interests: { id: string; name: string; emoji: string; category: string }[];
   /** Coarse H3 cell-center from the server; used for on-device ranking */
@@ -238,6 +240,8 @@ function SwipeCard({
           {profile.pronouns ? (
             <Text style={styles.pronounsText}>{profile.pronouns}</Text>
           ) : null}
+
+          <DatingCategoryBadge category={profile.datingCategory} style={styles.categoryBadge} />
 
           {profile.bio ? <Text style={styles.bio}>{profile.bio}</Text> : null}
 
@@ -995,6 +999,7 @@ const styles = StyleSheet.create({
   },
   name: { ...typography.h3, color: colors.textPrimary },
   pronounsText: { ...typography.caption, color: colors.textMuted, marginBottom: spacing.xs, fontSize: 11 },
+  categoryBadge: { marginBottom: spacing.sm },
   bio: { ...typography.body2, color: colors.textSecondary, marginBottom: spacing.sm, lineHeight: 19 },
   detailsRow: { flexDirection: 'row', flexWrap: 'wrap', gap: spacing.xs, marginBottom: spacing.sm },
   detailChip: {

@@ -7,6 +7,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { api } from '../../services/api';
 import { ProgressiveImage } from '../../components/common/ProgressiveImage';
+import { DatingCategoryBadge, DatingCategory } from '../../components/common/DatingCategoryBadge';
 import { getPresenceSocket } from '../../services/presenceSocket';
 import { resolveUrl } from '../../config';
 import { colors, typography, spacing, radius } from '../../theme';
@@ -18,6 +19,7 @@ interface GridProfile {
   bio: string;
   occupation?: string;
   isVerified: boolean;
+  datingCategory?: DatingCategory;
   photos: { id: string; url: string; thumbnailUrl?: string; isPrimary: boolean }[];
   interests: { id: string; name: string; emoji: string; category: string }[];
   /** Attached on-device by rankByProximity */
@@ -176,6 +178,7 @@ export const ExploreScreen: React.FC<{ navigation: any }> = ({ navigation }) => 
               <Ionicons name="checkmark-circle" size={14} color={colors.success} />
             )}
           </View>
+          <DatingCategoryBadge category={item.datingCategory} onDark compact style={styles.cardCategory} />
           {item.occupation ? (
             <Text style={styles.cardSub} numberOfLines={1}>{item.occupation}</Text>
           ) : item.interests.length > 0 ? (
@@ -374,6 +377,7 @@ const styles = StyleSheet.create({
   },
   nameRow: { flexDirection: 'row', alignItems: 'center', gap: 4 },
   cardName: { ...typography.body2, color: '#fff', fontWeight: '700', flexShrink: 1 },
+  cardCategory: { marginTop: 3, marginBottom: 2 },
   cardSub: { ...typography.caption, color: 'rgba(255,255,255,0.75)', fontSize: 11, marginTop: 1 },
   footerHint: {
     ...typography.caption,

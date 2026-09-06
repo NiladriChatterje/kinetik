@@ -12,6 +12,7 @@ import { useAuthStore } from '../../store/authStore';
 import { resolveUrl } from '../../config';
 import { colors, typography, spacing, radius } from '../../theme';
 import { PaywallModal, PaywallReason } from '../../components/common/PaywallModal';
+import { DatingCategoryBadge, DatingCategory } from '../../components/common/DatingCategoryBadge';
 
 interface IncomingLike {
   likedAt: string;
@@ -21,6 +22,7 @@ interface IncomingLike {
   age: number;
   photoUrl?: string;
   isVerified: boolean;
+  datingCategory?: DatingCategory;
   isMutual: boolean;
   isSuperLike?: boolean;
 }
@@ -134,6 +136,7 @@ export const LikeListScreen: React.FC<{ navigation: any }> = ({ navigation }) =>
               <Ionicons name="checkmark-circle" size={16} color={colors.textPrimary} style={{ marginLeft: 5 }} />
             )}
           </View>
+          <DatingCategoryBadge category={item.datingCategory} compact style={styles.categoryBadge} />
           {item.bio ? <Text style={styles.bio} numberOfLines={2}>{item.bio}</Text> : null}
           {item.isSuperLike && (
             <View style={styles.superLikeBadge}>
@@ -293,6 +296,7 @@ const styles = StyleSheet.create({
   name: { ...typography.h3, color: colors.textPrimary },
   age: { ...typography.body1, color: colors.textMuted, fontWeight: '400' },
   bio: { ...typography.body2, color: colors.textSecondary, marginTop: spacing.xs },
+  categoryBadge: { marginTop: spacing.xs },
   actions: {
     flexDirection: 'row',
     justifyContent: 'center',

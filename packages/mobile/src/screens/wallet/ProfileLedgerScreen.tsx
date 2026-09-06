@@ -8,6 +8,7 @@ import { Card } from '../../components/common/Card';
 import { Avatar } from '../../components/common/Avatar';
 import { Button } from '../../components/common/Button';
 import { LocationPicker, LocationSelection } from '../../components/common/LocationPicker';
+import { DatingCategoryBadge, DatingCategory } from '../../components/common/DatingCategoryBadge';
 import { PhotoOptionsModal } from '../../components/profile/PhotoOptionsModal';
 import { useToast } from '../../hooks/useToast';
 import { useAuthStore } from '../../store/authStore';
@@ -33,6 +34,7 @@ interface ProfileData {
   bio?: string;
   occupation?: string;
   education?: string;
+  datingCategory?: DatingCategory | null;
   city?: string;
   county?: string;
   /** "Search from here" city; null = feed centred on the user's own location */
@@ -395,8 +397,14 @@ export const ProfileLedgerScreen: React.FC = () => {
         </View>
 
         {/* Profile Info */}
-        {((profile?.bio) || (profile?.occupation) || (profile?.education)) && (
+        {((profile?.bio) || (profile?.occupation) || (profile?.education) || (profile?.datingCategory)) && (
           <Card style={styles.infoCard}>
+            {profile?.datingCategory && (
+              <View style={styles.infoRow}>
+                <Text style={styles.infoText}>Here for</Text>
+                <DatingCategoryBadge category={profile.datingCategory} />
+              </View>
+            )}
             {profile?.bio && <Text style={styles.bioText}>{profile.bio}</Text>}
             {profile?.occupation && (
               <View style={styles.infoRow}>
