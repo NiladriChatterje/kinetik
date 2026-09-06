@@ -234,7 +234,7 @@ const VIBE_OPTIONS = [
  * bar off the edge on phones that report no bottom inset without adding a
  * second gap on phones that do.
  */
-const MIN_INPUT_BOTTOM_GAP = spacing.xxl;
+const MIN_INPUT_BOTTOM_GAP = spacing.md;
 
 // ─── Recording Indicators ───────────────────────────────
 // Both are purely decorative and hold no recording state, so they cannot
@@ -1635,20 +1635,20 @@ export const ChatScreen: React.FC<{ navigation: any; route: any }> = ({ navigati
   };
 
   // ─── Input bar bottom spacing ──────────────────────
-  // The enclosing SafeAreaView already contributes `insets.bottom`, which is
-  // ~34px on a gesture-bar phone but 0 on one with hardware/3-button nav. A
-  // fixed padding therefore looked right on the former and sat on the screen
-  // edge on the latter, so top up only the shortfall and let the gesture bar
-  // do the work where it exists.
+  // The SafeAreaView deliberately excludes the bottom edge, so this is the
+  // only place the bottom inset is applied. The inset is ~34px on a gesture
+  // phone, ~48px under an edge-to-edge 3-button bar and 0 when the system bar
+  // is hidden, so a fixed value looked wrong somewhere. Sit a constant small
+  // gap above whatever the system draws, never less than MIN_INPUT_BOTTOM_GAP.
   //
   // While the keyboard is open it covers that area entirely, so the inset is
   // irrelevant and the bar hugs the keyboard instead.
   const inputBarPaddingBottom = keyboardVisible
     ? spacing.xs
-    : Math.max(spacing.sm, MIN_INPUT_BOTTOM_GAP - insets.bottom);
+    : Math.max(MIN_INPUT_BOTTOM_GAP, insets.bottom + spacing.xs);
 
   return (
-    <SafeAreaView style={styles.container}>
+    <SafeAreaView style={styles.container} edges={['top', 'left', 'right']}>
       <Animated.View style={{ flex: 1, transform: [{ scale: contentScale }] }}>
         {/* Header */}
         <View style={styles.header}>
@@ -1708,7 +1708,7 @@ export const ChatScreen: React.FC<{ navigation: any; route: any }> = ({ navigati
         {/* Messages */}
         <KeyboardAvoidingView
           style={styles.chatArea}
-          behavior="padding"
+          behavior={Platform.OS === 'ios' ? 'padding' : undefined}
           keyboardVerticalOffset={0}
         >
           {loading ? (
@@ -1996,7 +1996,11 @@ export const ChatScreen: React.FC<{ navigation: any; route: any }> = ({ navigati
           onPress={() => closeMediaPicker()}
         >
           <Animated.View
-            style={[styles.mediaPickerSheet, { transform: [{ translateY: mediaSheetY.interpolate({ inputRange: [0, 1], outputRange: [0, 300] }) }] }]}
+            style={[
+              styles.mediaPickerSheet,
+              { paddingBottom: insets.bottom + spacing.xl },
+              { transform: [{ translateY: mediaSheetY.interpolate({ inputRange: [0, 1], outputRange: [0, 300] }) }] },
+            ]}
           >
             <View style={styles.mediaPickerHandle} />
             <Text style={styles.mediaPickerTitle}>Share</Text>
@@ -2378,29 +2382,34 @@ const styles = StyleSheet.create({
   centered: { flex: 1, justifyContent: 'center', alignItems: 'center' },
   messagesList: { padding: spacing.lg, paddingBottom: spacing.md },
   messageRow: {
+    width: '100%',
     flexDirection: 'row',
     gap: spacing.sm,
     marginBottom: spacing.sm,
     alignItems: 'flex-end',
+    justifyContent: 'flex-start',
   },
   messageRowMine: { justifyContent: 'flex-end' },
-  messageAvatar: { width: 28, height: 28, borderRadius: 14, marginBottom: 4 },
+  messageAvatar: { width: 28, height: 28, borderRadius: 14, marginBottom: 4, flexShrink: 0 },
   noMsgAvatar: { backgroundColor: colors.surface, justifyContent: 'center', alignItems: 'center' },
   messageBubble: {
     maxWidth: '75%',
+    flexShrink: 1,
     paddingHorizontal: spacing.md,
     paddingVertical: spacing.sm,
     borderRadius: radius.lg,
   },
   myBubble: {
+    marginLeft: 'auto',
     backgroundColor: colors.primary,
     borderBottomRightRadius: radius.sm,
   },
   theirBubble: {
+    marginRight: 'auto',
     backgroundColor: colors.surfaceHighlight,
     borderBottomLeftRadius: radius.sm,
   },
-  messageText: { ...typography.body2, color: colors.textPrimary },
+  messageText: { ...typography.body2, color: colors.textPrimary, flexShrink: 1 },
   myMessageText: { color: colors.textInverse },
   messageMeta: {
     flexDirection: 'row',
@@ -2793,7 +2802,6 @@ const styles = StyleSheet.create({
     borderTopRightRadius: radius.xl,
     paddingHorizontal: spacing.xxl,
     paddingTop: spacing.md,
-    paddingBottom: spacing.xxxl,
   },
   mediaPickerHandle: {
     width: 40,
