@@ -139,7 +139,17 @@ const OTP_SEND_FAILED = {
 };
 
 // ─── Refresh Token Helpers ───────────────────────────────────
-const REFRESH_TOKEN_TTL_DAYS = 30;
+// A signed-in user stays signed in until they sign out, uninstall, or the
+// account/database is removed. Each refresh rotates to a fresh token with a
+// fresh expiry, so this is only a ceiling on a device that never comes back.
+const REFRESH_TOKEN_TTL_DAYS = 3650;
+
+// A token that was just rotated may be presented again when the response
+// carrying its successor was lost (network drop, app killed mid-refresh) or
+// when two refreshes race. Inside this window that is treated as a retry and
+// a new pair is issued; outside it, it is treated as replay and the whole
+// family is revoked.
+const REFRESH_REUSE_GRACE_MS = 2 * 60 * 1000;
 
 function hashToken(token: string): string {
   return crypto.createHash('sha256').update(token).digest('hex');
@@ -154,7 +164,9 @@ async function storeRefreshToken(userId: string, tokenHash: string, familyId: st
   );
 }
 
-async function verifyRefreshToken(token: string): Promise<{ userId: string; familyId: string } | null> {
+async function verifyRefreshToken(
+  token: string,
+): Promise<{ userId: string; familyId: string; graceReuse: boolean } | null> {
   const tokenHash = hashToken(token);
   const result = await query(
     `SELECT user_id, family_id, revoked_at, expires_at
@@ -168,8 +180,15 @@ async function verifyRefreshToken(token: string): Promise<{ userId: string; fami
   // Token expired
   if (new Date(row.expires_at) < new Date()) return null;
 
-  // Token was revoked — possible replay attack, revoke entire family
   if (row.revoked_at) {
+    // Rotated moments ago: the client most likely never received the
+    // successor. Let it through once more as a retry.
+    const revokedAgo = Date.now() - new Date(row.revoked_at).getTime();
+    if (revokedAgo >= 0 && revokedAgo < REFRESH_REUSE_GRACE_MS) {
+      return { userId: row.user_id, familyId: row.family_id, graceReuse: true };
+    }
+
+    // Token was revoked well before this — possible replay attack, revoke entire family
     await query(
       `UPDATE refresh_tokens SET revoked_at = NOW()
        WHERE family_id = $1 AND revoked_at IS NULL`,
@@ -178,7 +197,7 @@ async function verifyRefreshToken(token: string): Promise<{ userId: string; fami
     return null;
   }
 
-  return { userId: row.user_id, familyId: row.family_id };
+  return { userId: row.user_id, familyId: row.family_id, graceReuse: false };
 }
 
 async function rotateRefreshToken(oldToken: string, newTokenHash: string): Promise<boolean> {
@@ -588,22 +607,32 @@ export async function authRoutes(app: FastifyInstance) {
       // Rotate: revoke old, issue new pair
       const newAccessToken = app.jwt.sign({ sub: user.id, phone: user.phone });
       const newRefreshToken = crypto.randomBytes(64).toString('hex');
-      const rotated = await rotateRefreshToken(refreshToken, hashToken(newRefreshToken));
-      if (!rotated) {
-        return reply.status(401).send({
-          success: false,
-          error: { code: ERROR_CODES.TOKEN_EXPIRED, message: 'Refresh token already used. Please login again.' },
-        });
+      if (payload.graceReuse) {
+        // The old token is already revoked; just add the new one to the family.
+        await storeRefreshToken(user.id, hashToken(newRefreshToken), payload.familyId);
+      } else {
+        const rotated = await rotateRefreshToken(refreshToken, hashToken(newRefreshToken));
+        if (!rotated) {
+          return reply.status(401).send({
+            success: false,
+            error: { code: ERROR_CODES.TOKEN_EXPIRED, message: 'Refresh token already used. Please login again.' },
+          });
+        }
       }
 
       return reply.send({
         success: true,
         data: { token: newAccessToken, refreshToken: newRefreshToken },
       });
-    } catch {
-      return reply.status(401).send({
+    } catch (err) {
+      // Anything thrown here is the server's problem (database unreachable or
+      // waking up, pool exhausted), not the client's. Answering 401 made the
+      // app discard a perfectly good session; a 503 tells it to keep the
+      // tokens and try again later.
+      request.log.error({ err }, 'Token refresh failed');
+      return reply.status(503).send({
         success: false,
-        error: { code: ERROR_CODES.TOKEN_EXPIRED, message: 'Token refresh failed. Please login again.' },
+        error: { code: ERROR_CODES.INTERNAL_ERROR, message: 'Server is busy. Please try again in a moment.' },
       });
     }
   });
