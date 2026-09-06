@@ -183,7 +183,6 @@ export const OTPVerifyScreen: React.FC<{ navigation: any }> = ({ navigation }) =
         <Text style={styles.subtitle}>
           A code has been sent to{'\n'}
           <Text style={styles.phone}>{maskedTarget}</Text>
-          {isEmail ? '\nIt can take a minute. Check your spam folder too.' : ''}
         </Text>
 
         {/* Digit boxes */}
@@ -204,6 +203,10 @@ export const OTPVerifyScreen: React.FC<{ navigation: any }> = ({ navigation }) =
             />
           ))}
         </View>
+
+        {isEmail && (
+          <Text style={styles.spamHint}>Not in your inbox? Check spam.</Text>
+        )}
 
         {/* Resend section */}
         <View style={styles.resendSection}>
@@ -319,6 +322,13 @@ const styles = StyleSheet.create({
   digitBoxFilled: {
     borderColor: colors.textPrimary,
     backgroundColor: colors.surface,
+  },
+  spamHint: {
+    ...typography.caption,
+    color: colors.textMuted,
+    textAlign: 'center',
+    marginTop: -spacing.md,
+    marginBottom: spacing.xxl,
   },
   // ─── Resend ─────────────────────────────────────────────
   resendSection: {
