@@ -1,6 +1,6 @@
 import React, { useState, useCallback } from 'react';
 import { View, Text, StyleSheet, ScrollView, KeyboardAvoidingView, Platform, TouchableOpacity } from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
+import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Button } from '../../components/common/Button';
 import { useToast } from '../../hooks/useToast';
 import { Input } from '../../components/common/Input';
@@ -74,6 +74,7 @@ function validateDob(dob: string): { valid: boolean; error?: string } {
 }
 
 export const IdentityScreen: React.FC<{ navigation: any }> = ({ navigation }) => {
+  const insets = useSafeAreaInsets();
   const [dob, setDob] = useState('');
   const [gender, setGender] = useState<string | null>(null);
   const [genderTouched, setGenderTouched] = useState(false);
@@ -136,11 +137,20 @@ export const IdentityScreen: React.FC<{ navigation: any }> = ({ navigation }) =>
   return (
     <SafeAreaView style={styles.container} edges={['top']}>
       <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === 'ios' ? 'padding' : 'height'} keyboardVerticalOffset={0}>
-      <ScrollView contentContainerStyle={styles.content} keyboardShouldPersistTaps="handled" bounces={false}>
+      {/* Heading stays put; only the fields below scroll. */}
+      <View style={styles.header}>
         <Text style={styles.step}>Step 1 of 6</Text>
         <Text style={styles.title}>Who are you?</Text>
         <Text style={styles.subtitle}>This helps us find your best matches</Text>
+      </View>
 
+      <ScrollView
+        style={styles.scroll}
+        contentContainerStyle={styles.content}
+        keyboardShouldPersistTaps="handled"
+        bounces={false}
+        showsVerticalScrollIndicator={false}
+      >
         <Input label="Date of Birth" value={dob} onChangeText={handleDobChange} placeholder="DD/MM/YYYY" keyboardType="numeric" maxLength={10} required syncOnChange />
 
         <Text style={styles.fieldLabel}>Gender *</Text>
@@ -195,11 +205,13 @@ export const IdentityScreen: React.FC<{ navigation: any }> = ({ navigation }) =>
         {datingCategoryError && <Text style={styles.fieldError}>{datingCategoryError}</Text>}
 
         <Input label="Pronouns" value={pronouns} onChangeText={setPronouns} placeholder="they/them, she/her, he/him" required />
-
-        <View style={styles.footer}>
-          <Button title="Continue" onPress={handleSubmit} loading={loading} fullWidth />
-        </View>
       </ScrollView>
+
+      {/* Continue is pinned below the scroll area. The SafeAreaView only
+        covers the top edge, so the footer pads past the bottom inset itself. */}
+      <View style={[styles.footer, { paddingBottom: Math.max(spacing.lg, insets.bottom + spacing.sm) }]}>
+        <Button title="Continue" onPress={handleSubmit} loading={loading} fullWidth />
+      </View>
       </KeyboardAvoidingView>
     </SafeAreaView>
   );
@@ -207,10 +219,12 @@ export const IdentityScreen: React.FC<{ navigation: any }> = ({ navigation }) =>
 
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: colors.background },
-  content: { padding: spacing.xxl },
+  header: { paddingHorizontal: spacing.xxl, paddingTop: spacing.xxl, paddingBottom: spacing.lg },
+  scroll: { flex: 1 },
+  content: { paddingHorizontal: spacing.xxl, paddingTop: spacing.sm, paddingBottom: spacing.xxl },
   step: { ...typography.label, color: colors.textPrimary, marginBottom: spacing.sm },
   title: { ...typography.h1, color: colors.textPrimary, marginBottom: spacing.sm },
-  subtitle: { ...typography.body1, color: colors.textSecondary, marginBottom: spacing.xxl },
+  subtitle: { ...typography.body1, color: colors.textSecondary },
   fieldLabel: { ...typography.label, color: colors.textSecondary, marginBottom: spacing.sm },
   genderGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: spacing.sm, marginBottom: spacing.lg },
   genderChip: {
@@ -234,5 +248,11 @@ const styles = StyleSheet.create({
   categoryChipText: { ...typography.body1, color: colors.textPrimary, fontWeight: '600' },
   categoryChipTextActive: { color: colors.textInverse },
   categoryChipDesc: { ...typography.caption, color: colors.textMuted, marginTop: 2 },
-  footer: { paddingTop: spacing.lg, paddingBottom: spacing.xxl },
+  footer: {
+    paddingHorizontal: spacing.xxl,
+    paddingTop: spacing.md,
+    borderTopWidth: 1,
+    borderTopColor: colors.surfaceHighlight,
+    backgroundColor: colors.background,
+  },
 });
