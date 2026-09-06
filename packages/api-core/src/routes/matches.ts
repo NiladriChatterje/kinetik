@@ -138,6 +138,7 @@ export async function matchRoutes(app: FastifyInstance) {
         u.education,
         u.pronouns,
         u.is_verified,
+        u.dating_category,
         u.about_answers,
         u.h3_index,
         u.latitude,
@@ -175,7 +176,7 @@ export async function matchRoutes(app: FastifyInstance) {
       const exploreSql = `
         SELECT
           u.id, u.display_name, u.date_of_birth, u.bio, u.occupation,
-          u.education, u.pronouns, u.is_verified, u.about_answers,
+          u.education, u.pronouns, u.is_verified, u.dating_category, u.about_answers,
           u.h3_index, u.latitude, u.longitude,
           ${distanceExpr} AS distance_km,
           -- Pending incoming like from this profile — the Explore grid shows
@@ -287,6 +288,8 @@ export async function matchRoutes(app: FastifyInstance) {
         occupation: row.occupation || undefined,
         education: row.education || undefined,
         pronouns: row.pronouns || undefined,
+        // What they said they are here for; shown as a badge on their card.
+        datingCategory: row.dating_category || undefined,
         photos: (photosByUser.get(row.id) || []).map((p: any) => ({
           id: p.id,
           url: p.url,
@@ -583,6 +586,7 @@ export async function matchRoutes(app: FastifyInstance) {
               u.bio,
               u.date_of_birth,
               u.is_verified,
+              u.dating_category,
               pp.url as photo_url,
               pp.thumbnail_url as thumbnail_url
        FROM ${TABLES.USER_INTERACTIONS} ui
@@ -617,6 +621,7 @@ export async function matchRoutes(app: FastifyInstance) {
       photoUrl: row.photo_url || undefined,
       thumbnailUrl: row.thumbnail_url || undefined,
       isVerified: row.is_verified,
+      datingCategory: row.dating_category || undefined,
       respondedAt: row.responded_at || undefined,
       isSuperLike: row.action === 'super_like',
     }));
