@@ -1,6 +1,6 @@
 import React, { useState, useCallback, useEffect } from 'react';
 import {
-  View, Text, StyleSheet, TouchableOpacity,
+  View, Text, StyleSheet, TouchableOpacity, TextInput,
   ActivityIndicator, ScrollView, Platform,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
@@ -13,6 +13,7 @@ import { api } from '../../services/api';
 import { colors, typography, spacing, radius } from '../../theme';
 
 const DOC_TYPES = [
+  { id: 'aadhaar', icon: 'finger-print-outline' as const, name: 'Aadhaar' },
   { id: 'passport', icon: 'id-card-outline' as const, name: 'Passport' },
   { id: 'license', icon: 'car-outline' as const, name: "Driver's License" },
   { id: 'national_id', icon: 'card-outline' as const, name: 'National ID' },
@@ -27,6 +28,7 @@ interface SelectedFile {
 
 type UploadPhase = 'idle' | 'uploading' | 'success' | 'error';
 type VerifyPhase = 'idle' | 'verifying' | 'matched' | 'no_match' | 'error';
+type AadhaarPhase = 'idle' | 'verifying' | 'verified' | 'failed';
 
 export const KYCScreen: React.FC<{ navigation: any; route?: any }> = ({ navigation, route }) => {
   // Check if accessed from settings (KYCVerify route) vs onboarding (KYC route)
@@ -41,6 +43,11 @@ export const KYCScreen: React.FC<{ navigation: any; route?: any }> = ({ navigati
   // False when the deployment intentionally runs without the face service —
   // the verify action is replaced by a "coming soon" note instead of erroring.
   const [faceVerifyAvailable, setFaceVerifyAvailable] = useState(true);
+  // Aadhaar offline e-KYC: only offered once the server has UIDAI's certificate.
+  const [aadhaarAvailable, setAadhaarAvailable] = useState(false);
+  const [shareCode, setShareCode] = useState('');
+  const [aadhaarPhase, setAadhaarPhase] = useState<AadhaarPhase>('idle');
+  const [aadhaarMessage, setAadhaarMessage] = useState<string | null>(null);
   const toast = useToast();
 
   useEffect(() => {
@@ -48,6 +55,7 @@ export const KYCScreen: React.FC<{ navigation: any; route?: any }> = ({ navigati
       .getKycStatus()
       .then((s) => {
         if (s.faceVerificationAvailable === false) setFaceVerifyAvailable(false);
+        if (s.aadhaarOfflineAvailable) setAadhaarAvailable(true);
       })
       .catch(() => {
         // Status fetch failed — keep the action visible; verify has its own errors
@@ -62,14 +70,16 @@ export const KYCScreen: React.FC<{ navigation: any; route?: any }> = ({ navigati
    * Also handles the edge case where assets is null/empty (common on some
    * Android devices where the file picker returns empty results).
    */
+  const isAadhaar = docType === 'aadhaar';
+
   const handlePickDocument = useCallback(async () => {
     try {
       const result = await DocumentPicker.getDocumentAsync({
-        type: [
-          'application/pdf',
-          'image/jpeg',
-          'image/png',
-        ],
+        // Android often labels the myAadhaar zip as octet-stream, so accept
+        // anything for Aadhaar and check the extension below.
+        type: isAadhaar
+          ? ['application/zip', 'application/x-zip-compressed', 'application/octet-stream', '*/*']
+          : ['application/pdf', 'image/jpeg', 'image/png'],
         copyToCacheDirectory: true,
       });
 
@@ -91,6 +101,10 @@ export const KYCScreen: React.FC<{ navigation: any; route?: any }> = ({ navigati
       // Derive a proper MIME type fallback from the file extension
       // when the picker doesn't provide one (common on some Android devices).
       const extension = asset.name?.split('.').pop()?.toLowerCase() || '';
+      if (isAadhaar && extension !== 'zip') {
+        toast.showError('Not a zip', 'Pick the .zip downloaded from myAadhaar.');
+        return;
+      }
       const extToMime: Record<string, string> = {
         pdf: 'application/pdf',
         jpg: 'image/jpeg',
@@ -118,11 +132,41 @@ export const KYCScreen: React.FC<{ navigation: any; route?: any }> = ({ navigati
       });
       setUploadPhase('idle');
       setUploadError(null);
+      setAadhaarPhase('idle');
+      setAadhaarMessage(null);
     } catch (err: any) {
       console.error('[KYC] Document picker error:', err);
       toast.showError('Selection failed', err?.message || 'Try again.');
     }
-  }, [toast]);
+  }, [toast, isAadhaar]);
+
+  /**
+   * Aadhaar Paperless Offline e-KYC: send the zip and share code, get back a
+   * verified flag. Nothing from the file is kept on the server.
+   */
+  const handleVerifyAadhaar = useCallback(async () => {
+    if (!selectedFile || shareCode.length !== 4 || aadhaarPhase === 'verifying') return;
+    setAadhaarPhase('verifying');
+    setAadhaarMessage(null);
+    try {
+      const result = await api.submitAadhaarOffline(selectedFile.uri, shareCode);
+      if (result.verified) {
+        setAadhaarPhase('verified');
+        setAadhaarMessage(
+          result.faceChecked
+            ? 'Your Aadhaar is signed by UIDAI and its photo matches your profile.'
+            : 'Your Aadhaar is signed by UIDAI and confirms you are 18 or older.',
+        );
+        toast.showSuccess('Verified!', 'Aadhaar verification complete.');
+      } else {
+        setAadhaarPhase('failed');
+        setAadhaarMessage(result.reason || 'Your Aadhaar photo did not match your profile photos.');
+      }
+    } catch (err: any) {
+      setAadhaarPhase('failed');
+      setAadhaarMessage(err?.message || 'Verification failed. Please try again.');
+    }
+  }, [selectedFile, shareCode, aadhaarPhase, toast]);
 
   /**
    * Upload the selected document to the backend.
@@ -185,7 +229,7 @@ export const KYCScreen: React.FC<{ navigation: any; route?: any }> = ({ navigati
     if (!isFromSettings) {
       // Onboarding flow — update step and navigate to main
       await api.updateOnboardingStep('complete', {
-        kycCompleted: uploadPhase === 'success' || verifyPhase === 'matched',
+        kycCompleted: uploadPhase === 'success' || verifyPhase === 'matched' || aadhaarPhase === 'verified',
         kycDocumentType: docType,
       });
       toast.showSuccess('Welcome!', 'Profile ready. Start matching!');
@@ -196,7 +240,7 @@ export const KYCScreen: React.FC<{ navigation: any; route?: any }> = ({ navigati
       navigation.goBack();
       toast.showSuccess('Settings saved', 'KYC settings updated.');
     }
-  }, [isFromSettings, uploadPhase, verifyPhase, docType, navigation, toast]);
+  }, [isFromSettings, uploadPhase, verifyPhase, aadhaarPhase, docType, navigation, toast]);
 
   // ─── Format file size ───────────────────────────────────
   const formatSize = (bytes: number): string => {
@@ -219,11 +263,17 @@ export const KYCScreen: React.FC<{ navigation: any; route?: any }> = ({ navigati
         {/* Document Type Selector */}
         <Text style={styles.fieldLabel}>Select Document Type</Text>
         <View style={styles.docOptions}>
-          {DOC_TYPES.map((doc) => (
+          {DOC_TYPES.filter((doc) => doc.id !== 'aadhaar' || aadhaarAvailable).map((doc) => (
             <TouchableOpacity
               key={doc.id}
               style={[styles.docOption, docType === doc.id && styles.docOptionActive]}
-              onPress={() => setDocType(doc.id)}
+              onPress={() => {
+                setDocType(doc.id);
+                setSelectedFile(null);
+                setUploadPhase('idle');
+                setAadhaarPhase('idle');
+                setAadhaarMessage(null);
+              }}
             >
               <Ionicons
                 name={doc.icon}
@@ -237,8 +287,88 @@ export const KYCScreen: React.FC<{ navigation: any; route?: any }> = ({ navigati
           ))}
         </View>
 
+        {/* Aadhaar Paperless Offline e-KYC */}
+        {isAadhaar && (
+          <>
+            <View style={styles.aadhaarSteps}>
+              <Text style={styles.aadhaarStep}>1. On myaadhaar.uidai.gov.in choose Offline eKYC.</Text>
+              <Text style={styles.aadhaarStep}>2. Set a 4 digit share code and download the zip.</Text>
+              <Text style={styles.aadhaarStep}>3. Pick that zip here and enter the same code.</Text>
+            </View>
+
+            <Text style={styles.fieldLabel}>e-KYC file</Text>
+            <TouchableOpacity
+              style={[
+                styles.uploadArea,
+                selectedFile && styles.uploadAreaSelected,
+                aadhaarPhase === 'verifying' && styles.uploadAreaDisabled,
+              ]}
+              onPress={handlePickDocument}
+              disabled={aadhaarPhase === 'verifying'}
+            >
+              {selectedFile ? (
+                <>
+                  <Ionicons name="checkmark-circle" size={36} color={colors.success} />
+                  <Text style={styles.fileName}>{selectedFile.name}</Text>
+                  <Text style={styles.fileSize}>{formatSize(selectedFile.size)}</Text>
+                  <Text style={styles.changeFileText}>Tap to change file</Text>
+                </>
+              ) : (
+                <>
+                  <Ionicons name="cloud-upload-outline" size={36} color={colors.textSecondary} />
+                  <Text style={styles.uploadPrompt}>Tap to select the zip</Text>
+                  <Text style={styles.uploadFormats}>Downloaded from myAadhaar</Text>
+                </>
+              )}
+            </TouchableOpacity>
+
+            <Text style={styles.fieldLabel}>Share code</Text>
+            <TextInput
+              style={styles.shareCodeInput}
+              value={shareCode}
+              onChangeText={(t) => setShareCode(t.replace(/[^0-9]/g, '').slice(0, 4))}
+              placeholder="4 digits"
+              placeholderTextColor={colors.textMuted}
+              keyboardType="number-pad"
+              maxLength={4}
+              secureTextEntry
+              editable={aadhaarPhase !== 'verifying'}
+            />
+
+            {aadhaarPhase !== 'verified' && (
+              <Button
+                title="Verify with Aadhaar"
+                onPress={handleVerifyAadhaar}
+                fullWidth
+                size="lg"
+                loading={aadhaarPhase === 'verifying'}
+                disabled={!selectedFile || shareCode.length !== 4}
+              />
+            )}
+
+            {aadhaarPhase === 'verified' && (
+              <View style={styles.matchResult}>
+                <Ionicons name="checkmark-circle" size={32} color={colors.success} />
+                <Text style={styles.matchTitle}>Aadhaar Verified</Text>
+                <Text style={styles.matchDetail}>{aadhaarMessage}</Text>
+              </View>
+            )}
+
+            {aadhaarPhase === 'failed' && aadhaarMessage && (
+              <View style={styles.errorContainer}>
+                <Ionicons name="alert-circle-outline" size={18} color={colors.error} />
+                <Text style={styles.errorText}>{aadhaarMessage}</Text>
+              </View>
+            )}
+
+            <Text style={styles.aadhaarNote}>
+              The file is checked against UIDAI's signature and then discarded. We keep only that you are verified.
+            </Text>
+          </>
+        )}
+
         {/* Document Picker Area */}
-        {docType && (
+        {docType && !isAadhaar && (
           <>
             <Text style={styles.fieldLabel}>Upload Document</Text>
             <TouchableOpacity
@@ -412,6 +542,35 @@ const styles = StyleSheet.create({
   title: { ...typography.h1, color: colors.textPrimary, marginBottom: spacing.sm },
   subtitle: { ...typography.body1, color: colors.textSecondary, marginBottom: spacing.xxl },
   fieldLabel: { ...typography.label, color: colors.textSecondary, marginBottom: spacing.sm },
+
+  // Aadhaar offline e-KYC
+  aadhaarSteps: {
+    backgroundColor: colors.surfaceHighlight,
+    borderRadius: radius.md,
+    padding: spacing.md,
+    gap: spacing.xs,
+    marginBottom: spacing.lg,
+  },
+  aadhaarStep: { ...typography.body2, color: colors.textSecondary, lineHeight: 19 },
+  shareCodeInput: {
+    backgroundColor: colors.inputBg,
+    borderWidth: 1,
+    borderColor: colors.inputBorder,
+    borderRadius: radius.md,
+    paddingHorizontal: spacing.md,
+    paddingVertical: spacing.md,
+    ...typography.body1,
+    color: colors.textPrimary,
+    letterSpacing: 6,
+    marginBottom: spacing.lg,
+  },
+  aadhaarNote: {
+    ...typography.caption,
+    color: colors.textMuted,
+    textAlign: 'center',
+    marginTop: spacing.md,
+    marginBottom: spacing.lg,
+  },
 
   // Document type options
   docOptions: { flexDirection: 'row', gap: spacing.md, marginBottom: spacing.xxl },

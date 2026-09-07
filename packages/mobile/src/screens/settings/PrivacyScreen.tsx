@@ -36,7 +36,8 @@ const SECTIONS: { title: string; icon: keyof typeof Ionicons.glyphMap; points: s
     points: [
       'Profile photos are resized and compressed on your phone. Only the compressed copy is stored.',
       'Face verification runs on your device. Your selfie never leaves the phone.',
-      'Your ID document is used only to verify you. It is never shown to other users.',
+      'Aadhaar e-KYC files are checked against UIDAI\'s signature and then discarded. We keep only a verified flag and your date of birth.',
+      'Any other ID document is used only to verify you and is never shown to other users.',
     ],
   },
   {

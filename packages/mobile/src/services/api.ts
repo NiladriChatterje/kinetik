@@ -710,8 +710,52 @@ class ApiClient {
     throw new Error(body?.error?.message || `Upload failed (HTTP ${result.status})`);
   }
 
+  /**
+   * Aadhaar Paperless Offline e-KYC: upload the myAadhaar zip with its share
+   * code. The server verifies UIDAI's signature, checks 18+, matches the
+   * photo, and keeps nothing but a verified flag.
+   */
+  async submitAadhaarOffline(uri: string, shareCode: string): Promise<{
+    verified: boolean;
+    faceChecked: boolean;
+    confidence?: number;
+    reason?: string;
+    kycStatus?: string;
+  }> {
+    const token = this.getToken();
+    const url = `${API_URL}/api/v1/kyc/aadhaar-offline`;
+
+    const result = await Promise.race([
+      FileSystem.uploadAsync(url, uri, {
+        httpMethod: 'POST',
+        uploadType: FileSystem.FileSystemUploadType.MULTIPART,
+        fieldName: 'file',
+        mimeType: 'application/zip',
+        parameters: { share_code: shareCode },
+        headers: {
+          ...(token ? { Authorization: `Bearer ${token}` } : {}),
+        },
+      }),
+      new Promise<never>((_, reject) =>
+        setTimeout(() => reject(new Error('Upload timed out. Please try again.')), 60000),
+      ),
+    ]);
+
+    let body: any;
+    try {
+      body = this.parseUploadBody(result.body, result.status);
+    } catch (e: any) {
+      throw new Error(e?.message || `Verification failed (HTTP ${result.status})`);
+    }
+    if (result.status >= 200 && result.status < 300 && body?.success) {
+      return body.data;
+    }
+    throw new Error(body?.error?.message || `Verification failed (HTTP ${result.status})`);
+  }
+
   async getKycStatus(): Promise<{
     kycStatus: string;
+    aadhaarOfflineAvailable?: boolean;
     latestDocument: {
       id: string;
       document_type: string;
