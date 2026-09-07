@@ -63,7 +63,7 @@ const SETTINGS = [
   { icon: 'notifications-outline' as const, label: 'Notifications', screen: 'NotificationPreferences' as const },
   { icon: 'people-outline' as const, label: 'Duo Wingman', screen: 'DuoWingman' as const },
   { icon: 'shield-checkmark-outline' as const, label: 'KYC Verification', screen: 'KYCVerify' as const },
-  { icon: 'lock-closed-outline' as const, label: 'Privacy', screen: undefined },
+  { icon: 'lock-closed-outline' as const, label: 'Privacy', screen: 'Privacy' as const },
   { icon: 'card-outline' as const, label: 'Subscription', screen: 'SubscriptionCheckout' as const },
   { icon: 'mail-outline' as const, label: 'Support', screen: undefined, action: 'support' as const },
 ];
