@@ -343,6 +343,38 @@ export async function deleteAllUserPhotos(userId: string): Promise<void> {
 }
 
 /**
+ * Delete every KYC document a user uploaded (objects under `kyc/{userId}/`).
+ * Called on account deletion so the ID file itself goes, not just its row.
+ */
+export async function deleteAllUserKycDocuments(userId: string): Promise<void> {
+  const client = getS3Client();
+
+  const listed = await client.send(
+    new ListObjectsV2Command({
+      Bucket: BUCKET,
+      Prefix: `kyc/${userId}/`,
+    }),
+  );
+
+  if (!listed.Contents?.length) return;
+
+  await Promise.all(
+    listed.Contents.map((obj) =>
+      client
+        .send(
+          new DeleteObjectCommand({
+            Bucket: BUCKET,
+            Key: obj.Key!,
+          }),
+        )
+        .catch(() => {}),
+    ),
+  );
+
+  console.log(`[photoStorage] Deleted ${listed.Contents.length} KYC objects for user ${userId}`);
+}
+
+/**
  * Delete a single chat media file from MinIO by its storage key.
  * Used for one-time view media cleanup after the media has been viewed.
  * The key should be the full path within the bucket (e.g. "chat/{userId}/{fileId}.enc").

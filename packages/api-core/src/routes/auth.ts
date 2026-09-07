@@ -4,7 +4,7 @@ import crypto from 'crypto';
 import { z } from 'zod';
 import { ERROR_CODES, transaction, TABLES, geoToH3 } from '@kinetik/shared';
 import { createUser, findUserByPhone, findUserByEmail, findUserById, createSubscription, updateUser, getSubscription, query } from '../services/database';
-import { deleteAllUserPhotos, deleteChatFile } from '../services/photoStorage';
+import { deleteAllUserPhotos, deleteAllUserKycDocuments, deleteChatFile } from '../services/photoStorage';
 import { isPlayBillingConfigured, cancelSubscription } from '../services/playBilling';
 import { eventBus } from '../services/eventBus';
 import { sendOtpSms, isSmsConfigured } from '../services/sms';
@@ -803,6 +803,11 @@ export async function authRoutes(app: FastifyInstance) {
       // ── Post-commit best-effort cleanup (non-critical) ──
       await deleteAllUserPhotos(userId).catch((err: Error) => {
         console.error(`[DeleteAccount] Failed to delete MinIO photos for ${userId}:`, err.message);
+      });
+      // The ID document is the most sensitive file we hold; the row went in
+      // the transaction above, this removes the file itself.
+      await deleteAllUserKycDocuments(userId).catch((err: Error) => {
+        console.error(`[DeleteAccount] Failed to delete KYC documents for ${userId}:`, err.message);
       });
       for (const url of chatMediaUrls) {
         const key = chatMediaKeyFromUrl(url);
