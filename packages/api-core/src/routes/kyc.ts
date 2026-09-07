@@ -2,6 +2,12 @@ import { FastifyInstance, FastifyRequest, FastifyReply } from 'fastify';
 import { v4 as uuidv4 } from 'uuid';
 import { ERROR_CODES } from '@kinetik/shared';
 import { query, TABLES } from '../services/database';
+import {
+  AadhaarOfflineError,
+  ageOn,
+  isAadhaarOfflineConfigured,
+  verifyOfflineEkyc,
+} from '../services/aadhaarOffline';
 
 // ─── MinIO constants (reuse same S3 client pattern as photoStorage) ─
 
@@ -223,7 +229,160 @@ export async function kycRoutes(app: FastifyInstance) {
         // intentionally skips the face service) — the app hides the verify
         // action instead of showing 502s. Unset env still means localhost dev.
         faceVerificationAvailable: (process.env.POSE_SERVICE_URL ?? 'http://localhost:3004') !== '',
+        // True once the UIDAI signing certificate is present on the server.
+        aadhaarOfflineAvailable: isAadhaarOfflineConfigured(),
       },
+    });
+  });
+
+  // ─── Aadhaar Paperless Offline e-KYC ─────────────────────
+  // The user uploads the zip from myAadhaar plus their 4-digit share code.
+  // We verify UIDAI's signature, take the date of birth and photo, confirm
+  // 18+, match the photo against the profile photos, and keep only: a
+  // verified flag, the date of birth, and a hash to stop one Aadhaar
+  // verifying many accounts. The zip, XML and photo are never written to
+  // disk or object storage.
+  app.post('/aadhaar-offline', async (request: FastifyRequest, reply: FastifyReply) => {
+    const { sub: userId } = request.user as any;
+
+    if (!isAadhaarOfflineConfigured()) {
+      return reply.status(503).send({
+        success: false,
+        error: { code: 'AADHAAR_UNAVAILABLE', message: 'Aadhaar verification is not available yet.' },
+      });
+    }
+
+    let zipBuffer: Buffer | null = null;
+    let shareCode = '';
+    for await (const part of request.parts()) {
+      if (part.type === 'field') {
+        if (part.fieldname === 'share_code') shareCode = String(part.value ?? '').trim();
+      } else if (part.type === 'file') {
+        const chunks: Buffer[] = [];
+        for await (const chunk of part.file) chunks.push(chunk);
+        zipBuffer = Buffer.concat(chunks);
+      }
+    }
+    if (!zipBuffer || zipBuffer.length === 0) {
+      return reply.status(400).send({
+        success: false,
+        error: { code: 'NO_FILE', message: 'Attach the zip downloaded from myAadhaar.' },
+      });
+    }
+    if (zipBuffer.length > 5 * 1024 * 1024) {
+      return reply.status(400).send({
+        success: false,
+        error: { code: 'FILE_TOO_LARGE', message: 'That file is too large to be an Aadhaar e-KYC zip.' },
+      });
+    }
+
+    // ─── 1. Signature + fields ────────────────────────────
+    let ekyc;
+    try {
+      ekyc = verifyOfflineEkyc(zipBuffer, shareCode);
+    } catch (err: any) {
+      if (err instanceof AadhaarOfflineError) {
+        const status = err.code === 'NOT_CONFIGURED' ? 503 : 400;
+        return reply.status(status).send({ success: false, error: { code: err.code, message: err.message } });
+      }
+      throw err;
+    }
+
+    // ─― 2. Age gate from the signed date of birth ─────────
+    if (ageOn(ekyc.dateOfBirth) < 18) {
+      return reply.status(403).send({
+        success: false,
+        error: { code: 'UNDERAGE', message: 'You must be 18 or older to use Kinetik.' },
+      });
+    }
+
+    // ─── 3. One Aadhaar, one account ──────────────────────
+    const dup = await query(
+      `SELECT id FROM ${TABLES.USERS} WHERE aadhaar_ref_hash = $1 AND id <> $2 LIMIT 1`,
+      [ekyc.identityHash, userId],
+    );
+    if (dup.rows.length > 0) {
+      return reply.status(409).send({
+        success: false,
+        error: { code: 'AADHAAR_ALREADY_USED', message: 'This Aadhaar is already verified on another account.' },
+      });
+    }
+
+    // ─── 4. Face on the Aadhaar photo vs profile photos ───
+    // Mandatory whenever the face service is deployed. When POSE_SERVICE_URL
+    // is explicitly empty (service intentionally not deployed) the signature
+    // and age checks stand on their own and faceChecked is reported false.
+    const poseServiceUrl = process.env.POSE_SERVICE_URL ?? 'http://localhost:3004';
+    let faceChecked = false;
+    let confidence: number | undefined;
+    if (poseServiceUrl !== '') {
+      if (!ekyc.photoBase64) {
+        return reply.status(400).send({
+          success: false,
+          error: { code: 'NO_PHOTO', message: 'The e-KYC file has no photo. Download it again from myAadhaar.' },
+        });
+      }
+      const photosResult = await query(
+        `SELECT url FROM ${TABLES.PROFILE_PHOTOS} WHERE user_id = $1 ORDER BY created_at ASC`,
+        [userId],
+      );
+      const profilePhotoUrls: string[] = photosResult.rows.map((r: any) => r.url);
+      if (profilePhotoUrls.length < 2) {
+        return reply.status(400).send({
+          success: false,
+          error: { code: 'NOT_ENOUGH_PHOTOS', message: 'Add at least 2 profile photos first.' },
+        });
+      }
+      let result: { match: boolean; confidence: number; rejection_reasons?: string[] };
+      try {
+        const res = await fetch(`${poseServiceUrl}/verify-document-face`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            user_id: userId,
+            document_image: ekyc.photoBase64,
+            profile_photo_urls: profilePhotoUrls,
+            min_match_threshold: 0.55,
+          }),
+          signal: AbortSignal.timeout(30000),
+        });
+        if (!res.ok) throw new Error(`pose-service ${res.status}`);
+        result = (await res.json()) as typeof result;
+      } catch (err: any) {
+        console.error(`[kyc] Aadhaar face match unavailable for ${userId}: ${err?.message || err}`);
+        return reply.status(502).send({
+          success: false,
+          error: { code: 'VERIFICATION_SERVICE_ERROR', message: 'Verification service temporarily unavailable.' },
+        });
+      }
+      faceChecked = true;
+      confidence = result.confidence;
+      if (!result.match) {
+        return reply.send({
+          success: true,
+          data: {
+            verified: false,
+            faceChecked,
+            confidence,
+            reason: result.rejection_reasons?.[0] || 'Your Aadhaar photo did not match your profile photos.',
+          },
+        });
+      }
+    }
+
+    // ─── 5. Persist only what the app needs ───────────────
+    await query(
+      `UPDATE ${TABLES.USERS}
+       SET kyc_status = 'verified', is_verified = TRUE,
+           date_of_birth = $2, aadhaar_ref_hash = $3
+       WHERE id = $1`,
+      [userId, ekyc.dateOfBirth, ekyc.identityHash],
+    );
+    console.log(`[kyc] Aadhaar offline e-KYC verified for ${userId} (faceChecked=${faceChecked})`);
+
+    return reply.send({
+      success: true,
+      data: { verified: true, faceChecked, confidence, kycStatus: 'verified' },
     });
   });
 

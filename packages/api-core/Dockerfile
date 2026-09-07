@@ -18,6 +18,7 @@ RUN npm install
 # Copy source files
 COPY packages/shared/src ./packages/shared/src
 COPY packages/api-core/src ./packages/api-core/src
+COPY packages/api-core/certs ./packages/api-core/certs
 
 # Build shared first, then the service
 # tsc exits code 2 for type warnings but still emits valid JS to dist/
@@ -37,6 +38,7 @@ COPY --from=builder /app/packages/shared/dist ./packages/shared/dist
 # Service package (built output + metadata)
 COPY --from=builder /app/packages/api-core/package.json ./packages/api-core/
 COPY --from=builder /app/packages/api-core/dist ./packages/api-core/dist
+COPY --from=builder /app/packages/api-core/certs ./packages/api-core/certs
 
 # Install production dependencies (preserves workspace links via root package.json)
 RUN npm install --omit=dev

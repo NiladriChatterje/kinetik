@@ -19,6 +19,8 @@
     "@fastify/rate-limit": "^9.1.0",
     "@getbrevo/brevo": "^6.0.3",
     "@kinetik/shared": "0.1.0",
+    "@xmldom/xmldom": "^0.9.12",
+    "adm-zip": "^0.5.18",
     "bcrypt": "^5.1.1",
     "blurhash": "^2.0.5",
     "country-state-city": "^3.2.1",
@@ -30,9 +32,11 @@
     "sharp": "^0.35.2",
     "twilio": "^6.0.2",
     "uuid": "^9.0.0",
+    "xml-crypto": "^6.1.2",
     "zod": "^3.22.4"
   },
   "devDependencies": {
+    "@types/adm-zip": "^0.5.8",
     "@types/bcrypt": "^5.0.2",
     "@types/node": "^20.11.0",
     "@types/pg": "^8.10.9",
