@@ -267,7 +267,7 @@ const STEPS = [
   {
     num: '03',
     title: 'Talk',
-    body: 'Real-time chat with read receipts, typing indicators, voice notes and calls. Stuck for a reply? Tap a suggestion or an icebreaker and keep it moving.',
+    body: 'Real-time chat with read receipts, typing indicators and voice notes. Stuck for a reply? Tap a suggestion or an icebreaker and keep it moving.',
   },
   {
     num: '04',
@@ -808,7 +808,7 @@ const FEATURES: { Icon: IconType; title: string; body: string }[] = [
   {
     Icon: FiZap,
     title: 'Real-time chat',
-    body: 'Read receipts, typing indicators and push notifications, plus voice notes, view-once photos and in-app calls.',
+    body: 'Read receipts, typing indicators and push notifications, plus voice notes and view-once photos.',
   },
   {
     Icon: FiUserCheck,
