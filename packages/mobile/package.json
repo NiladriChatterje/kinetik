@@ -46,6 +46,7 @@
     "expo-status-bar": "~57.0.1",
     "expo-system-ui": "~57.0.2",
     "jpeg-js": "^0.4.4",
+    "llama.rn": "^0.12.9",
     "react": "19.2.3",
     "react-native": "0.86.2",
     "react-native-fast-tflite": "^3.0.1",
@@ -62,5 +63,8 @@
     "@types/react": "~19.2.14",
     "patch-package": "^8.0.1",
     "typescript": "~6.0.3"
+  },
+  "allowScripts": {
+    "llama.rn@0.12.9": true
   }
 }

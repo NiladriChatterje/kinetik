@@ -103,6 +103,7 @@ import { NotificationHandler } from '../hooks/useNotifications';
 // Settings
 import { NotificationPreferencesScreen } from '../screens/settings/NotificationPreferencesScreen';
 import { PrivacyScreen } from '../screens/settings/PrivacyScreen';
+import { ReplyAssistantScreen } from '../screens/settings/ReplyAssistantScreen';
 
 export type RootStackParamList = {
   Auth: undefined;
@@ -110,6 +111,7 @@ export type RootStackParamList = {
   Main: undefined;
   NotificationPreferences: undefined;
   Privacy: undefined;
+  ReplyAssistant: undefined;
   LockStatus: { matchId: string; partnerName: string };
   CalendarSync: { matchId: string };
   VenueSelector: { matchId: string };
@@ -335,6 +337,7 @@ export function RootNavigator() {
         <RootStack.Screen name="DoubleDate" component={DoubleDateScreen} />
         <RootStack.Screen name="NotificationPreferences" component={NotificationPreferencesScreen} />
         <RootStack.Screen name="Privacy" component={PrivacyScreen} />
+        <RootStack.Screen name="ReplyAssistant" component={ReplyAssistantScreen} />
         <RootStack.Screen name="KYCVerify" component={KYCScreen} />
         <RootStack.Screen name="SubscriptionCheckout" component={SubscriptionCheckoutScreen} />
       </RootStack.Navigator>

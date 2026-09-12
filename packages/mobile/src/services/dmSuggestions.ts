@@ -1,34 +1,27 @@
 /**
  * Ambient DM reply suggestions — two tiers, always safe.
  *
- * Tier A (on-device LLM): a tiny instruct model (Qwen2.5 0.5B, Q4 GGUF,
- * ~400 MB) reads the last 20 messages and writes 3 strategic replies.
- * The conversation never leaves the device. Model: LFM2-1.2B (Liquid AI),
- * chosen for edge inference — ~2x the prefill/decode throughput of
- * same-size transformers, so it reads the 20-message history fast.
- *
- * Tier A is currently DORMANT — llama.rn was removed from package.json by
- * request. To re-enable, ALL THREE steps are required:
- *   1. `npm i llama.rn` (needs Linux/EAS or working tar on Windows)
- *   2. add "llama.rn" back to app.json "plugins"
- *   3. in tryRequire() below, switch the llama.rn case back to a STATIC
- *      `require('llama.rn')` — Metro only bundles statically required
- *      modules, so the eval guard used while the package is absent would
- *      otherwise keep Tier A dead even after installing
- * then rebuild the dev client. Until then Tier B serves every device.
+ * Tier A (on-device LLM): LFM2-1.2B (Liquid AI, Q4_K_M GGUF, ~730 MB) reads
+ * the last 20 messages and writes 3 strategic replies. The conversation never
+ * leaves the device. The model is NOT bundled with the app — the way a game
+ * fetches a map only when you pick it, replyAssistant.ts downloads the
+ * weights when the user asks (the offer above the chat input, or Profile →
+ * Reply assistant). This file loads the model lazily the first time
+ * suggestions are wanted after that download is complete, and releases it
+ * when the app goes to the background or the model is deleted.
  *
  * Tier B (heuristics): a zero-weight rule engine — who spoke last, question
  * detection, message energy, conversation age — picks from a curated bank of
- * re-engagement and momentum lines. Runs instantly on any device.
+ * re-engagement and momentum lines. Runs instantly on any device, and always
+ * fills the chips first; Tier A only ever replaces them.
  *
- * Every native access is guarded: any missing module, failed download, or
- * slow generation silently degrades to Tier B. This file must never throw.
+ * Every native access is guarded: a missing module, a phone without the
+ * model, or slow generation silently degrades to Tier B. This file must
+ * never throw.
  */
+import { AppState } from 'react-native';
+import { getModelUri, isDeviceEligible, subscribeReplyAssistant } from './replyAssistant';
 
-const MODEL_URL =
-  'https://huggingface.co/LiquidAI/LFM2-1.2B-GGUF/resolve/main/LFM2-1.2B-Q4_K_M.gguf';
-const MODEL_FILE = 'LFM2-1.2B-Q4_K_M.gguf';
-const MIN_RAM_BYTES = 4 * 1024 * 1024 * 1024;
 const LLM_TIMEOUT_MS = 25000;
 
 export interface SuggestionMessage {
@@ -37,127 +30,84 @@ export interface SuggestionMessage {
   createdAt?: string;
 }
 
-// ─── Guarded module access ────────────────────────────────
-// Static literal requires so Metro bundles the JS of each module; the
-// try/catch guards builds whose NATIVE side predates these packages —
-// there the require (or first native call) throws and we serve Tier B.
-
-type OptionalModule = 'llama.rn' | 'expo-device' | 'expo-network' | 'expo-file-system/legacy';
-
-function tryRequire(name: OptionalModule): any | null {
-  try {
-    switch (name) {
-      case 'llama.rn': {
-        // llama.rn is NOT installed — the eval keeps Metro from trying to
-        // resolve it at bundle time. When reinstalling, replace this case
-        // with a static `return require('llama.rn')` (see header note 3).
-        // eslint-disable-next-line no-eval
-        const req: any = eval('require');
-        return req('llama.rn');
-      }
-      case 'expo-device':
-        return require('expo-device');
-      case 'expo-network':
-        return require('expo-network');
-      case 'expo-file-system/legacy':
-        return require('expo-file-system/legacy');
-    }
-  } catch {
-    // fall through
-  }
-  return null;
-}
-
 // ─── Tier A: on-device LLM ────────────────────────────────
 
+let llamaModule: any | null | undefined; // undefined = not tried yet
+
+function loadLlama(): any | null {
+  if (llamaModule !== undefined) return llamaModule;
+  try {
+    // Static literal require so Metro bundles llama.rn. A build whose native
+    // side predates the package throws here (or on the first call) and
+    // Tier B serves that device.
+    llamaModule = require('llama.rn');
+  } catch {
+    llamaModule = null;
+  }
+  return llamaModule;
+}
+
 let llamaContext: any | null = null;
+let llamaLoading: Promise<any | null> | null = null;
 let llamaUnavailable = false;
-let modelDownloadStarted = false;
 
-function getDeviceRamBytes(): number {
+async function releaseLlama(): Promise<void> {
+  const ctx = llamaContext;
+  llamaContext = null;
+  llamaLoading = null;
+  if (!ctx) return;
   try {
-    const Device = tryRequire('expo-device');
-    return Device?.totalMemory ?? 0;
+    await ctx.release();
   } catch {
-    return 0;
+    // already gone
   }
 }
 
-async function isOnWifi(): Promise<boolean> {
-  try {
-    const Network = tryRequire('expo-network');
-    if (!Network?.getNetworkStateAsync) return false;
-    const state = await Network.getNetworkStateAsync();
-    return state?.type === Network.NetworkStateType?.WIFI;
-  } catch {
-    return false;
-  }
-}
-
-function getModelPath(): string | null {
-  try {
-    const fs = tryRequire('expo-file-system/legacy');
-    if (!fs?.documentDirectory) return null;
-    return `${fs.documentDirectory}${MODEL_FILE}`;
-  } catch {
-    return null;
-  }
-}
-
-/**
- * Kick off the one-time model download when the device qualifies and is on
- * Wi-Fi. Fire-and-forget: until the file exists, Tier B serves suggestions.
- */
-async function ensureModelDownloaded(): Promise<string | null> {
-  const path = getModelPath();
-  if (!path) return null;
-  try {
-    const fs = tryRequire('expo-file-system/legacy');
-    const info = await fs.getInfoAsync(path);
-    if (info?.exists) return path;
-    if (modelDownloadStarted) return null;
-    if (!(await isOnWifi())) return null;
-    modelDownloadStarted = true;
-    fs.downloadAsync(MODEL_URL, path)
-      .then(() => console.log('[dmSuggestions] LLM model downloaded'))
-      .catch((err: any) => {
-        modelDownloadStarted = false;
-        console.warn('[dmSuggestions] Model download failed:', err?.message);
-      });
-    return null;
-  } catch {
-    return null;
-  }
-}
+// The model is ~800 MB resident. Free it when the user deletes the download
+// and whenever the app leaves the foreground; the next chat reloads it.
+subscribeReplyAssistant((s) => {
+  if (s.phase !== 'ready' && llamaContext) void releaseLlama();
+});
+AppState.addEventListener('change', (next) => {
+  if (next === 'background') void releaseLlama();
+});
 
 async function getLlamaContext(): Promise<any | null> {
   if (llamaUnavailable) return null;
   if (llamaContext) return llamaContext;
+  if (llamaLoading) return llamaLoading;
 
-  if (getDeviceRamBytes() < MIN_RAM_BYTES) {
+  const modelUri = getModelUri();
+  if (!modelUri) return null; // not downloaded — Tier B until the user opts in
+  if (!isDeviceEligible()) {
     llamaUnavailable = true;
     return null;
   }
-  const llama = tryRequire('llama.rn');
+  const llama = loadLlama();
   if (!llama?.initLlama) {
     llamaUnavailable = true;
     return null;
   }
-  const modelPath = await ensureModelDownloaded();
-  if (!modelPath) return null; // downloading or not on Wi-Fi yet — retry later
 
-  try {
-    llamaContext = await llama.initLlama({
-      model: modelPath,
-      n_ctx: 1024,
-      n_gpu_layers: 0,
-    });
-    return llamaContext;
-  } catch (err: any) {
-    console.warn('[dmSuggestions] LLM init failed:', err?.message);
-    llamaUnavailable = true;
-    return null;
-  }
+  llamaLoading = (async () => {
+    try {
+      const ctx = await llama.initLlama({
+        model: modelUri.replace(/^file:\/\//, ''),
+        n_ctx: 1024,
+        n_gpu_layers: 0,
+        use_mlock: false,
+      });
+      llamaContext = ctx;
+      return ctx;
+    } catch (err: any) {
+      console.warn('[dmSuggestions] LLM init failed:', err?.message);
+      llamaUnavailable = true;
+      return null;
+    } finally {
+      llamaLoading = null;
+    }
+  })();
+  return llamaLoading;
 }
 
 async function llmSuggestions(
