@@ -98,6 +98,7 @@ export const TABLES = {
   RESERVATIONS: 'reservations',
   DUO_CREWS: 'duo_crews',
   SUBSCRIPTION_LEDGER: 'subscription_ledger',
+  PLAY_PENDING_PURCHASES: 'play_pending_purchases',
   TRANSACTIONS: 'transactions',
   USER_INTERACTIONS: 'user_interactions',
   KYC_DOCUMENTS: 'kyc_documents',

@@ -11,7 +11,11 @@ import {
   cancelSubscription,
   PREMIUM_PLAN_PERIOD,
 } from '../services/playBilling';
-import { applyPlayEntitlement, findUserByPurchaseToken } from '../services/subscriptionEntitlement';
+import {
+  applyPlayEntitlement,
+  findUserByPurchaseToken,
+  recordPendingPurchase,
+} from '../services/subscriptionEntitlement';
 
 const VerifyPurchaseSchema = z.object({
   // Opaque token from the Play purchase: Purchase.purchaseToken
@@ -180,7 +184,13 @@ export async function paymentRoutes(app: FastifyInstance) {
     // UPI Autopay mandates are not always confirmed when the sheet closes.
     // Granting Premium here would hand out a free month if the mandate then
     // fails — wait for the RTDN that resolves it.
+    //
+    // That notification carries only the purchase token, so the token has to
+    // be bound to this account NOW or the webhook cannot tell whose purchase
+    // completed and Premium would only ever arrive if the user happened to
+    // reopen the checkout screen before Google's three-day refund.
     if (playSub.state === 'SUBSCRIPTION_STATE_PENDING') {
+      await recordPendingPurchase(userId, purchaseToken, playSub.productId ?? productId ?? null);
       return reply.send({
         success: true,
         data: { verified: true, activated: false, pending: true, state: playSub.state },

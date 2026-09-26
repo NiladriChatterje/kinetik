@@ -129,8 +129,14 @@ subscribe → sheet → verify → Premium granted → renewal (accelerated) →
 - **Acknowledge within 3 days.** Google auto-refunds and revokes anything unacknowledged. The
   server acknowledges immediately after granting, and the RTDN path retries if that failed.
 - **UPI Autopay can return `SUBSCRIPTION_STATE_PENDING`.** The mandate is not confirmed when the
-  sheet closes. `/subscription/verify` responds `pending: true` and grants nothing; the app leaves
-  the transaction unfinished and Premium arrives via RTDN once the bank confirms.
+  sheet closes. `/subscription/verify` responds `pending: true` and grants nothing, but it does
+  bind the purchase token to the account in `play_pending_purchases` (migration 023). That matters
+  because the RTDN that follows carries only the token: without the binding the webhook could not
+  tell whose purchase completed, and Premium would only arrive if the user reopened the checkout
+  screen before Google's three-day auto-refund. The app sends pending purchases to the server too
+  and leaves the transaction unfinished; when the bank confirms, the webhook finds the user through
+  the pending row, grants Premium, acknowledges, and removes the row. A mandate the bank rejects
+  is removed the same way without touching the ledger.
 - **Cancellation is a server operation**, via
   [`subscriptionsv2.cancel`](https://developers.google.com/android-publisher/api-ref/rest/v3/purchases.subscriptionsv2/cancel).
   `POST /subscription/cancel` uses `USER_REQUESTED_STOP_RENEWALS`, which stops the next renewal

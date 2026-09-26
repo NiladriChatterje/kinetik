@@ -153,9 +153,13 @@ export const SubscriptionCheckoutScreen: React.FC = () => {
     let cancelled = false;
 
     const purchaseSub = purchaseUpdatedListener(async (purchase: any) => {
-      // Android reports 'pending' for a purchase awaiting a UPI mandate; only
-      // a completed one is worth sending to the server.
-      if (purchase?.purchaseState && purchase.purchaseState !== 'purchased') return;
+      // Android reports 'pending' for a purchase awaiting a UPI mandate. It is
+      // still sent to the server: nothing is granted for it, but the server
+      // records which account it belongs to, so the Play notification that
+      // arrives when the bank confirms can activate Premium even if this
+      // screen is never opened again. redeemPurchase leaves a pending
+      // transaction unfinished.
+      if (!purchase?.purchaseToken) return;
       try {
         await redeemPurchase(purchase);
       } catch (error: any) {
