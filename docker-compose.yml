@@ -258,9 +258,16 @@ services:
 
   # ─── MinIO Object Storage (S3-compatible) ──────────────
   minio:
-    image: minio/minio:latest
+    # minio/minio and minio/mc were removed from Docker Hub in 2026 and MinIO's
+    # own registry (quay.io) now needs a login. Chainguard publishes a public
+    # build of the same server binary; the image is distroless apart from bash.
+    image: chainguard/minio:latest
     container_name: kinetik-minio
     restart: unless-stopped
+    # The image runs as uid 65532, but a fresh named volume is created owned
+    # by root, so the server cannot initialise /data ("file access denied").
+    # The upstream image ran as root too, so nothing changes security-wise.
+    user: "0:0"
     command: server /data --console-address ":9001"
     ports:
       - "${MINIO_PORT:-9000}:9000"
@@ -271,7 +278,16 @@ services:
     volumes:
       - minio-data:/data
     healthcheck:
-      test: [ "CMD", "curl", "-f", "http://localhost:9000/minio/health/live" ]
+      # No curl or wget in the image; bash's /dev/tcp does the HTTP probe.
+      # HTTP/1.1 with a Host header is required — MinIO answers 400 otherwise.
+      test:
+        - "CMD"
+        - "bash"
+        - "-c"
+        - >-
+          exec 3<>/dev/tcp/127.0.0.1/9000 &&
+          printf 'GET /minio/health/live HTTP/1.1\r\nHost: localhost\r\nConnection: close\r\n\r\n' >&3 &&
+          read -r line <&3 && [[ "$$line" == *" 200 "* ]]
       interval: 10s
       timeout: 5s
       retries: 5
@@ -286,7 +302,9 @@ services:
 
   # ─── MinIO Bucket Setup (runs once on startup) ──────────
   minio-init:
-    image: minio/mc:latest
+    # minio/mc is gone from Docker Hub as well. Bitnami's frozen legacy build
+    # ships the same mc binary on PATH and a /bin/sh for the script below.
+    image: bitnamilegacy/minio-client:latest
     container_name: kinetik-minio-init
     restart: "no"
     entrypoint: [ "/bin/sh", "-c" ]
