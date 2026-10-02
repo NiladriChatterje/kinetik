@@ -26,6 +26,14 @@ import { v4 as uuidv4 } from 'uuid';
 import { encode } from 'blurhash';
 import { encryptBuffer, decryptBuffer } from '@kinetik/shared';
 
+// ─── sharp tuning for the 0.5 CPU / 256 MB api-core container ────────
+// Every image here is processed exactly once, so libvips's operation cache
+// (50 MB by default) never gets a hit and only adds to resident memory.
+// A single worker thread matches the CPU quota; more threads would only
+// contend with each other and raise peak memory per upload.
+sharp.cache(false);
+sharp.concurrency(1);
+
 // ─── Constants ───────────────────────────────────────────────────────
 
 const ENDPOINT = process.env.MINIO_ENDPOINT || 'localhost:9000';
@@ -125,36 +133,20 @@ export async function savePhoto(
     .webp({ quality: opts.lossless === false ? 82 : 88, effort: 4 })
     .toBuffer();
 
-  await client.send(
-    new PutObjectCommand({
-      Bucket: BUCKET,
-      Key: fullKey,
-      Body: fullBuffer,
-      ContentType: 'image/webp',
-      CacheControl: 'public, max-age=31536000, immutable',
-    }),
-  );
-
   // ── Generate thumbnail ──────────────────────────────────
+  // Decoded from the original (not the full WebP) so sharp can shrink-on-load
+  // for JPEG/WebP input, which is far cheaper than a full-size decode.
   const thumbKey = `${userId}/${photoId}_thumb.webp`;
   const thumbBuffer = await sharp(fileBuffer)
     .resize(THUMB_SIZE, THUMB_SIZE, { fit: 'inside' })
     .webp({ quality: 75, effort: 4 })
     .toBuffer();
 
-  await client.send(
-    new PutObjectCommand({
-      Bucket: BUCKET,
-      Key: thumbKey,
-      Body: thumbBuffer,
-      ContentType: 'image/webp',
-      CacheControl: 'public, max-age=31536000, immutable',
-    }),
-  );
-
   // ── Generate BlurHash ───────────────────────────────────
-  // Resize to a tiny square to keep encoding fast — BlurHash only needs broad color info.
-  const { data: blurRaw, info: blurInfo } = await sharp(fileBuffer)
+  // Derived from the 300px thumbnail rather than the original: BlurHash only
+  // captures broad colour, so the result is visually identical and this avoids
+  // a third decode of the source image.
+  const { data: blurRaw, info: blurInfo } = await sharp(thumbBuffer)
     .resize(BLUR_HASH_SIZE, BLUR_HASH_SIZE, { fit: 'cover', position: 'centre' })
     .ensureAlpha()
     .raw()
@@ -166,6 +158,31 @@ export async function savePhoto(
     BLUR_HASH_COMPONENTS.x,
     BLUR_HASH_COMPONENTS.y,
   );
+
+  // ── Upload both variants concurrently ───────────────────
+  // Both objects are fully built at this point, so the two network round
+  // trips can overlap. Either failure still rejects the whole save.
+  const cacheControl = 'public, max-age=31536000, immutable';
+  await Promise.all([
+    client.send(
+      new PutObjectCommand({
+        Bucket: BUCKET,
+        Key: fullKey,
+        Body: fullBuffer,
+        ContentType: 'image/webp',
+        CacheControl: cacheControl,
+      }),
+    ),
+    client.send(
+      new PutObjectCommand({
+        Bucket: BUCKET,
+        Key: thumbKey,
+        Body: thumbBuffer,
+        ContentType: 'image/webp',
+        CacheControl: cacheControl,
+      }),
+    ),
+  ]);
 
   console.log(
     `[photoStorage] Uploaded to minio://${BUCKET}/${fullKey} ` +
