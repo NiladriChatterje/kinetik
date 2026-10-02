@@ -32,6 +32,12 @@ async function bootstrap() {
     logger: {
       level: process.env.NODE_ENV === 'production' ? 'info' : 'debug',
     },
+    // All traffic arrives via the nginx container on the private Docker
+    // network, which sets X-Forwarded-For. Without this, request.ip is
+    // nginx's address for every caller and the rate limiter below becomes
+    // one bucket shared by all users. Only private-range peers are trusted,
+    // so a forged header on a direct public connection is ignored.
+    trustProxy: 'loopback, uniquelocal',
   });
 
   // ─── Plugins ──────────────────────────────────────────
