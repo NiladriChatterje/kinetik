@@ -104,7 +104,6 @@
 
 | Feature | Status | Details |
 |---------|--------|---------|
-| Countdown Timer | ✅ Implemented | Animated countdown to next 8:30 PM window |
 | Location-based Queue Stats | ✅ Implemented | Live users, in queue, matches count |
 | Area Details Modal | ✅ Implemented | Bottom sheet with city, county, region, country, H3 hex cell, coordinates, last polled time |
 | Animated Radar Screen | ✅ Implemented | Pulsing radar ring, sweeping animation, blip dots, queue enter/leave |

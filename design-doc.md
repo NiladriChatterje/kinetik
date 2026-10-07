@@ -33,7 +33,7 @@ By concentrating user activity into structured, high-density live windows, Kinet
 
 ### 2.1 The Live Queue & Window Synchronization
 Kinetik does not operate on a 24/7 passive swiping paradigm[cite: 1]. Instead, it utilizes **Flash Windows** to concentrate local liquidity[cite: 1].
-* **The Concept:** Users opt into structured 30-minute windows (e.g., Daily at 8:30 PM - 9:00 PM, Sunday Megawindows)[cite: 1].
+* **The Concept:** Users opt into structured 30-minute windows[cite: 1].
 * **The UX:** When the window opens, users enter a live interactive queue[cite: 1]. The app UI transitions into an active, high-intent matching radar screen[cite: 1].
 
 ### 2.2 The 3-Minute Blind "Vibe Check"

@@ -95,7 +95,7 @@ for (const chunk of chunks) {
 - Message queue (e.g., Bull/BullMQ backed by Redis)
 - Dead-letter queue for persistent failures
 
-**When it becomes critical:** During peak hours (8:30 PM flash windows), if Expo has an outage, all notifications during that window are lost forever.
+**When it becomes critical:** During peak hours, if Expo has an outage, all notifications during that window are lost forever.
 
 ---
 
