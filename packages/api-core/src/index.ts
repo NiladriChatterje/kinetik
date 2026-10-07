@@ -71,7 +71,15 @@ async function bootstrap() {
       tls: { servername: process.env.REDIS_AIVEN_HOST! },
       enableOfflineQueue: false,
     }),
+    // Logged-in requests get a per-user bucket: carrier NAT puts many users
+    // behind one IP. Anonymous or expired-token requests stay keyed by IP.
     keyGenerator: (request) => {
+      const auth = request.headers.authorization;
+      if (auth?.startsWith('Bearer ')) {
+        try {
+          return `user:${app.jwt.verify<{ sub: string }>(auth.slice(7)).sub}`;
+        } catch {}
+      }
       return request.ip;
     },
   });
