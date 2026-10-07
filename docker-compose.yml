@@ -206,8 +206,8 @@ services:
     deploy:
       resources:
         limits:
-          cpus: "0.5"
-          memory: 256M
+          cpus: "1.5"
+          memory: 4G
         reservations:
           memory: 128M
     logging: *default-logging
