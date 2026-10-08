@@ -7,7 +7,6 @@ import { createUser, findUserByPhone, findUserByEmail, findUserById, createSubsc
 import { deleteAllUserPhotos, deleteAllUserKycDocuments, deleteChatFile } from '../services/photoStorage';
 import { isPlayBillingConfigured, cancelSubscription } from '../services/playBilling';
 import { eventBus } from '../services/eventBus';
-import { sendOtpSms, isSmsConfigured } from '../services/sms';
 import { sendOtpEmail, isEmailConfigured, maskEmail } from '../services/email';
 import { resolveCity } from '../services/locations';
 
@@ -31,7 +30,7 @@ function chatMediaKeyFromUrl(url: string): string | null {
 
 // ─── In-memory OTP store (dev only; replace with Redis in production) ──
 // A code is addressed to a channel + identifier pair: email (Brevo) or phone
-// (Twilio). Entries are keyed "email:alice@example.com" / "phone:+9199…" so
+// (no SMS provider, so phone codes are only logged in development). Entries are keyed "email:alice@example.com" / "phone:+9199…" so
 // the two channels never collide.
 type OtpChannel = 'email' | 'phone';
 interface OtpTarget {
@@ -56,13 +55,12 @@ function normalizeEmail(email: string): string {
 }
 
 /**
- * Random 6-digit code when a real delivery provider is configured for the
- * channel. With no provider the code is only logged, so it stays the fixed
- * 123456 documented in FREE_HOSTING_GUIDE.md for local testing.
+ * Random 6-digit code when Brevo is configured to email it. Otherwise (no
+ * Brevo, or a phone number, which has no provider) the code is only logged, so
+ * it stays the fixed 123456 documented in FREE_HOSTING_GUIDE.md for testing.
  */
 function generateOtp(channel: OtpChannel): string {
-  const live = channel === 'email' ? isEmailConfigured() : isSmsConfigured();
-  if (!live) return '123456';
+  if (channel === 'phone' || !isEmailConfigured()) return '123456';
   return crypto.randomInt(0, 1_000_000).toString().padStart(6, '0');
 }
 
@@ -72,6 +70,13 @@ function generateOtp(channel: OtpChannel): string {
  * cannot linger, and the caller should ask the user to retry.
  */
 async function storeOtp(target: OtpTarget): Promise<boolean> {
+  // Phone codes cannot be delivered, and the logged fallback is the fixed
+  // 123456: accepting it in production would let anyone sign in as any phone
+  // number. The app signs in by email only, so refuse instead.
+  if (target.channel === 'phone' && process.env.NODE_ENV === 'production') {
+    return false;
+  }
+
   const otp = generateOtp(target.channel);
   const key = otpKey(target);
   otpStore.set(key, { otp, expiresAt: Date.now() + OTP_TTL_MS, attempts: 0 });
@@ -80,8 +85,7 @@ async function storeOtp(target: OtpTarget): Promise<boolean> {
   if (target.channel === 'email') {
     sent = await sendOtpEmail(target.value, otp);
   } else {
-    // SMS falls back to console.log in dev mode and never reports failure
-    await sendOtpSms(target.value, otp);
+    console.log(`[OTP] DEV MODE — code for ${maskPhone(target.value)}: ${otp}`);
     sent = true;
   }
 

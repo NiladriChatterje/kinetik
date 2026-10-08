@@ -11,7 +11,6 @@ const users = new Map<string, any>(); // id → row
 let idCounter = 0;
 
 const mockSendOtpEmail = vi.fn();
-const mockSendOtpSms = vi.fn();
 const mockQuery = vi.fn().mockResolvedValue({ rows: [] });
 
 vi.mock('../services/database', () => ({
@@ -60,10 +59,6 @@ vi.mock('../services/playBilling', () => ({
 vi.mock('../services/eventBus', () => ({
   eventBus: { sendUserEvent: vi.fn(), publish: vi.fn() },
 }));
-vi.mock('../services/sms', () => ({
-  sendOtpSms: mockSendOtpSms,
-  isSmsConfigured: () => false,
-}));
 vi.mock('../services/email', () => ({
   sendOtpEmail: mockSendOtpEmail,
   // "Configured" so the code is random, which is what production users get
@@ -97,7 +92,6 @@ afterAll(async () => {
 
 beforeEach(() => {
   mockSendOtpEmail.mockReset().mockResolvedValue(true);
-  mockSendOtpSms.mockReset();
 });
 
 function post(url: string, payload: object) {
@@ -178,7 +172,6 @@ describe('email signup → login → emailed code → session', () => {
     expect(mockSendOtpEmail).toHaveBeenCalledTimes(1);
     expect(mockSendOtpEmail.mock.calls[0][0]).toBe('new.user@example.com');
     expect(lastEmailedCode()).toMatch(/^\d{6}$/);
-    expect(mockSendOtpSms).not.toHaveBeenCalled();
   });
 
   it('login with the wrong password sends nothing', async () => {
