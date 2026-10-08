@@ -152,9 +152,6 @@ services:
       GOOGLE_PLAY_SERVICE_ACCOUNT_JSON: ${GOOGLE_PLAY_SERVICE_ACCOUNT_JSON:-}
       GOOGLE_PLAY_SERVICE_ACCOUNT_FILE: ${GOOGLE_PLAY_SERVICE_ACCOUNT_FILE:-}
       GOOGLE_PLAY_RTDN_SECRET: ${GOOGLE_PLAY_RTDN_SECRET:-}
-      TWILIO_ACCOUNT_SID: ${TWILIO_ACCOUNT_SID:-}
-      TWILIO_AUTH_TOKEN: ${TWILIO_AUTH_TOKEN:-}
-      TWILIO_PHONE_NUMBER: ${TWILIO_PHONE_NUMBER:-}
 
       # Email one-time codes via Brevo (free plan: 300/day, hard-stops at the
       # cap). Blank means codes are only logged and fixed to 123456.
@@ -189,9 +186,6 @@ services:
 
       # Expo push notifications (optional — unauthenticated sends work too)
       EXPO_ACCESS_TOKEN: ${EXPO_ACCESS_TOKEN:-}
-      # Set to "true" to skip Twilio entirely and only log OTPs. Blank keeps
-      # today's behaviour: Twilio is used if its credentials are present.
-      SMS_DISABLED: ${SMS_DISABLED:-}
       # KYC document face matching only — selfie verification runs on-device.
       # Deliberately left unset: the code reads `?? 'http://localhost:3004'`,
       # so UNSET means dev-localhost while an explicit EMPTY value means

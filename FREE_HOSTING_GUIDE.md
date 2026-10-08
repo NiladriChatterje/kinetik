@@ -177,12 +177,11 @@ The app is built to work without it: onboarding never blocks on it.
 | Push notifications | Expo Push | free | `EXPO_ACCESS_TOKEN` (optional) |
 | Address lookup | Geoapify | 3,000/day | `GEOAPIFY_API` |
 | Email login codes | Brevo | 300/day, hard-stops at the cap | `BREVO_API_KEY`, `BREVO_SENDER_EMAIL` |
-| SMS login codes | deferred | — | `SMS_DISABLED=true` |
 | Payments | Google Play Billing | No hosting cost; Google takes a service fee per sale | `GOOGLE_PLAY_SERVICE_ACCOUNT_*`, `GOOGLE_PLAY_RTDN_SECRET` (+ see `PAYMENT_INTEGRATION.md`) |
 | Error alerts | Sentry | 5k errors/month | — |
 | Log storage | Better Stack | 100k logs/month | — |
 
-**Login code note:** codes go out by email through Brevo's SDK (`services/email.ts`). Create a free Brevo account, verify a sender address on a domain you control (publish the SPF and DKIM records Brevo shows you), and set `BREVO_API_KEY` + `BREVO_SENDER_EMAIL`. With those unset the code is only logged and fixed to `123456` (`generateOtp()` in `routes/auth.ts`) so local testing needs no provider. The free plan holds anything past 300/day until the next day rather than billing. SMS is a legacy path: keep `SMS_DISABLED=true`; real SMS always costs per message (~₹0.2–0.7), on any provider.
+**Login code note:** codes go out by email through Brevo's SDK (`services/email.ts`). Create a free Brevo account, verify a sender address on a domain you control (publish the SPF and DKIM records Brevo shows you), and set `BREVO_API_KEY` + `BREVO_SENDER_EMAIL`. With those unset the code is only logged and fixed to `123456` (`generateOtp()` in `routes/auth.ts`) so local testing needs no provider. The free plan holds anything past 300/day until the next day rather than billing. There is no SMS provider: phone codes are only logged in development and refused in production.
 
 **Payments note:** Play Billing costs nothing to host — Google is the merchant of record and there is no PSP. Licence testers can buy without being charged. Going live needs a verified Play payments profile and an app published to a track; Google's service fee comes out of each sale — a payment fee, not a hosting fee.
 
@@ -235,7 +234,6 @@ GOOGLE_PLAY_RTDN_SECRET=                 # secret on the Pub/Sub push URL
 BREVO_API_KEY=<brevo-api-key>            # Brevo → SMTP & API → API keys
 BREVO_SENDER_EMAIL=<verified-sender>     # e.g. login@auth.yourdomain.com
 BREVO_SENDER_NAME=Kinetik
-SMS_DISABLED=true
 EXPO_ACCESS_TOKEN=                       # optional
 POSE_SERVICE_URL=                        # leave empty
 ```
