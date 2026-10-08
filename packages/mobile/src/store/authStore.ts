@@ -241,10 +241,15 @@ export const useAuthStore = create<AuthState>((set, get) => ({
             profileRes.error?.code === 'UNAUTHORIZED' ||
             status === 401 ||
             status === 403;
-          const isMissingAccount =
-            profileRes.error?.code === 'NOT_FOUND' || status === 404;
+          // USER_NOT_FOUND has already signed out through api.onAccountMissing.
+          // NOT_FOUND is what servers from before that code still send. A bare
+          // 404 is not enough: a misrouted proxy answers 404 too.
+          const code = profileRes.error?.code;
+          const isMissingAccount = code === 'USER_NOT_FOUND' || code === 'NOT_FOUND';
 
-          if (isAuthFailure || isMissingAccount) {
+          if (isMissingAccount) {
+            signOutMissingAccount();
+          } else if (isAuthFailure) {
             // setToken/setRefreshToken clear SecureStore *and* the in-memory
             // copy the client sends on every request.
             api.setToken(null);
@@ -274,19 +279,6 @@ export const useAuthStore = create<AuthState>((set, get) => ({
               get().connectChatsSocket();
               return;
             }
-          }
-
-          if (isMissingAccount) {
-            // The user did nothing wrong and there is nothing for them to fix,
-            // so never surface "User not found". From their side this is just
-            // a session that ended: land on the welcome screen with a soft
-            // nudge instead of an error.
-            Toast.show({
-              type: 'glass',
-              text1: 'Session ended',
-              text2: 'Please sign in again to continue.',
-              visibilityTime: 3000,
-            });
           }
 
           set({ isLoading: false });
@@ -603,6 +595,23 @@ export const useAuthStore = create<AuthState>((set, get) => ({
   setUser: (user) => set({ user }),
   setOnboardingStep: (step) => set({ onboardingStep: step }),
 }));
+
+// The token is valid but its account is gone: deleted elsewhere, or the API now
+// talks to a different database. Sign out right away, wherever the user is.
+// Several requests in flight can all come back USER_NOT_FOUND; the first one
+// clears the token, which makes the rest no-ops.
+function signOutMissingAccount(): void {
+  if (!api.getToken()) return;
+  useAuthStore.getState().logout();
+  Toast.show({
+    type: 'glass',
+    text1: 'Account not found',
+    text2: "This account doesn't exist anymore. You've been signed out.",
+    visibilityTime: 4000,
+  });
+}
+
+api.onAccountMissing(signOutMissingAccount);
 
 // Keep the on-device session snapshot in step with the store: written while
 // signed in, removed on sign out or account deletion. Doing it here, rather

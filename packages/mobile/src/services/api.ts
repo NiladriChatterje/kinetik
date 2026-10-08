@@ -29,6 +29,7 @@ class ApiClient {
   private refreshTokenValue: string | null = null;
   private isRefreshing = false;
   private refreshPromise: Promise<RefreshOutcome> | null = null;
+  private accountMissingListener: (() => void) | null = null;
 
   async init() {
     this.token = await SecureStore.getItemAsync('auth_token');
@@ -60,6 +61,15 @@ class ApiClient {
 
   getRefreshToken(): string | null {
     return this.refreshTokenValue;
+  }
+
+  /**
+   * Called when a signed-in request is answered with USER_NOT_FOUND: the token
+   * is valid but the account behind it no longer exists. The auth store uses
+   * it to sign out from wherever in the app the request was made.
+   */
+  onAccountMissing(listener: (() => void) | null) {
+    this.accountMissingListener = listener;
   }
 
   /**
@@ -123,7 +133,21 @@ class ApiClient {
     options: RequestInit = {},
     _isRetry = false,
   ): Promise<ApiResponse<T>> {
+    const sentToken = this.token;
     const result = await this._rawRequest<T>(endpoint, options);
+
+    // Only a signed-in request counts: login answers USER_NOT_FOUND for an
+    // unknown email, which is a typo, not a deleted account. Matching the code
+    // and not a bare 404 keeps a misrouted proxy 404 from signing anyone out.
+    if (
+      sentToken &&
+      !result.success &&
+      result.error?.code === 'USER_NOT_FOUND' &&
+      result.error?.status === 404
+    ) {
+      this.accountMissingListener?.();
+      return result;
+    }
 
     // Auto-refresh on 401 UNAUTHORIZED / TOKEN_EXPIRED — retry once
     if (
