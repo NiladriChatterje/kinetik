@@ -87,7 +87,7 @@ export async function userRoutes(app: FastifyInstance) {
     if (!user) {
       return reply.status(404).send({
         success: false,
-        error: { code: ERROR_CODES.NOT_FOUND, message: 'User not found' },
+        error: { code: ERROR_CODES.USER_NOT_FOUND, message: 'User not found' },
       });
     }
 
@@ -349,7 +349,7 @@ export async function userRoutes(app: FastifyInstance) {
     if (!user) {
       return reply.status(404).send({
         success: false,
-        error: { code: ERROR_CODES.NOT_FOUND, message: 'User not found' },
+        error: { code: ERROR_CODES.USER_NOT_FOUND, message: 'User not found' },
       });
     }
 
