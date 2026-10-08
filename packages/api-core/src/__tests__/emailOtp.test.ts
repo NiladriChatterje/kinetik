@@ -16,8 +16,14 @@ class MockBrevoError extends Error {
 
 // A real class: the service calls `new BrevoClient(...)`, and Vitest 4 rejects
 // arrow-function mock implementations invoked with `new`.
+// The second argument says which account sent it, for the failover tests.
 class MockBrevoClient {
-  transactionalEmails = { sendTransacEmail: mockSendTransacEmail };
+  transactionalEmails: { sendTransacEmail: (payload: unknown) => unknown };
+  constructor(opts: { apiKey: string }) {
+    this.transactionalEmails = {
+      sendTransacEmail: (payload: unknown) => mockSendTransacEmail(payload, opts.apiKey),
+    };
+  }
 }
 
 vi.mock('@getbrevo/brevo', () => ({
@@ -30,7 +36,10 @@ const ORIGINAL_ENV = { ...process.env };
 /** (Re)load the service with the given env so its module-level config is rebuilt. */
 async function loadEmailService(env: Record<string, string | undefined>) {
   vi.resetModules();
-  for (const key of ['BREVO_API_KEY', 'BREVO_SENDER_EMAIL', 'BREVO_SENDER_NAME', 'EMAIL_DISABLED']) {
+  for (const key of [
+    'BREVO_API_KEY', 'BREVO_SENDER_EMAIL', 'BREVO_SENDER_NAME', 'EMAIL_DISABLED',
+    'BREVO_API_KEY_2', 'BREVO_SENDER_EMAIL_2',
+  ]) {
     delete process.env[key];
   }
   Object.assign(process.env, env);
@@ -44,6 +53,7 @@ describe('services/email — Brevo OTP delivery', () => {
     vi.clearAllMocks();
     vi.spyOn(console, 'log').mockImplementation(() => {});
     vi.spyOn(console, 'error').mockImplementation(() => {});
+    vi.spyOn(console, 'warn').mockImplementation(() => {});
   });
 
   afterEach(() => {
@@ -134,6 +144,93 @@ describe('services/email — Brevo OTP delivery', () => {
 
       const sent = await email.sendOtpEmail('alice@example.com', '482913');
       expect(sent).toBe(false);
+    });
+  });
+
+  describe('with two Brevo accounts', () => {
+    const env = {
+      BREVO_API_KEY: 'key-one',
+      BREVO_SENDER_EMAIL: 'login@kinetik.test',
+      BREVO_API_KEY_2: 'key-two',
+    };
+    const keysUsed = () => mockSendTransacEmail.mock.calls.map((c) => c[1]);
+
+    it('uses only the first account while it works', async () => {
+      mockSendTransacEmail.mockResolvedValue({ messageId: 'x' });
+      const email = await loadEmailService(env);
+
+      expect(await email.sendOtpEmail('alice@example.com', '111111')).toBe(true);
+      expect(keysUsed()).toEqual(['key-one']);
+    });
+
+    it('fails over to the second account, reusing the first sender by default', async () => {
+      mockSendTransacEmail
+        .mockRejectedValueOnce(new MockBrevoError(429, 'Daily limit reached'))
+        .mockResolvedValueOnce({ messageId: 'x' });
+      const email = await loadEmailService(env);
+
+      expect(await email.sendOtpEmail('alice@example.com', '111111')).toBe(true);
+      expect(keysUsed()).toEqual(['key-one', 'key-two']);
+      expect(mockSendTransacEmail.mock.calls[1][0].sender.email).toBe('login@kinetik.test');
+    });
+
+    it('also fails over on a network error', async () => {
+      mockSendTransacEmail
+        .mockRejectedValueOnce(new Error('ECONNRESET'))
+        .mockResolvedValueOnce({ messageId: 'x' });
+      const email = await loadEmailService(env);
+
+      expect(await email.sendOtpEmail('alice@example.com', '111111')).toBe(true);
+      expect(keysUsed()).toEqual(['key-one', 'key-two']);
+    });
+
+    it('returns false and logs when both accounts fail', async () => {
+      mockSendTransacEmail.mockRejectedValue(new MockBrevoError(429, 'Daily limit reached'));
+      const email = await loadEmailService(env);
+
+      expect(await email.sendOtpEmail('alice@example.com', '111111')).toBe(false);
+      expect(keysUsed()).toEqual(['key-one', 'key-two']);
+      expect(console.error).toHaveBeenCalledWith(expect.stringContaining('Every Brevo account failed'));
+    });
+
+    it('tries the capped account last for the next send', async () => {
+      mockSendTransacEmail
+        .mockRejectedValueOnce(new MockBrevoError(429, 'Daily limit reached'))
+        .mockResolvedValue({ messageId: 'x' });
+      const email = await loadEmailService(env);
+
+      await email.sendOtpEmail('alice@example.com', '111111');
+      await email.sendOtpEmail('bob@example.com', '222222');
+      expect(keysUsed()).toEqual(['key-one', 'key-two', 'key-two']);
+    });
+
+    it('uses its own sender when BREVO_SENDER_EMAIL_2 is set', async () => {
+      mockSendTransacEmail
+        .mockRejectedValueOnce(new Error('down'))
+        .mockResolvedValueOnce({ messageId: 'x' });
+      const email = await loadEmailService({ ...env, BREVO_SENDER_EMAIL_2: 'otp@kinetik.test' });
+
+      await email.sendOtpEmail('alice@example.com', '111111');
+      expect(mockSendTransacEmail.mock.calls[1][0].sender.email).toBe('otp@kinetik.test');
+    });
+
+    it('works with only the second account configured', async () => {
+      mockSendTransacEmail.mockResolvedValue({ messageId: 'x' });
+      const email = await loadEmailService({
+        BREVO_API_KEY_2: 'key-two',
+        BREVO_SENDER_EMAIL_2: 'otp@kinetik.test',
+      });
+
+      expect(email.isEmailConfigured()).toBe(true);
+      expect(await email.sendOtpEmail('alice@example.com', '111111')).toBe(true);
+      expect(keysUsed()).toEqual(['key-two']);
+    });
+
+    it('skips a key with no sender at all and warns about it', async () => {
+      const email = await loadEmailService({ BREVO_API_KEY_2: 'key-two' });
+
+      expect(email.isEmailConfigured()).toBe(false);
+      expect(console.warn).toHaveBeenCalledWith(expect.stringContaining('BREVO_SENDER_EMAIL_2'));
     });
   });
 
