@@ -158,6 +158,9 @@ services:
       BREVO_API_KEY: ${BREVO_API_KEY:-}
       BREVO_SENDER_EMAIL: ${BREVO_SENDER_EMAIL:-}
       BREVO_SENDER_NAME: ${BREVO_SENDER_NAME:-Kinetik}
+      # Optional second account, used when the first fails or hits its cap.
+      BREVO_API_KEY_2: ${BREVO_API_KEY_2:-}
+      BREVO_SENDER_EMAIL_2: ${BREVO_SENDER_EMAIL_2:-}
       # Set to "true" to skip Brevo entirely and only log OTPs.
       EMAIL_DISABLED: ${EMAIL_DISABLED:-}
 

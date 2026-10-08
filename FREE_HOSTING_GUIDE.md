@@ -176,7 +176,7 @@ The app is built to work without it: onboarding never blocks on it.
 |---|---|---|---|
 | Push notifications | Expo Push | free | `EXPO_ACCESS_TOKEN` (optional) |
 | Address lookup | Geoapify | 3,000/day | `GEOAPIFY_API` |
-| Email login codes | Brevo | 300/day, hard-stops at the cap | `BREVO_API_KEY`, `BREVO_SENDER_EMAIL` |
+| Email login codes | Brevo | 300/day per account, hard-stops at the cap | `BREVO_API_KEY`, `BREVO_SENDER_EMAIL` (+ optional `BREVO_API_KEY_2`, `BREVO_SENDER_EMAIL_2` as failover) |
 | Payments | Google Play Billing | No hosting cost; Google takes a service fee per sale | `GOOGLE_PLAY_SERVICE_ACCOUNT_*`, `GOOGLE_PLAY_RTDN_SECRET` (+ see `PAYMENT_INTEGRATION.md`) |
 | Error alerts | Sentry | 5k errors/month | — |
 | Log storage | Better Stack | 100k logs/month | — |
