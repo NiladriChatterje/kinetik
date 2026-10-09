@@ -4,6 +4,7 @@ import * as Location from 'expo-location';
 import { Ionicons } from '@expo/vector-icons';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Button } from '../../components/common/Button';
+import { BackButton } from '../../components/common/BackButton';
 import { Card } from '../../components/common/Card';
 import { useToast } from '../../hooks/useToast';
 import { api } from '../../services/api';
@@ -25,6 +26,8 @@ export const LocationPermissionScreen: React.FC<{ navigation: any }> = ({ naviga
   const toast = useToast();
   // Set when we send the user to Settings, so coming back retries automatically
   const awaitingSettingsRef = useRef(false);
+  // Pending auto-advance to Photos — cancelled if the user goes back first
+  const advanceTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const requestLocation = async () => {
     setLoading(true);
@@ -57,7 +60,7 @@ export const LocationPermissionScreen: React.FC<{ navigation: any }> = ({ naviga
         toast.showSuccess('Location enabled', 'Ready to match.');
       }
       await api.updateOnboardingStep('location');
-      setTimeout(() => navigation.navigate('Photos'), 1200);
+      advanceTimerRef.current = setTimeout(() => navigation.navigate('Photos'), 1200);
     } catch {
       // A GPS fix or the network call failed — let the user try again
       setPermissionStatus('denied');
@@ -100,9 +103,14 @@ export const LocationPermissionScreen: React.FC<{ navigation: any }> = ({ naviga
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
+  useEffect(() => () => {
+    if (advanceTimerRef.current) clearTimeout(advanceTimerRef.current);
+  }, []);
+
   return (
     <SafeAreaView style={styles.container}>
       <View style={styles.content}>
+        <BackButton onPress={() => navigation.goBack()} />
         <Text style={styles.step}>Step 3 of 6</Text>
         <Text style={styles.title}>Enable Location</Text>
         <Text style={styles.subtitle}>We use precise GPS to place you on the local matching grid</Text>
@@ -143,10 +151,14 @@ export const LocationPermissionScreen: React.FC<{ navigation: any }> = ({ naviga
 
       <View style={styles.footer}>
         {permissionStatus === 'granted' ? (
-          <View style={styles.grantedRow}>
-            <Ionicons name="checkmark-circle" size={20} color={colors.textPrimary} />
-            <Text style={styles.grantedText}> Location access granted</Text>
-          </View>
+          <>
+            <View style={styles.grantedRow}>
+              <Ionicons name="checkmark-circle" size={20} color={colors.textPrimary} />
+              <Text style={styles.grantedText}> Location access granted</Text>
+            </View>
+            {/* Reached again via back from Photos — the auto-advance already ran */}
+            <Button title="Continue" onPress={() => navigation.navigate('Photos')} fullWidth />
+          </>
         ) : permissionStatus === 'blocked' ? (
           <>
             <Text style={styles.hint}>Location was turned off for Kinetik. Allow it in Settings, then come back — we will retry for you.</Text>
@@ -189,6 +201,6 @@ const styles = StyleSheet.create({
   permissionDesc: { ...typography.caption, color: colors.textSecondary },
   footer: { padding: spacing.xxl, paddingBottom: spacing.huge },
   hint: { ...typography.caption, color: colors.textSecondary, textAlign: 'center', marginBottom: spacing.md },
-  grantedRow: { flexDirection: 'row', justifyContent: 'center', alignItems: 'center' },
+  grantedRow: { flexDirection: 'row', justifyContent: 'center', alignItems: 'center', marginBottom: spacing.md },
   grantedText: { ...typography.body1, color: colors.textPrimary, textAlign: 'center' },
 });

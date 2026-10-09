@@ -11,6 +11,7 @@ import { useToast } from '../../hooks/useToast';
 import { Button } from '../../components/common/Button';
 import { Input } from '../../components/common/Input';
 import { LocationPicker, LocationSelection } from '../../components/common/LocationPicker';
+import { enterOnboarding } from '../../navigation/onboardingFlow';
 import { colors, typography, spacing, radius } from '../../theme';
 
 const { width: SCREEN_WIDTH } = Dimensions.get('window');
@@ -126,10 +127,11 @@ export const SplashScreen: React.FC<{ navigation: any }> = ({ navigation }) => {
             navigation.navigate('OTPVerify');
           } else {
             toast.showSuccess('Welcome back!', 'Signed in successfully.');
-            if (useAuthStore.getState().onboardingStep === 'complete') {
+            const step = useAuthStore.getState().onboardingStep;
+            if (step === 'complete') {
               navigation.getParent()?.reset({ index: 0, routes: [{ name: 'Main' }] });
             } else {
-              navigation.navigate('Identity');
+              enterOnboarding(navigation, step);
             }
           }
         } else {

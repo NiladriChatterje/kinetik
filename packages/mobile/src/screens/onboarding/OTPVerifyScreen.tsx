@@ -8,6 +8,7 @@ import { useAuthStore } from '../../store/authStore';
 import { useToast } from '../../hooks/useToast';
 import { Button } from '../../components/common/Button';
 import { OtpTarget } from '../../services/api';
+import { enterOnboarding } from '../../navigation/onboardingFlow';
 import { colors, typography, spacing, radius } from '../../theme';
 
 const RESEND_COOLDOWN = 30;
@@ -94,24 +95,10 @@ export const OTPVerifyScreen: React.FC<{ navigation: any }> = ({ navigation }) =
         if (currentStep === 'complete') {
           // Profile is fully set up — go straight to Main
           navigation.getParent()?.reset({ index: 0, routes: [{ name: 'Main' }] });
-        } else if (currentStep === 'identity') {
-          // Identity data already exists — skip to About
-          navigation.navigate('About');
-        } else if (currentStep === 'about' || currentStep === 'location' || currentStep === 'photos' || currentStep === 'face' || currentStep === 'pose' || currentStep === 'kyc') {
-          // User is further along — determine next screen based on step
-          const screenMap: Record<string, string> = {
-            about: 'Location',
-            location: 'Photos',
-            photos: 'FaceVerification',
-            face: 'KYC',
-            // Legacy value: rows written before migration 019 renamed the step.
-            pose: 'KYC',
-            kyc: 'KYC',
-          };
-          navigation.navigate(screenMap[currentStep] || 'Identity');
         } else {
-          // No progress — start from Identity
-          navigation.navigate('Identity');
+          // Resume on the next unfinished step, with the finished ones behind
+          // it so back goes to the previous step instead of this spent screen
+          enterOnboarding(navigation, currentStep);
         }
       } else {
         toast.showError('Verification failed', result.error || 'Invalid code.');

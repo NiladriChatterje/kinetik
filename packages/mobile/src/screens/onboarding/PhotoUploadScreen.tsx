@@ -4,6 +4,7 @@ import * as ImagePicker from 'expo-image-picker';
 import { Ionicons } from '@expo/vector-icons';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Button } from '../../components/common/Button';
+import { BackButton } from '../../components/common/BackButton';
 import { useToast } from '../../hooks/useToast';
 import { compressAndUploadPhoto } from '../../services/photoService';
 import { api } from '../../services/api';
@@ -170,6 +171,7 @@ export const PhotoUploadScreen: React.FC<{ navigation: any }> = ({ navigation })
     <SafeAreaView style={styles.container}>
       <Animated.View style={[styles.contentWrap, { transform: [{ scale: contentScale }] }]}>  
         <ScrollView contentContainerStyle={styles.content}>
+          <BackButton onPress={() => navigation.goBack()} />
           <Text style={styles.step}>Step 4 of 6</Text>
           <Text style={styles.title}>Add Photos</Text>
           <Text style={styles.subtitle}>Upload at least 2 clear photos for your profile</Text>

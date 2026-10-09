@@ -7,8 +7,10 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { Gesture, GestureDetector } from 'react-native-gesture-handler';
 import { Ionicons } from '@expo/vector-icons';
 import { CameraView, useCameraPermissions } from 'expo-camera';
+import { useIsFocused } from '@react-navigation/native';
 import * as ImageManipulator from 'expo-image-manipulator';
 import { Button } from '../../components/common/Button';
+import { BackButton } from '../../components/common/BackButton';
 import { useToast } from '../../hooks/useToast';
 import { api } from '../../services/api';
 import { resolveUrl, PRODUCTION_FACE_VERIFICATION } from '../../config';
@@ -37,6 +39,9 @@ export const FaceVerificationScreen: React.FC<{ navigation: any }> = ({ navigati
   const cameraRef = useRef<any>(null);
   const pinchStartZoomRef = useRef(0);
   const toast = useToast();
+  // This screen stays mounted under KYC; release the camera while it is hidden
+  const isFocused = useIsFocused();
+  const goBack = useCallback(() => navigation.goBack(), [navigation]);
 
   // Instagram-style pinch-to-zoom on the front camera. expo-camera's `zoom`
   // is a 0–1 fraction of the device's max zoom; the pinch nudges it from
@@ -188,6 +193,7 @@ export const FaceVerificationScreen: React.FC<{ navigation: any }> = ({ navigati
     return (
       <SafeAreaView style={styles.container}>
         <View style={styles.content}>
+          <BackButton onPress={goBack} />
           <Text style={styles.step}>Step 5 of 6</Text>
           <Text style={styles.title}>Verify You're Real</Text>
           <Text style={styles.subtitle}>
@@ -210,6 +216,7 @@ export const FaceVerificationScreen: React.FC<{ navigation: any }> = ({ navigati
     return (
       <SafeAreaView style={styles.container}>
         <View style={styles.content}>
+          <BackButton onPress={goBack} />
           <Text style={styles.step}>Step 5 of 6</Text>
           <Text style={styles.title}>Verify You're Real</Text>
           <Text style={styles.subtitle}>We match your selfie against the photos you uploaded</Text>
@@ -284,6 +291,7 @@ export const FaceVerificationScreen: React.FC<{ navigation: any }> = ({ navigati
     return (
       <SafeAreaView style={styles.container}>
         <View style={styles.content}>
+          <BackButton onPress={goBack} />
           <Text style={styles.step}>Step 5 of 6</Text>
           <Text style={styles.title}>Verify You're Real</Text>
           <Text style={styles.subtitle}>Check your selfie before submitting</Text>
@@ -315,6 +323,7 @@ export const FaceVerificationScreen: React.FC<{ navigation: any }> = ({ navigati
   return (
     <SafeAreaView style={styles.container}>
       <View style={styles.content}>
+        <BackButton onPress={goBack} />
         <Text style={styles.step}>Step 5 of 6</Text>
         <Text style={styles.title}>Verify You're Real</Text>
         <Text style={styles.subtitle}>Take a clear selfie so we can match it to your photos</Text>
@@ -322,12 +331,14 @@ export const FaceVerificationScreen: React.FC<{ navigation: any }> = ({ navigati
         <GestureDetector gesture={pinchGesture}>
           <View style={styles.cameraContainer}>
             {/* Mirror the front-camera preview so it behaves like a mirror */}
-            <CameraView
-              ref={cameraRef}
-              style={[styles.camera, { transform: [{ scaleX: -1 }] }]}
-              facing="front"
-              zoom={zoom}
-            />
+            {isFocused && (
+              <CameraView
+                ref={cameraRef}
+                style={[styles.camera, { transform: [{ scaleX: -1 }] }]}
+                facing="front"
+                zoom={zoom}
+              />
+            )}
 
             {/* Zoom indicator — only while zoomed in */}
             {zoom > 0 && (

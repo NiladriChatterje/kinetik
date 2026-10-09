@@ -5,6 +5,7 @@ import {
 } from 'react-native';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Button } from '../../components/common/Button';
+import { BackButton } from '../../components/common/BackButton';
 import { useToast } from '../../hooks/useToast';
 import { api } from '../../services/api';
 import { hapticLight } from '../../utils/haptics';
@@ -246,6 +247,8 @@ export const AboutYouScreen: React.FC<{ navigation: any }> = ({ navigation }) =>
         bounces={false}
         showsVerticalScrollIndicator={false}
       >
+        <BackButton onPress={() => navigation.goBack()} />
+
         {/* Header */}
         <View style={styles.header}>
           <View style={styles.headerCopy}>

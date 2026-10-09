@@ -7,6 +7,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import * as DocumentPicker from 'expo-document-picker';
 import { Button } from '../../components/common/Button';
+import { BackButton } from '../../components/common/BackButton';
 import { useAuthStore } from '../../store/authStore';
 import { useToast } from '../../hooks/useToast';
 import { api } from '../../services/api';
@@ -256,6 +257,8 @@ export const KYCScreen: React.FC<{ navigation: any; route?: any }> = ({ navigati
         contentContainerStyle={styles.scrollContent}
         showsVerticalScrollIndicator={false}
       >
+        {/* Back to the selfie step in onboarding, or to Profile from Settings */}
+        <BackButton onPress={() => navigation.goBack()} />
         <Text style={styles.step}>Final Step</Text>
         <Text style={styles.title}>Verify Your Identity</Text>
         <Text style={styles.subtitle}>Government ID required for secure verification (KYC)</Text>
