@@ -45,7 +45,17 @@ export async function faceVerificationRoutes(app: FastifyInstance) {
         `[face-verification] User ${userId} verified on-device (confidence=${confidence ?? 'n/a'})`,
       );
     } else {
-      // Not verified — leave status untouched; user proceeds with onboarding
+      // The latest selfie did not match — at onboarding, or when the user
+      // chose to make a photo primary without a matching selfie. Drop the
+      // face badge so it never vouches for photos the selfie did not match.
+      // is_verified stays TRUE only for a separately KYC-verified account.
+      await query(
+        `UPDATE ${TABLES.USERS}
+         SET face_verification_status = 'rejected',
+             is_verified = COALESCE(kyc_status = 'verified', FALSE)
+         WHERE id = $1`,
+        [userId],
+      );
       console.log(
         `[face-verification] On-device verification not confirmed for user ${userId} (confidence=${confidence ?? 'n/a'})`,
       );
@@ -53,7 +63,7 @@ export async function faceVerificationRoutes(app: FastifyInstance) {
 
     return reply.status(201).send({
       success: true,
-      data: { status: verified ? 'verified' : 'pending' },
+      data: { status: verified ? 'verified' : 'rejected' },
     });
   });
 }
