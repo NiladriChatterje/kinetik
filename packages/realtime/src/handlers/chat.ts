@@ -40,6 +40,32 @@ interface MessagePayload {
   };
 }
 
+/**
+ * Same rule as api-core services/premiumAccess.ts: a free user may chat only
+ * in their oldest active match; Premium (a paid tier whose Play expiry has
+ * not passed, with a few hours of renewal grace) unlocks every chat.
+ */
+async function isChatLocked(userId: string, matchId: string): Promise<boolean> {
+  const premium = await query(
+    `SELECT 1 FROM ${TABLES.SUBSCRIPTION_LEDGER}
+     WHERE user_id = $1
+       AND tier IN ('premium', 'infinite')
+       AND expires_at IS NOT NULL
+       AND expires_at > NOW() - INTERVAL '6 hours'`,
+    [userId],
+  );
+  if ((premium.rowCount ?? 0) > 0) return false;
+
+  const free = await query(
+    `SELECT id FROM ${TABLES.MATCHES}
+     WHERE is_active = TRUE AND (user_a_id = $1 OR user_b_id = $1)
+     ORDER BY matched_at ASC, id ASC
+     LIMIT 1`,
+    [userId],
+  );
+  return free.rows[0]?.id !== matchId;
+}
+
 // ─── Internal Redis pub/sub channels for cross-instance chat events ──
 // These complement the Socket.IO Redis adapter: the adapter handles
 // io.to(room).emit() broadcasts across all instances, but we use dedicated
@@ -256,10 +282,11 @@ export class ChatHandler {
       socket.join(`user:${userId}`);
 
       // Join conversation room
-      // Only the two participants of an ACTIVE match may join its room. Without
-      // this check any authenticated user could join any `match:<id>` room and
-      // eavesdrop on that match's chat. Fails open on DB errors so a transient
-      // Postgres blip doesn't break chat for everyone.
+      // Only the two participants of an ACTIVE match may join its room, and
+      // only if the chat is unlocked for this user. Without this any
+      // authenticated user could join any `match:<id>` room and eavesdrop, and
+      // a free user could read locked chats live. Fails closed: on a DB error
+      // the join is refused, and the app still loads messages over HTTP.
       socket.on(WsEvent.CHAT_JOIN, async (data: { matchId: string }) => {
         const { matchId } = data;
         if (!matchId) return;
@@ -274,8 +301,13 @@ export class ChatHandler {
             console.warn(`[Chat] User ${userId} denied join to match:${matchId} (not a participant)`);
             return;
           }
+          if (await isChatLocked(userId, matchId)) {
+            console.warn(`[Chat] User ${userId} denied join to match:${matchId} (chat locked, no Premium)`);
+            return;
+          }
         } catch (err: any) {
-          console.warn(`[Chat] Membership check failed for match:${matchId} — allowing join:`, err?.message);
+          console.warn(`[Chat] Join check failed for match:${matchId}, refusing join:`, err?.message);
+          return;
         }
 
         socket.join(`match:${matchId}`);

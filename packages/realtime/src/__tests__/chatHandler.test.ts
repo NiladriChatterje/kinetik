@@ -210,10 +210,54 @@ describe('ChatHandler', () => {
       expect(socket.join).not.toHaveBeenCalledWith('match:match-456');
     });
 
-    it('should fail open (allow join) when the DB membership check errors', async () => {
+    it('should fail closed (refuse join) when the DB check errors', async () => {
       const { socket } = simulateConnection(nsp);
       const handlerFn = registerHandler(socket, WsEvent.CHAT_JOIN);
       vi.mocked(query).mockRejectedValue(new Error('db down'));
+
+      await handlerFn({ matchId: 'match-456' });
+
+      expect(socket.join).not.toHaveBeenCalledWith('match:match-456');
+    });
+
+    // Answers each of the join check's three queries: participant, Premium,
+    // and the user's oldest active match (their one free chat)
+    const mockJoinChecks = (opts: { premium: boolean; freeMatchId: string }) => {
+      vi.mocked(query).mockImplementation((async (sql: string) => {
+        if (sql.includes("tier IN ('premium', 'infinite')")) {
+          return opts.premium ? { rowCount: 1, rows: [{}] } : { rowCount: 0, rows: [] };
+        }
+        if (sql.includes('ORDER BY matched_at ASC')) {
+          return { rowCount: 1, rows: [{ id: opts.freeMatchId }] };
+        }
+        return { rowCount: 1, rows: [{ id: 'match-456' }] };
+      }) as any);
+    };
+
+    it('should let a free user join their one free chat (oldest active match)', async () => {
+      const { socket } = simulateConnection(nsp);
+      const handlerFn = registerHandler(socket, WsEvent.CHAT_JOIN);
+      mockJoinChecks({ premium: false, freeMatchId: 'match-456' });
+
+      await handlerFn({ matchId: 'match-456' });
+
+      expect(socket.join).toHaveBeenCalledWith('match:match-456');
+    });
+
+    it('should NOT let a free user join any other chat (locked)', async () => {
+      const { socket } = simulateConnection(nsp);
+      const handlerFn = registerHandler(socket, WsEvent.CHAT_JOIN);
+      mockJoinChecks({ premium: false, freeMatchId: 'match-oldest' });
+
+      await handlerFn({ matchId: 'match-456' });
+
+      expect(socket.join).not.toHaveBeenCalledWith('match:match-456');
+    });
+
+    it('should let a Premium user join any of their chats', async () => {
+      const { socket } = simulateConnection(nsp);
+      const handlerFn = registerHandler(socket, WsEvent.CHAT_JOIN);
+      mockJoinChecks({ premium: true, freeMatchId: 'match-oldest' });
 
       await handlerFn({ matchId: 'match-456' });
 

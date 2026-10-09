@@ -96,8 +96,6 @@ export const API_ROUTES = {
   MATCH_CONVERSATION_MESSAGES: (id: string) => `/api/v1/matches/conversations/${id}/messages`,
 
   // Fans / Likes
-  FANS_LIST: '/api/v1/fans',
-  FANS_UNLOCK: '/api/v1/fans/unlock',
 
   // Venues
   VENUES_PREFIX: '/api/v1/venues',

@@ -183,10 +183,13 @@ export const notificationEvents = {
     });
   },
 
-  async newLike(userId: string, likerName: string): Promise<void> {
+  /** likerName is null for a free user: who liked them is a Premium feature. */
+  async newLike(userId: string, likerName: string | null): Promise<void> {
     await sendPushNotification(userId, 'new.like', {
       title: 'New Like',
-      body: `${likerName} liked your profile! See who likes you.`,
+      body: likerName
+        ? `${likerName} liked your profile! See who likes you.`
+        : 'Someone liked your profile! Upgrade to Premium to see who.',
       data: { type: 'new.like', screen: 'Likes' },
     });
   },

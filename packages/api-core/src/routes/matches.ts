@@ -9,6 +9,7 @@ import { v4 as uuidv4 } from 'uuid';
 import { query, TABLES } from '../services/database';
 import { transaction } from '@kinetik/shared';
 import { notificationEvents } from '../services/notificationService';
+import { hasActivePremium, getChatAccess, isChatLocked, CHAT_LOCKED } from '../services/premiumAccess';
 import { eventBus } from '../services/eventBus';
 import { getRedis, publishChatMessage } from '../services/redis';
 import { savePhoto, saveEncryptedChatFile, getEncryptedChatFileBuffer, deleteChatFile } from '../services/photoStorage';
@@ -28,6 +29,21 @@ function chatMediaKeyFromUrl(url: string): string | null {
   }
   return null;
 }
+
+// Every chat endpoint answers a locked conversation the same way, so the app
+// can show its Premium upsell (see services/premiumAccess.ts).
+function sendChatLocked(reply: FastifyReply) {
+  return reply.status(402).send({
+    success: false,
+    error: {
+      code: CHAT_LOCKED,
+      message: 'Free accounts can chat with one match. Upgrade to Premium to unlock every chat.',
+    },
+  });
+}
+
+/** Push text for a message in a chat the recipient cannot open. */
+const LOCKED_MESSAGE_PREVIEW = 'New message. Upgrade to Premium to read it.';
 
 export async function matchRoutes(app: FastifyInstance) {
   app.addHook('preHandler', async (request: FastifyRequest, reply: FastifyReply) => {
@@ -59,6 +75,8 @@ export async function matchRoutes(app: FastifyInstance) {
     const { sub: userId } = request.user as any;
     const q = request.query as { scope?: string; offset?: string; limit?: string };
     const isExplore = q.scope === 'explore';
+    // "Liked you" tags reveal who liked the user, a Premium feature
+    const canSeeLikes = await hasActivePremium(userId);
     const exploreOffset = Math.max(0, parseInt(q.offset || '0', 10) || 0);
     const exploreLimit = Math.min(50, Math.max(1, parseInt(q.limit || '24', 10) || 24));
 
@@ -304,8 +322,9 @@ export async function matchRoutes(app: FastifyInstance) {
         })),
         aboutAnswers: row.about_answers || undefined,
         isVerified: row.is_verified,
-        // Only set by the explore query; undefined (→ false) for the deck
-        likedYou: Boolean(row.liked_you),
+        // Only set by the explore query; undefined (→ false) for the deck.
+        // Never sent to free users, who may only see how many liked them.
+        likedYou: canSeeLikes && Boolean(row.liked_you),
       };
     });
 
@@ -537,14 +556,18 @@ export async function matchRoutes(app: FastifyInstance) {
         // concurrent request) — fall through and treat this as a plain like.
       }
 
+      // Who liked them is Premium only: a free recipient's live event and push
+      // say that someone liked them, never who
+      const targetCanSeeLikes = await hasActivePremium(targetUserId);
+
       // Publish `like.created` event via Redis event bus
       await eventBus.publish(EVENT_BUS_CHANNELS.MATCH_EVENTS, {
         type: 'like.created',
         payload: {
-          actorId: userId,
+          actorId: targetCanSeeLikes ? userId : null,
           targetId: targetUserId,
           action,
-          actorName: swiperName,
+          actorName: targetCanSeeLikes ? swiperName : null,
           timestamp: new Date().toISOString(),
         },
       }).catch((err) => {
@@ -552,7 +575,7 @@ export async function matchRoutes(app: FastifyInstance) {
       });
 
       // Send push notification
-      notificationEvents.newLike(targetUserId, swiperName).catch(() => {});
+      notificationEvents.newLike(targetUserId, targetCanSeeLikes ? swiperName : null).catch(() => {});
 
       return reply.send({
         success: true,
@@ -575,6 +598,26 @@ export async function matchRoutes(app: FastifyInstance) {
   // ─── Get Incoming Likes ──────────────────────────────
   app.get('/likes', async (request: FastifyRequest, reply: FastifyReply) => {
     const { sub: userId } = request.user as any;
+
+    // Free users learn only how many people liked them: no ids, names or
+    // photos leave the server. The app shows that many blurred cards.
+    if (!(await hasActivePremium(userId))) {
+      const countResult = await query(
+        `SELECT COUNT(*)::int AS cnt FROM (
+           SELECT 1 FROM ${TABLES.USER_INTERACTIONS} ui
+           WHERE ui.target_id = $1
+             AND ui.action IN ('like', 'super_like')
+             AND ui.is_mutual = FALSE
+             AND ui.responded_at IS NULL
+           LIMIT 50
+         ) pending`,
+        [userId],
+      );
+      return reply.send({
+        success: true,
+        data: { likes: [], totalCount: countResult.rows[0]?.cnt ?? 0, locked: true },
+      });
+    }
 
     const result = await query(
       `SELECT ui.created_at as liked_at,
@@ -628,7 +671,7 @@ export async function matchRoutes(app: FastifyInstance) {
 
     return reply.send({
       success: true,
-      data: { likes, totalCount: likes.length },
+      data: { likes, totalCount: likes.length, locked: false },
     });
   });
 
@@ -804,20 +847,28 @@ export async function matchRoutes(app: FastifyInstance) {
       [userId],
     );
 
-    const conversations = result.rows.map((row: any) => ({
-      matchId: row.match_id,
-      partnerId: row.partner_id,
-      partnerName: row.partner_name,
-      partnerPhotoUrl: row.partner_photo_url || undefined,
-      partnerThumbnailUrl: row.partner_thumbnail_url || undefined,
-      lastMessage: row.last_message_content
-        ? decryptMessage(row.last_message_content, MESSAGE_ENCRYPTION_KEY)
-        : undefined,
-      lastMessageAt: row.last_message_at || undefined,
-      lastMessageSenderId: row.last_message_sender_id || undefined,
-      unreadCount: row.unread_count || 0,
-      isActive: row.is_active,
-    }));
+    // Locked chats stay listed (the user knows the match) but carry no message
+    // text; unreadCount still shows that something is waiting
+    const access = await getChatAccess(userId);
+
+    const conversations = result.rows.map((row: any) => {
+      const locked = access.isLocked(row.match_id);
+      return {
+        matchId: row.match_id,
+        partnerId: row.partner_id,
+        partnerName: row.partner_name,
+        partnerPhotoUrl: row.partner_photo_url || undefined,
+        partnerThumbnailUrl: row.partner_thumbnail_url || undefined,
+        lastMessage: !locked && row.last_message_content
+          ? decryptMessage(row.last_message_content, MESSAGE_ENCRYPTION_KEY)
+          : undefined,
+        lastMessageAt: row.last_message_at || undefined,
+        lastMessageSenderId: row.last_message_sender_id || undefined,
+        unreadCount: row.unread_count || 0,
+        isActive: row.is_active,
+        locked,
+      };
+    });
 
     return reply.send({ success: true, data: { conversations } });
   });
@@ -930,6 +981,7 @@ export async function matchRoutes(app: FastifyInstance) {
         error: { code: ERROR_CODES.NOT_FOUND, message: 'Match not found or inactive' },
       });
     }
+    if (await isChatLocked(userId, matchId)) return sendChatLocked(reply);
 
     const messages = await query(
       `SELECT
@@ -1030,6 +1082,7 @@ export async function matchRoutes(app: FastifyInstance) {
         error: { code: ERROR_CODES.NOT_FOUND, message: 'Match not found or inactive' },
       });
     }
+    if (await isChatLocked(userId, matchId)) return sendChatLocked(reply);
 
     const plainContent = content.trim();
     const encryptedContent = encryptMessage(plainContent, MESSAGE_ENCRYPTION_KEY);
@@ -1058,7 +1111,10 @@ export async function matchRoutes(app: FastifyInstance) {
     const partnerId = matchRow.user_a_id === userId ? matchRow.user_b_id : matchRow.user_a_id;
     const senderResult = await query(`SELECT display_name FROM ${TABLES.USERS} WHERE id = $1`, [userId]);
     const senderName = senderResult.rows[0]?.display_name || 'Someone';
-    const preview = plainContent.length > 80 ? plainContent.slice(0, 80) + '…' : plainContent;
+    // A partner whose side of this chat is locked gets no message text
+    const preview = (await isChatLocked(partnerId, matchId))
+      ? LOCKED_MESSAGE_PREVIEW
+      : plainContent.length > 80 ? plainContent.slice(0, 80) + '…' : plainContent;
 
     notificationEvents.newMessage(partnerId, senderName, preview).catch(() => {});
 
@@ -1115,6 +1171,7 @@ export async function matchRoutes(app: FastifyInstance) {
         error: { code: ERROR_CODES.NOT_FOUND, message: 'Match not found or inactive' },
       });
     }
+    if (await isChatLocked(userId, matchId)) return sendChatLocked(reply);
 
     const mediaType = (request.query as any).media_type || 'image';
     const caption = (request.query as any).caption || '';
@@ -1232,7 +1289,9 @@ export async function matchRoutes(app: FastifyInstance) {
     const partnerId = matchRow.user_a_id === userId ? matchRow.user_b_id : matchRow.user_a_id;
     const senderResult = await query(`SELECT display_name FROM ${TABLES.USERS} WHERE id = $1`, [userId]);
     const senderName = senderResult.rows[0]?.display_name || 'Someone';
-    const preview = mediaType === 'image' ? 'Sent a photo' : `Sent ${mediaType}`;
+    const preview = (await isChatLocked(partnerId, matchId))
+      ? LOCKED_MESSAGE_PREVIEW
+      : mediaType === 'image' ? 'Sent a photo' : `Sent ${mediaType}`;
 
     notificationEvents.newMessage(partnerId, senderName, preview).catch(() => {});
 
@@ -1343,6 +1402,8 @@ export async function matchRoutes(app: FastifyInstance) {
           error: { code: ERROR_CODES.FORBIDDEN, message: 'Not authorized to access this media.' },
         });
       }
+      // Media a match sent lives in that chat, so a locked chat locks it too
+      if (await isChatLocked(userId, matchCheck.rows[0].id)) return sendChatLocked(reply);
     }
 
     try {
@@ -1409,6 +1470,18 @@ export async function matchRoutes(app: FastifyInstance) {
   app.post('/media/:mediaId/view', async (request: FastifyRequest<{ Params: { mediaId: string } }>, reply: FastifyReply) => {
     const { sub: userId } = request.user as any;
     const { mediaId } = request.params;
+
+    // Opening view-once media is reading the chat: refuse it in a locked chat
+    // before anything is marked viewed
+    const owning = await query(
+      `SELECT msg.match_id FROM ${TABLES.CHAT_MEDIA} cm
+       JOIN ${TABLES.MESSAGES} msg ON msg.id = cm.message_id
+       WHERE cm.id = $1`,
+      [mediaId],
+    );
+    if (owning.rows[0] && (await isChatLocked(userId, owning.rows[0].match_id))) {
+      return sendChatLocked(reply);
+    }
 
     // Atomically mark as viewed — only succeeds if it hasn't been viewed yet.
     // Using a single UPDATE ... WHERE viewed_at IS NULL RETURNING * avoids a
@@ -1496,6 +1569,8 @@ export async function matchRoutes(app: FastifyInstance) {
   app.get('/:id/planner', async (request: FastifyRequest<{ Params: { id: string } }>, reply: FastifyReply) => {
     const { id: matchId } = request.params;
     const { sub: userId } = request.user as any;
+    // Part of the conversation, so a locked chat locks it too
+    if (await isChatLocked(userId, matchId)) return sendChatLocked(reply);
 
     const matchCheck = await query(
       `SELECT id FROM ${TABLES.MATCHES}
@@ -1526,6 +1601,8 @@ export async function matchRoutes(app: FastifyInstance) {
     const { sub: userId } = request.user as any;
     const { id: matchId } = request.params;
     const { plannerData } = request.body as { plannerData?: any };
+    // Part of the conversation, so a locked chat locks it too
+    if (await isChatLocked(userId, matchId)) return sendChatLocked(reply);
 
     if (!plannerData || typeof plannerData !== 'object') {
       return reply.status(400).send({
@@ -1572,6 +1649,8 @@ export async function matchRoutes(app: FastifyInstance) {
     const { sub: userId } = request.user as any;
     const { id: matchId } = request.params;
     const { date } = request.body as { date?: string };
+    // Part of the conversation, so a locked chat locks it too
+    if (await isChatLocked(userId, matchId)) return sendChatLocked(reply);
 
     // Validate YYYY-MM-DD format AND that it is a real calendar date
     // (e.g. 2026-02-31 is rejected even though it matches the regex)

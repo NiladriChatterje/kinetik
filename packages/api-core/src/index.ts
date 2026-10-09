@@ -12,7 +12,6 @@ import { onboardingRoutes } from './routes/onboarding';
 import { matchRoutes } from './routes/matches';
 import { paymentRoutes } from './routes/payments';
 import { venueRoutes } from './routes/venues';
-import { fanRoutes } from './routes/fans';
 import { duoRoutes } from './routes/duo';
 import { webhookRoutes } from './routes/webhooks';
 import { notificationRoutes } from './routes/notifications';
@@ -118,7 +117,6 @@ async function bootstrap() {
   await app.register(userRoutes, { prefix: API_ROUTES.USERS_PREFIX });
   await app.register(onboardingRoutes, { prefix: '/api/v1/onboarding' });
   await app.register(matchRoutes, { prefix: API_ROUTES.MATCHES_PREFIX });
-  await app.register(fanRoutes, { prefix: '/api/v1/fans' });
   await app.register(venueRoutes, { prefix: API_ROUTES.VENUES_PREFIX });
   await app.register(paymentRoutes, { prefix: API_ROUTES.PAYMENTS_PREFIX });
   await app.register(duoRoutes, { prefix: API_ROUTES.DUO_PREFIX });
