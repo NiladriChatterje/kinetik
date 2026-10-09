@@ -88,12 +88,14 @@ export const SplashScreen: React.FC<{ navigation: any }> = ({ navigation }) => {
   // The server lowercases and trims it, so casing here does not matter.
   const clearError = () => setErrorMsg('');
 
+  // Email and password are shared by both tabs and deliberately kept. Input
+  // does not push a cleared value into a field that still has focus, so
+  // clearing them here left text on screen that the form no longer held and
+  // submit failed with Missing fields.
   const handleModeSwitch = (newMode: 'login' | 'register') => {
     if (newMode === mode) return;
     setMode(newMode);
     clearError();
-    setPassword('');
-    setEmail('');
     setFirstName('');
     setLastName('');
     setMiddleName('');
@@ -150,9 +152,9 @@ export const SplashScreen: React.FC<{ navigation: any }> = ({ navigation }) => {
         if (firstName) payload.displayName = firstName;
         const result = await register(payload);
         if (result.success) {
+          // Email and password stay filled so Sign In is one tap (see handleModeSwitch)
           toast.showSuccess('Account created', 'Please sign in.');
           setMode('login');
-          setPassword('');
           setFirstName('');
           setLastName('');
           setMiddleName('');
