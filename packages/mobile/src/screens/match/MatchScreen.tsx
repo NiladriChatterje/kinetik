@@ -232,13 +232,20 @@ function SwipeCard({
             <Text style={styles.name}>
               {profile.displayName}, {profile.age}
             </Text>
-            {/* Their selfie matched their own photos */}
-            {profile.isVerified && (
-              <View style={styles.faceVerified} accessibilityLabel="Face verified">
-                <Ionicons name="checkmark-circle" size={16} color={colors.success} />
-                <Text style={styles.faceVerifiedText}>Face verified</Text>
-              </View>
-            )}
+            {/* Whether their latest selfie matched their own photos */}
+            <View
+              style={styles.faceVerified}
+              accessibilityLabel={profile.isVerified ? 'Face verified' : 'Face unverified'}
+            >
+              <Ionicons
+                name={profile.isVerified ? 'checkmark-circle' : 'close-circle'}
+                size={16}
+                color={profile.isVerified ? colors.success : UNVERIFIED_RED}
+              />
+              <Text style={styles.faceVerifiedText}>
+                {profile.isVerified ? 'Face verified' : 'Face unverified'}
+              </Text>
+            </View>
           </View>
 
           {profile.pronouns ? (
@@ -813,6 +820,9 @@ export const MatchScreen: React.FC<{ navigation: any; route?: any }> = ({ naviga
     </SafeAreaView>
   );
 };
+
+/** Cross on the Face unverified label */
+const UNVERIFIED_RED = '#E53935';
 
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: colors.background },

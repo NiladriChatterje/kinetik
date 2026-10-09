@@ -218,10 +218,13 @@ export async function embedProfilePhotos(photoUrls: string[]): Promise<Float32Ar
 
 /**
  * Verify a selfie against precomputed profile photo embeddings.
+ * `minProfileFaces` is how many of those photos must contain a face:
+ * onboarding checks the whole set, a new primary photo is checked alone.
  */
 export async function verifySelfie(
   selfieUri: string,
   profileEmbeddings: Float32Array[],
+  minProfileFaces = MIN_PROFILE_FACES,
 ): Promise<FaceVerificationResult> {
   const rejectionReasons: string[] = [];
 
@@ -247,9 +250,11 @@ export async function verifySelfie(
   if (Math.abs(face.rotationX) > MAX_HEAD_PITCH_DEG) {
     rejectionReasons.push(`Head tilted too far (${face.rotationX.toFixed(0)}°)`);
   }
-  if (profileEmbeddings.length < MIN_PROFILE_FACES) {
+  if (profileEmbeddings.length < minProfileFaces) {
     rejectionReasons.push(
-      `Need ${MIN_PROFILE_FACES} profile photos with a clear face (found ${profileEmbeddings.length})`,
+      minProfileFaces === 1
+        ? 'No clear face found in this photo'
+        : `Need ${minProfileFaces} profile photos with a clear face (found ${profileEmbeddings.length})`,
     );
   }
 

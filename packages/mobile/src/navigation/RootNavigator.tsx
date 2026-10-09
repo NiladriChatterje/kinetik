@@ -95,6 +95,7 @@ import { ChatScreen } from '../screens/match/ChatScreen';
 
 // Wallet
 import { ProfileLedgerScreen } from '../screens/wallet/ProfileLedgerScreen';
+import { PrimaryPhotoSelfieScreen } from '../screens/wallet/PrimaryPhotoSelfieScreen';
 import { SubscriptionCheckoutScreen } from '../screens/wallet/SubscriptionCheckoutScreen';
 
 // Notifications
@@ -124,6 +125,8 @@ export type RootStackParamList = {
   // Kept for profile access
   DuoWingman: undefined;
   KYCVerify: undefined;
+  // Selfie check before a photo becomes the primary profile photo
+  PrimaryPhotoSelfie: { photoId: string; photoUrl: string };
   SubscriptionCheckout: undefined;
 };
 
@@ -340,6 +343,7 @@ export function RootNavigator() {
         <RootStack.Screen name="Privacy" component={PrivacyScreen} />
         <RootStack.Screen name="ReplyAssistant" component={ReplyAssistantScreen} />
         <RootStack.Screen name="KYCVerify" component={KYCScreen} />
+        <RootStack.Screen name="PrimaryPhotoSelfie" component={PrimaryPhotoSelfieScreen} />
         <RootStack.Screen name="SubscriptionCheckout" component={SubscriptionCheckoutScreen} />
       </RootStack.Navigator>
     </NavigationContainer>

@@ -72,6 +72,9 @@ const SETTINGS = [
 
 const SUPPORT_EMAIL = 'kinetik.dating@gmail.com';
 
+/** Cross on the Face Unverified badge, matching the delete confirmations */
+const UNVERIFIED_RED = '#E53935';
+
 export const ProfileLedgerScreen: React.FC = () => {
   const authUser = useAuthStore((s) => s.user);
   const logout = useAuthStore((s) => s.logout);
@@ -241,20 +244,10 @@ export const ProfileLedgerScreen: React.FC = () => {
     }
   }, [toast, fetchProfileAndPhotos]);
 
-  const handleSetPrimary = async (photoId: string) => {
-    setMutatingPhotoId(photoId);
-    try {
-      const res = await api.setPrimaryPhoto(photoId);
-      if (!res.success) {
-        throw new Error(res.error?.message || 'Could not update primary photo.');
-      }
-      toast.showSuccess('Primary updated', 'Profile photo set.');
-      await fetchProfileAndPhotos();
-    } catch (e: any) {
-      toast.showError('Failed', e?.message || 'Try again.');
-    } finally {
-      setMutatingPhotoId(null);
-    }
+  // The primary photo is the face others see first, so it is only set after
+  // a selfie check (PrimaryPhotoSelfieScreen). The profile refetches on focus.
+  const handleSetPrimary = (photo: ProfilePhoto) => {
+    (navigation as any).navigate('PrimaryPhotoSelfie', { photoId: photo.id, photoUrl: photo.url });
   };
 
   // ─── Account Deletion ──────────────────────────────────
@@ -326,16 +319,19 @@ export const ProfileLedgerScreen: React.FC = () => {
               <Text style={styles.locationText}>{locationStr}</Text>
             </View>
           )}
-          {/* Only after the selfie matched the profile photos */}
-          {profile?.isVerified && (
+          {/* Verified while the latest selfie matched the photos; a selfie the
+              user chose to skip past (primary photo check) shows Unverified */}
+          {profile && (
             <View style={styles.verifiedBadge}>
               <Ionicons
-                name="checkmark-circle"
+                name={profile.isVerified ? 'checkmark-circle' : 'close-circle'}
                 size={14}
-                color={colors.textPrimary}
+                color={profile.isVerified ? colors.textPrimary : UNVERIFIED_RED}
                 style={{ marginRight: 4 }}
               />
-              <Text style={styles.verifiedText}>Face Verified</Text>
+              <Text style={styles.verifiedText}>
+                {profile.isVerified ? 'Face Verified' : 'Face Unverified'}
+              </Text>
             </View>
           )}
         </View>
@@ -598,7 +594,7 @@ export const ProfileLedgerScreen: React.FC = () => {
         photoUrl={modalPhoto?.thumbnail_url || modalPhoto?.url || ''}
         isPrimary={modalPhoto?.is_primary ?? false}
         onSetPrimary={() => {
-          if (modalPhoto) handleSetPrimary(modalPhoto.id);
+          if (modalPhoto) handleSetPrimary(modalPhoto);
         }}
         onDelete={async () => {
           if (modalPhoto) await handleDeletePhoto(modalPhoto.id);
