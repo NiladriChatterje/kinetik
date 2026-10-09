@@ -13,6 +13,7 @@ import { Button } from '../../components/common/Button';
 import { StepLabel } from '../../components/common/StepLabel';
 import { useToast } from '../../hooks/useToast';
 import { useAuthStore } from '../../store/authStore';
+import { markWelcomePending } from '../../services/welcomeNotice';
 import { api } from '../../services/api';
 import { resolveUrl, PRODUCTION_FACE_VERIFICATION } from '../../config';
 import { embedProfilePhotos, verifySelfie, MIN_PROFILE_FACES } from '../../services/faceVerification';
@@ -183,9 +184,13 @@ export const FaceVerificationScreen: React.FC<{ navigation: any }> = ({ navigati
       toast.showError('Could not finish', res?.error?.message || 'Check your connection and try again.');
       return;
     }
-    toast.showSuccess('Welcome!', 'Profile ready. Start matching!');
+    // Onboarding is done: show the one-time Welcome page before the app.
+    // It stays pending until its Start Exploring button is tapped.
+    const userId = useAuthStore.getState().user?.id;
+    if (userId) await markWelcomePending(userId);
+    useAuthStore.getState().setWelcomePending(true);
     useAuthStore.getState().setOnboardingStep('complete');
-    navigation.getParent()?.reset({ index: 0, routes: [{ name: 'Main' }] });
+    navigation.getParent()?.reset({ index: 0, routes: [{ name: 'Welcome' }] });
   }, [navigation, toast]);
 
   // ─── Permission states ──────────────────────────────────

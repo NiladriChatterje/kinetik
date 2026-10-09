@@ -5,6 +5,7 @@ import { Socket } from 'socket.io-client';
 import { api, OtpTarget } from '../services/api';
 import { closeChatSocket, getChatSocket } from '../services/chatSocket';
 import { closePresenceSocket, getPresenceSocket } from '../services/presenceSocket';
+import { isWelcomePending } from '../services/welcomeNotice';
 
 // Badge listeners attached to the shared /chat socket, kept for detaching
 let chatsSocketHandlers: {
@@ -80,6 +81,8 @@ interface AuthState {
   isAuthenticated: boolean;
   isLoading: boolean;
   onboardingStep: string;
+  /** The one-time Welcome page is still waiting to be seen (services/welcomeNotice.ts) */
+  welcomePending: boolean;
   connectionStatus: ConnectionStatus;
   connectionError: string | null;
 
@@ -126,6 +129,7 @@ interface AuthState {
   deleteAccount: () => Promise<AuthResult>;
   setUser: (user: User) => void;
   setOnboardingStep: (step: string) => void;
+  setWelcomePending: (pending: boolean) => void;
 }
 
 // Extract a user-friendly error message from the API response
@@ -160,6 +164,7 @@ export const useAuthStore = create<AuthState>((set, get) => ({
   isAuthenticated: false,
   isLoading: true,
   onboardingStep: 'splash',
+  welcomePending: false,
   connectionStatus: 'checking' as ConnectionStatus,
   connectionError: null,
   pendingEmail: null,
@@ -206,8 +211,12 @@ export const useAuthStore = create<AuthState>((set, get) => ({
             }
           }
 
+          // Closed the app on the Welcome page last time: show it again
+          const welcomePending = d.onboardingComplete ? await isWelcomePending(d.id) : false;
+
           set({
             token,
+            welcomePending,
             user: {
               id: d.id,
               phone: d.phone,
@@ -594,6 +603,7 @@ export const useAuthStore = create<AuthState>((set, get) => ({
 
   setUser: (user) => set({ user }),
   setOnboardingStep: (step) => set({ onboardingStep: step }),
+  setWelcomePending: (pending) => set({ welcomePending: pending }),
 }));
 
 // The token is valid but its account is gone: deleted elsewhere, or the API now

@@ -4,8 +4,6 @@ import { createNavigationContainerRef, NavigationContainer } from '@react-naviga
 import { createStackNavigator } from '@react-navigation/stack';
 import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
 import { Ionicons } from '@expo/vector-icons';
-import * as SecureStore from 'expo-secure-store';
-import Toast from 'react-native-toast-message';
 import { useAuthStore } from '../store/authStore';
 import { colors, typography } from '../theme';
 
@@ -95,6 +93,7 @@ import { ChatScreen } from '../screens/match/ChatScreen';
 
 // Wallet
 import { ProfileLedgerScreen } from '../screens/wallet/ProfileLedgerScreen';
+import { WelcomeScreen } from '../screens/onboarding/WelcomeScreen';
 import { PrimaryPhotoSelfieScreen } from '../screens/wallet/PrimaryPhotoSelfieScreen';
 import { SubscriptionCheckoutScreen } from '../screens/wallet/SubscriptionCheckoutScreen';
 
@@ -109,6 +108,8 @@ import { ReplyAssistantScreen } from '../screens/settings/ReplyAssistantScreen';
 export type RootStackParamList = {
   Auth: undefined;
   Onboarding: undefined;
+  // One-time thank-you page right after onboarding (services/welcomeNotice.ts)
+  Welcome: undefined;
   Main: undefined;
   NotificationPreferences: undefined;
   Privacy: undefined;
@@ -222,39 +223,7 @@ const tabBarScreenOptions = {
   },
 };
 
-// Shown once per install, the first time the user reaches the main tabs, so
-// the first slow screen has an explanation. Never repeated after that; the
-// profile page footer carries the same note permanently.
-const FREE_SERVER_NOTICE_KEY = 'notice_free_server_shown';
-
-function useFreeServerNoticeOnce() {
-  React.useEffect(() => {
-    let cancelled = false;
-    (async () => {
-      try {
-        if (await SecureStore.getItemAsync(FREE_SERVER_NOTICE_KEY)) return;
-        await SecureStore.setItemAsync(FREE_SERVER_NOTICE_KEY, '1');
-      } catch {
-        return;
-      }
-      if (cancelled) return;
-      // Small delay so it lands after the first screen has rendered.
-      setTimeout(() => {
-        if (cancelled) return;
-        Toast.show({
-          type: 'glass',
-          text1: 'Running on a free server',
-          text2: 'Things may feel slow at times. Thanks for your patience.',
-          visibilityTime: 5000,
-        });
-      }, 1200);
-    })();
-    return () => { cancelled = true; };
-  }, []);
-}
-
 const MainTabNavigator = React.memo(function MainTabNavigator() {
-  useFreeServerNoticeOnce();
   return (
     <MainTab.Navigator screenOptions={tabBarScreenOptions}>
       <MainTab.Screen
@@ -295,7 +264,7 @@ const MainTabNavigator = React.memo(function MainTabNavigator() {
 MainTabNavigator.displayName = 'MainTabNavigator';
 
 export function RootNavigator() {
-  const { isAuthenticated, isLoading, onboardingStep } = useAuthStore();
+  const { isAuthenticated, isLoading, onboardingStep, welcomePending } = useAuthStore();
 
   // When the user logs out or deletes their account, reset the navigator
   // back to the Onboarding screen so they can't swipe back into Main.
@@ -323,9 +292,10 @@ export function RootNavigator() {
       <NotificationHandler />
       <RootStack.Navigator
         screenOptions={screenOptions}
-        initialRouteName={showOnboarding ? 'Onboarding' : 'Main'}
+        initialRouteName={showOnboarding ? 'Onboarding' : welcomePending ? 'Welcome' : 'Main'}
       >
         <RootStack.Screen name="Onboarding" component={AuthNavigator} />
+        <RootStack.Screen name="Welcome" component={WelcomeScreen} />
         <RootStack.Screen name="Main" component={MainTabNavigator} />
         {/* Match screens (pushed above tab bar) */}
         <RootStack.Screen name="Likes" component={LikeListScreen} />
