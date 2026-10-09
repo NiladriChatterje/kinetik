@@ -27,10 +27,16 @@ interface IncomingLike {
   isSuperLike?: boolean;
 }
 
+/** Blurred placeholder cards shown to a free user; the rest is a "+N more" */
+const BLURRED_CARDS_SHOWN = 6;
+
 export const LikeListScreen: React.FC<{ navigation: any }> = ({ navigation }) => {
   const [likes, setLikes] = useState<IncomingLike[]>([]);
   const [loading, setLoading] = useState(true);
   const [responding, setResponding] = useState<string | null>(null);
+  // Free account: the server sends only how many liked them, never who
+  const [locked, setLocked] = useState(false);
+  const [lockedCount, setLockedCount] = useState(0);
   const toast = useToast();
 
   // Paywall modal state
@@ -46,6 +52,8 @@ export const LikeListScreen: React.FC<{ navigation: any }> = ({ navigation }) =>
       setLoading(true);
       const res = await api.getIncomingLikes();
       if (res.success && res.data) {
+        setLocked(Boolean(res.data.locked));
+        setLockedCount(res.data.totalCount || 0);
         setLikes(res.data.likes || []);
         // Reset unread badge count — user has now seen all likes
         useAuthStore.getState().resetUnreadLikeCount();
@@ -211,7 +219,47 @@ export const LikeListScreen: React.FC<{ navigation: any }> = ({ navigation }) =>
         </TouchableOpacity>
       </View>
 
-      {likes.length === 0 ? (
+      {locked ? (
+        lockedCount === 0 ? (
+          <View style={styles.centered}>
+            <Ionicons name="heart-outline" size={64} color={colors.textMuted} />
+            <Text style={styles.emptyTitle}>No Likes Yet</Text>
+            <Text style={styles.emptySubtitle}>When someone likes your profile, it will show here</Text>
+          </View>
+        ) : (
+          <View style={styles.lockedWrap}>
+            <Text style={styles.lockedTitle}>
+              {lockedCount === 1 ? '1 person likes you' : `${lockedCount} people like you`}
+            </Text>
+            <Text style={styles.lockedSubtitle}>Upgrade to Premium to see who they are and like them back.</Text>
+
+            {/* Placeholders only: no names, photos or ids reach the app */}
+            <View style={styles.blurGrid}>
+              {Array.from({ length: Math.min(lockedCount, BLURRED_CARDS_SHOWN) }).map((_, i) => (
+                <View key={i} style={styles.blurCard}>
+                  <View style={styles.blurAvatar}>
+                    <Ionicons name="lock-closed" size={20} color={colors.textMuted} />
+                  </View>
+                  <View style={styles.blurLineWide} />
+                  <View style={styles.blurLineShort} />
+                </View>
+              ))}
+            </View>
+            {lockedCount > BLURRED_CARDS_SHOWN && (
+              <Text style={styles.moreText}>+{lockedCount - BLURRED_CARDS_SHOWN} more</Text>
+            )}
+
+            <TouchableOpacity
+              style={styles.upgradeButton}
+              onPress={() => navigation.navigate('SubscriptionCheckout')}
+              activeOpacity={0.8}
+            >
+              <Ionicons name="eye-outline" size={18} color={colors.textInverse} />
+              <Text style={styles.upgradeText}>See who likes you</Text>
+            </TouchableOpacity>
+          </View>
+        )
+      ) : likes.length === 0 ? (
         <View style={styles.centered}>
           <Ionicons name="heart-outline" size={64} color={colors.textMuted} />
           <Text style={styles.emptyTitle}>No Likes Yet</Text>
@@ -261,6 +309,42 @@ const styles = StyleSheet.create({
   emptyTitle: { ...typography.h2, color: colors.textPrimary, marginTop: spacing.lg },
   emptySubtitle: { ...typography.body1, color: colors.textMuted, marginTop: spacing.sm, textAlign: 'center' },
   list: { padding: spacing.lg, gap: spacing.md },
+
+  // Locked (free account)
+  lockedWrap: { flex: 1, paddingHorizontal: spacing.xxl, paddingTop: spacing.lg },
+  lockedTitle: { ...typography.h2, color: colors.textPrimary, textAlign: 'center' },
+  lockedSubtitle: { ...typography.body1, color: colors.textSecondary, textAlign: 'center', marginTop: spacing.sm, marginBottom: spacing.xl },
+  blurGrid: { flexDirection: 'row', flexWrap: 'wrap', justifyContent: 'space-between', rowGap: spacing.md },
+  blurCard: {
+    width: '48%',
+    alignItems: 'center',
+    gap: spacing.sm,
+    paddingVertical: spacing.lg,
+    borderRadius: radius.xl,
+    backgroundColor: colors.surface,
+  },
+  blurAvatar: {
+    width: 64,
+    height: 64,
+    borderRadius: 32,
+    backgroundColor: colors.surfaceHighlight,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  blurLineWide: { width: '60%', height: 10, borderRadius: 5, backgroundColor: colors.surfaceHighlight },
+  blurLineShort: { width: '35%', height: 10, borderRadius: 5, backgroundColor: colors.surfaceHighlight },
+  moreText: { ...typography.body2, color: colors.textMuted, textAlign: 'center', marginTop: spacing.md },
+  upgradeButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: spacing.sm,
+    marginTop: spacing.xl,
+    paddingVertical: spacing.md + 2,
+    borderRadius: radius.full,
+    backgroundColor: colors.textPrimary,
+  },
+  upgradeText: { ...typography.button, color: colors.textInverse },
   likeCard: {
     backgroundColor: colors.surface,
     borderRadius: radius.xl,

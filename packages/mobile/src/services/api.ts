@@ -498,15 +498,6 @@ class ApiClient {
     });
   }
 
-  // ─── Fans ───────────────────────────────────────────
-  async getFans() {
-    return this.request('/api/v1/fans');
-  }
-
-  async unlockFans() {
-    return this.request('/api/v1/fans/unlock', { method: 'POST' });
-  }
-
   // ─── Venues ─────────────────────────────────────────
   async getNearbyVenues(latitude: number, longitude: number, radius?: number) {
     return this.request(`/api/v1/venues/nearby?latitude=${latitude}&longitude=${longitude}&radius=${radius || 5}`);
@@ -864,7 +855,8 @@ class ApiClient {
   }
 
   async getIncomingLikes() {
-    return this.request<{ likes: any[]; totalCount: number }>('/api/v1/matches/likes');
+    // locked: free account, so likes is empty and totalCount is all there is
+    return this.request<{ likes: any[]; totalCount: number; locked?: boolean }>('/api/v1/matches/likes');
   }
 
   async respondToLike(targetUserId: string, action: 'like' | 'discard') {

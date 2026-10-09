@@ -23,6 +23,8 @@ interface Conversation {
   lastMessageAt?: string;
   lastMessageSenderId?: string;
   unreadCount: number;
+  /** Free account and not their one free chat: the server sends no messages */
+  locked?: boolean;
 }
 
 export const ChatListScreen: React.FC<{ navigation: any }> = ({ navigation }) => {
@@ -153,6 +155,7 @@ export const ChatListScreen: React.FC<{ navigation: any }> = ({ navigation }) =>
         partnerId: item.partnerId,
         partnerPhotoUrl: item.partnerPhotoUrl,
       })}
+      accessibilityHint={item.locked ? 'Locked. Upgrade to Premium to chat.' : undefined}
     >
       <View style={styles.avatarContainer}>
         {item.partnerPhotoUrl ? (
@@ -171,7 +174,12 @@ export const ChatListScreen: React.FC<{ navigation: any }> = ({ navigation }) =>
 
       <View style={styles.conversationInfo}>
         <View style={styles.conversationHeader}>
-          <Text style={styles.partnerName}>{item.partnerName}</Text>
+          <View style={styles.nameRow}>
+            <Text style={styles.partnerName}>{item.partnerName}</Text>
+            {item.locked && (
+              <Ionicons name="lock-closed" size={13} color={colors.textMuted} />
+            )}
+          </View>
           {item.lastMessageAt && (
             <Text style={styles.time}>{formatTime(item.lastMessageAt)}</Text>
           )}
@@ -183,8 +191,9 @@ export const ChatListScreen: React.FC<{ navigation: any }> = ({ navigation }) =>
           ]}
           numberOfLines={1}
         >
-          {item.lastMessageSenderId === authUser?.id ? 'You: ' : ''}
-          {item.lastMessage || 'No messages yet'}
+          {item.locked
+            ? 'Upgrade to Premium to chat'
+            : `${item.lastMessageSenderId === authUser?.id ? 'You: ' : ''}${item.lastMessage || 'No messages yet'}`}
         </Text>
       </View>
     </TouchableOpacity>
@@ -295,6 +304,7 @@ const styles = StyleSheet.create({
     marginBottom: 2,
   },
   partnerName: { ...typography.body1, color: colors.textPrimary, fontWeight: '600' },
+  nameRow: { flexDirection: 'row', alignItems: 'center', gap: spacing.xs, flexShrink: 1 },
   time: { ...typography.caption, color: colors.textMuted, fontSize: 12 },
   lastMessage: { ...typography.body2, color: colors.textMuted },
   unreadMessage: { color: colors.textPrimary, fontWeight: '600' },

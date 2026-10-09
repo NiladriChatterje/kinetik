@@ -22,6 +22,7 @@ import { useAuthStore } from '../../store/authStore';
 import { useToast } from '../../hooks/useToast';
 import { DmSuggestionChips } from '../../components/chat/DmSuggestionChips';
 import { ReplyAssistantOffer } from '../../components/chat/ReplyAssistantOffer';
+import { LockedChatView } from '../../components/chat/LockedChatView';
 import { resolveUrl } from '../../config';
 import { colors, typography, spacing, radius } from '../../theme';
 
@@ -395,6 +396,8 @@ export const ChatScreen: React.FC<{ navigation: any; route: any }> = ({ navigati
   const [messages, setMessages] = useState<Message[]>([]);
   const [inputText, setInputText] = useState('');
   const [loading, setLoading] = useState(true);
+  // The server reports this chat as locked (free account, not their one free chat)
+  const [locked, setLocked] = useState(false);
   const [sending, setSending] = useState(false);
   const [partnerTyping, setPartnerTyping] = useState(false);
   const [socketConnected, setSocketConnected] = useState(false);
@@ -629,7 +632,12 @@ export const ChatScreen: React.FC<{ navigation: any; route: any }> = ({ navigati
   const syncMessages = useCallback(async () => {
     try {
       const res = await api.getMessages(matchId);
+      if (!res.success && res.error?.code === 'CHAT_LOCKED') {
+        setLocked(true);
+        return;
+      }
       if (!res.success || !res.data) return;
+      setLocked(false);
       const fetched = res.data.messages || [];
       setMessages((prev) => {
         // Keep only THIS match's pending sends — if the screen was re-used
@@ -1647,6 +1655,16 @@ export const ChatScreen: React.FC<{ navigation: any; route: any }> = ({ navigati
   const inputBarPaddingBottom = keyboardVisible
     ? spacing.xs
     : Math.max(MIN_INPUT_BOTTOM_GAP, insets.bottom + spacing.xs);
+
+  if (locked) {
+    return (
+      <LockedChatView
+        partnerName={partnerName}
+        onBack={() => navigation.goBack()}
+        onUpgrade={() => navigation.navigate('SubscriptionCheckout')}
+      />
+    );
+  }
 
   return (
     <SafeAreaView style={styles.container} edges={['top', 'left', 'right']}>
