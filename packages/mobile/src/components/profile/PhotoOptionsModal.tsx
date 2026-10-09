@@ -1,4 +1,4 @@
-import React, { useEffect, useRef } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import {
   View,
   Text,
@@ -8,12 +8,15 @@ import {
   Image,
   Animated,
   TouchableWithoutFeedback,
+  ActivityIndicator,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { resolveUrl } from '../../config';
 import { colors, typography, spacing, radius } from '../../theme';
 
 const SHEET_HEIGHT = 340;
+/** Destructive red, matching the Delete Account confirmation on the profile screen */
+const DANGER = '#E53935';
 
 interface PhotoOptionsModalProps {
   visible: boolean;
@@ -23,8 +26,8 @@ interface PhotoOptionsModalProps {
   isPrimary: boolean;
   /** Called when the user taps "Set as Primary" */
   onSetPrimary: () => void;
-  /** Called when the user taps "Delete Photo" */
-  onDelete: () => void;
+  /** Called once the user confirms the delete; the sheet waits for it, then closes */
+  onDelete: () => Promise<void>;
   /** Called to close the modal */
   onClose: () => void;
 }
@@ -39,6 +42,38 @@ export const PhotoOptionsModal: React.FC<PhotoOptionsModalProps> = ({
 }) => {
   const slideAnim = useRef(new Animated.Value(SHEET_HEIGHT)).current;
   const fadeAnim = useRef(new Animated.Value(0)).current;
+  // Delete asks for confirmation inside this sheet rather than a system alert
+  const [confirmingDelete, setConfirmingDelete] = useState(false);
+  const [deleting, setDeleting] = useState(false);
+
+  // Every opening starts on the options view
+  useEffect(() => {
+    if (visible) {
+      setConfirmingDelete(false);
+      setDeleting(false);
+    }
+  }, [visible]);
+
+  const handleClose = () => {
+    if (!deleting) onClose();
+  };
+
+  // Android back steps out of the confirmation before closing the sheet
+  const handleRequestClose = () => {
+    if (deleting) return;
+    if (confirmingDelete) setConfirmingDelete(false);
+    else onClose();
+  };
+
+  const handleConfirmDelete = async () => {
+    setDeleting(true);
+    try {
+      await onDelete();
+    } finally {
+      setDeleting(false);
+      onClose();
+    }
+  };
 
   useEffect(() => {
     if (visible) {
@@ -79,11 +114,11 @@ export const PhotoOptionsModal: React.FC<PhotoOptionsModalProps> = ({
       visible={visible}
       transparent
       animationType="none"
-      onRequestClose={onClose}
+      onRequestClose={handleRequestClose}
       statusBarTranslucent
     >
       {/* Backdrop */}
-      <TouchableWithoutFeedback onPress={onClose}>
+      <TouchableWithoutFeedback onPress={handleClose}>
         <Animated.View style={[styles.backdrop, { opacity: fadeAnim }]}>
           <TouchableWithoutFeedback>
             <Animated.View
@@ -103,82 +138,112 @@ export const PhotoOptionsModal: React.FC<PhotoOptionsModalProps> = ({
                 />
               </View>
 
-              {/* Divider */}
-              <View style={styles.divider} />
+              {confirmingDelete ? (
+                <>
+                  {/* Delete confirmation */}
+                  <Text style={styles.confirmTitle}>Delete this photo?</Text>
+                  <Text style={styles.confirmBody}>
+                    It will be removed from your profile. This cannot be undone.
+                  </Text>
 
-              {/* Options */}
-              <View style={styles.optionsSection}>
-                {/* Set as Primary (hidden if already primary) */}
-                {!isPrimary && (
                   <TouchableOpacity
-                    style={styles.optionRow}
-                    onPress={() => {
-                      onClose();
-                      onSetPrimary();
-                    }}
-                    activeOpacity={0.6}
+                    style={[styles.deleteButton, deleting && styles.deleteButtonBusy]}
+                    onPress={handleConfirmDelete}
+                    disabled={deleting}
+                    activeOpacity={0.8}
                   >
-                    <View style={styles.optionIconWrap}>
-                      <Ionicons
-                        name="star"
-                        size={22}
-                        color={colors.textPrimary}
-                      />
-                    </View>
-                    <View style={styles.optionContent}>
-                      <Text style={styles.optionTitle}>Set as Primary</Text>
-                      <Text style={styles.optionSubtitle}>
-                        Make this your main profile photo
-                      </Text>
-                    </View>
-                    <Ionicons
-                      name="chevron-forward"
-                      size={18}
-                      color={colors.textMuted}
-                    />
+                    {deleting && <ActivityIndicator size="small" color={colors.textMuted} />}
+                    <Text style={[styles.deleteButtonText, deleting && styles.deleteButtonTextBusy]}>
+                      {deleting ? 'Deleting…' : 'Delete Photo'}
+                    </Text>
                   </TouchableOpacity>
-                )}
 
-                {/* Delete Photo */}
-                <TouchableOpacity
-                  style={styles.optionRow}
-                  onPress={() => {
-                    onClose();
-                    onDelete();
-                  }}
-                  activeOpacity={0.6}
-                >
-                  <View style={[styles.optionIconWrap, styles.optionIconDanger]}>
-                    <Ionicons
-                      name="trash-outline"
-                      size={22}
-                      color={colors.error}
-                    />
-                  </View>
-                  <View style={styles.optionContent}>
-                    <Text style={[styles.optionTitle, styles.optionTitleDanger]}>
-                      Delete Photo
-                    </Text>
-                    <Text style={styles.optionSubtitle}>
-                      Remove this photo permanently
-                    </Text>
-                  </View>
-                  <Ionicons
-                    name="chevron-forward"
-                    size={18}
-                    color={colors.textMuted}
-                  />
-                </TouchableOpacity>
-              </View>
+                  <TouchableOpacity
+                    style={styles.cancelButton}
+                    onPress={() => setConfirmingDelete(false)}
+                    disabled={deleting}
+                    activeOpacity={0.7}
+                  >
+                    <Text style={styles.cancelText}>Keep Photo</Text>
+                  </TouchableOpacity>
+                </>
+              ) : (
+                <>
+                  {/* Divider */}
+                  <View style={styles.divider} />
 
-              {/* Cancel Button */}
-              <TouchableOpacity
-                style={styles.cancelButton}
-                onPress={onClose}
-                activeOpacity={0.7}
-              >
-                <Text style={styles.cancelText}>Cancel</Text>
-              </TouchableOpacity>
+                  {/* Options */}
+                  <View style={styles.optionsSection}>
+                    {/* Set as Primary (hidden if already primary) */}
+                    {!isPrimary && (
+                      <TouchableOpacity
+                        style={styles.optionRow}
+                        onPress={() => {
+                          onClose();
+                          onSetPrimary();
+                        }}
+                        activeOpacity={0.6}
+                      >
+                        <View style={styles.optionIconWrap}>
+                          <Ionicons
+                            name="star"
+                            size={22}
+                            color={colors.textPrimary}
+                          />
+                        </View>
+                        <View style={styles.optionContent}>
+                          <Text style={styles.optionTitle}>Set as Primary</Text>
+                          <Text style={styles.optionSubtitle}>
+                            Make this your main profile photo
+                          </Text>
+                        </View>
+                        <Ionicons
+                          name="chevron-forward"
+                          size={18}
+                          color={colors.textMuted}
+                        />
+                      </TouchableOpacity>
+                    )}
+
+                    {/* Delete Photo */}
+                    <TouchableOpacity
+                      style={styles.optionRow}
+                      onPress={() => setConfirmingDelete(true)}
+                      activeOpacity={0.6}
+                    >
+                      <View style={[styles.optionIconWrap, styles.optionIconDanger]}>
+                        <Ionicons
+                          name="trash-outline"
+                          size={22}
+                          color={DANGER}
+                        />
+                      </View>
+                      <View style={styles.optionContent}>
+                        <Text style={[styles.optionTitle, styles.optionTitleDanger]}>
+                          Delete Photo
+                        </Text>
+                        <Text style={styles.optionSubtitle}>
+                          Remove this photo permanently
+                        </Text>
+                      </View>
+                      <Ionicons
+                        name="chevron-forward"
+                        size={18}
+                        color={colors.textMuted}
+                      />
+                    </TouchableOpacity>
+                  </View>
+
+                  {/* Cancel Button */}
+                  <TouchableOpacity
+                    style={styles.cancelButton}
+                    onPress={onClose}
+                    activeOpacity={0.7}
+                  >
+                    <Text style={styles.cancelText}>Cancel</Text>
+                  </TouchableOpacity>
+                </>
+              )}
             </Animated.View>
           </TouchableWithoutFeedback>
         </Animated.View>
@@ -252,7 +317,7 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
   },
   optionIconDanger: {
-    backgroundColor: 'rgba(255,0,0,0.08)',
+    backgroundColor: 'rgba(229, 57, 53, 0.1)',
   },
   optionContent: {
     flex: 1,
@@ -263,12 +328,48 @@ const styles = StyleSheet.create({
     fontWeight: '600',
   },
   optionTitleDanger: {
-    color: colors.error,
+    color: DANGER,
   },
   optionSubtitle: {
     ...typography.caption,
     color: colors.textMuted,
     marginTop: 2,
+  },
+
+  // Delete confirmation
+  confirmTitle: {
+    ...typography.h3,
+    color: colors.textPrimary,
+    textAlign: 'center',
+    marginBottom: spacing.sm,
+  },
+  confirmBody: {
+    ...typography.body2,
+    color: colors.textSecondary,
+    textAlign: 'center',
+    lineHeight: 18,
+    marginBottom: spacing.xl,
+    paddingHorizontal: spacing.sm,
+  },
+  deleteButton: {
+    flexDirection: 'row',
+    gap: spacing.sm,
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: spacing.md + 2,
+    borderRadius: radius.md,
+    backgroundColor: DANGER,
+    marginBottom: spacing.sm,
+  },
+  deleteButtonBusy: {
+    backgroundColor: colors.surfaceHighlight,
+  },
+  deleteButtonText: {
+    ...typography.button,
+    color: colors.textInverse,
+  },
+  deleteButtonTextBusy: {
+    color: colors.textMuted,
   },
 
   // Cancel

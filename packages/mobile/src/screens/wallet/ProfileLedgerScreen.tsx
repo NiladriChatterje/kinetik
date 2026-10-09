@@ -1,5 +1,5 @@
 import React, { useEffect, useState, useCallback, useRef } from 'react';
-import { View, Text, StyleSheet, ScrollView, TouchableOpacity, Image, Alert, ActivityIndicator, Modal, Animated, Dimensions, Linking } from 'react-native';
+import { View, Text, StyleSheet, ScrollView, TouchableOpacity, Image, ActivityIndicator, Modal, Animated, Dimensions, Linking } from 'react-native';
 import { useNavigation } from '@react-navigation/native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
@@ -277,30 +277,18 @@ export const ProfileLedgerScreen: React.FC = () => {
     });
   }, [deleteAccount, toast]);
 
-  const handleDeletePhoto = (photoId: string) => {
-    Alert.alert(
-      'Remove Photo',
-      'Are you sure you want to delete this photo? This cannot be undone.',
-      [
-        { text: 'Cancel', style: 'cancel' },
-        {
-          text: 'Delete',
-          style: 'destructive',
-          onPress: async () => {
-            setMutatingPhotoId(photoId);
-            try {
-              await api.deletePhoto(photoId);
-              toast.showSuccess('Photo removed', 'Deleted.');
-              await fetchProfileAndPhotos();
-            } catch (e: any) {
-              toast.showError('Failed', e?.message || 'Try again.');
-            } finally {
-              setMutatingPhotoId(null);
-            }
-          },
-        },
-      ],
-    );
+  // Confirmed inside PhotoOptionsModal, which waits for this before closing
+  const handleDeletePhoto = async (photoId: string) => {
+    setMutatingPhotoId(photoId);
+    try {
+      await api.deletePhoto(photoId);
+      toast.showSuccess('Photo removed', 'Deleted.');
+      await fetchProfileAndPhotos();
+    } catch (e: any) {
+      toast.showError('Failed', e?.message || 'Try again.');
+    } finally {
+      setMutatingPhotoId(null);
+    }
   };
 
   const handlePhotoPress = (photo: ProfilePhoto) => {
@@ -609,8 +597,8 @@ export const ProfileLedgerScreen: React.FC = () => {
         onSetPrimary={() => {
           if (modalPhoto) handleSetPrimary(modalPhoto.id);
         }}
-        onDelete={() => {
-          if (modalPhoto) handleDeletePhoto(modalPhoto.id);
+        onDelete={async () => {
+          if (modalPhoto) await handleDeletePhoto(modalPhoto.id);
         }}
         onClose={() => setModalPhoto(null)}
       />
