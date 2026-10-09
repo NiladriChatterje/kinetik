@@ -158,7 +158,7 @@
 |---------|--------|---------|
 | Token Vault | ✅ Implemented | Token balance display |
 | Profile Ledger | ✅ Implemented | Transaction history |
-| Premium Subscriptions | ✅ Implemented | Google Play Billing, ₹149 Premium monthly (UPI Autopay / cards, billed by Google) |
+| Premium Subscriptions | ✅ Implemented | Google Play Billing, ₹99 Premium monthly (UPI Autopay / cards, billed by Google) |
 | Swipe Allowance Upgrades | ✅ Implemented | Premium = 99999 swipes (effectively unlimited), Infinite = unlimited |
 | Fast Passes & Rain Checks | ✅ Implemented | Token-based boosts for matching priority |
 

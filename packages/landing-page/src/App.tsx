@@ -172,7 +172,7 @@ function HeroRadarSVG() {
             See how it works
           </a>
           <a href="#premium" className="btn btn-outline">
-            Go Premium — ₹149/mo
+            Go Premium — ₹99/mo
           </a>
         </div>
         <div className="hero-free-tier">
@@ -874,7 +874,7 @@ function Premium() {
         </p>
         <div className={`pricing-card ${visible ? 'visible' : ''}`}>
           <span className="pricing-badge">PREMIUM</span>
-          <div className="pricing-price">₹149</div>
+          <div className="pricing-price">₹99</div>
           <div className="pricing-period">per month · recurring</div>
           <ul className="pricing-list">
             {PREMIUM_FEATURES.map((f) => (
@@ -888,7 +888,7 @@ function Premium() {
             Questions? Contact support
           </a>
           <p className="pricing-note">
-            You approve a recurring autopay mandate once; ₹149 is charged each month and Google Pay
+            You approve a recurring autopay mandate once; ₹99 is charged each month and Google Pay
             notifies you before every charge. Cancel any time — Premium stays active until the end
             of the paid cycle.
           </p>
@@ -1121,7 +1121,7 @@ function Terms() {
           <h3>Premium subscription</h3>
           <ul>
             <li>
-              Premium costs <strong>₹149 per month</strong>, billed in advance through Google Pay
+              Premium costs <strong>₹99 per month</strong>, billed in advance through Google Pay
               as a recurring autopay mandate you authorise at signup.
             </li>
             <li>

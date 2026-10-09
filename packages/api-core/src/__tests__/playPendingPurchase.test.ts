@@ -188,7 +188,7 @@ function verify(userId: string, purchaseToken: string) {
     method: 'POST',
     url: '/api/v1/payments/subscription/verify',
     headers: { authorization: `Bearer ${token}` },
-    payload: { purchaseToken, productId: PRODUCT, priceAmount: 149, priceCurrency: 'INR' },
+    payload: { purchaseToken, productId: PRODUCT, priceAmount: 99, priceCurrency: 'INR' },
   });
 }
 

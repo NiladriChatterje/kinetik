@@ -1,6 +1,6 @@
 # Payment Integration — Google Play Billing Subscriptions
 
-Kinetik Premium (₹149/month, a single plan) is sold as a **Google Play Billing subscription**.
+Kinetik Premium (₹99/month, a single plan) is sold as a **Google Play Billing subscription**.
 
 Google is the **merchant of record**. It shows the purchase sheet, takes whatever payment method
 the user has on their Google account — UPI Autopay, card, Play balance — holds the recurring
@@ -84,7 +84,7 @@ Upload an **AAB** to **internal testing** with **Play App Signing** enabled.
 
 - Product ID — must equal `GOOGLE_PLAY_SUBSCRIPTION_PRODUCT_ID`. Permanent; choose carefully.
 - Add a **base plan**: auto-renewing, billing period `P1M`.
-- Price ₹149 for India; set or auto-convert other regions.
+- Price ₹99 for India; set or auto-convert other regions.
 - Set **grace period** and **account hold** — without them a single failed UPI charge cancels
   the subscription outright instead of retrying.
 - **Activate the base plan.** Creating it is not enough; an inactive plan is invisible to the app
