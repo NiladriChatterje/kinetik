@@ -372,7 +372,7 @@ export const FaceVerificationScreen: React.FC<{ navigation: any }> = ({ navigati
 
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: colors.background },
-  content: { flex: 1, padding: spacing.xxl, alignItems: 'center' },
+  content: { flex: 1, paddingHorizontal: spacing.xxl, paddingTop: spacing.lg, paddingBottom: spacing.sm, alignItems: 'center' },
   centered: { flex: 1, alignItems: 'center', justifyContent: 'center' },
 
   // Text
@@ -391,7 +391,7 @@ const styles = StyleSheet.create({
     backgroundColor: colors.surfaceHighlight,
     alignItems: 'center',
     justifyContent: 'center',
-    marginBottom: spacing.lg,
+    marginBottom: spacing.md,
   },
   placeholderText: { ...typography.body2, color: colors.textMuted, marginTop: spacing.md },
 
@@ -402,7 +402,7 @@ const styles = StyleSheet.create({
     maxHeight: CAMERA_HEIGHT,
     borderRadius: radius.xl,
     overflow: 'hidden',
-    marginBottom: spacing.lg,
+    marginBottom: spacing.md,
     backgroundColor: colors.surfaceHighlight,
   },
   camera: {
@@ -537,5 +537,5 @@ const styles = StyleSheet.create({
   retakeText: { ...typography.body2, color: colors.textPrimary, fontWeight: '600' },
 
   // Footer
-  footer: { paddingHorizontal: spacing.xxl, paddingTop: spacing.md, paddingBottom: spacing.xxl, alignItems: 'center' },
+  footer: { paddingHorizontal: spacing.xxl, paddingTop: spacing.sm, paddingBottom: spacing.lg, alignItems: 'center' },
 });
