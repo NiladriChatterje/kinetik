@@ -1,4 +1,4 @@
-import React, { useState, useCallback } from 'react';
+import React, { useState, useCallback, useEffect } from 'react';
 import { View, Text, StyleSheet, ScrollView, KeyboardAvoidingView, Platform, TouchableOpacity } from 'react-native';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Button } from '../../components/common/Button';
@@ -84,6 +84,27 @@ export const IdentityScreen: React.FC<{ navigation: any }> = ({ navigation }) =>
   const [loading, setLoading] = useState(false);
   const { user } = useAuthStore();
   const toast = useToast();
+
+  // Prefill what this step already saved, so returning here to change one
+  // answer does not mean re-entering all of them. Never overwrites input.
+  useEffect(() => {
+    let cancelled = false;
+    api.getProfile().then((res: any) => {
+      const p = res?.success ? res.data : null;
+      if (cancelled || !p) return;
+      const iso = typeof p.dateOfBirth === 'string' ? p.dateOfBirth.match(/^(\d{4})-(\d{2})-(\d{2})/) : null;
+      if (iso) setDob((prev) => prev || `${iso[3]}/${iso[2]}/${iso[1]}`);
+      const savedGender = GENDER_OPTIONS.find((g) => g.toLowerCase() === String(p.gender ?? '').toLowerCase());
+      if (savedGender) setGender((prev) => prev ?? savedGender);
+      if (DATING_CATEGORIES.some((c) => c.value === p.datingCategory)) {
+        setDatingCategory((prev) => prev ?? p.datingCategory);
+      }
+      if (typeof p.pronouns === 'string') setPronouns((prev) => prev || p.pronouns);
+    }).catch(() => {
+      // Prefill is a convenience — an empty form still works
+    });
+    return () => { cancelled = true; };
+  }, []);
 
   const handleDobChange = useCallback((text: string) => {
     setDob(formatDob(text));

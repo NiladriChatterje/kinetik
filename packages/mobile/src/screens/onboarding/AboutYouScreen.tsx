@@ -1,4 +1,4 @@
-import React, { useState, useCallback, useMemo, useRef } from 'react';
+import React, { useState, useCallback, useEffect, useMemo, useRef } from 'react';
 import {
   View, Text, StyleSheet, ScrollView, TextInput,
   TouchableOpacity, Keyboard, Animated, LayoutAnimation,
@@ -142,6 +142,27 @@ export const AboutYouScreen: React.FC<{ navigation: any }> = ({ navigation }) =>
   const [typingOpen, setTypingOpen] = useState<Record<string, boolean>>({});
   const [loading, setLoading] = useState(false);
   const [attempted, setAttempted] = useState(false);
+
+  // Prefill saved answers, so returning here to change one section keeps the
+  // rest. Only applied while nothing has been picked yet.
+  useEffect(() => {
+    let cancelled = false;
+    api.getProfile().then((res: any) => {
+      const saved = res?.success ? res.data?.aboutAnswers : null;
+      if (cancelled || !saved || typeof saved !== 'object') return;
+      const loaded = emptyAnswers();
+      for (const q of QUESTIONS) {
+        const values = saved[q.key];
+        if (Array.isArray(values)) {
+          loaded[q.key] = values.filter((v: unknown): v is string => typeof v === 'string').slice(0, q.max);
+        }
+      }
+      setAnswers((prev) => (QUESTIONS.every((q) => prev[q.key].length === 0) ? loaded : prev));
+    }).catch(() => {
+      // Prefill is a convenience — empty sections still work
+    });
+    return () => { cancelled = true; };
+  }, []);
 
   const answeredCount = useMemo(
     () => QUESTIONS.filter((q) => answers[q.key].length > 0).length,

@@ -32,6 +32,27 @@ export const PhotoUploadScreen: React.FC<{ navigation: any }> = ({ navigation })
 
   const { height: SCREEN_HEIGHT } = Dimensions.get('window');
 
+  // Show photos already uploaded in this step, so returning here to change
+  // them starts from what was saved instead of an empty grid.
+  useEffect(() => {
+    let cancelled = false;
+    api.getPhotos().then((res: any) => {
+      if (cancelled || !res?.success || !Array.isArray(res.data)) return;
+      const saved: UploadedPhoto[] = res.data.map((p: any) => ({
+        id: p.id,
+        url: p.url,
+        thumbnailUrl: p.thumbnail_url ?? '',
+        localUri: '',
+        uploading: false,
+      }));
+      // Keep anything added meanwhile; skip ids already in the grid
+      setPhotos((prev) => [...saved.filter((s) => !prev.some((p) => p.id === s.id)), ...prev]);
+    }).catch(() => {
+      // Grid starts empty — the user can still add photos
+    });
+    return () => { cancelled = true; };
+  }, []);
+
   const openModal = () => {
     setSourceModalVisible(true);
     Animated.parallel([
