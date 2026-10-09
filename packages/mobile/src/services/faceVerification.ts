@@ -160,7 +160,10 @@ export async function embedFace(
     // fast-tflite v3 takes/returns ArrayBuffers (tensor was allocated via
     // `new Float32Array(n)`, so its buffer is a plain ArrayBuffer)
     const outputs = await model.run([tensor.buffer as ArrayBuffer]);
-    const embedding = new Float32Array(outputs[0] as ArrayBuffer);
+    // Copy, don't wrap: fast-tflite reuses one output ArrayBuffer for every
+    // run, so a view would be overwritten by the next embedFace() call —
+    // every profile embedding would become the selfie's and match at 1.0.
+    const embedding = new Float32Array(outputs[0] as ArrayBuffer).slice();
 
     // L2-normalize so cosine similarity is a plain dot product
     let norm = 0;
