@@ -236,7 +236,7 @@ export const FaceVerificationScreen: React.FC<{ navigation: any }> = ({ navigati
               color={colors.textPrimary}
             />
             <Text style={styles.successTitle}>
-              {verified ? 'Identity Verified!' : blocked ? 'Not Matched' : 'Selfie Submitted'}
+              {verified ? 'Face Verified!' : blocked ? 'Not Matched' : 'Selfie Submitted'}
             </Text>
             <Text style={styles.successSubtitle}>
               {verified

@@ -232,8 +232,12 @@ function SwipeCard({
             <Text style={styles.name}>
               {profile.displayName}, {profile.age}
             </Text>
+            {/* Their selfie matched their own photos */}
             {profile.isVerified && (
-              <Ionicons name="checkmark-circle" size={18} color={colors.success} style={{ marginLeft: 6 }} />
+              <View style={styles.faceVerified} accessibilityLabel="Face verified">
+                <Ionicons name="checkmark-circle" size={16} color={colors.success} />
+                <Text style={styles.faceVerifiedText}>Face verified</Text>
+              </View>
             )}
           </View>
 
@@ -994,10 +998,13 @@ const styles = StyleSheet.create({
   },
   nameRow: {
     flexDirection: 'row',
+    flexWrap: 'wrap',
     alignItems: 'center',
     marginBottom: 2,
   },
   name: { ...typography.h3, color: colors.textPrimary },
+  faceVerified: { flexDirection: 'row', alignItems: 'center', gap: 3, marginLeft: spacing.sm },
+  faceVerifiedText: { ...typography.caption, color: colors.textSecondary, fontWeight: '600' },
   pronounsText: { ...typography.caption, color: colors.textMuted, marginBottom: spacing.xs, fontSize: 11 },
   categoryBadge: { marginBottom: spacing.sm },
   bio: { ...typography.body2, color: colors.textSecondary, marginBottom: spacing.sm, lineHeight: 19 },

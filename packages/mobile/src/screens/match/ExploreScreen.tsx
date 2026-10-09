@@ -175,7 +175,7 @@ export const ExploreScreen: React.FC<{ navigation: any }> = ({ navigation }) => 
               {item.displayName}, {item.age}
             </Text>
             {item.isVerified && (
-              <Ionicons name="checkmark-circle" size={14} color={colors.success} />
+              <Ionicons name="checkmark-circle" size={14} color={colors.success} accessibilityLabel="Face verified" />
             )}
           </View>
           <DatingCategoryBadge category={item.datingCategory} onDark compact style={styles.cardCategory} />

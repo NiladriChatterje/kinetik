@@ -326,15 +326,18 @@ export const ProfileLedgerScreen: React.FC = () => {
               <Text style={styles.locationText}>{locationStr}</Text>
             </View>
           )}
-          <View style={styles.verifiedBadge}>
-            <Ionicons
-              name="checkmark-circle"
-              size={14}
-              color={colors.textPrimary}
-              style={{ marginRight: 4 }}
-            />
-            <Text style={styles.verifiedText}>Identity Verified</Text>
-          </View>
+          {/* Only after the selfie matched the profile photos */}
+          {profile?.isVerified && (
+            <View style={styles.verifiedBadge}>
+              <Ionicons
+                name="checkmark-circle"
+                size={14}
+                color={colors.textPrimary}
+                style={{ marginRight: 4 }}
+              />
+              <Text style={styles.verifiedText}>Face Verified</Text>
+            </View>
+          )}
         </View>
 
         {/* Photos Grid — always visible with empty slots up to MAX_PHOTOS */}

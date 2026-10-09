@@ -133,7 +133,7 @@ export const LikeListScreen: React.FC<{ navigation: any }> = ({ navigation }) =>
               <Text style={styles.age}>  {item.age}</Text>
             </Text>
             {item.isVerified && (
-              <Ionicons name="checkmark-circle" size={16} color={colors.textPrimary} style={{ marginLeft: 5 }} />
+              <Ionicons name="checkmark-circle" size={16} color={colors.textPrimary} style={{ marginLeft: 5 }} accessibilityLabel="Face verified" />
             )}
           </View>
           <DatingCategoryBadge category={item.datingCategory} compact style={styles.categoryBadge} />
