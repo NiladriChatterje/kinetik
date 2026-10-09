@@ -5,7 +5,7 @@ import {
 } from 'react-native';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Button } from '../../components/common/Button';
-import { BackButton } from '../../components/common/BackButton';
+import { StepLabel } from '../../components/common/StepLabel';
 import { useToast } from '../../hooks/useToast';
 import { api } from '../../services/api';
 import { hapticLight } from '../../utils/haptics';
@@ -247,12 +247,10 @@ export const AboutYouScreen: React.FC<{ navigation: any }> = ({ navigation }) =>
         bounces={false}
         showsVerticalScrollIndicator={false}
       >
-        <BackButton onPress={() => navigation.goBack()} />
-
         {/* Header */}
         <View style={styles.header}>
           <View style={styles.headerCopy}>
-            <Text style={styles.step}>Step 2 of 6</Text>
+            <StepLabel label="Step 2 of 6" onBack={() => navigation.goBack()} />
             <Text style={styles.title}>Knowing more about you</Text>
             <Text style={styles.subtitle}>
               Five quick questions so your matches get the real you, before the small talk
@@ -379,7 +377,6 @@ const styles = StyleSheet.create({
     marginBottom: spacing.xl,
   },
   headerCopy: { flex: 1, paddingRight: spacing.lg },
-  step: { ...typography.label, color: colors.textPrimary, marginBottom: spacing.sm },
   title: { ...typography.h1, color: colors.textPrimary, marginBottom: spacing.sm },
   subtitle: { ...typography.body1, color: colors.textSecondary, lineHeight: 21 },
 

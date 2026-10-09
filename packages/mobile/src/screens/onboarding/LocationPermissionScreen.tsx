@@ -4,7 +4,7 @@ import * as Location from 'expo-location';
 import { Ionicons } from '@expo/vector-icons';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Button } from '../../components/common/Button';
-import { BackButton } from '../../components/common/BackButton';
+import { StepLabel } from '../../components/common/StepLabel';
 import { Card } from '../../components/common/Card';
 import { useToast } from '../../hooks/useToast';
 import { api } from '../../services/api';
@@ -110,8 +110,7 @@ export const LocationPermissionScreen: React.FC<{ navigation: any }> = ({ naviga
   return (
     <SafeAreaView style={styles.container}>
       <View style={styles.content}>
-        <BackButton onPress={() => navigation.goBack()} />
-        <Text style={styles.step}>Step 3 of 6</Text>
+        <StepLabel label="Step 3 of 6" onBack={() => navigation.goBack()} />
         <Text style={styles.title}>Enable Location</Text>
         <Text style={styles.subtitle}>We use precise GPS to place you on the local matching grid</Text>
 
@@ -185,7 +184,6 @@ export const LocationPermissionScreen: React.FC<{ navigation: any }> = ({ naviga
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: colors.background },
   content: { flex: 1, padding: spacing.xxl },
-  step: { ...typography.label, color: colors.textPrimary, marginBottom: spacing.sm },
   title: { ...typography.h1, color: colors.textPrimary, marginBottom: spacing.sm },
   subtitle: { ...typography.body1, color: colors.textSecondary, marginBottom: spacing.xxl },
   mapPreview: { alignItems: 'center', padding: spacing.xl, marginBottom: spacing.xl },

@@ -4,7 +4,7 @@ import * as ImagePicker from 'expo-image-picker';
 import { Ionicons } from '@expo/vector-icons';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Button } from '../../components/common/Button';
-import { BackButton } from '../../components/common/BackButton';
+import { StepLabel } from '../../components/common/StepLabel';
 import { useToast } from '../../hooks/useToast';
 import { compressAndUploadPhoto } from '../../services/photoService';
 import { api } from '../../services/api';
@@ -171,8 +171,7 @@ export const PhotoUploadScreen: React.FC<{ navigation: any }> = ({ navigation })
     <SafeAreaView style={styles.container}>
       <Animated.View style={[styles.contentWrap, { transform: [{ scale: contentScale }] }]}>  
         <ScrollView contentContainerStyle={styles.content}>
-          <BackButton onPress={() => navigation.goBack()} />
-          <Text style={styles.step}>Step 4 of 6</Text>
+          <StepLabel label="Step 4 of 6" onBack={() => navigation.goBack()} />
           <Text style={styles.title}>Add Photos</Text>
           <Text style={styles.subtitle}>Upload at least 2 clear photos for your profile</Text>
 
@@ -284,7 +283,6 @@ const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: colors.background },
   contentWrap: { flex: 1 },
   content: { padding: spacing.xxl, paddingBottom: 120 },
-  step: { ...typography.label, color: colors.textPrimary, marginBottom: spacing.sm },
   title: { ...typography.h1, color: colors.textPrimary, marginBottom: spacing.sm },
   subtitle: { ...typography.body1, color: colors.textSecondary, marginBottom: spacing.xxl },
   photoGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: spacing.md, justifyContent: 'center' },

@@ -10,7 +10,7 @@ import { CameraView, useCameraPermissions } from 'expo-camera';
 import { useIsFocused } from '@react-navigation/native';
 import * as ImageManipulator from 'expo-image-manipulator';
 import { Button } from '../../components/common/Button';
-import { BackButton } from '../../components/common/BackButton';
+import { StepLabel } from '../../components/common/StepLabel';
 import { useToast } from '../../hooks/useToast';
 import { api } from '../../services/api';
 import { resolveUrl, PRODUCTION_FACE_VERIFICATION } from '../../config';
@@ -19,7 +19,7 @@ import { hapticSuccess } from '../../utils/haptics';
 import { colors, typography, spacing, radius } from '../../theme';
 
 const { width: SCREEN_WIDTH } = Dimensions.get('window');
-/** 9:16 portrait camera — fills width, height = width × 16/9 */
+/** Camera box: full width, and at most 9:16 tall (it shrinks to fit shorter screens) */
 const CAMERA_WIDTH = SCREEN_WIDTH - spacing.xxl * 2;
 const CAMERA_HEIGHT = Math.round(CAMERA_WIDTH * (16 / 9));
 
@@ -193,8 +193,7 @@ export const FaceVerificationScreen: React.FC<{ navigation: any }> = ({ navigati
     return (
       <SafeAreaView style={styles.container}>
         <View style={styles.content}>
-          <BackButton onPress={goBack} />
-          <Text style={styles.step}>Step 5 of 6</Text>
+          <StepLabel label="Step 5 of 6" onBack={goBack} />
           <Text style={styles.title}>Verify You're Real</Text>
           <Text style={styles.subtitle}>
             We need access to your camera to take a verification selfie.
@@ -216,8 +215,7 @@ export const FaceVerificationScreen: React.FC<{ navigation: any }> = ({ navigati
     return (
       <SafeAreaView style={styles.container}>
         <View style={styles.content}>
-          <BackButton onPress={goBack} />
-          <Text style={styles.step}>Step 5 of 6</Text>
+          <StepLabel label="Step 5 of 6" onBack={goBack} />
           <Text style={styles.title}>Verify You're Real</Text>
           <Text style={styles.subtitle}>We match your selfie against the photos you uploaded</Text>
 
@@ -268,7 +266,7 @@ export const FaceVerificationScreen: React.FC<{ navigation: any }> = ({ navigati
     return (
       <SafeAreaView style={styles.container}>
         <View style={styles.content}>
-          <Text style={styles.step}>Step 5 of 6</Text>
+          <StepLabel label="Step 5 of 6" onBack={goBack} backDisabled />
           <Text style={styles.title}>Verify You're Real</Text>
           <Text style={styles.subtitle}>We match your selfie against the photos you uploaded</Text>
 
@@ -291,8 +289,7 @@ export const FaceVerificationScreen: React.FC<{ navigation: any }> = ({ navigati
     return (
       <SafeAreaView style={styles.container}>
         <View style={styles.content}>
-          <BackButton onPress={goBack} />
-          <Text style={styles.step}>Step 5 of 6</Text>
+          <StepLabel label="Step 5 of 6" onBack={goBack} />
           <Text style={styles.title}>Verify You're Real</Text>
           <Text style={styles.subtitle}>Check your selfie before submitting</Text>
 
@@ -323,8 +320,7 @@ export const FaceVerificationScreen: React.FC<{ navigation: any }> = ({ navigati
   return (
     <SafeAreaView style={styles.container}>
       <View style={styles.content}>
-        <BackButton onPress={goBack} />
-        <Text style={styles.step}>Step 5 of 6</Text>
+        <StepLabel label="Step 5 of 6" onBack={goBack} />
         <Text style={styles.title}>Verify You're Real</Text>
         <Text style={styles.subtitle}>Take a clear selfie so we can match it to your photos</Text>
 
@@ -380,29 +376,33 @@ const styles = StyleSheet.create({
   centered: { flex: 1, alignItems: 'center', justifyContent: 'center' },
 
   // Text
-  step: { ...typography.label, color: colors.textPrimary, marginBottom: spacing.sm, alignSelf: 'flex-start' },
   title: { ...typography.h1, color: colors.textPrimary, marginBottom: spacing.sm, alignSelf: 'flex-start' },
-  subtitle: { ...typography.body1, color: colors.textSecondary, marginBottom: spacing.xxl, alignSelf: 'flex-start' },
+  subtitle: { ...typography.body1, color: colors.textSecondary, marginBottom: spacing.lg, alignSelf: 'flex-start' },
 
   // Camera placeholder (permission denied)
+  // Both camera boxes are full width and take the height left between the
+  // heading and the footer, up to 9:16, so the capture button always stays
+  // on screen. The preview crops to fill whatever shape remains.
   cameraPlaceholder: {
     width: CAMERA_WIDTH,
-    height: CAMERA_HEIGHT,
+    flex: 1,
+    maxHeight: CAMERA_HEIGHT,
     borderRadius: radius.xl,
     backgroundColor: colors.surfaceHighlight,
     alignItems: 'center',
     justifyContent: 'center',
-    marginBottom: spacing.xxl,
+    marginBottom: spacing.lg,
   },
   placeholderText: { ...typography.body2, color: colors.textMuted, marginTop: spacing.md },
 
-  // Camera (9:16 portrait)
+  // Camera
   cameraContainer: {
     width: CAMERA_WIDTH,
-    height: CAMERA_HEIGHT,
+    flex: 1,
+    maxHeight: CAMERA_HEIGHT,
     borderRadius: radius.xl,
     overflow: 'hidden',
-    marginBottom: spacing.xxl,
+    marginBottom: spacing.lg,
     backgroundColor: colors.surfaceHighlight,
   },
   camera: {
@@ -537,5 +537,5 @@ const styles = StyleSheet.create({
   retakeText: { ...typography.body2, color: colors.textPrimary, fontWeight: '600' },
 
   // Footer
-  footer: { padding: spacing.xxl, paddingBottom: spacing.huge, alignItems: 'center' },
+  footer: { paddingHorizontal: spacing.xxl, paddingTop: spacing.md, paddingBottom: spacing.xxl, alignItems: 'center' },
 });

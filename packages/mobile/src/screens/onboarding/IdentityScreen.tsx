@@ -2,6 +2,7 @@ import React, { useState, useCallback, useEffect } from 'react';
 import { View, Text, StyleSheet, ScrollView, KeyboardAvoidingView, Platform, TouchableOpacity } from 'react-native';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Button } from '../../components/common/Button';
+import { StepLabel } from '../../components/common/StepLabel';
 import { useToast } from '../../hooks/useToast';
 import { Input } from '../../components/common/Input';
 import { useAuthStore } from '../../store/authStore';
@@ -160,7 +161,7 @@ export const IdentityScreen: React.FC<{ navigation: any }> = ({ navigation }) =>
       <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === 'ios' ? 'padding' : 'height'} keyboardVerticalOffset={0}>
       {/* Heading stays put; only the fields below scroll. */}
       <View style={styles.header}>
-        <Text style={styles.step}>Step 1 of 6</Text>
+        <StepLabel label="Step 1 of 6" />
         <Text style={styles.title}>Who are you?</Text>
         <Text style={styles.subtitle}>This helps us find your best matches</Text>
       </View>
@@ -243,7 +244,6 @@ const styles = StyleSheet.create({
   header: { paddingHorizontal: spacing.xxl, paddingTop: spacing.xxl, paddingBottom: spacing.lg },
   scroll: { flex: 1 },
   content: { paddingHorizontal: spacing.xxl, paddingTop: spacing.sm, paddingBottom: spacing.xxl },
-  step: { ...typography.label, color: colors.textPrimary, marginBottom: spacing.sm },
   title: { ...typography.h1, color: colors.textPrimary, marginBottom: spacing.sm },
   subtitle: { ...typography.body1, color: colors.textSecondary },
   fieldLabel: { ...typography.label, color: colors.textSecondary, marginBottom: spacing.sm },
