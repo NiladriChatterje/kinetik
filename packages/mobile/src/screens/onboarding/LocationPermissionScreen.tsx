@@ -110,7 +110,7 @@ export const LocationPermissionScreen: React.FC<{ navigation: any }> = ({ naviga
   return (
     <SafeAreaView style={styles.container}>
       <View style={styles.content}>
-        <StepLabel label="Step 3 of 6" onBack={() => navigation.goBack()} />
+        <StepLabel label="Step 3 of 5" onBack={() => navigation.goBack()} />
         <Text style={styles.title}>Enable Location</Text>
         <Text style={styles.subtitle}>We use precise GPS to place you on the local matching grid</Text>
 

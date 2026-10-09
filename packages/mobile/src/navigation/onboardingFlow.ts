@@ -13,7 +13,11 @@ export const ONBOARDING_SCREENS = [
   'Location',
   'Photos',
   'FaceVerification',
-  'KYC',
+  // KYC ("Verify Your Identity") is commented out for now: its ID upload is
+  // never reviewed, and the document face match and Aadhaar offline check
+  // are switched off on the server. The selfie step finishes onboarding.
+  // KYC stays reachable from Profile (KYCVerify).
+  // 'KYC',
 ] as const;
 
 export type OnboardingScreen = (typeof ONBOARDING_SCREENS)[number];
@@ -24,10 +28,12 @@ const RESUME_SCREEN: Record<string, OnboardingScreen> = {
   about: 'Location',
   location: 'Photos',
   photos: 'FaceVerification',
-  face: 'KYC',
+  // Users who finished the selfie but not KYC were never marked complete;
+  // with KYC commented out they redo the selfie, whose Continue finishes.
+  face: 'FaceVerification', // was 'KYC'
   // Legacy value: rows written before migration 019 renamed the step.
-  pose: 'KYC',
-  kyc: 'KYC',
+  pose: 'FaceVerification', // was 'KYC'
+  kyc: 'FaceVerification', // was 'KYC'
 };
 
 /** Replace the onboarding stack with every step up to where `step` resumes. */

@@ -182,7 +182,8 @@ const AuthNavigator = React.memo(function AuthNavigator() {
           </React.Suspense>
         )}
       </OnboardingStack.Screen>
-      <OnboardingStack.Screen name="KYC" component={KYCScreen} />
+      {/* KYC step commented out — see navigation/onboardingFlow.ts */}
+      {/* <OnboardingStack.Screen name="KYC" component={KYCScreen} /> */}
     </OnboardingStack.Navigator>
   );
 });

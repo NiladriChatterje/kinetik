@@ -12,6 +12,7 @@ import * as ImageManipulator from 'expo-image-manipulator';
 import { Button } from '../../components/common/Button';
 import { StepLabel } from '../../components/common/StepLabel';
 import { useToast } from '../../hooks/useToast';
+import { useAuthStore } from '../../store/authStore';
 import { api } from '../../services/api';
 import { resolveUrl, PRODUCTION_FACE_VERIFICATION } from '../../config';
 import { embedProfilePhotos, verifySelfie, MIN_PROFILE_FACES } from '../../services/faceVerification';
@@ -171,12 +172,21 @@ export const FaceVerificationScreen: React.FC<{ navigation: any }> = ({ navigati
   }, []);
 
   /**
-   * Continue to next onboarding step.
+   * Finish onboarding. The selfie is the last step while the KYC step is
+   * commented out (see navigation/onboardingFlow.ts).
    */
   const handleContinue = useCallback(async () => {
-    await api.updateOnboardingStep('face');
-    navigation.navigate('KYC');
-  }, [navigation]);
+    // await api.updateOnboardingStep('face');
+    // navigation.navigate('KYC');
+    const res = await api.updateOnboardingStep('complete');
+    if (!res?.success) {
+      toast.showError('Could not finish', res?.error?.message || 'Check your connection and try again.');
+      return;
+    }
+    toast.showSuccess('Welcome!', 'Profile ready. Start matching!');
+    useAuthStore.getState().setOnboardingStep('complete');
+    navigation.getParent()?.reset({ index: 0, routes: [{ name: 'Main' }] });
+  }, [navigation, toast]);
 
   // ─── Permission states ──────────────────────────────────
   if (!permission) {
@@ -193,7 +203,7 @@ export const FaceVerificationScreen: React.FC<{ navigation: any }> = ({ navigati
     return (
       <SafeAreaView style={styles.container}>
         <View style={styles.content}>
-          <StepLabel label="Step 5 of 6" onBack={goBack} />
+          <StepLabel label="Step 5 of 5" onBack={goBack} />
           <Text style={styles.title}>Verify You're Real</Text>
           <Text style={styles.subtitle}>
             We need access to your camera to take a verification selfie.
@@ -215,7 +225,7 @@ export const FaceVerificationScreen: React.FC<{ navigation: any }> = ({ navigati
     return (
       <SafeAreaView style={styles.container}>
         <View style={styles.content}>
-          <StepLabel label="Step 5 of 6" onBack={goBack} />
+          <StepLabel label="Step 5 of 5" onBack={goBack} />
           <Text style={styles.title}>Verify You're Real</Text>
           <Text style={styles.subtitle}>We match your selfie against the photos you uploaded</Text>
 
@@ -266,7 +276,7 @@ export const FaceVerificationScreen: React.FC<{ navigation: any }> = ({ navigati
     return (
       <SafeAreaView style={styles.container}>
         <View style={styles.content}>
-          <StepLabel label="Step 5 of 6" onBack={goBack} backDisabled />
+          <StepLabel label="Step 5 of 5" onBack={goBack} backDisabled />
           <Text style={styles.title}>Verify You're Real</Text>
           <Text style={styles.subtitle}>We match your selfie against the photos you uploaded</Text>
 
@@ -289,7 +299,7 @@ export const FaceVerificationScreen: React.FC<{ navigation: any }> = ({ navigati
     return (
       <SafeAreaView style={styles.container}>
         <View style={styles.content}>
-          <StepLabel label="Step 5 of 6" onBack={goBack} />
+          <StepLabel label="Step 5 of 5" onBack={goBack} />
           <Text style={styles.title}>Verify You're Real</Text>
           <Text style={styles.subtitle}>Check your selfie before submitting</Text>
 
@@ -320,7 +330,7 @@ export const FaceVerificationScreen: React.FC<{ navigation: any }> = ({ navigati
   return (
     <SafeAreaView style={styles.container}>
       <View style={styles.content}>
-        <StepLabel label="Step 5 of 6" onBack={goBack} />
+        <StepLabel label="Step 5 of 5" onBack={goBack} />
         <Text style={styles.title}>Verify You're Real</Text>
         <Text style={styles.subtitle}>Take a clear selfie so we can match it to your photos</Text>
 

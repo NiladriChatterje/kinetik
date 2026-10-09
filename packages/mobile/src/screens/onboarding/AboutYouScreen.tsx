@@ -250,7 +250,7 @@ export const AboutYouScreen: React.FC<{ navigation: any }> = ({ navigation }) =>
         {/* Header */}
         <View style={styles.header}>
           <View style={styles.headerCopy}>
-            <StepLabel label="Step 2 of 6" onBack={() => navigation.goBack()} />
+            <StepLabel label="Step 2 of 5" onBack={() => navigation.goBack()} />
             <Text style={styles.title}>Knowing more about you</Text>
             <Text style={styles.subtitle}>
               Five quick questions so your matches get the real you, before the small talk

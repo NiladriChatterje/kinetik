@@ -161,7 +161,7 @@ export const IdentityScreen: React.FC<{ navigation: any }> = ({ navigation }) =>
       <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === 'ios' ? 'padding' : 'height'} keyboardVerticalOffset={0}>
       {/* Heading stays put; only the fields below scroll. */}
       <View style={styles.header}>
-        <StepLabel label="Step 1 of 6" />
+        <StepLabel label="Step 1 of 5" />
         <Text style={styles.title}>Who are you?</Text>
         <Text style={styles.subtitle}>This helps us find your best matches</Text>
       </View>
