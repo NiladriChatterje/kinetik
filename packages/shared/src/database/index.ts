@@ -6,7 +6,9 @@ export function getDatabasePool(config?: PoolConfig): Pool {
   if (!pool) {
     pool = new Pool({
       connectionString: process.env.DATABASE_URL,
-      max: 5,
+      // Connections per process. docker-compose sets DB_POOL_MAX per service;
+      // the sum across services must stay under the managed Postgres limit.
+      max: Number(process.env.DB_POOL_MAX) || 5,
       idleTimeoutMillis: 30000,
       connectionTimeoutMillis: 5000,
       ...config,

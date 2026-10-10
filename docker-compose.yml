@@ -4,6 +4,26 @@ x-logging: &default-logging
     max-size: "10m"
     max-file: "3"
 
+# ─── Sizing ───────────────────────────────────────────────
+# Tuned for the Oracle Always Free box: 2 OCPU / 12 GB (ORACLE_STEPS.md).
+# Postgres and Redis are managed services, so the box runs only the Node
+# services, MinIO and nginx. Memory adds up to ~8.5 GB, leaving the rest to
+# the OS and page cache. Node is single-threaded, so the CPU caps are set to
+# the whole box: whichever service is busy gets it. A cap above the core
+# count fails to start, so HOST_CPUS must match the machine (.env).
+#
+# Every long-lived connection (WebSocket, keep-alive, upstream) costs a file
+# descriptor on both nginx and the service behind it; the 1024 default
+# would cap the stack at a few hundred users.
+x-service-limits: &service-limits
+  ulimits:
+    nofile:
+      soft: 65536
+      hard: 65536
+  sysctls:
+    # Accept queue for bursts of new connections (default 128 or 4096).
+    net.core.somaxconn: 8192
+
 services:
   # ─── PostgreSQL ───────────────────────────────────────────
   # postgres:
@@ -195,18 +215,27 @@ services:
       # "intentionally not deployed" and hides the action in the app. Adding
       # it here with a blank default would silently flip that.
       # POSE_SERVICE_URL: http://pose-service:3004
+
+      # ─── Capacity ────────────────────────────────────────
+      # Heap cap below the container limit so Node is never OOM-killed
+      # mid-GC. The libuv threadpool handles bcrypt, crypto and file I/O;
+      # the default 4 serialises password hashing at login bursts.
+      NODE_OPTIONS: --max-old-space-size=3072
+      UV_THREADPOOL_SIZE: 8
+      DB_POOL_MAX: ${API_DB_POOL_MAX:-15}
     depends_on:
       # postgres:
       #   condition: service_healthy
       migration-runner:
         condition: service_completed_successfully
+    <<: *service-limits
     deploy:
       resources:
         limits:
-          cpus: "1.5"
+          cpus: "${HOST_CPUS:-2}"
           memory: 4G
         reservations:
-          memory: 128M
+          memory: 1G
     logging: *default-logging
 
   # ─── Real-Time WebSocket Service ─────────────────────────
@@ -237,6 +266,14 @@ services:
       REDIS_EVENTS_PORT: 6379
       REDIS_EVENTS_PASSWORD: ${REDIS_EVENTS_PASSWORD:-kinetik_events_2024}
       JWT_SECRET: ${JWT_SECRET:-super-secret-jwt-key-change-in-production-2024}
+
+      # ─── Capacity ────────────────────────────────────────
+      # Every connected app holds one WebSocket here, so this service is
+      # sized by memory, not CPU: ~50–100 KB per socket puts 20k connections
+      # around 1–2 GB.
+      NODE_OPTIONS: --max-old-space-size=2560
+      UV_THREADPOOL_SIZE: 8
+      DB_POOL_MAX: ${REALTIME_DB_POOL_MAX:-5}
     depends_on:
       # redis:
       #   condition: service_healthy
@@ -244,13 +281,14 @@ services:
       #   condition: service_healthy
       migration-runner:
         condition: service_completed_successfully
+    <<: *service-limits
     deploy:
       resources:
         limits:
-          cpus: "1"
-          memory: 1G
+          cpus: "${HOST_CPUS:-2}"
+          memory: 3G
         reservations:
-          memory: 128M
+          memory: 512M
     logging: *default-logging
 
   # ─── MinIO Object Storage (S3-compatible) ──────────────
@@ -288,11 +326,15 @@ services:
       interval: 10s
       timeout: 5s
       retries: 5
+    ulimits:
+      nofile:
+        soft: 65536
+        hard: 65536
     deploy:
       resources:
         limits:
-          cpus: "0.5"
-          memory: 512M
+          cpus: "1"
+          memory: 1G
         reservations:
           memory: 256M
     logging: *default-logging
@@ -342,13 +384,14 @@ services:
     depends_on:
       - api-core
       - realtime
+    <<: *service-limits
     deploy:
       resources:
         limits:
           cpus: "1"
-          memory: 256M
+          memory: 512M
         reservations:
-          memory: 32M
+          memory: 64M
     logging: *default-logging
   # ─── Pose / Face Service (Python / MediaPipe) ──────────────
   # DISABLED — selfie face verification runs on-device in the
