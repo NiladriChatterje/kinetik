@@ -4,9 +4,11 @@ import { query, TABLES } from './database';
  * Server-side Premium gates for the two paid features:
  *
  *  - Who liked you: free users get only a count, never the likers.
- *  - Chat: a free user can chat in ONE conversation, their oldest active
- *    match. Every other match is locked (no reading, sending, media or live
- *    events) until they subscribe.
+ *  - Chat: a free user can chat in ONE conversation, their first match.
+ *    Every other match is locked (no reading, sending, media or live events)
+ *    until they subscribe. Once that first match is unmatched the free chat is
+ *    spent: the next match does not take its place, or a free user could
+ *    chat with everyone one at a time by unmatching between them.
  *
  * Every endpoint that exposes those features checks here, so the app hiding
  * a screen is never the only guard. The realtime service applies the same
@@ -34,16 +36,21 @@ export async function hasActivePremium(userId: string): Promise<boolean> {
   return (result.rowCount ?? 0) > 0;
 }
 
-/** The one conversation a free user may use: their oldest active match. */
+/**
+ * The one conversation a free user may use: their first match, active or
+ * not. Null when they have no match yet, or when that first match has been
+ * unmatched — then every chat is locked.
+ */
 export async function freeChatMatchId(userId: string): Promise<string | null> {
   const result = await query(
-    `SELECT id FROM ${TABLES.MATCHES}
-     WHERE is_active = TRUE AND (user_a_id = $1 OR user_b_id = $1)
+    `SELECT id, is_active FROM ${TABLES.MATCHES}
+     WHERE user_a_id = $1 OR user_b_id = $1
      ORDER BY matched_at ASC, id ASC
      LIMIT 1`,
     [userId],
   );
-  return result.rows[0]?.id ?? null;
+  const first = result.rows[0];
+  return first?.is_active ? first.id : null;
 }
 
 /**

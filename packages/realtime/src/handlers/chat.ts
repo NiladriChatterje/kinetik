@@ -42,8 +42,9 @@ interface MessagePayload {
 
 /**
  * Same rule as api-core services/premiumAccess.ts: a free user may chat only
- * in their oldest active match; Premium (a paid tier whose Play expiry has
- * not passed, with a few hours of renewal grace) unlocks every chat.
+ * in their first match, and not at all once that match has been unmatched;
+ * Premium (a paid tier whose Play expiry has not passed, with a few hours of
+ * renewal grace) unlocks every chat.
  */
 async function isChatLocked(userId: string, matchId: string): Promise<boolean> {
   const premium = await query(
@@ -57,13 +58,14 @@ async function isChatLocked(userId: string, matchId: string): Promise<boolean> {
   if ((premium.rowCount ?? 0) > 0) return false;
 
   const free = await query(
-    `SELECT id FROM ${TABLES.MATCHES}
-     WHERE is_active = TRUE AND (user_a_id = $1 OR user_b_id = $1)
+    `SELECT id, is_active FROM ${TABLES.MATCHES}
+     WHERE user_a_id = $1 OR user_b_id = $1
      ORDER BY matched_at ASC, id ASC
      LIMIT 1`,
     [userId],
   );
-  return free.rows[0]?.id !== matchId;
+  const first = free.rows[0];
+  return !first?.is_active || first.id !== matchId;
 }
 
 // ─── Internal Redis pub/sub channels for cross-instance chat events ──

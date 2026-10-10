@@ -45,9 +45,9 @@ const mockQuery = vi.fn(async (sql: string, params: any[] = []) => {
   }
   if (text.includes('ORDER BY matched_at ASC, id ASC')) {
     const own = matches
-      .filter((m) => m.is_active && (m.user_a_id === params[0] || m.user_b_id === params[0]))
+      .filter((m) => m.user_a_id === params[0] || m.user_b_id === params[0])
       .sort((a, b) => a.matched_at.getTime() - b.matched_at.getTime() || a.id.localeCompare(b.id));
-    return { rows: own[0] ? [{ id: own[0].id }] : [], rowCount: own.length ? 1 : 0 };
+    return { rows: own[0] ? [{ id: own[0].id, is_active: own[0].is_active }] : [], rowCount: own.length ? 1 : 0 };
   }
   if (/FROM matches WHERE id = \$1 AND \(user_a_id = \$2 OR user_b_id = \$2\) AND is_active = TRUE/.test(text)) {
     const m = matches.find((r) => r.id === params[0] && r.is_active && (r.user_a_id === params[1] || r.user_b_id === params[1]));
@@ -153,7 +153,7 @@ beforeEach(() => {
   ]);
   matches = [];
   for (const user of [FREE, PREMIUM, EXPIRED, NO_EXPIRY]) {
-    // match-<user>-old is each user's oldest active match: their free chat
+    // match-<user>-old is each user's first match: their free chat
     matches.push({ id: `match-${user}-old`, user_a_id: user, user_b_id: PARTNER_1, matched_at: new Date(Date.now() - 10 * DAY), is_active: true });
     matches.push({ id: `match-${user}-new`, user_a_id: PARTNER_2, user_b_id: user, matched_at: new Date(Date.now() - DAY), is_active: true });
   }
@@ -210,6 +210,15 @@ describe('chat lock', () => {
     expect(res.json().error.code).toBe('CHAT_LOCKED');
     expect(res.body).not.toContain('"messages"');
     expect(sqlLog.some((s) => s.startsWith('UPDATE messages SET read_at'))).toBe(false);
+  });
+
+  it('keeps every chat locked once the free chat has been unmatched', async () => {
+    // Unmatching the first match must not promote the next one to free, or a
+    // free user could chat with everyone one at a time.
+    matches.find((m) => m.id === `match-${FREE}-old`)!.is_active = false;
+    const res = await call('GET', FREE, `/api/v1/matches/conversations/match-${FREE}-new/messages`);
+    expect(res.statusCode).toBe(402);
+    expect(res.json().error.code).toBe('CHAT_LOCKED');
   });
 
   it('refuses a free user sending in a locked chat, without storing it', async () => {
