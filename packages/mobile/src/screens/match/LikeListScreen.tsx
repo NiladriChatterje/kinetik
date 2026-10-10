@@ -233,16 +233,24 @@ export const LikeListScreen: React.FC<{ navigation: any }> = ({ navigation }) =>
             </Text>
             <Text style={styles.lockedSubtitle}>Upgrade to Premium to see who they are and like them back.</Text>
 
-            {/* Placeholders only: no names, photos or ids reach the app */}
+            {/* Placeholders only: no names, photos or ids reach the app.
+                Tapping one opens checkout, like the button below. */}
             <View style={styles.blurGrid}>
               {Array.from({ length: Math.min(lockedCount, BLURRED_CARDS_SHOWN) }).map((_, i) => (
-                <View key={i} style={styles.blurCard}>
+                <TouchableOpacity
+                  key={i}
+                  style={styles.blurCard}
+                  onPress={() => navigation.navigate('SubscriptionCheckout')}
+                  activeOpacity={0.7}
+                  accessibilityRole="button"
+                  accessibilityLabel="Upgrade to Premium to see who likes you"
+                >
                   <View style={styles.blurAvatar}>
                     <Ionicons name="lock-closed" size={20} color={colors.textMuted} />
                   </View>
                   <View style={styles.blurLineWide} />
                   <View style={styles.blurLineShort} />
-                </View>
+                </TouchableOpacity>
               ))}
             </View>
             {lockedCount > BLURRED_CARDS_SHOWN && (
