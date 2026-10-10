@@ -1,7 +1,7 @@
 import React, { useState, useRef, useCallback, useEffect } from 'react';
 import {
   View, Text, StyleSheet, TouchableOpacity,
-  Image, ActivityIndicator, Dimensions,
+  Image, ActivityIndicator, Dimensions, Alert,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Gesture, GestureDetector } from 'react-native-gesture-handler';
@@ -193,6 +193,21 @@ export const FaceVerificationScreen: React.FC<{ navigation: any }> = ({ navigati
     navigation.getParent()?.reset({ index: 0, routes: [{ name: 'Welcome' }] });
   }, [navigation, toast]);
 
+  /**
+   * Skip the selfie and finish onboarding. Nothing is reported: a new account
+   * starts unverified, so the profile shows the Face unverified tag.
+   */
+  const handleSkip = useCallback(() => {
+    Alert.alert(
+      'Skip face verification?',
+      'Your profile will show a "Face unverified" tag to others.',
+      [
+        { text: 'Cancel', style: 'cancel' },
+        { text: 'Skip', onPress: handleContinue },
+      ],
+    );
+  }, [handleContinue]);
+
   // ─── Permission states ──────────────────────────────────
   if (!permission) {
     return (
@@ -220,6 +235,7 @@ export const FaceVerificationScreen: React.FC<{ navigation: any }> = ({ navigati
           </View>
 
           <Button title="Grant Camera Access" onPress={requestPermission} fullWidth />
+          <Button title="Skip for now" variant="ghost" onPress={handleSkip} fullWidth style={styles.skipButton} />
         </View>
       </SafeAreaView>
     );
@@ -267,7 +283,10 @@ export const FaceVerificationScreen: React.FC<{ navigation: any }> = ({ navigati
 
         <View style={styles.footer}>
           {blocked ? (
-            <Button title="Retake Selfie" onPress={handleRetake} fullWidth />
+            <>
+              <Button title="Retake Selfie" onPress={handleRetake} fullWidth />
+              <Button title="Skip for now" variant="ghost" onPress={handleSkip} fullWidth style={styles.skipButton} />
+            </>
           ) : (
             <Button title="Continue" onPress={handleContinue} fullWidth />
           )}
@@ -380,6 +399,7 @@ export const FaceVerificationScreen: React.FC<{ navigation: any }> = ({ navigati
           <View style={styles.captureButtonInner} />
         </TouchableOpacity>
         <Text style={styles.captureHint}>Tap to capture</Text>
+        <Button title="Skip for now" variant="ghost" onPress={handleSkip} fullWidth style={styles.skipButton} />
       </View>
     </SafeAreaView>
   );
@@ -550,6 +570,8 @@ const styles = StyleSheet.create({
     backgroundColor: colors.surfaceHighlight,
   },
   retakeText: { ...typography.body2, color: colors.textPrimary, fontWeight: '600' },
+
+  skipButton: { marginTop: spacing.sm },
 
   // Footer
   footer: { paddingHorizontal: spacing.xxl, paddingTop: spacing.sm, paddingBottom: spacing.lg, alignItems: 'center' },
