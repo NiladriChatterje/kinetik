@@ -68,9 +68,10 @@ export const EVENT_BUS_CHANNELS = {
 export const API_ROUTES = {
   // Auth
   AUTH_PREFIX: '/api/v1/auth',
-  AUTH_REGISTER: '/api/v1/auth/register',
+  AUTH_SIGNUP: '/api/v1/auth/signup',
+  AUTH_SIGNUP_RESEND: '/api/v1/auth/signup/resend',
+  AUTH_SIGNUP_VERIFY: '/api/v1/auth/signup/verify',
   AUTH_LOGIN: '/api/v1/auth/login',
-  AUTH_VERIFY_OTP: '/api/v1/auth/verify-otp',
   AUTH_REFRESH: '/api/v1/auth/refresh',
 
   // Users
@@ -145,6 +146,12 @@ export const ERROR_CODES = {
   EMAIL_EXISTS: 'EMAIL_EXISTS',
   USER_NOT_FOUND: 'USER_NOT_FOUND',
   INVALID_PASSWORD: 'INVALID_PASSWORD',
+  /** Sign-up codes for this email are used up for 24 hours. */
+  SIGNUP_LOCKED: 'SIGNUP_LOCKED',
+  /** The sign-up code expired or was already used: start the sign-up again. */
+  SIGNUP_EXPIRED: 'SIGNUP_EXPIRED',
+  /** Too many wrong sign-up codes: start the sign-up again. */
+  SIGNUP_FAILED: 'SIGNUP_FAILED',
 
   // Validation
   VALIDATION_ERROR: 'VALIDATION_ERROR',

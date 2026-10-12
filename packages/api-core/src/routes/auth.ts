@@ -3,7 +3,11 @@ import bcrypt from 'bcrypt';
 import crypto from 'crypto';
 import { z } from 'zod';
 import { ERROR_CODES, transaction, TABLES, geoToH3 } from '@kinetik/shared';
-import { createUser, findUserByPhone, findUserByEmail, findUserById, createSubscription, updateUser, getSubscription, query } from '../services/database';
+import { createUser, findUserByPhone, findUserByEmail, findUserById, createSubscription, getSubscription, query } from '../services/database';
+import {
+  claimSend, refundSend, lockSeconds, savePending, getPending, recordAttempt, deletePending,
+  SIGNUP_CODE_TTL_SECONDS, SIGNUP_MAX_ATTEMPTS, SIGNUP_MAX_SENDS_PER_DAY, SIGNUP_RESEND_COOLDOWN_SECONDS,
+} from '../services/signupStore';
 import { deleteAllUserPhotos, deleteAllUserKycDocuments, deleteChatFile } from '../services/photoStorage';
 import { isPlayBillingConfigured, cancelSubscription } from '../services/playBilling';
 import { eventBus } from '../services/eventBus';
@@ -28,26 +32,10 @@ function chatMediaKeyFromUrl(url: string): string | null {
   return null;
 }
 
-// ─── In-memory OTP store (dev only; replace with Redis in production) ──
-// A code is addressed to a channel + identifier pair: email (Brevo) or phone
-// (no SMS provider, so phone codes are only logged in development). Entries are keyed "email:alice@example.com" / "phone:+9199…" so
-// the two channels never collide.
-type OtpChannel = 'email' | 'phone';
-interface OtpTarget {
-  channel: OtpChannel;
-  value: string;
-}
-
-const otpStore = new Map<string, { otp: string; expiresAt: number; attempts: number }>();
-const OTP_TTL_MS = 5 * 60 * 1000; // 5 minutes
-const RESEND_COOLDOWN_MS = 30 * 1000; // 30 seconds
-// Six digits is a million possibilities; without a cap the 5-minute window is
-// enough to brute-force. After this many wrong guesses the code is discarded.
-const OTP_MAX_ATTEMPTS = 5;
-
-function otpKey(target: OtpTarget): string {
-  return `${target.channel}:${target.value}`;
-}
+// ─── Sign-up codes ───────────────────────────────────
+// Sign-up is proven with a code emailed through Brevo. Until it is verified
+// the attempt lives only in the otp-store Redis (services/signupStore.ts):
+// no database query runs for a sign-up that is never confirmed.
 
 /** Lowercase + trim so "Alice@Example.com " and "alice@example.com" are one account. */
 function normalizeEmail(email: string): string {
@@ -55,83 +43,35 @@ function normalizeEmail(email: string): string {
 }
 
 /**
- * Random 6-digit code when Brevo is configured to email it. Otherwise (no
- * Brevo, or a phone number, which has no provider) the code is only logged, so
- * it stays the fixed 123456 documented in FREE_HOSTING_GUIDE.md for testing.
+ * Random 6-digit code when Brevo is configured to email it. Otherwise the
+ * code is only logged, so it stays the fixed 123456 documented in
+ * FREE_HOSTING_GUIDE.md for testing.
  */
-function generateOtp(channel: OtpChannel): string {
-  if (channel === 'phone' || !isEmailConfigured()) return '123456';
+function generateCode(): string {
+  if (!isEmailConfigured()) return '123456';
   return crypto.randomInt(0, 1_000_000).toString().padStart(6, '0');
 }
 
-/**
- * Generate, store and deliver a code. Resolves false when delivery failed
- * (Brevo cap reached, network error) — the entry is dropped so a stale code
- * cannot linger, and the caller should ask the user to retry.
- */
-async function storeOtp(target: OtpTarget): Promise<boolean> {
-  // Phone codes cannot be delivered, and the logged fallback is the fixed
-  // 123456: accepting it in production would let anyone sign in as any phone
-  // number. The app signs in by email only, so refuse instead.
-  if (target.channel === 'phone' && process.env.NODE_ENV === 'production') {
-    return false;
-  }
-
-  const otp = generateOtp(target.channel);
-  const key = otpKey(target);
-  otpStore.set(key, { otp, expiresAt: Date.now() + OTP_TTL_MS, attempts: 0 });
-
-  let sent: boolean;
-  if (target.channel === 'email') {
-    sent = await sendOtpEmail(target.value, otp);
-  } else {
-    console.log(`[OTP] DEV MODE — code for ${maskPhone(target.value)}: ${otp}`);
-    sent = true;
-  }
-
-  if (!sent) otpStore.delete(key);
-  return sent;
+/** Codes are kept hashed, salted with the address, never in plain text. */
+function hashCode(email: string, code: string): string {
+  return crypto.createHash('sha256').update(`${email}:${code}`).digest('hex');
 }
 
-function verifyStoredOtp(target: OtpTarget, otp: string): boolean {
-  const key = otpKey(target);
-  const entry = otpStore.get(key);
-  if (!entry) return false;
-  if (Date.now() > entry.expiresAt) {
-    otpStore.delete(key);
-    return false;
-  }
-
-  entry.attempts += 1;
-  const expected = Buffer.from(entry.otp);
-  const given = Buffer.from(otp);
-  const matches = expected.length === given.length && crypto.timingSafeEqual(expected, given);
-
-  if (!matches && entry.attempts >= OTP_MAX_ATTEMPTS) {
-    // Too many wrong guesses: the user has to request a fresh code
-    otpStore.delete(key);
-  }
-  return matches;
+function codeMatches(email: string, code: string, storedHash: string): boolean {
+  const given = Buffer.from(hashCode(email, code), 'hex');
+  const expected = Buffer.from(storedHash, 'hex');
+  return given.length === expected.length && crypto.timingSafeEqual(given, expected);
 }
 
-function canResendOtp(target: OtpTarget): boolean {
-  const entry = otpStore.get(otpKey(target));
-  if (!entry) return true;
-  return Date.now() - (entry.expiresAt - OTP_TTL_MS) >= RESEND_COOLDOWN_MS;
-}
-
-function maskPhone(phone: string): string {
-  if (phone.length <= 6) return phone;
-  return phone.slice(0, 4) + '***' + phone.slice(-2);
-}
-
-/**
- * Resolve the OTP target from a request body carrying `email` or `phone`.
- * Email is normalized here so every lookup and store uses the same key.
- */
-function otpTargetFromBody(body: { email?: string; phone?: string }): OtpTarget {
-  if (body.email) return { channel: 'email', value: normalizeEmail(body.email) };
-  return { channel: 'phone', value: body.phone! };
+/** The validated sign-up form as kept in the otp-store until it is verified. */
+interface PendingSignupData {
+  passwordHash: string;
+  displayName?: string;
+  countryCode: string;
+  city: string;
+  country: string;
+  latitude: number;
+  longitude: number;
 }
 
 const OTP_SEND_FAILED = {
@@ -141,6 +81,25 @@ const OTP_SEND_FAILED = {
     message: 'Could not send the verification code right now. Please try again in a minute.',
   },
 };
+
+const SIGNUP_UNAVAILABLE = {
+  success: false,
+  error: {
+    code: ERROR_CODES.INTERNAL_ERROR,
+    message: 'Sign-up is unavailable right now. Please try again in a minute.',
+  },
+};
+
+function signupLocked(retryAfterSeconds: number) {
+  return {
+    success: false,
+    error: {
+      code: ERROR_CODES.SIGNUP_LOCKED,
+      message: `You have used all ${SIGNUP_MAX_SENDS_PER_DAY} verification codes for today. Try again in 24 hours.`,
+      retryAfterSeconds,
+    },
+  };
+}
 
 // ─── Refresh Token Helpers ───────────────────────────────────
 // A signed-in user stays signed in until they sign out, uninstall, or the
@@ -230,192 +189,303 @@ async function revokeAllRefreshTokens(userId: string): Promise<void> {
 const EmailSchema = z.string().trim().toLowerCase().email().max(255);
 const PhoneSchema = z.string().min(8).max(20);
 
-const RegisterSchema = z
-  .object({
-    phone: PhoneSchema.optional(),
-    email: EmailSchema.optional(),
-    password: z.string().min(8).max(128).optional(),
-    authProvider: z.enum(['phone', 'email', 'google', 'apple']),
-    authProviderId: z.string().optional(),
-    displayName: z.string().min(1).max(100).optional(),
-    // Where the user lives, from the country → city picker. Required: it is
-    // the feed origin until GPS is granted.
-    countryCode: z.string().trim().length(2),
-    city: z.string().trim().min(1).max(100),
-    stateCode: z.string().trim().max(10).optional(),
-  })
-  .refine((d) => !!d.phone || !!d.email, {
-    message: 'Provide an email address or a phone number',
-    path: ['email'],
-  });
+const SignupSchema = z.object({
+  email: EmailSchema,
+  password: z.string().min(8).max(128),
+  displayName: z.string().trim().min(1).max(100).optional(),
+  // Where the user lives, from the country → city picker. Required: it is
+  // the feed origin until GPS is granted.
+  countryCode: z.string().trim().length(2),
+  city: z.string().trim().min(1).max(100),
+  stateCode: z.string().trim().max(10).optional(),
+});
+
+const SignupResendSchema = z.object({ email: EmailSchema });
+
+const SignupVerifySchema = z.object({
+  email: EmailSchema,
+  otp: z.string().regex(/^\d{6}$/),
+});
 
 const LoginSchema = z.object({
   phone: PhoneSchema.optional(),
   email: EmailSchema.optional(),
   password: z.string().optional(),
-  authProvider: z.enum(['phone', 'email', 'google', 'apple']).optional(),
-  authProviderId: z.string().optional(),
 });
 
-// Exactly one of email / phone identifies where the code goes.
-const OtpTargetSchema = z
-  .object({
-    email: EmailSchema.optional(),
-    phone: PhoneSchema.optional(),
-  })
-  .refine((d) => (d.email ? 1 : 0) + (d.phone ? 1 : 0) === 1, {
-    message: 'Provide either an email address or a phone number',
-    path: ['email'],
-  });
-
-const SendOtpSchema = OtpTargetSchema;
-
-const VerifyOtpSchema = z
-  .object({
-    email: EmailSchema.optional(),
-    phone: PhoneSchema.optional(),
-    otp: z.string().length(6),
-  })
-  .refine((d) => (d.email ? 1 : 0) + (d.phone ? 1 : 0) === 1, {
-    message: 'Provide either an email address or a phone number',
-    path: ['email'],
-  });
-
 export async function authRoutes(app: FastifyInstance) {
-  // ─── Register ────────────────────────────────────────
-  app.post('/register', async (request: FastifyRequest, reply: FastifyReply) => {
-    const validation = RegisterSchema.safeParse(request.body);
-    if (!validation.success) {
-      return reply.status(400).send({
+  /** Access + refresh token pair for a user who just proved who they are. */
+  async function issueSession(user: { id: string; phone?: string | null }) {
+    const token = app.jwt.sign({ sub: user.id, phone: user.phone });
+    const refreshToken = crypto.randomBytes(64).toString('hex');
+    await storeRefreshToken(user.id, hashToken(refreshToken), crypto.randomUUID());
+    return { token, refreshToken };
+  }
+
+  function invalidInput(reply: FastifyReply, error: z.ZodError) {
+    return reply.status(400).send({
+      success: false,
+      error: { code: ERROR_CODES.VALIDATION_ERROR, message: 'Invalid input', details: error.flatten() },
+    });
+  }
+
+  const signupExpired = {
+    success: false,
+    error: { code: ERROR_CODES.SIGNUP_EXPIRED, message: 'The code expired. Please sign up again.' },
+  };
+
+  /**
+   * Emails a fresh code for a pending sign-up, counting it against the daily
+   * allowance. Replies itself on every failure; resolves the sends left after
+   * this one, or null when it already replied.
+   */
+  async function sendSignupCode(
+    reply: FastifyReply,
+    email: string,
+    data: string,
+  ): Promise<number | null> {
+    const claim = await claimSend(email);
+    if (claim.locked) {
+      reply.status(429).send(signupLocked(claim.retryAfterSeconds));
+      return null;
+    }
+    const code = generateCode();
+    await savePending(email, hashCode(email, code), data);
+    if (!(await sendOtpEmail(email, code))) {
+      await deletePending(email);
+      await refundSend(email);
+      reply.status(503).send(OTP_SEND_FAILED);
+      return null;
+    }
+    return claim.sendsLeft;
+  }
+
+  // ─── Sign up: step 1, email a code ───────────────────
+  // Validates the form and emails a code. The account is created only by
+  // /signup/verify, so this touches no database: an address that is already
+  // registered is reported after verification, which also keeps this route
+  // from revealing who has an account.
+  app.post(
+    '/signup',
+    { config: { rateLimit: { max: 10, timeWindow: '1 hour' } } },
+    async (request: FastifyRequest, reply: FastifyReply) => {
+      const validation = SignupSchema.safeParse(request.body);
+      if (!validation.success) return invalidInput(reply, validation.error);
+      const form = validation.data;
+      const email = normalizeEmail(form.email);
+
+      // Signup city → coordinates, from the bundled dataset (no database)
+      const location = resolveCity(form.countryCode, form.city, form.stateCode);
+      if (!location) {
+        return reply.status(400).send({
+          success: false,
+          error: { code: ERROR_CODES.VALIDATION_ERROR, message: 'Unknown city for the selected country' },
+        });
+      }
+
+      try {
+        // Checked before hashing so a locked address costs no bcrypt work
+        const lockedFor = await lockSeconds(email);
+        if (lockedFor > 0) return reply.status(429).send(signupLocked(lockedFor));
+
+        const pending: PendingSignupData = {
+          passwordHash: await bcrypt.hash(form.password, 10),
+          displayName: form.displayName,
+          countryCode: location.countryCode,
+          city: location.name,
+          country: location.countryName,
+          latitude: location.latitude,
+          longitude: location.longitude,
+        };
+        const sendsLeft = await sendSignupCode(reply, email, JSON.stringify(pending));
+        if (sendsLeft === null) return reply;
+
+        return reply.send({
+          success: true,
+          data: {
+            email: maskEmail(email),
+            expiresInSeconds: SIGNUP_CODE_TTL_SECONDS,
+            maxAttempts: SIGNUP_MAX_ATTEMPTS,
+            sendsLeft,
+          },
+        });
+      } catch (err) {
+        request.log.error({ err }, 'Sign-up code could not be issued');
+        return reply.status(503).send(SIGNUP_UNAVAILABLE);
+      }
+    },
+  );
+
+  // ─── Sign up: resend the code ────────────────────────
+  // A new code replaces the old one and restarts the 5 minutes and the
+  // attempts. Every send counts toward the daily allowance.
+  app.post(
+    '/signup/resend',
+    { config: { rateLimit: { max: 10, timeWindow: '1 hour' } } },
+    async (request: FastifyRequest, reply: FastifyReply) => {
+      const validation = SignupResendSchema.safeParse(request.body);
+      if (!validation.success) return invalidInput(reply, validation.error);
+      const email = normalizeEmail(validation.data.email);
+
+      try {
+        const pending = await getPending(email);
+        if (!pending) return reply.status(410).send(signupExpired);
+
+        const waited = (Date.now() - pending.sentAt) / 1000;
+        if (waited < SIGNUP_RESEND_COOLDOWN_SECONDS) {
+          return reply.status(429).send({
+            success: false,
+            error: {
+              code: ERROR_CODES.RATE_LIMITED,
+              message: `Please wait ${SIGNUP_RESEND_COOLDOWN_SECONDS} seconds before requesting a new code.`,
+            },
+          });
+        }
+
+        const sendsLeft = await sendSignupCode(reply, email, pending.data);
+        if (sendsLeft === null) return reply;
+
+        return reply.send({
+          success: true,
+          data: { expiresInSeconds: SIGNUP_CODE_TTL_SECONDS, maxAttempts: SIGNUP_MAX_ATTEMPTS, sendsLeft },
+        });
+      } catch (err) {
+        request.log.error({ err }, 'Sign-up code could not be resent');
+        return reply.status(503).send(SIGNUP_UNAVAILABLE);
+      }
+    },
+  );
+
+  // ─── Sign up: step 2, verify and create the account ──
+  // The only sign-up step that touches the database, and only after the code
+  // matched. A third wrong code ends the attempt: the app returns to the
+  // filled-in form, and a new code counts toward the daily allowance.
+  app.post(
+    '/signup/verify',
+    { config: { rateLimit: { max: 30, timeWindow: '15 minutes' } } },
+    async (request: FastifyRequest, reply: FastifyReply) => {
+      const validation = SignupVerifySchema.safeParse(request.body);
+      if (!validation.success) return invalidInput(reply, validation.error);
+      const email = normalizeEmail(validation.data.email);
+
+      let data: PendingSignupData;
+      try {
+        const pending = await getPending(email);
+        if (!pending) return reply.status(410).send(signupExpired);
+        const attempts = await recordAttempt(email);
+        if (attempts < 0) return reply.status(410).send(signupExpired);
+
+        const correct =
+          attempts <= SIGNUP_MAX_ATTEMPTS && codeMatches(email, validation.data.otp, pending.codeHash);
+        if (!correct) {
+          const attemptsLeft = Math.max(0, SIGNUP_MAX_ATTEMPTS - attempts);
+          if (attemptsLeft > 0) {
+            return reply.status(400).send({
+              success: false,
+              error: {
+                code: ERROR_CODES.INVALID_OTP,
+                message: `Wrong code. ${attemptsLeft} ${attemptsLeft === 1 ? 'attempt' : 'attempts'} left.`,
+                attemptsLeft,
+              },
+            });
+          }
+          await deletePending(email);
+          const lockedFor = await lockSeconds(email);
+          return reply.status(400).send({
+            success: false,
+            error: {
+              code: ERROR_CODES.SIGNUP_FAILED,
+              message: lockedFor > 0
+                ? `Too many wrong codes, and all ${SIGNUP_MAX_SENDS_PER_DAY} codes for today are used. Try again in 24 hours.`
+                : 'Too many wrong codes. Please try again.',
+              retryAfterSeconds: lockedFor,
+            },
+          });
+        }
+
+        // Exactly one request gets to consume a correct code
+        if (!(await deletePending(email))) return reply.status(410).send(signupExpired);
+        data = JSON.parse(pending.data);
+      } catch (err) {
+        request.log.error({ err }, 'Sign-up code could not be checked');
+        return reply.status(503).send(SIGNUP_UNAVAILABLE);
+      }
+
+      // ── Verified: the first database access of this sign-up ──
+      const emailTaken = {
         success: false,
-        error: {
-          code: ERROR_CODES.VALIDATION_ERROR,
-          message: 'Invalid input',
-          details: validation.error.flatten(),
+        error: { code: ERROR_CODES.EMAIL_EXISTS, message: 'This email is already registered. Please sign in.' },
+      };
+      if (await findUserByEmail(email)) return reply.status(409).send(emailTaken);
+
+      let user;
+      try {
+        user = await createUser({
+          email,
+          emailVerified: true,
+          passwordHash: data.passwordHash,
+          authProvider: 'email',
+          displayName: data.displayName,
+          countryCode: data.countryCode,
+          city: data.city,
+          country: data.country,
+          latitude: data.latitude,
+          longitude: data.longitude,
+          h3Index: geoToH3(data.latitude, data.longitude, 7),
+        });
+      } catch (err: any) {
+        // Unique email: registered in the meantime, or a banned account
+        if (err?.code === '23505') return reply.status(409).send(emailTaken);
+        throw err;
+      }
+      await createSubscription(user.id, 'free');
+      const session = await issueSession(user);
+
+      return reply.status(201).send({
+        success: true,
+        data: {
+          user: {
+            id: user.id,
+            phone: user.phone,
+            email: user.email,
+            displayName: user.display_name,
+            onboardingComplete: false,
+          },
+          ...session,
         },
       });
-    }
-
-    const data = validation.data;
-
-    // Check if phone or email already exists
-    if (data.phone) {
-      const existing = await findUserByPhone(data.phone);
-      if (existing) {
-        return reply.status(409).send({
-          success: false,
-          error: { code: ERROR_CODES.PHONE_EXISTS, message: 'Phone number already registered' },
-        });
-      }
-    }
-
-    if (data.email) {
-      const existing = await findUserByEmail(data.email);
-      if (existing) {
-        return reply.status(409).send({
-          success: false,
-          error: { code: ERROR_CODES.EMAIL_EXISTS, message: 'Email already registered' },
-        });
-      }
-    }
-
-    // Hash password if provided
-    let passwordHash: string | undefined;
-    if (data.password) {
-      passwordHash = await bcrypt.hash(data.password, 10);
-    }
-
-    // Signup city → coordinates. Seeds the location columns so the feed has an
-    // origin before (or without) GPS; the first location update overwrites them.
-    const location = resolveCity(data.countryCode, data.city, data.stateCode);
-    if (!location) {
-      return reply.status(400).send({
-        success: false,
-        error: { code: ERROR_CODES.VALIDATION_ERROR, message: 'Unknown city for the selected country' },
-      });
-    }
-
-    const user = await createUser({
-      phone: data.phone,
-      email: data.email,
-      passwordHash,
-      authProvider: data.authProvider,
-      authProviderId: data.authProviderId,
-      displayName: data.displayName,
-      countryCode: location.countryCode,
-      city: location.name,
-      country: location.countryName,
-      latitude: location.latitude,
-      longitude: location.longitude,
-      h3Index: geoToH3(location.latitude, location.longitude, 7),
-    });
-
-    // Generate JWT access token
-    const token = app.jwt.sign({
-      sub: user.id,
-      phone: user.phone,
-    });
-
-    // Generate refresh token
-    const refreshToken = crypto.randomBytes(64).toString('hex');
-    const familyId = crypto.randomUUID();
-    await storeRefreshToken(user.id, hashToken(refreshToken), familyId);
-
-    // Create subscription ledger
-    await createSubscription(user.id, 'free');
-
-    return reply.status(201).send({
-      success: true,
-      data: {
-        user: { id: user.id, phone: user.phone, email: user.email, displayName: user.display_name },
-        token,
-        refreshToken,
-      },
-    });
-  });
+    },
+  );
 
   // ─── Login ───────────────────────────────────────────
+  // Email + password. The address was proven when the account was created,
+  // so signing in needs no emailed code.
   app.post('/login', async (request: FastifyRequest, reply: FastifyReply) => {
     const validation = LoginSchema.safeParse(request.body);
-    if (!validation.success) {
-      return reply.status(400).send({
-        success: false,
-        error: {
-          code: ERROR_CODES.VALIDATION_ERROR,
-          message: 'Invalid input',
-          details: validation.error.flatten(),
-        },
-      });
-    }
+    if (!validation.success) return invalidInput(reply, validation.error);
 
     const data = validation.data;
 
-    // Password login (email or phone) — valid credentials still require a
-    // one-time code on the same channel before a session is issued.
     if ((data.email || data.phone) && data.password) {
-      const target = otpTargetFromBody(data);
-      const user =
-        target.channel === 'email'
-          ? await findUserByEmail(target.value)
-          : await findUserByPhone(target.value);
+      const user = data.email
+        ? await findUserByEmail(normalizeEmail(data.email))
+        : await findUserByPhone(data.phone!);
       if (!user) {
         return reply.status(401).send({
           success: false,
           error: {
             code: ERROR_CODES.USER_NOT_FOUND,
-            message:
-              target.channel === 'email'
-                ? 'No account found with this email address'
-                : 'No account found with this phone number',
+            message: data.email
+              ? 'No account found with this email address'
+              : 'No account found with this phone number',
           },
         });
       }
 
-      // Guard: OTP-only users have no password
       if (!user.password_hash) {
         return reply.status(401).send({
           success: false,
-          error: { code: ERROR_CODES.UNAUTHORIZED, message: 'Please login using OTP verification' },
+          error: { code: ERROR_CODES.UNAUTHORIZED, message: 'This account has no password.' },
         });
       }
 
@@ -427,142 +497,7 @@ export async function authRoutes(app: FastifyInstance) {
         });
       }
 
-      // Credentials are valid — generate OTP and require verification
-      const sent = await storeOtp(target);
-      if (!sent) return reply.status(503).send(OTP_SEND_FAILED);
-
-      return reply.send({
-        success: true,
-        data: {
-          requiresOtp: true,
-          ...(target.channel === 'email'
-            ? { email: maskEmail(target.value) }
-            : { phone: maskPhone(target.value) }),
-          userId: user.id,
-        },
-      });
-    }
-
-    // OAuth login
-    if (data.authProvider && data.authProviderId) {
-      const user = await findUserByEmail(data.email || '');
-      if (!user) {
-        return reply.status(401).send({
-          success: false,
-          error: { code: ERROR_CODES.UNAUTHORIZED, message: 'No account found. Please register.' },
-        });
-      }
-
-      const token = app.jwt.sign({ sub: user.id, phone: user.phone });
-      return reply.send({
-        success: true,
-        data: {
-          user: { id: user.id, phone: user.phone, email: user.email, displayName: user.display_name },
-          token,
-        },
-      });
-    }
-
-    return reply.status(400).send({
-      success: false,
-      error: { code: ERROR_CODES.VALIDATION_ERROR, message: 'Provide phone+password or authProvider+authProviderId' },
-    });
-  });
-
-  // ─── Send OTP (resend) ─────────────────────────────────
-  // Sending is free for the caller to trigger but spends the Brevo daily
-  // quota (300 on the free plan), so this route is throttled per IP on top of
-  // the per-identifier cooldown below.
-  app.post(
-    '/send-otp',
-    { config: { rateLimit: { max: 5, timeWindow: '15 minutes' } } },
-    async (request: FastifyRequest, reply: FastifyReply) => {
-      const validation = SendOtpSchema.safeParse(request.body);
-      if (!validation.success) {
-        return reply.status(400).send({
-          success: false,
-          error: {
-            code: ERROR_CODES.VALIDATION_ERROR,
-            message: 'Invalid email address or phone number',
-            details: validation.error.flatten(),
-          },
-        });
-      }
-
-      const target = otpTargetFromBody(validation.data);
-
-      // Rate limit: check cooldown
-      if (!canResendOtp(target)) {
-        return reply.status(429).send({
-          success: false,
-          error: { code: ERROR_CODES.RATE_LIMITED, message: 'Please wait 30 seconds before requesting a new code.' },
-        });
-      }
-
-      const sent = await storeOtp(target);
-      if (!sent) return reply.status(503).send(OTP_SEND_FAILED);
-
-      return reply.send({
-        success: true,
-        data: { message: 'Verification code sent.' },
-      });
-    },
-  );
-
-  // ─── Verify OTP ──────────────────────────────────────
-  app.post(
-    '/verify-otp',
-    { config: { rateLimit: { max: 20, timeWindow: '15 minutes' } } },
-    async (request: FastifyRequest, reply: FastifyReply) => {
-      const validation = VerifyOtpSchema.safeParse(request.body);
-      if (!validation.success) {
-        return reply.status(400).send({
-          success: false,
-          error: {
-            code: ERROR_CODES.VALIDATION_ERROR,
-            message: 'Invalid input',
-            details: validation.error.flatten(),
-          },
-        });
-      }
-
-      const { otp } = validation.data;
-      const target = otpTargetFromBody(validation.data);
-
-      // Verify OTP against stored value
-      if (!verifyStoredOtp(target, otp)) {
-        return reply.status(400).send({
-          success: false,
-          error: { code: ERROR_CODES.INVALID_OTP, message: 'Invalid or expired verification code.' },
-        });
-      }
-
-      // OTP is valid — clear it and issue JWT
-      otpStore.delete(otpKey(target));
-
-      // Find or create the user behind the verified identifier
-      let user =
-        target.channel === 'email'
-          ? await findUserByEmail(target.value)
-          : await findUserByPhone(target.value);
-      if (!user) {
-        user =
-          target.channel === 'email'
-            ? await createUser({ email: target.value, authProvider: 'email' })
-            : await createUser({ phone: target.value, authProvider: 'phone' });
-        await createSubscription(user.id, 'free');
-      }
-
-      // Mark the channel as verified
-      await updateUser(user.id, target.channel === 'email' ? { email_verified: true } : { phone_verified: true });
-
-      const token = app.jwt.sign({ sub: user.id, phone: user.phone });
-
-      // Generate refresh token
-      const refreshToken = crypto.randomBytes(64).toString('hex');
-      const familyId = crypto.randomUUID();
-      await storeRefreshToken(user.id, hashToken(refreshToken), familyId);
-
+      const session = await issueSession(user);
       return reply.send({
         success: true,
         data: {
@@ -570,14 +505,19 @@ export async function authRoutes(app: FastifyInstance) {
             id: user.id,
             phone: user.phone,
             email: user.email,
+            displayName: user.display_name,
             onboardingComplete: user.onboarding_complete,
           },
-          token,
-          refreshToken,
+          ...session,
         },
       });
-    },
-  );
+    }
+
+    return reply.status(400).send({
+      success: false,
+      error: { code: ERROR_CODES.VALIDATION_ERROR, message: 'Provide an email and password' },
+    });
+  });
 
   // ─── Refresh Token ───────────────────────────────────
   // Rotates the refresh token: revokes the old one, issues a new access + refresh pair.

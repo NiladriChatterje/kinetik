@@ -14,6 +14,8 @@ export { query, TABLES };
 export async function createUser(data: {
   phone?: string;
   email?: string;
+  /** Proven with an emailed code before the account was created */
+  emailVerified?: boolean;
   passwordHash?: string;
   authProvider?: string;
   authProviderId?: string;
@@ -31,13 +33,14 @@ export async function createUser(data: {
   try {
     const result = await query(
       `INSERT INTO ${TABLES.USERS} (phone, email, password_hash, auth_provider, auth_provider_id, display_name, date_of_birth, country_code,
-                                    city, country, latitude, longitude, h3_index)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)
+                                    city, country, latitude, longitude, h3_index, email_verified)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14)
        RETURNING id, phone, email, display_name, created_at`,
       [
         data.phone, data.email, data.passwordHash, data.authProvider, data.authProviderId, data.displayName,
         data.dateOfBirth || null, data.countryCode || null,
         data.city || null, data.country || null, data.latitude ?? null, data.longitude ?? null, data.h3Index || null,
+        data.emailVerified ?? false,
       ],
     );
     return result.rows[0];
