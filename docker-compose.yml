@@ -132,6 +132,46 @@ services:
   #     retries: 5
   #   logging: *default-logging
 
+  # ─── Sign-up code store (Redis, memory only) ────────────
+  # Holds sign-ups until their emailed code is verified: the form, the code
+  # and the per-email daily send count, each with its own expiry. Nothing
+  # reaches Postgres before verification, so abandoned sign-ups cost no
+  # database compute. No disk: a restart only drops pending codes (users ask
+  # for a new one) and resets the daily counters. Internal network only.
+  otp-store:
+    image: redis:7-alpine
+    container_name: kinetik-otp-store
+    restart: unless-stopped
+    command:
+      - redis-server
+      - --save
+      - ""
+      - --appendonly
+      - "no"
+      - --maxmemory
+      - 96mb
+      # Every key expires on its own. When full, refuse new sign-ups rather
+      # than evict a daily counter and lift someone's lock.
+      - --maxmemory-policy
+      - noeviction
+      - --requirepass
+      - ${OTP_STORE_PASSWORD:-kinetik_otp_2024}
+    environment:
+      REDISCLI_AUTH: ${OTP_STORE_PASSWORD:-kinetik_otp_2024}
+    healthcheck:
+      test: [ "CMD", "redis-cli", "ping" ]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+    deploy:
+      resources:
+        limits:
+          cpus: "0.5"
+          memory: 128M
+        reservations:
+          memory: 16M
+    logging: *default-logging
+
   # ─── Core API Service ────────────────────────────────────
   api-core:
     build:
@@ -183,6 +223,8 @@ services:
       BREVO_SENDER_EMAIL_2: ${BREVO_SENDER_EMAIL_2:-}
       # Set to "true" to skip Brevo entirely and only log OTPs.
       EMAIL_DISABLED: ${EMAIL_DISABLED:-}
+      # Pending sign-ups and their codes (otp-store service above)
+      OTP_STORE_URL: redis://:${OTP_STORE_PASSWORD:-kinetik_otp_2024}@otp-store:6379
 
       # Message encryption key (AES-256-GCM, any string)
       MESSAGE_ENCRYPTION_KEY: ${MESSAGE_ENCRYPTION_KEY:-kinetik_msg_enc_key_2024_dev}
@@ -228,6 +270,8 @@ services:
       #   condition: service_healthy
       migration-runner:
         condition: service_completed_successfully
+      otp-store:
+        condition: service_healthy
     <<: *service-limits
     deploy:
       resources:
