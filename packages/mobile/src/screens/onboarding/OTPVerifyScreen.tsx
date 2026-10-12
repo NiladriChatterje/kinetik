@@ -7,43 +7,61 @@ import { Ionicons } from '@expo/vector-icons';
 import { useAuthStore } from '../../store/authStore';
 import { useToast } from '../../hooks/useToast';
 import { Button } from '../../components/common/Button';
-import { OtpTarget } from '../../services/api';
 import { enterOnboarding } from '../../navigation/onboardingFlow';
 import { colors, typography, spacing, radius } from '../../theme';
 
 const RESEND_COOLDOWN = 30;
 
+const secondsUntil = (ms: number) => Math.max(0, Math.ceil((ms - Date.now()) / 1000));
+const clock = (seconds: number) =>
+  `${Math.floor(seconds / 60)}:${(seconds % 60).toString().padStart(2, '0')}`;
+
+/**
+ * Sign-up code entry. The account does not exist yet: a correct code creates
+ * it and signs the user in. The code lasts 5 minutes and allows 3 guesses;
+ * when either runs out the user goes back to the sign-up form, still filled
+ * in (SplashScreen stays mounted underneath).
+ */
 export const OTPVerifyScreen: React.FC<{ navigation: any }> = ({ navigation }) => {
-  const { pendingEmail, pendingPhone, verifyOtp, sendOtp, clearPendingOtp } = useAuthStore();
+  const pending = useAuthStore((s) => s.pendingSignup);
+  const verifySignup = useAuthStore((s) => s.verifySignup);
+  const resendSignupCode = useAuthStore((s) => s.resendSignupCode);
+  const clearPendingSignup = useAuthStore((s) => s.clearPendingSignup);
   const toast = useToast();
 
   const [digits, setDigits] = useState<string[]>(['', '', '', '', '', '']);
   const [loading, setLoading] = useState(false);
-  const [countdown, setCountdown] = useState(0);
+  const [resending, setResending] = useState(false);
+  // Re-render once a second for the expiry and resend countdowns
+  const [, setTick] = useState(0);
 
   const inputRefs = useRef<(TextInput | null)[]>([]);
+  // Leaving is triggered by the timer and by replies; only once
+  const leftRef = useRef(false);
 
-  // The code is delivered by email (Brevo) or, on the legacy path, by SMS.
-  const target: OtpTarget | null = pendingEmail
-    ? { email: pendingEmail }
-    : pendingPhone
-      ? { phone: pendingPhone }
-      : null;
-  const isEmail = !!pendingEmail;
+  const expiresIn = pending ? secondsUntil(pending.expiresAt) : 0;
+  const resendIn = pending ? secondsUntil(pending.sentAt + RESEND_COOLDOWN * 1000) : 0;
 
-  // The login route already emailed the code before navigating here, so the
-  // screen only starts the resend cooldown — sending again on mount would be
-  // rejected by the server's 30 s cooldown and waste a Brevo send.
   useEffect(() => {
-    setCountdown(RESEND_COOLDOWN);
+    const interval = setInterval(() => setTick((t) => t + 1), 1000);
+    return () => clearInterval(interval);
   }, []);
 
-  // Countdown timer for resend
+  /** Back to the filled-in sign-up form. */
+  const backToForm = () => {
+    if (leftRef.current) return;
+    leftRef.current = true;
+    clearPendingSignup();
+    if (navigation.canGoBack()) navigation.goBack();
+    else navigation.navigate('Splash');
+  };
+
   useEffect(() => {
-    if (countdown <= 0) return;
-    const interval = setInterval(() => setCountdown((c) => c - 1), 1000);
-    return () => clearInterval(interval);
-  }, [countdown]);
+    if (pending && expiresIn === 0 && !loading) {
+      toast.showError('Code expired', 'Please create your account again.');
+      backToForm();
+    }
+  }, [expiresIn, pending, loading]);
 
   // Handle digit input
   const handleDigitChange = (text: string, index: number) => {
@@ -66,44 +84,62 @@ export const OTPVerifyScreen: React.FC<{ navigation: any }> = ({ navigation }) =
     }
   };
 
+  const clearDigits = () => {
+    setDigits(['', '', '', '', '', '']);
+    inputRefs.current[0]?.focus();
+  };
+
   const handleResend = async () => {
-    if (countdown > 0 || !target) return;
-    setCountdown(RESEND_COOLDOWN);
-    const result = await sendOtp(target);
-    if (result.success) {
-      toast.showSuccess('Code sent', isEmail ? 'Check your inbox.' : 'Check your phone.');
-    } else {
-      toast.showError('Failed', result.error || 'Could not resend.');
-      setCountdown(0);
+    if (!pending || resendIn > 0 || pending.sendsLeft <= 0 || resending) return;
+    setResending(true);
+    try {
+      const result = await resendSignupCode();
+      if (result.success) {
+        toast.showSuccess('New code sent', 'Check your inbox.');
+        clearDigits();
+      } else if (result.errorCode === 'SIGNUP_EXPIRED') {
+        toast.showError('Code expired', 'Please create your account again.');
+        backToForm();
+      } else if (result.errorCode === 'SIGNUP_LOCKED') {
+        toast.showError('No codes left today', result.error || 'Try again in 24 hours.');
+      } else {
+        toast.showError('Could not resend', result.error || 'Please try again.');
+      }
+    } finally {
+      setResending(false);
     }
   };
 
   const handleVerify = async () => {
     const code = digits.join('');
-    if (code.length !== 6 || !target) {
+    if (code.length !== 6 || !pending) {
       toast.showGlass('Enter code', 'Enter the 6-digit code.');
       return;
     }
 
     setLoading(true);
     try {
-      const result = await verifyOtp(target, code);
+      const result = await verifySignup(code);
       if (result.success) {
-        toast.showSuccess('Verified!', 'You\'re all set.');
-        // Read the latest onboardingStep directly from store (avoid stale closure)
-        const currentStep = useAuthStore.getState().onboardingStep;
-        if (currentStep === 'complete') {
-          // Profile is fully set up — go straight to Main
-          navigation.getParent()?.reset({ index: 0, routes: [{ name: 'Main' }] });
-        } else {
-          // Resume on the next unfinished step, with the finished ones behind
-          // it so back goes to the previous step instead of this spent screen
-          enterOnboarding(navigation, currentStep);
-        }
+        leftRef.current = true;
+        toast.showSuccess('Email verified', 'Your account is ready.');
+        enterOnboarding(navigation, useAuthStore.getState().onboardingStep);
+      } else if (result.errorCode === 'INVALID_OTP') {
+        toast.showError('Wrong code', result.error || 'Please try again.');
+        clearDigits();
+      } else if (result.errorCode === 'SIGNUP_FAILED' || result.errorCode === 'SIGNUP_EXPIRED') {
+        toast.showError(
+          result.errorCode === 'SIGNUP_FAILED' ? 'Verification failed' : 'Code expired',
+          result.error || 'Please create your account again.',
+        );
+        backToForm();
+      } else if (result.errorCode === 'EMAIL_EXISTS') {
+        toast.showGlass('Email already registered', 'Sign in with your password instead.');
+        leftRef.current = true;
+        clearPendingSignup();
+        navigation.navigate('Splash', { mode: 'login' });
       } else {
-        toast.showError('Verification failed', result.error || 'Invalid code.');
-        setDigits(['', '', '', '', '', '']);
-        inputRefs.current[0]?.focus();
+        toast.showError('Verification failed', result.error || 'Please try again.');
       }
     } catch (e: any) {
       toast.showError('Network error', e?.message || 'Try again.');
@@ -112,36 +148,20 @@ export const OTPVerifyScreen: React.FC<{ navigation: any }> = ({ navigation }) =
     }
   };
 
-  const handleBack = () => {
-    clearPendingOtp();
-    navigation.goBack();
-  };
-
-  const maskPhone = (phone: string) => {
-    if (phone.length <= 6) return phone;
-    return phone.slice(0, 4) + '•••••' + phone.slice(-2);
-  };
-
   const maskEmail = (email: string) => {
     const at = email.indexOf('@');
     if (at <= 0) return email;
     return email.slice(0, Math.min(2, at)) + '•••' + email.slice(at);
   };
 
-  const maskedTarget = pendingEmail
-    ? maskEmail(pendingEmail)
-    : pendingPhone
-      ? maskPhone(pendingPhone)
-      : '';
-
-  // Guard: no pending verification
-  if (!target) {
+  // Guard: no pending sign-up
+  if (!pending) {
     return (
       <View style={styles.container}>
         <View style={styles.errorContainer}>
           <Ionicons name="alert-circle-outline" size={48} color={colors.textMuted} />
           <Text style={styles.errorText}>No verification in progress.</Text>
-          <Button title="Back to Login" onPress={() => navigation.navigate('Splash')} fullWidth size="lg" />
+          <Button title="Back to Sign Up" onPress={() => navigation.navigate('Splash')} fullWidth size="lg" />
         </View>
       </View>
     );
@@ -151,10 +171,10 @@ export const OTPVerifyScreen: React.FC<{ navigation: any }> = ({ navigation }) =
     <View style={styles.container}>
       {/* Header */}
       <View style={styles.header}>
-        <TouchableOpacity onPress={handleBack} style={styles.backButton}>
+        <TouchableOpacity onPress={backToForm} style={styles.backButton} accessibilityLabel="Back to sign up">
           <Ionicons name="chevron-back" size={24} color={colors.textPrimary} />
         </TouchableOpacity>
-        <Text style={styles.headerTitle}>Verification</Text>
+        <Text style={styles.headerTitle}>Verify Email</Text>
         <View style={styles.headerSpacer} />
       </View>
 
@@ -162,14 +182,14 @@ export const OTPVerifyScreen: React.FC<{ navigation: any }> = ({ navigation }) =
       <View style={styles.content}>
         {/* Icon */}
         <View style={styles.iconCircle}>
-          <Ionicons name={isEmail ? 'mail-outline' : 'phone-portrait-outline'} size={28} color={colors.textPrimary} />
+          <Ionicons name="mail-outline" size={28} color={colors.textPrimary} />
         </View>
 
         {/* Heading */}
         <Text style={styles.heading}>Enter verification code</Text>
         <Text style={styles.subtitle}>
           A code has been sent to{'\n'}
-          <Text style={styles.phone}>{maskedTarget}</Text>
+          <Text style={styles.phone}>{maskEmail(pending.email)}</Text>
         </Text>
 
         {/* Digit boxes */}
@@ -191,20 +211,28 @@ export const OTPVerifyScreen: React.FC<{ navigation: any }> = ({ navigation }) =
           ))}
         </View>
 
-        {isEmail && (
-          <Text style={styles.spamHint}>Not in your inbox? Check spam.</Text>
-        )}
+        <Text style={styles.expiryText}>
+          Code expires in <Text style={styles.countdownText}>{clock(expiresIn)}</Text>
+          {'  ·  '}
+          {pending.attemptsLeft} {pending.attemptsLeft === 1 ? 'attempt' : 'attempts'} left
+        </Text>
+
+        <Text style={styles.spamHint}>Not in your inbox? Check spam.</Text>
 
         {/* Resend section */}
         <View style={styles.resendSection}>
-          {countdown > 0 ? (
+          {pending.sendsLeft <= 0 ? (
+            <Text style={styles.resendText}>No more codes can be sent today</Text>
+          ) : resendIn > 0 ? (
             <Text style={styles.resendText}>
-              Resend code in <Text style={styles.countdownText}>00:{countdown.toString().padStart(2, '0')}</Text>
+              Resend code in <Text style={styles.countdownText}>{clock(resendIn)}</Text>
             </Text>
           ) : (
-            <TouchableOpacity onPress={handleResend} style={styles.resendButton}>
+            <TouchableOpacity onPress={handleResend} style={styles.resendButton} disabled={resending}>
               <Ionicons name="refresh-outline" size={16} color={colors.textPrimary} />
-              <Text style={styles.resendAction}>  Resend code</Text>
+              <Text style={styles.resendAction}>
+                {'  '}Resend code ({pending.sendsLeft} left today)
+              </Text>
             </TouchableOpacity>
           )}
         </View>
@@ -215,6 +243,7 @@ export const OTPVerifyScreen: React.FC<{ navigation: any }> = ({ navigation }) =
             title="Verify"
             onPress={handleVerify}
             loading={loading}
+            disabled={loading}
             fullWidth
             size="lg"
           />
@@ -310,11 +339,17 @@ const styles = StyleSheet.create({
     borderColor: colors.textPrimary,
     backgroundColor: colors.surface,
   },
+  expiryText: {
+    ...typography.body2,
+    color: colors.textSecondary,
+    textAlign: 'center',
+    marginTop: -spacing.md,
+    marginBottom: spacing.sm,
+  },
   spamHint: {
     ...typography.caption,
     color: colors.textMuted,
     textAlign: 'center',
-    marginTop: -spacing.md,
     marginBottom: spacing.xxl,
   },
   // ─── Resend ─────────────────────────────────────────────

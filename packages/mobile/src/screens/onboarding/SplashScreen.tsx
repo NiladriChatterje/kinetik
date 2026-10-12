@@ -6,7 +6,7 @@ import {
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
-import { useAuthStore } from '../../store/authStore';
+import { useAuthStore, signupEmailKey } from '../../store/authStore';
 import { useToast } from '../../hooks/useToast';
 import { Button } from '../../components/common/Button';
 import { Input } from '../../components/common/Input';
@@ -22,7 +22,15 @@ const SEGMENT_TAB_WIDTH = (SEGMENT_WIDTH - 4) / 2;
 // code proves the address is real.
 const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
-export const SplashScreen: React.FC<{ navigation: any }> = ({ navigation }) => {
+/** "about 23 hours" / "about 40 minutes" for the sign-up lock message. */
+function roughDuration(ms: number): string {
+  const minutes = Math.max(1, Math.ceil(ms / 60000));
+  if (minutes < 60) return `about ${minutes} ${minutes === 1 ? 'minute' : 'minutes'}`;
+  const hours = Math.ceil(minutes / 60);
+  return `about ${hours} ${hours === 1 ? 'hour' : 'hours'}`;
+}
+
+export const SplashScreen: React.FC<{ navigation: any; route?: any }> = ({ navigation, route }) => {
   const [mode, setMode] = useState<'login' | 'register'>('login');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
@@ -34,8 +42,29 @@ export const SplashScreen: React.FC<{ navigation: any }> = ({ navigation }) => {
   const [loading, setLoading] = useState(false);
   const [errorMsg, setErrorMsg] = useState('');
   const login = useAuthStore((s) => s.login);
-  const register = useAuthStore((s) => s.register);
+  const startSignup = useAuthStore((s) => s.startSignup);
+  const signupLocks = useAuthStore((s) => s.signupLocks);
   const toast = useToast();
+
+  // All sign-up codes for this email are used up for today: Create Account
+  // stays disabled until the server's 24-hour window ends.
+  const lockedUntil = signupLocks[signupEmailKey(email)] ?? 0;
+  const [now, setNow] = useState(Date.now());
+  const signupLocked = mode === 'register' && lockedUntil > now;
+  useEffect(() => {
+    if (!signupLocked) return;
+    const interval = setInterval(() => setNow(Date.now()), 60 * 1000);
+    return () => clearInterval(interval);
+  }, [signupLocked]);
+  useEffect(() => setNow(Date.now()), [lockedUntil]);
+
+  // The code screen sends an already registered email back here to sign in
+  useEffect(() => {
+    if (route?.params?.mode === 'login') {
+      handleModeSwitch('login');
+      navigation.setParams({ mode: undefined });
+    }
+  }, [route?.params?.mode]);
 
   // ─── Entrance animations ──────────────────────────────
   const logoScale = useRef(new Animated.Value(0.6)).current;
@@ -120,21 +149,22 @@ export const SplashScreen: React.FC<{ navigation: any }> = ({ navigation }) => {
       toast.showError('Missing location', 'Select your country and city.');
       return;
     }
+    if (mode === 'register' && password.length < 8) {
+      toast.showError('Password too short', 'Use at least 8 characters.');
+      return;
+    }
+    if (signupLocked) return;
     setLoading(true);
     try {
       if (mode === 'login') {
-        const result = await login({ email: trimmedEmail }, password);
+        const result = await login(trimmedEmail, password);
         if (result.success) {
-          if (result.requiresOtp) {
-            navigation.navigate('OTPVerify');
+          toast.showSuccess('Welcome back!', 'Signed in successfully.');
+          const step = useAuthStore.getState().onboardingStep;
+          if (step === 'complete') {
+            navigation.getParent()?.reset({ index: 0, routes: [{ name: 'Main' }] });
           } else {
-            toast.showSuccess('Welcome back!', 'Signed in successfully.');
-            const step = useAuthStore.getState().onboardingStep;
-            if (step === 'complete') {
-              navigation.getParent()?.reset({ index: 0, routes: [{ name: 'Main' }] });
-            } else {
-              enterOnboarding(navigation, step);
-            }
+            enterOnboarding(navigation, step);
           }
         } else {
           console.log('[LOGIN] failed:', result.error || 'unknown');
@@ -150,17 +180,15 @@ export const SplashScreen: React.FC<{ navigation: any }> = ({ navigation }) => {
           stateCode: location.stateCode,
         };
         if (firstName) payload.displayName = firstName;
-        const result = await register(payload);
+        // Emails a code; the account is created once it is verified. The
+        // form stays filled in underneath, so a failed or expired code
+        // comes back to it unchanged.
+        const result = await startSignup(payload);
         if (result.success) {
-          // Email and password stay filled so Sign In is one tap (see handleModeSwitch)
-          toast.showSuccess('Account created', 'Please sign in.');
-          setMode('login');
-          setFirstName('');
-          setLastName('');
-          setMiddleName('');
-          setLocation(null);
-        } else if (result.errorCode === 'EMAIL_EXISTS') {
-          toast.showGlass('Email exists', 'Try signing in instead.');
+          toast.showSuccess('Code sent', 'Check your inbox.');
+          navigation.navigate('OTPVerify');
+        } else if (result.errorCode === 'SIGNUP_LOCKED') {
+          toast.showError('Sign-up locked', result.error || 'Try again in 24 hours.');
         } else {
           toast.showError('Signup failed', result.error || 'Please try again.');
         }
@@ -283,6 +311,16 @@ export const SplashScreen: React.FC<{ navigation: any }> = ({ navigation }) => {
             </>
           )}
 
+          {signupLocked ? (
+            <View style={styles.errorBanner}>
+              <Ionicons name="lock-closed-outline" size={16} color={colors.textPrimary} />
+              <Text style={styles.errorText}>
+                All 3 verification codes for this email were used today, so sign-up is locked
+                for 24 hours. Try again in {roughDuration(lockedUntil - now)}.
+              </Text>
+            </View>
+          ) : null}
+
           {errorMsg ? (
             <View style={styles.errorBanner}>
               <Ionicons name="alert-circle-outline" size={16} color={colors.textPrimary} />
@@ -298,7 +336,7 @@ export const SplashScreen: React.FC<{ navigation: any }> = ({ navigation }) => {
           title={mode === 'login' ? 'Sign In' : 'Create Account'}
           onPress={handleSubmit}
           loading={loading}
-          disabled={loading}
+          disabled={loading || signupLocked}
           fullWidth
           size="lg"
         />

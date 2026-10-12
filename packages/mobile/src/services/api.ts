@@ -5,8 +5,23 @@ import { API_URL, WS_URL } from '../config';
 // runtime, never at module init) — safe under Metro.
 import { rankByProximity } from '../utils/proximity';
 
-/** Where a one-time login code is delivered. Exactly one field is set. */
-export type OtpTarget = { email: string; phone?: undefined } | { phone: string; email?: undefined };
+/** The sign-up form, sent before the emailed code is verified. */
+export interface SignupForm {
+  email: string;
+  password: string;
+  displayName?: string;
+  countryCode: string;
+  city: string;
+  stateCode?: string;
+}
+
+/** What the server says about a sign-up code it just emailed. */
+export interface SignupCodeInfo {
+  expiresInSeconds: number;
+  maxAttempts: number;
+  /** Codes that can still be emailed to this address today */
+  sendsLeft: number;
+}
 
 interface ApiResponse<T = any> {
   success: boolean;
@@ -355,32 +370,34 @@ class ApiClient {
   }
 
   // ─── Auth ───────────────────────────────────────────
-  async register(data: { phone?: string; email?: string; password?: string; authProvider: string; authProviderId?: string; displayName?: string; countryCode?: string; city?: string; stateCode?: string }) {
-    return this.request<{ user: any; token: string; refreshToken: string }>('/api/v1/auth/register', {
+  // Sign-up emails a code first; the account exists only once
+  // signupVerify succeeds. Error replies carry attemptsLeft (wrong code) or
+  // retryAfterSeconds (codes for today used up) next to the code.
+  async signup(form: SignupForm) {
+    return this.request<SignupCodeInfo & { email: string }>('/api/v1/auth/signup', {
+      method: 'POST',
+      body: JSON.stringify(form),
+    });
+  }
+
+  async signupResend(email: string) {
+    return this.request<SignupCodeInfo>('/api/v1/auth/signup/resend', {
+      method: 'POST',
+      body: JSON.stringify({ email }),
+    });
+  }
+
+  async signupVerify(email: string, otp: string) {
+    return this.request<{ user: any; token: string; refreshToken: string }>('/api/v1/auth/signup/verify', {
+      method: 'POST',
+      body: JSON.stringify({ email, otp }),
+    });
+  }
+
+  async login(data: { email: string; password: string }) {
+    return this.request<{ user: any; token: string; refreshToken: string }>('/api/v1/auth/login', {
       method: 'POST',
       body: JSON.stringify(data),
-    });
-  }
-
-  async login(data: { phone?: string; email?: string; password?: string }) {
-    return this.request<{ user?: any; token?: string; requiresOtp?: boolean; phone?: string; email?: string; userId?: string }>('/api/v1/auth/login', {
-      method: 'POST',
-      body: JSON.stringify(data),
-    });
-  }
-
-  /** Where a one-time code is delivered: exactly one of email (Brevo) or phone (SMS). */
-  async sendOtp(target: OtpTarget) {
-    return this.request<{ message: string }>('/api/v1/auth/send-otp', {
-      method: 'POST',
-      body: JSON.stringify(target),
-    });
-  }
-
-  async verifyOtp(target: OtpTarget, otp: string) {
-    return this.request<{ user: any; token: string; refreshToken: string }>('/api/v1/auth/verify-otp', {
-      method: 'POST',
-      body: JSON.stringify({ ...target, otp }),
     });
   }
 

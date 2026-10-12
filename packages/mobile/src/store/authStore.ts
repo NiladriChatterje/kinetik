@@ -2,7 +2,7 @@ import { create } from 'zustand';
 import * as SecureStore from 'expo-secure-store';
 import Toast from 'react-native-toast-message';
 import { Socket } from 'socket.io-client';
-import { api, OtpTarget } from '../services/api';
+import { api, SignupForm, SignupCodeInfo } from '../services/api';
 import { closeChatSocket, getChatSocket } from '../services/chatSocket';
 import { closePresenceSocket, getPresenceSocket } from '../services/presenceSocket';
 import { isWelcomePending } from '../services/welcomeNotice';
@@ -72,8 +72,26 @@ interface AuthResult {
   success: boolean;
   error?: string;
   errorCode?: string;
-  requiresOtp?: boolean;
+  /** Wrong sign-up code: guesses left on this code */
+  attemptsLeft?: number;
+  /** Sign-up codes for today are used up: seconds until the lock lifts */
+  retryAfterSeconds?: number;
 }
+
+/** A sign-up waiting for its emailed code. Nothing is in the database yet. */
+interface PendingSignup {
+  email: string;
+  /** When the current code stops working (ms since epoch) */
+  expiresAt: number;
+  attemptsLeft: number;
+  /** Codes that can still be emailed today */
+  sendsLeft: number;
+  /** When the current code was sent, for the resend cooldown */
+  sentAt: number;
+}
+
+/** Sign-up emails are compared lowercased, as the server does. */
+export const signupEmailKey = (email: string) => email.trim().toLowerCase();
 
 interface AuthState {
   user: User | null;
@@ -86,10 +104,10 @@ interface AuthState {
   connectionStatus: ConnectionStatus;
   connectionError: string | null;
 
-  // OTP verification flow — the code goes to whichever of these is set
-  pendingEmail: string | null;
-  pendingPhone: string | null;
-  pendingUserId: string | null;
+  // Sign-up waiting for its emailed code
+  pendingSignup: PendingSignup | null;
+  /** Emails whose sign-up codes for today are used up → lock end (ms) */
+  signupLocks: Record<string, number>;
 
   // Like badge
   unreadLikeCount: number;
@@ -120,11 +138,13 @@ interface AuthState {
   // Actions
   initialize: () => Promise<void>;
   checkConnection: () => Promise<void>;
-  login: (credentials: { email?: string; phone?: string }, password: string) => Promise<AuthResult>;
-  register: (data: { phone?: string; email?: string; password?: string; displayName?: string; countryCode?: string; city?: string; stateCode?: string }) => Promise<AuthResult>;
-  verifyOtp: (target: OtpTarget, otp: string) => Promise<AuthResult>;
-  sendOtp: (target: OtpTarget) => Promise<AuthResult>;
-  clearPendingOtp: () => void;
+  login: (email: string, password: string) => Promise<AuthResult>;
+  /** Emails a sign-up code. The account is created by verifySignup. */
+  startSignup: (form: SignupForm) => Promise<AuthResult>;
+  resendSignupCode: () => Promise<AuthResult>;
+  verifySignup: (code: string) => Promise<AuthResult>;
+  clearPendingSignup: () => void;
+  lockSignup: (email: string, seconds: number) => void;
   logout: () => void;
   deleteAccount: () => Promise<AuthResult>;
   setUser: (user: User) => void;
@@ -158,6 +178,108 @@ function getErrorResponse(response: {
   return { message: msg, code };
 }
 
+type SetAuthState = (partial: Partial<AuthState>) => void;
+type GetAuthState = () => AuthState;
+
+function pendingFromCode(email: string, info: SignupCodeInfo): PendingSignup {
+  const now = Date.now();
+  return {
+    email,
+    expiresAt: now + info.expiresInSeconds * 1000,
+    attemptsLeft: info.maxAttempts,
+    sendsLeft: info.sendsLeft,
+    sentAt: now,
+  };
+}
+
+/**
+ * A refused sign-up request. A 24-hour lock is remembered for the email so
+ * the form can disable Create Account, and a spent or expired code ends the
+ * pending sign-up.
+ */
+function signupFailure(
+  response: { error?: { code?: string; message?: string; details?: unknown } },
+  email: string,
+  get: GetAuthState,
+): AuthResult {
+  const { message, code } = getErrorResponse(response);
+  const extra = (response.error ?? {}) as { attemptsLeft?: unknown; retryAfterSeconds?: unknown };
+  const retryAfterSeconds = typeof extra.retryAfterSeconds === 'number' ? extra.retryAfterSeconds : undefined;
+  if (retryAfterSeconds && retryAfterSeconds > 0) get().lockSignup(email, retryAfterSeconds);
+  if (code === 'SIGNUP_EXPIRED' || code === 'SIGNUP_FAILED') get().clearPendingSignup();
+  return {
+    success: false,
+    error: message,
+    errorCode: code,
+    attemptsLeft: typeof extra.attemptsLeft === 'number' ? extra.attemptsLeft : undefined,
+    retryAfterSeconds,
+  };
+}
+
+/**
+ * Stores the session from a login or a verified sign-up and works out which
+ * onboarding step the user resumes on.
+ */
+async function startSession(
+  data: { user: any; token: string; refreshToken?: string },
+  set: SetAuthState,
+  get: GetAuthState,
+): Promise<void> {
+  api.setToken(data.token);
+  api.setRefreshToken(data.refreshToken ?? null);
+  const userData = data.user as User;
+  const onboardingComplete = userData?.onboardingComplete ?? false;
+
+  let step = onboardingComplete ? 'complete' : 'splash';
+
+  // If not marked complete, check actual profile data to determine real progress.
+  // This handles users who filled in identity fields but never reached 'complete' step.
+  if (!onboardingComplete) {
+    try {
+      const profileRes = await api.getProfile();
+      if (profileRes.success && profileRes.data) {
+        const d = profileRes.data as any;
+        const hasIdentity = !!(d.dateOfBirth && d.gender && d.pronouns);
+
+        if (hasIdentity) {
+          // Identity data exists — use the stored onboarding step (which may be
+          // ahead of 'splash'), or mark identity as completed so the screen
+          // navigator skips the Identity screen.
+          step = d.onboardingStep && d.onboardingStep !== 'splash'
+            ? d.onboardingStep
+            : 'identity';
+        }
+
+        // If step would send user to the Photos screen, check if they already
+        // have at least 2 photos and skip ahead to face verification.
+        if (step === 'location') {
+          try {
+            const photosRes = await api.getPhotos();
+            if (photosRes.success && Array.isArray(photosRes.data) && photosRes.data.length >= 2) {
+              step = 'photos';
+            }
+          } catch {
+            // Photos fetch failed — user will see the Photos screen
+          }
+        }
+      }
+    } catch {
+      // Profile fetch failed — fall back to the response flag
+    }
+  }
+
+  set({
+    user: userData,
+    token: data.token,
+    isAuthenticated: true,
+    onboardingStep: step,
+  });
+
+  // Connect real-time sockets for like/match and chat updates
+  get().connectLikesSocket();
+  get().connectChatsSocket();
+}
+
 export const useAuthStore = create<AuthState>((set, get) => ({
   user: null,
   token: null,
@@ -167,9 +289,8 @@ export const useAuthStore = create<AuthState>((set, get) => ({
   welcomePending: false,
   connectionStatus: 'checking' as ConnectionStatus,
   connectionError: null,
-  pendingEmail: null,
-  pendingPhone: null,
-  pendingUserId: null,
+  pendingSignup: null,
+  signupLocks: {},
   unreadLikeCount: 0,
   unreadChatCount: 0,
   openChatMatchId: null,
@@ -300,27 +421,11 @@ export const useAuthStore = create<AuthState>((set, get) => ({
     }
   },
 
-  login: async (credentials, password) => {
+  login: async (email, password) => {
     try {
-      const response = await api.login({ ...credentials, password });
+      const response = await api.login({ email, password });
       if (response.success && response.data) {
-        if (response.data.requiresOtp) {
-          set({
-            pendingEmail: credentials.email ?? null,
-            pendingPhone: credentials.phone ?? null,
-            pendingUserId: response.data.userId || null,
-          });
-          return { success: true, requiresOtp: true };
-        }
-        set({
-          user: response.data.user as User,
-          token: response.data.token ?? null,
-          isAuthenticated: true,
-        });
-
-        // Connect real-time sockets for like/match and chat updates
-        get().connectLikesSocket();
-        get().connectChatsSocket();
+        await startSession(response.data, set, get);
         return { success: true };
       }
       const { message, code } = getErrorResponse(response);
@@ -330,103 +435,60 @@ export const useAuthStore = create<AuthState>((set, get) => ({
     }
   },
 
-  register: async (data) => {
+  startSignup: async (form) => {
     try {
-      const response = await api.register({ ...data, authProvider: data.email ? 'email' : 'phone' });
+      const response = await api.signup(form);
       if (response.success && response.data) {
+        set({ pendingSignup: pendingFromCode(signupEmailKey(form.email), response.data) });
         return { success: true };
       }
-      const { message, code } = getErrorResponse(response);
-      return { success: false, error: message, errorCode: code };
+      return signupFailure(response, form.email, get);
     } catch (e: any) {
-      return { success: false, error: e?.message || 'Registration failed.' };
+      return { success: false, error: e?.message || 'Unable to connect. Please try again.' };
     }
   },
 
-  sendOtp: async (target) => {
+  resendSignupCode: async () => {
+    const pending = get().pendingSignup;
+    if (!pending) return { success: false, errorCode: 'SIGNUP_EXPIRED', error: 'Please sign up again.' };
     try {
-      const response = await api.sendOtp(target);
-      if (response.success) {
-        return { success: true };
-      }
-      const { message } = getErrorResponse(response);
-      return { success: false, error: message };
-    } catch (e: any) {
-      return { success: false, error: e?.message || 'Failed to send verification code.' };
-    }
-  },
-
-  verifyOtp: async (target, otp) => {
-    try {
-      const response = await api.verifyOtp(target, otp);
+      const response = await api.signupResend(pending.email);
       if (response.success && response.data) {
-        api.setToken(response.data.token);
-        api.setRefreshToken(response.data.refreshToken ?? null);
-        const userData = response.data.user as User;
-        const onboardingComplete = userData?.onboardingComplete ?? false;
-
-        let step = onboardingComplete ? 'complete' : 'splash';
-
-        // If not marked complete, check actual profile data to determine real progress.
-        // This handles users who filled in identity fields but never reached 'complete' step.
-        if (!onboardingComplete) {
-          try {
-            const profileRes = await api.getProfile();
-            if (profileRes.success && profileRes.data) {
-              const d = profileRes.data as any;
-              const hasIdentity = !!(d.dateOfBirth && d.gender && d.pronouns);
-
-              if (hasIdentity) {
-                // Identity data exists — use the stored onboarding step (which may be
-                // ahead of 'splash'), or mark identity as completed so the screen
-                // navigator skips the Identity screen.
-                step = d.onboardingStep && d.onboardingStep !== 'splash'
-                  ? d.onboardingStep
-                  : 'identity';
-              }
-
-              // If step would send user to the Photos screen, check if they already
-              // have at least 2 photos and skip ahead to face verification.
-              if (step === 'location') {
-                try {
-                  const photosRes = await api.getPhotos();
-                  if (photosRes.success && Array.isArray(photosRes.data) && photosRes.data.length >= 2) {
-                    step = 'photos';
-                  }
-                } catch {
-                  // Photos fetch failed — user will see the Photos screen
-                }
-              }
-            }
-          } catch {
-            // Profile fetch failed — fall back to the response flag
-          }
-        }
-
-        set({
-          user: userData,
-          token: response.data.token,
-          isAuthenticated: true,
-          onboardingStep: step,
-          pendingEmail: null,
-          pendingPhone: null,
-          pendingUserId: null,
-        });
-
-        // Connect real-time sockets for like/match and chat updates
-        get().connectLikesSocket();
-        get().connectChatsSocket();
+        set({ pendingSignup: pendingFromCode(pending.email, response.data) });
         return { success: true };
       }
-      const { message } = getErrorResponse(response);
-      return { success: false, error: message };
+      return signupFailure(response, pending.email, get);
     } catch (e: any) {
-      return { success: false, error: e?.message || 'Invalid verification code.' };
+      return { success: false, error: e?.message || 'Unable to connect. Please try again.' };
     }
   },
 
-  clearPendingOtp: () => {
-    set({ pendingEmail: null, pendingPhone: null, pendingUserId: null });
+  verifySignup: async (code) => {
+    const pending = get().pendingSignup;
+    if (!pending) return { success: false, errorCode: 'SIGNUP_EXPIRED', error: 'Please sign up again.' };
+    try {
+      const response = await api.signupVerify(pending.email, code);
+      if (response.success && response.data) {
+        await startSession(response.data, set, get);
+        set({ pendingSignup: null });
+        return { success: true };
+      }
+      const result = signupFailure(response, pending.email, get);
+      if (result.errorCode === 'INVALID_OTP' && typeof result.attemptsLeft === 'number') {
+        set({ pendingSignup: { ...pending, attemptsLeft: result.attemptsLeft } });
+      }
+      return result;
+    } catch (e: any) {
+      return { success: false, error: e?.message || 'Unable to connect. Please try again.' };
+    }
+  },
+
+  clearPendingSignup: () => {
+    set({ pendingSignup: null });
+  },
+
+  lockSignup: (email, seconds) => {
+    set({ signupLocks: { ...get().signupLocks, [signupEmailKey(email)]: Date.now() + seconds * 1000 } });
   },
 
   connectLikesSocket: () => {
@@ -557,7 +619,7 @@ export const useAuthStore = create<AuthState>((set, get) => ({
     api.setRefreshToken(null);
     set({
       user: null, token: null, isAuthenticated: false,
-      onboardingStep: 'splash', pendingEmail: null, pendingPhone: null, pendingUserId: null,
+      onboardingStep: 'splash', pendingSignup: null,
       unreadLikeCount: 0, unreadChatCount: 0,
     });
   },
@@ -576,7 +638,7 @@ export const useAuthStore = create<AuthState>((set, get) => ({
         api.setRefreshToken(null);
         set({
           user: null, token: null, isAuthenticated: false,
-          onboardingStep: 'splash', pendingEmail: null, pendingPhone: null, pendingUserId: null,
+          onboardingStep: 'splash', pendingSignup: null,
           unreadLikeCount: 0, unreadChatCount: 0,
         });
         return { success: true };
