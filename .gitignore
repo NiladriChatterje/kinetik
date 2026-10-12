@@ -24,3 +24,4 @@ packages/pose-service/models/*.task
 # Local-only design notes
 SYSTEM_DESIGN_GOOGLE_PLAY.md
 LAUNCH_STEPS.md
+SSH_GUIDE.md
