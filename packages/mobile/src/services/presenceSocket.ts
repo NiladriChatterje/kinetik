@@ -23,7 +23,9 @@ export function getPresenceSocket(): Socket {
     socket.on('connect_error', (err) => {
       if (!loggedConnectError) {
         loggedConnectError = true;
-        console.warn('[PresenceSocket] Connection error (will keep retrying):', err.message);
+        // console.log, not console.warn: a warning pops a yellow LogBox on
+        // the phone in development. The offline pill tells the user.
+        console.log('[PresenceSocket] Connection error (will keep retrying):', err.message);
       }
     });
   }

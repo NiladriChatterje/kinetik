@@ -45,6 +45,8 @@ class ApiClient {
   private isRefreshing = false;
   private refreshPromise: Promise<RefreshOutcome> | null = null;
   private accountMissingListener: (() => void) | null = null;
+  private reachabilityListener: ((reachable: boolean) => void) | null = null;
+  private serverReachable = true;
 
   async init() {
     this.token = await SecureStore.getItemAsync('auth_token');
@@ -85,6 +87,23 @@ class ApiClient {
    */
   onAccountMissing(listener: (() => void) | null) {
     this.accountMissingListener = listener;
+  }
+
+  /**
+   * Called with `false` when a request could not reach the server at all
+   * (no response: refused, no network, timed out) and with `true` when the
+   * next request after that gets any response. Fires once per transition,
+   * so a burst of failing requests at launch counts as one outage. The auth
+   * store uses it for the offline pill and the retry-then-sign-out loop.
+   */
+  onReachabilityChange(listener: ((reachable: boolean) => void) | null) {
+    this.reachabilityListener = listener;
+  }
+
+  private reportReachable(reachable: boolean) {
+    if (this.serverReachable === reachable) return;
+    this.serverReachable = reachable;
+    this.reachabilityListener?.(reachable);
   }
 
   /**
@@ -225,6 +244,7 @@ class ApiClient {
       });
 
       clearTimeout(timeout);
+      this.reportReachable(true);
 
       // Parse the body defensively — proxies/gateways can return non-JSON
       // (e.g. an nginx HTML error page on 502) or an empty body on success.
@@ -243,8 +263,11 @@ class ApiClient {
 
       // Non-JSON error body (nginx 502 page, Cloudflare error page, ...)
       if (data === undefined) {
+        // console.log, not console.error: in development an error log pops a
+        // red LogBox overlay on the phone. The user gets a toast from the
+        // screen instead; this line is for the Metro terminal.
         if (__DEV__) {
-          console.error(`[API] Non-JSON response ${response.status} from ${endpoint}`);
+          console.log(`[API] Non-JSON response ${response.status} from ${endpoint}`);
         }
         return {
           success: false,
@@ -263,7 +286,7 @@ class ApiClient {
       // rely on `res.success` always being a boolean.
       if (data === null || typeof data !== 'object' || typeof data.success !== 'boolean') {
         if (!response.ok && __DEV__) {
-          console.error(`[API] ${response.status} ${endpoint}:`, data);
+          console.log(`[API] ${response.status} ${endpoint}:`, data);
         }
         return response.ok
           ? { success: true, data }
@@ -282,7 +305,7 @@ class ApiClient {
       // limit (429) — are surfaced to the user by each screen's toast/banner,
       // so logging them as errors here is just noise.
       if (!response.ok && __DEV__ && response.status >= 500) {
-        console.error(`[API] ${response.status} ${endpoint}:`, JSON.stringify(data));
+        console.log(`[API] ${response.status} ${endpoint}:`, JSON.stringify(data));
       }
 
       // Attach the HTTP status to error payloads so consumers can tell a
@@ -302,9 +325,13 @@ class ApiClient {
       return data as ApiResponse<T>;
     } catch (error: any) {
       clearTimeout(timeout);
+      this.reportReachable(false);
 
+      // Terminal only (see above): a raw "java.net.ConnectException ..."
+      // must never reach the screen. The caller shows the user-level message
+      // returned below.
       if (__DEV__) {
-        console.error(`[API] Request failed ${endpoint}:`, error.message);
+        console.log(`[API] Request failed ${endpoint}:`, error.message);
       }
 
       // Timeout
@@ -321,14 +348,14 @@ class ApiClient {
           success: false,
           error: {
             code: 'NETWORK_ERROR',
-            message: 'Cannot reach server. Make sure you are on the same Wi-Fi and the backend is running.',
+            message: "Can't reach the server. Please check your connection and try again.",
           },
         };
       }
 
       return {
         success: false,
-        error: { code: 'NETWORK_ERROR', message: error.message || 'Network request failed' },
+        error: { code: 'NETWORK_ERROR', message: 'Something went wrong with the connection. Please try again.' },
       };
     }
   }
@@ -360,9 +387,13 @@ class ApiClient {
         signal: controller.signal,
       });
       clearTimeout(timeout);
+      // A health answer that is not OK (an nginx 502 while api-core is
+      // down) is as unusable as no answer, so it counts as unreachable too.
+      this.reportReachable(response.ok);
       if (response.ok) return { ok: true };
       return { ok: false, error: `Server returned ${response.status}` };
     } catch (e: any) {
+      this.reportReachable(false);
       if (e.name === 'AbortError') return { ok: false, error: 'Connection timed out' };
       if (e instanceof TypeError) return { ok: false, error: 'Server unreachable' };
       return { ok: false, error: e.message || 'Connection failed' };

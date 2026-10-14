@@ -390,12 +390,22 @@ export const useAuthStore = create<AuthState>((set, get) => ({
               isAuthenticated: false,
               onboardingStep: 'splash',
             });
+            Toast.show({
+              type: 'glass',
+              text1: 'Signed out',
+              text2: 'Your session has expired. Please sign in again.',
+              visibilityTime: 4000,
+            });
           } else {
             // Transient failure (5xx, timeout, no network, database waking
             // up). The token was kept above; keep the session too. Restore the
             // last known user so the app opens where it left off instead of
             // on the login screen. Screens refetch their own data and the
             // connection banner covers the outage.
+            // The offline pill and the retry loop are already running: the
+            // failed request reported the server unreachable (see the outage
+            // handling at the bottom of this file).
+
             const snapshot = await readSessionSnapshot();
             if (snapshot) {
               set({
@@ -409,6 +419,15 @@ export const useAuthStore = create<AuthState>((set, get) => ({
               get().connectChatsSocket();
               return;
             }
+
+            // No snapshot to restore: the user lands on the sign-in screen
+            // and deserves to know it was the connection, not their account.
+            Toast.show({
+              type: 'glass',
+              text1: "Can't reach the server",
+              text2: 'Please check your connection and sign in again.',
+              visibilityTime: 4000,
+            });
           }
 
           set({ isLoading: false });
@@ -684,6 +703,66 @@ function signOutMissingAccount(): void {
 }
 
 api.onAccountMissing(signOutMissingAccount);
+
+// ─── Server outage: show the pill, retry 3 times, then sign out ──────
+// The first request that cannot reach the server shows the offline pill and
+// starts three automatic health-check retries, spaced 5 s, 10 s and 15 s
+// apart. Any request or retry that gets through clears the pill and stops
+// the loop. If all three retries fail, a signed-in user is signed out with
+// a toast; a user on the sign-in screen just keeps the pill and its Retry.
+const OUTAGE_RETRY_DELAYS_MS = [5000, 10000, 15000];
+let outageRetryTimer: ReturnType<typeof setTimeout> | null = null;
+
+function stopOutageRetries(): void {
+  if (outageRetryTimer) {
+    clearTimeout(outageRetryTimer);
+    outageRetryTimer = null;
+  }
+}
+
+function scheduleOutageRetry(attempt: number): void {
+  outageRetryTimer = setTimeout(async () => {
+    outageRetryTimer = null;
+    const result = await api.healthCheck();
+    if (result.ok) {
+      // healthCheck has already reported the server reachable, which clears
+      // the pill through onReachabilityChange below.
+      return;
+    }
+    const failed = attempt + 1;
+    if (failed < OUTAGE_RETRY_DELAYS_MS.length) {
+      useAuthStore.setState({
+        connectionStatus: 'disconnected',
+        connectionError: `Server unreachable · retry ${failed}/${OUTAGE_RETRY_DELAYS_MS.length}`,
+      });
+      scheduleOutageRetry(failed);
+      return;
+    }
+
+    // Every retry failed.
+    useAuthStore.setState({ connectionStatus: 'disconnected', connectionError: 'Server unreachable' });
+    if (!useAuthStore.getState().isAuthenticated) return;
+    useAuthStore.getState().logout();
+    Toast.show({
+      type: 'glass',
+      text1: 'Signed out',
+      text2: `Couldn't reach the server after ${OUTAGE_RETRY_DELAYS_MS.length} attempts. Please sign in again.`,
+      visibilityTime: 5000,
+    });
+  }, OUTAGE_RETRY_DELAYS_MS[attempt]);
+}
+
+function onReachabilityChange(reachable: boolean): void {
+  if (reachable) {
+    stopOutageRetries();
+    useAuthStore.setState({ connectionStatus: 'connected', connectionError: null });
+    return;
+  }
+  useAuthStore.setState({ connectionStatus: 'disconnected', connectionError: 'Server unreachable' });
+  if (!outageRetryTimer) scheduleOutageRetry(0);
+}
+
+api.onReachabilityChange(onReachabilityChange);
 
 // Keep the on-device session snapshot in step with the store: written while
 // signed in, removed on sign out or account deletion. Doing it here, rather

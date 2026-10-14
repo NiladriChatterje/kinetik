@@ -32,7 +32,9 @@ export function getChatSocket(): Socket {
     socket.on('connect_error', (err) => {
       if (!loggedConnectError) {
         loggedConnectError = true;
-        console.warn('[ChatSocket] Connection error (will keep retrying):', err.message);
+        // console.log, not console.warn: a warning pops a yellow LogBox on
+        // the phone in development. The offline pill tells the user.
+        console.log('[ChatSocket] Connection error (will keep retrying):', err.message);
       }
     });
     socket.on('disconnect', (reason) => {
