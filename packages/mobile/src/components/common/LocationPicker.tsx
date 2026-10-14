@@ -1,13 +1,24 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
-import { View, Text, TouchableOpacity, StyleSheet, ActivityIndicator, FlatList, LogBox } from 'react-native';
+import {
+  View,
+  Text,
+  TouchableOpacity,
+  StyleSheet,
+  ActivityIndicator,
+  ScrollView,
+  NativeScrollEvent,
+  NativeSyntheticEvent,
+} from 'react-native';
 import { Input } from './Input';
 import { api } from '../../services/api';
 import { colors, typography, spacing, radius } from '../../theme';
 
-// The dropdowns are FlatLists (windowed) with a fixed max height, nested in
-// the screen's ScrollView. RN warns about that nesting even though the inner
-// list scrolls on its own and only renders the visible rows.
-LogBox.ignoreLogs(['VirtualizedLists should never be nested']);
+// The dropdowns sit inside the screen's ScrollView, so they are plain nested
+// ScrollViews, not FlatLists: a virtualized list inside a ScrollView of the
+// same orientation cannot measure its viewport, and React Native reports
+// that as an error. The lists are small (a filtered country list, city pages
+// of CITY_PAGE rows) and capped at LIST_MAX_HEIGHT, so rendering every row
+// is cheap; the next city page loads as the user nears the bottom.
 
 /** A picked place. `countryName` is display-only and optional when hydrating from the server. */
 export interface LocationSelection {
@@ -38,6 +49,9 @@ function loadCountries(): Promise<CountryOption[]> {
 const CITY_PAGE = 30;
 const CITY_DEBOUNCE_MS = 250;
 const LIST_MAX_HEIGHT = 240;
+// Load the next city page once the list is scrolled to within this many
+// pixels of its end (half a list height, like FlatList's default threshold).
+const LOAD_MORE_WITHIN_PX = LIST_MAX_HEIGHT / 2;
 
 interface Props {
   value: LocationSelection | null;
@@ -49,9 +63,9 @@ interface Props {
 /**
  * Two typeable dropdowns: country first, then a city of that country. Both
  * lists come from the server's offline dataset, so a selection always maps
- * to coordinates the feed can use. Lists are windowed, and cities are paged
- * from the server as the user scrolls, so a country with tens of thousands
- * of places costs the app only the rows on screen.
+ * to coordinates the feed can use. Cities are paged from the server as the
+ * user scrolls, so a country with tens of thousands of places costs the app
+ * only the pages the user has scrolled through.
  */
 export const LocationPicker: React.FC<Props> = ({ value, onChange, required }) => {
   const [countries, setCountries] = useState<CountryOption[]>([]);
@@ -159,6 +173,13 @@ export const LocationPicker: React.FC<Props> = ({ value, onChange, required }) =
     onChange({ countryCode: country.code, countryName: country.name, city: c.name, stateCode: c.stateCode });
   };
 
+  /** Fetch the next page when the city list is scrolled near its end. */
+  const handleCityScroll = (e: NativeSyntheticEvent<NativeScrollEvent>) => {
+    const { layoutMeasurement, contentOffset, contentSize } = e.nativeEvent;
+    const remaining = contentSize.height - layoutMeasurement.height - contentOffset.y;
+    if (remaining <= LOAD_MORE_WITHIN_PX) loadMoreCities();
+  };
+
   const needle = countryQuery.trim().toLowerCase();
   const countrySuggestions: CountryOption[] = countryOpen && !country && needle
     ? [
@@ -181,20 +202,18 @@ export const LocationPicker: React.FC<Props> = ({ value, onChange, required }) =
         syncOnChange
       />
       {countrySuggestions.length > 0 && (
-        <FlatList
+        <ScrollView
           style={styles.list}
-          data={countrySuggestions}
-          keyExtractor={(c) => c.code}
-          renderItem={({ item }) => (
-            <TouchableOpacity style={styles.row} onPress={() => selectCountry(item)}>
-              <Text style={styles.rowText}>{item.flag}  {item.name}</Text>
-            </TouchableOpacity>
-          )}
           keyboardShouldPersistTaps="handled"
           nestedScrollEnabled
-          initialNumToRender={8}
-          windowSize={3}
-        />
+          showsVerticalScrollIndicator={false}
+        >
+          {countrySuggestions.map((item) => (
+            <TouchableOpacity key={item.code} style={styles.row} onPress={() => selectCountry(item)}>
+              <Text style={styles.rowText}>{item.flag}  {item.name}</Text>
+            </TouchableOpacity>
+          ))}
+        </ScrollView>
       )}
 
       {country && (
@@ -210,27 +229,28 @@ export const LocationPicker: React.FC<Props> = ({ value, onChange, required }) =
           />
           {loadingCities && <ActivityIndicator size="small" color={colors.textMuted} style={styles.spinner} />}
           {showCityList && (
-            <FlatList
+            <ScrollView
               style={styles.list}
-              data={cities}
-              keyExtractor={(c, i) => `${c.stateCode}-${c.name}-${c.latitude}-${i}`}
-              renderItem={({ item }) => (
-                <TouchableOpacity style={styles.row} onPress={() => selectCity(item)}>
+              keyboardShouldPersistTaps="handled"
+              nestedScrollEnabled
+              showsVerticalScrollIndicator={false}
+              onScroll={handleCityScroll}
+              scrollEventThrottle={100}
+            >
+              {cities.map((item, i) => (
+                <TouchableOpacity
+                  key={`${item.stateCode}-${item.name}-${item.latitude}-${i}`}
+                  style={styles.row}
+                  onPress={() => selectCity(item)}
+                >
                   <Text style={styles.rowText}>{item.name}</Text>
                   {item.stateCode ? <Text style={styles.rowMeta}>{item.stateCode}</Text> : null}
                 </TouchableOpacity>
-              )}
-              onEndReached={loadMoreCities}
-              onEndReachedThreshold={0.5}
-              ListFooterComponent={
-                loadingMore ? <ActivityIndicator size="small" color={colors.textMuted} style={styles.footer} /> : null
-              }
-              keyboardShouldPersistTaps="handled"
-              nestedScrollEnabled
-              initialNumToRender={8}
-              windowSize={3}
-              removeClippedSubviews
-            />
+              ))}
+              {loadingMore ? (
+                <ActivityIndicator size="small" color={colors.textMuted} style={styles.footer} />
+              ) : null}
+            </ScrollView>
           )}
           {!loadingCities && cityOpen && cityQuery.trim() && cities.length === 0 && (
             <Text style={styles.empty}>No matching place found. Try a nearby town.</Text>
