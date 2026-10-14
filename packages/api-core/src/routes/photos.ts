@@ -3,6 +3,14 @@ import { ERROR_CODES } from '@kinetik/shared';
 import { query, TABLES, getPhotosByUserId, deletePhotoById, setPrimaryPhoto } from '../services/database';
 import { savePhoto, deletePhoto } from '../services/photoStorage';
 
+/**
+ * A finished profile keeps at least this many photos. Onboarding is exempt:
+ * the user is still assembling the set there and may swap a photo out while
+ * at two. The profile page disables its delete action at this count; this is
+ * the server-side guarantee behind it.
+ */
+const MIN_PROFILE_PHOTOS = 2;
+
 export async function photoRoutes(app: FastifyInstance) {
   // All routes require authentication
   app.addHook('preHandler', async (request: FastifyRequest, reply: FastifyReply) => {
@@ -112,6 +120,24 @@ export async function photoRoutes(app: FastifyInstance) {
       return reply.status(404).send({
         success: false,
         error: { code: ERROR_CODES.NOT_FOUND, message: 'Photo not found.' },
+      });
+    }
+
+    // A completed profile may not drop below the minimum
+    const guard = await query(
+      `SELECT u.onboarding_complete,
+              (SELECT COUNT(*)::int FROM ${TABLES.PROFILE_PHOTOS} p WHERE p.user_id = u.id) AS photo_count
+       FROM ${TABLES.USERS} u WHERE u.id = $1`,
+      [userId],
+    );
+    const { onboarding_complete: onboardingComplete, photo_count: photoCount } = guard.rows[0] ?? {};
+    if (onboardingComplete && photoCount <= MIN_PROFILE_PHOTOS) {
+      return reply.status(400).send({
+        success: false,
+        error: {
+          code: 'NOT_ENOUGH_PHOTOS',
+          message: `Keep at least ${MIN_PROFILE_PHOTOS} photos on your profile. Add another photo before deleting this one.`,
+        },
       });
     }
 

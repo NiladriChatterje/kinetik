@@ -28,6 +28,13 @@ interface PhotoOptionsModalProps {
   onSetPrimary: () => void;
   /** Called once the user confirms the delete; the sheet waits for it, then closes */
   onDelete: () => Promise<void>;
+  /**
+   * False when deleting is not allowed right now (the profile is at its
+   * minimum photo count). The row is shown greyed out and does nothing.
+   */
+  canDelete?: boolean;
+  /** Shown under "Delete Photo" when canDelete is false */
+  deleteDisabledReason?: string;
   /** Called to close the modal */
   onClose: () => void;
 }
@@ -39,6 +46,8 @@ export const PhotoOptionsModal: React.FC<PhotoOptionsModalProps> = ({
   onSetPrimary,
   onDelete,
   onClose,
+  canDelete = true,
+  deleteDisabledReason = 'Add another photo first',
 }) => {
   const slideAnim = useRef(new Animated.Value(SHEET_HEIGHT)).current;
   const fadeAnim = useRef(new Animated.Value(0)).current;
@@ -205,32 +214,37 @@ export const PhotoOptionsModal: React.FC<PhotoOptionsModalProps> = ({
                       </TouchableOpacity>
                     )}
 
-                    {/* Delete Photo */}
+                    {/* Delete Photo — greyed out while the profile is at its
+                        minimum photo count */}
                     <TouchableOpacity
-                      style={styles.optionRow}
+                      style={[styles.optionRow, !canDelete && styles.optionRowDisabled]}
                       onPress={() => setConfirmingDelete(true)}
+                      disabled={!canDelete}
                       activeOpacity={0.6}
+                      accessibilityState={{ disabled: !canDelete }}
                     >
-                      <View style={[styles.optionIconWrap, styles.optionIconDanger]}>
+                      <View style={[styles.optionIconWrap, canDelete && styles.optionIconDanger]}>
                         <Ionicons
-                          name="trash-outline"
+                          name={canDelete ? 'trash-outline' : 'lock-closed-outline'}
                           size={22}
-                          color={DANGER}
+                          color={canDelete ? DANGER : colors.textMuted}
                         />
                       </View>
                       <View style={styles.optionContent}>
-                        <Text style={[styles.optionTitle, styles.optionTitleDanger]}>
+                        <Text style={[styles.optionTitle, canDelete ? styles.optionTitleDanger : styles.optionTitleDisabled]}>
                           Delete Photo
                         </Text>
                         <Text style={styles.optionSubtitle}>
-                          Remove this photo permanently
+                          {canDelete ? 'Remove this photo permanently' : deleteDisabledReason}
                         </Text>
                       </View>
-                      <Ionicons
-                        name="chevron-forward"
-                        size={18}
-                        color={colors.textMuted}
-                      />
+                      {canDelete && (
+                        <Ionicons
+                          name="chevron-forward"
+                          size={18}
+                          color={colors.textMuted}
+                        />
+                      )}
                     </TouchableOpacity>
                   </View>
 
@@ -318,6 +332,12 @@ const styles = StyleSheet.create({
   },
   optionIconDanger: {
     backgroundColor: 'rgba(229, 57, 53, 0.1)',
+  },
+  optionRowDisabled: {
+    opacity: 0.55,
+  },
+  optionTitleDisabled: {
+    color: colors.textMuted,
   },
   optionContent: {
     flex: 1,

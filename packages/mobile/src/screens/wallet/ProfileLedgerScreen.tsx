@@ -220,6 +220,12 @@ export const ProfileLedgerScreen: React.FC = () => {
   const locationStr = locationParts.length > 0 ? locationParts.join(', ') : null;
 
   const MAX_PHOTOS = 6;
+  // A profile keeps at least this many photos: deleting is disabled at this
+  // count and enabled again once a third photo is added. The server enforces
+  // the same rule, so this is only the visible side of it.
+  const MIN_PHOTOS = 2;
+  const canDeletePhoto = photos.length > MIN_PHOTOS;
+  const deleteDisabledReason = `Keep at least ${MIN_PHOTOS} photos. Add another to delete this one.`;
 
   // ─── Photo Handlers ──────────────────────────────────────
 
@@ -272,6 +278,10 @@ export const ProfileLedgerScreen: React.FC = () => {
 
   // Confirmed inside PhotoOptionsModal, which waits for this before closing
   const handleDeletePhoto = async (photoId: string) => {
+    if (!canDeletePhoto) {
+      toast.showGlass(`Keep at least ${MIN_PHOTOS} photos`, 'Add another photo before deleting this one.');
+      return;
+    }
     setMutatingPhotoId(photoId);
     try {
       await api.deletePhoto(photoId);
@@ -599,6 +609,8 @@ export const ProfileLedgerScreen: React.FC = () => {
         onDelete={async () => {
           if (modalPhoto) await handleDeletePhoto(modalPhoto.id);
         }}
+        canDelete={canDeletePhoto}
+        deleteDisabledReason={deleteDisabledReason}
         onClose={() => setModalPhoto(null)}
       />
 
