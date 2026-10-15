@@ -185,9 +185,11 @@ export async function matchRoutes(app: FastifyInstance) {
       LIMIT 20
     `;
 
-    // Explore mode: paginated browse over everyone eligible. Only active
-    // matches are excluded (people you're already chatting with) — passed and
-    // liked users stay visible so the whole platform is browsable.
+    // Explore mode: paginated browse over everyone eligible. Active matches
+    // (people you're already chatting with) and people with a pending like
+    // on you are excluded — the latter belong to the Likes list, where a
+    // like-back makes the match. Passed and liked users stay visible so the
+    // whole platform is browsable.
     let profilesResult;
     let hasMore = false;
     if (isExplore) {
@@ -196,15 +198,7 @@ export async function matchRoutes(app: FastifyInstance) {
           u.id, u.display_name, u.date_of_birth, u.bio, u.occupation,
           u.education, u.pronouns, u.is_verified, u.dating_category, u.about_answers,
           u.h3_index, u.latitude, u.longitude,
-          ${distanceExpr} AS distance_km,
-          -- Pending incoming like from this profile — the Explore grid shows
-          -- their card with a "Liked you" tag
-          EXISTS (
-            SELECT 1 FROM ${TABLES.USER_INTERACTIONS} ui
-            WHERE ui.actor_id = u.id AND ui.target_id = $1
-              AND ui.action IN ('like', 'super_like')
-              AND ui.is_mutual = FALSE AND ui.responded_at IS NULL
-          ) AS liked_you
+          ${distanceExpr} AS distance_km
         FROM ${TABLES.USERS} u
         WHERE u.id != $1
           AND u.is_active = TRUE
@@ -216,6 +210,11 @@ export async function matchRoutes(app: FastifyInstance) {
             SELECT user_b_id FROM ${TABLES.MATCHES} WHERE user_a_id = $1 AND is_active = TRUE
             UNION
             SELECT user_a_id FROM ${TABLES.MATCHES} WHERE user_b_id = $1 AND is_active = TRUE
+            UNION
+            -- Pending incoming like: answered from the Likes list, not here
+            SELECT actor_id FROM ${TABLES.USER_INTERACTIONS}
+            WHERE target_id = $1 AND action IN ('like', 'super_like')
+              AND is_mutual = FALSE AND responded_at IS NULL
           )
         -- Explore browses everyone (no distance cut-off) but nearest first
         -- when the viewer has an origin; profiles without a location go last.
