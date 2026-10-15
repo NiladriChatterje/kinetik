@@ -1,11 +1,13 @@
 import React, { useState } from 'react';
-import { View, Text, StyleSheet, ScrollView } from 'react-native';
+import { View, Text, StyleSheet, ScrollView, Image } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { Button } from '../../components/common/Button';
 import { useAuthStore } from '../../store/authStore';
 import { clearWelcomePending } from '../../services/welcomeNotice';
 import { colors, typography, spacing, radius } from '../../theme';
+
+const LOGO = require('../../assets/images/logo.png');
 
 /**
  * Shown once, right after a user finishes onboarding. Start Exploring is the
@@ -26,7 +28,7 @@ export const WelcomeScreen: React.FC<{ navigation: any }> = ({ navigation }) => 
     <SafeAreaView style={styles.container}>
       <ScrollView contentContainerStyle={styles.content} bounces={false}>
         <View style={styles.logoIcon}>
-          <Ionicons name="flash" size={32} color={colors.textInverse} />
+          <Image source={LOGO} style={styles.logoImage} resizeMode="contain" />
         </View>
 
         <Text style={styles.title}>Thank you</Text>
@@ -71,6 +73,11 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
     marginBottom: spacing.xxl,
+  },
+  logoImage: {
+    width: 46,
+    height: 46,
+    tintColor: colors.textInverse,
   },
   title: { ...typography.h1, color: colors.textPrimary, textAlign: 'center', marginBottom: spacing.sm },
   subtitle: { ...typography.body1, color: colors.textSecondary, textAlign: 'center', marginBottom: spacing.xxl },

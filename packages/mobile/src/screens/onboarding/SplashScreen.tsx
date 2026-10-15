@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
 import {
-  View, Text, StyleSheet, TouchableOpacity,
+  View, Text, StyleSheet, TouchableOpacity, Image,
   ScrollView, Animated, Dimensions,
   KeyboardAvoidingView, Platform,
 } from 'react-native';
@@ -13,6 +13,8 @@ import { Input } from '../../components/common/Input';
 import { LocationPicker, LocationSelection } from '../../components/common/LocationPicker';
 import { enterOnboarding } from '../../navigation/onboardingFlow';
 import { colors, typography, spacing, radius } from '../../theme';
+
+const LOGO = require('../../assets/images/logo.png');
 
 const { width: SCREEN_WIDTH } = Dimensions.get('window');
 const SEGMENT_WIDTH = SCREEN_WIDTH - spacing.xxl * 2;
@@ -218,7 +220,7 @@ export const SplashScreen: React.FC<{ navigation: any; route?: any }> = ({ navig
       {/* ─── Fixed Top: Logo + Segment ──────────────────── */}
       <Animated.View style={[styles.topSection, { opacity: logoOpacity, transform: [{ scale: logoScale }] }]}>
         <View style={styles.logoIcon}>
-          <Ionicons name="flash" size={32} color={colors.textInverse} />
+          <Image source={LOGO} style={styles.logoImage} resizeMode="contain" />
         </View>
         <Text style={styles.title}>Kinetik</Text>
         <Text style={styles.tagline}>Where real connections begin</Text>
@@ -367,6 +369,11 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
     marginBottom: spacing.xl,
+  },
+  logoImage: {
+    width: 46,
+    height: 46,
+    tintColor: colors.textInverse,
   },
   title: {
     fontFamily: 'Cantarell-Bold',
