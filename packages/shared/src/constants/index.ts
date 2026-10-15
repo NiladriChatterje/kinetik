@@ -25,6 +25,10 @@ export const REDIS_KEYS = {
   USER_SESSION: (userId: string) => `user:${userId}:session`,
   USER_PRESENCE: (userId: string) => `user:${userId}:presence`,
   USER_SUPERLIKE_COUNT: (userId: string) => `user:${userId}:superlikes:daily`,
+  // "1" / "0": whether the user has active Premium, kept for a short time so
+  // the ledger is not queried on every request. Dropped by api-core whenever
+  // the ledger changes (services/subscriptionEntitlement.ts).
+  USER_PREMIUM: (userId: string) => `user:${userId}:premium`,
 
   // New likes counter (for unread badge)
   USER_UNREAD_LIKES: (userId: string) => `user:${userId}:likes:unread`,

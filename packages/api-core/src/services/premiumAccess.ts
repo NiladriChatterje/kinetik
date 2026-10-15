@@ -1,4 +1,6 @@
+import { REDIS_KEYS } from '@kinetik/shared';
 import { query, TABLES } from './database';
+import { getRedis } from './redis';
 
 /**
  * Server-side Premium gates for the two paid features:
@@ -25,6 +27,64 @@ export const CHAT_LOCKED = 'CHAT_LOCKED';
  * arrives after the old period's expiry.
  */
 export async function hasActivePremium(userId: string): Promise<boolean> {
+  const key = REDIS_KEYS.USER_PREMIUM(userId);
+  const cached = await withPremiumCache((redis) => redis.get(key));
+  if (cached === '1') return true;
+  if (cached === '0') return false;
+
+  const premium = await queryActivePremium(userId);
+  // Written in the background: the answer is already known, and a slow
+  // cache must not slow the request.
+  void withPremiumCache((redis) => redis.set(key, premium ? '1' : '0', 'EX', PREMIUM_CACHE_TTL_SECONDS));
+  return premium;
+}
+
+/**
+ * Drop the cached Premium answer. Called wherever the ledger's tier changes,
+ * so a purchase or an expiry shows the moment it is recorded rather than up
+ * to PREMIUM_CACHE_TTL_SECONDS later.
+ */
+export async function invalidatePremiumCache(userId: string): Promise<void> {
+  await withPremiumCache((redis) => redis.del(REDIS_KEYS.USER_PREMIUM(userId)));
+}
+
+/** How long a Premium answer is reused before the ledger is asked again. */
+const PREMIUM_CACHE_TTL_SECONDS = 60;
+/** A cache slower than this is treated as absent and the ledger is asked. */
+const PREMIUM_CACHE_TIMEOUT_MS = 300;
+
+/**
+ * Run one cache command, or return null when the cache cannot answer:
+ * Redis not configured, not connected, erroring, or slow. The ledger is
+ * always the fallback, so a cache problem can only cost a query, never a
+ * wrong answer or a failed request.
+ */
+async function withPremiumCache<T>(op: (redis: ReturnType<typeof getRedis>) => Promise<T>): Promise<T | null> {
+  if (!process.env.REDIS_AIVEN_URL) return null;
+  let redis: ReturnType<typeof getRedis>;
+  try {
+    redis = getRedis();
+  } catch {
+    return null;
+  }
+  // ioredis queues commands while reconnecting; they would wait, not fail.
+  if (!redis || (redis as any).status !== 'ready') return null;
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  try {
+    return await Promise.race([
+      op(redis),
+      new Promise<null>((resolve) => {
+        timer = setTimeout(() => resolve(null), PREMIUM_CACHE_TIMEOUT_MS);
+      }),
+    ]);
+  } catch {
+    return null;
+  } finally {
+    if (timer) clearTimeout(timer);
+  }
+}
+
+async function queryActivePremium(userId: string): Promise<boolean> {
   const result = await query(
     `SELECT 1 FROM ${TABLES.SUBSCRIPTION_LEDGER}
      WHERE user_id = $1

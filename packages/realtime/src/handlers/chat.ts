@@ -46,16 +46,27 @@ interface MessagePayload {
  * Premium (a paid tier whose Play expiry has not passed, with a few hours of
  * renewal grace) unlocks every chat.
  */
-async function isChatLocked(userId: string, matchId: string): Promise<boolean> {
-  const premium = await query(
-    `SELECT 1 FROM ${TABLES.SUBSCRIPTION_LEDGER}
-     WHERE user_id = $1
-       AND tier IN ('premium', 'infinite')
-       AND expires_at IS NOT NULL
-       AND expires_at > NOW() - INTERVAL '6 hours'`,
-    [userId],
-  );
-  if ((premium.rowCount ?? 0) > 0) return false;
+async function isChatLocked(userId: string, matchId: string, redis?: Redis): Promise<boolean> {
+  // api-core keeps the Premium answer in this Redis for a short time and drops
+  // it when the ledger changes; read it the same way, ledger as the fallback.
+  const key = REDIS_KEYS.USER_PREMIUM(userId);
+  const cached = await withPremiumCache(redis, (r) => r.get(key));
+  let hasPremium: boolean;
+  if (cached === '1' || cached === '0') {
+    hasPremium = cached === '1';
+  } else {
+    const premium = await query(
+      `SELECT 1 FROM ${TABLES.SUBSCRIPTION_LEDGER}
+       WHERE user_id = $1
+         AND tier IN ('premium', 'infinite')
+         AND expires_at IS NOT NULL
+         AND expires_at > NOW() - INTERVAL '6 hours'`,
+      [userId],
+    );
+    hasPremium = (premium.rowCount ?? 0) > 0;
+    void withPremiumCache(redis, (r) => r.set(key, hasPremium ? '1' : '0', 'EX', PREMIUM_CACHE_TTL_SECONDS));
+  }
+  if (hasPremium) return false;
 
   const free = await query(
     `SELECT id, is_active FROM ${TABLES.MATCHES}
@@ -66,6 +77,31 @@ async function isChatLocked(userId: string, matchId: string): Promise<boolean> {
   );
   const first = free.rows[0];
   return !first?.is_active || first.id !== matchId;
+}
+
+const PREMIUM_CACHE_TTL_SECONDS = 60;
+const PREMIUM_CACHE_TIMEOUT_MS = 300;
+
+/**
+ * One cache command, or null when the cache cannot answer (no client, not
+ * connected, erroring, slow). The ledger query above is the fallback, so a
+ * cache problem can only cost a query, never a wrong answer.
+ */
+async function withPremiumCache<T>(redis: Redis | undefined, op: (r: Redis) => Promise<T>): Promise<T | null> {
+  if (!redis || (redis as any).status !== 'ready') return null;
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  try {
+    return await Promise.race([
+      op(redis),
+      new Promise<null>((resolve) => {
+        timer = setTimeout(() => resolve(null), PREMIUM_CACHE_TIMEOUT_MS);
+      }),
+    ]);
+  } catch {
+    return null;
+  } finally {
+    if (timer) clearTimeout(timer);
+  }
 }
 
 // ─── Internal Redis pub/sub channels for cross-instance chat events ──
@@ -303,7 +339,7 @@ export class ChatHandler {
             console.warn(`[Chat] User ${userId} denied join to match:${matchId} (not a participant)`);
             return;
           }
-          if (await isChatLocked(userId, matchId)) {
+          if (await isChatLocked(userId, matchId, this.pubClient)) {
             console.warn(`[Chat] User ${userId} denied join to match:${matchId} (chat locked, no Premium)`);
             return;
           }

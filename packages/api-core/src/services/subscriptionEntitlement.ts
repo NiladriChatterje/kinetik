@@ -1,4 +1,5 @@
 import { FREE_SWIPE_LIMIT, PREMIUM_SWIPE_LIMIT } from '@kinetik/shared';
+import { invalidatePremiumCache } from './premiumAccess';
 import { query, TABLES } from './database';
 import { eventBus } from './eventBus';
 import { getRedis } from './redis';
@@ -163,6 +164,8 @@ export async function applyPlayEntitlement(
   } catch (error: any) {
     console.warn('[entitlement] Could not clear swipe cache:', error?.message || error);
   }
+  // Same for the Premium answer the gates cache (never throws).
+  await invalidatePremiumCache(userId);
 
   await eventBus.sendPaymentEvent({
     type: sub.entitled ? 'subscription.activated' : 'subscription.cancelled',
