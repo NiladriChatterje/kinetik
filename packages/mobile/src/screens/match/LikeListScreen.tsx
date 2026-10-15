@@ -194,9 +194,13 @@ export const LikeListScreen: React.FC<{ navigation: any }> = ({ navigation }) =>
     return (
       <SafeAreaView style={styles.container}>
         <View style={styles.header}>
-          <TouchableOpacity onPress={() => navigation.goBack()}>
-            <Ionicons name="chevron-back" size={24} color={colors.textPrimary} />
-          </TouchableOpacity>
+          {navigation.canGoBack() ? (
+            <TouchableOpacity onPress={() => navigation.goBack()}>
+              <Ionicons name="chevron-back" size={24} color={colors.textPrimary} />
+            </TouchableOpacity>
+          ) : (
+            <View style={{ width: 24 }} />
+          )}
           <Text style={styles.headerTitle}>Likes</Text>
           <View style={{ width: 24 }} />
         </View>
@@ -210,9 +214,15 @@ export const LikeListScreen: React.FC<{ navigation: any }> = ({ navigation }) =>
   return (
     <SafeAreaView style={styles.container}>
       <View style={styles.header}>
-        <TouchableOpacity onPress={() => navigation.goBack()}>
-          <Ionicons name="chevron-back" size={24} color={colors.textPrimary} />
-        </TouchableOpacity>
+        {/* As the Match tab there is nothing to go back to; pushed from the
+            deck's heart button there is */}
+        {navigation.canGoBack() ? (
+          <TouchableOpacity onPress={() => navigation.goBack()}>
+            <Ionicons name="chevron-back" size={24} color={colors.textPrimary} />
+          </TouchableOpacity>
+        ) : (
+          <View style={{ width: 24 }} />
+        )}
         <Text style={styles.headerTitle}>Likes</Text>
         <TouchableOpacity onPress={fetchLikes}>
           <Ionicons name="refresh" size={22} color={colors.textSecondary} />

@@ -120,7 +120,7 @@ export const ExploreScreen: React.FC<{ navigation: any }> = ({ navigation }) => 
   }, []);
 
   const openProfile = (profile: GridProfile) => {
-    navigation.navigate('Match', { focusProfile: profile });
+    navigation.navigate('Discover', { focusProfile: profile });
   };
 
   const primaryPhoto = (p: GridProfile) =>

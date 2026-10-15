@@ -121,6 +121,8 @@ export type RootStackParamList = {
   DoubleDate: { roomId: string };
   // Match screens shown as modal overlays
   Likes: undefined;
+  // The swipe deck, opened on a profile tapped in Explore
+  Discover: { focusProfile?: any } | undefined;
   ChatList: undefined;
   Chat: { matchId: string; partnerName: string; partnerId?: string; partnerPhotoUrl?: string };
   // Kept for profile access
@@ -151,7 +153,7 @@ export type PreferencesStackParamList = {
 
 export type MainTabParamList = {
   Explore: undefined;
-  Match: { focusProfile?: any } | undefined;
+  Match: undefined;
   ChatListTab: undefined;
   Profile: undefined;
 };
@@ -234,9 +236,11 @@ const MainTabNavigator = React.memo(function MainTabNavigator() {
           tabBarIcon: ({ color }) => <Ionicons name="grid-outline" size={22} color={color} />,
         }}
       />
+      {/* The tab opens the Likes list: Explore already covers discovery, and
+          the swipe deck is reached from a profile tapped there (Discover). */}
       <MainTab.Screen
         name="Match"
-        component={MatchScreen}
+        component={LikeListScreen}
         options={{
           tabBarLabel: 'Match',
           tabBarIcon: ({ color }) => <MatchTabIcon color={color} />,
@@ -299,6 +303,7 @@ export function RootNavigator() {
         <RootStack.Screen name="Main" component={MainTabNavigator} />
         {/* Match screens (pushed above tab bar) */}
         <RootStack.Screen name="Likes" component={LikeListScreen} />
+        <RootStack.Screen name="Discover" component={MatchScreen} />
         <RootStack.Screen name="ChatList" component={ChatListScreen} />
         <RootStack.Screen name="Chat" component={ChatScreen} />
         {/* Screens navigated from Profile */}

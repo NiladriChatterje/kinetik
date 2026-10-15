@@ -580,7 +580,14 @@ export const MatchScreen: React.FC<{ navigation: any; route?: any }> = ({ naviga
     return (
       <SafeAreaView style={styles.container}>
         <View style={styles.header}>
-          <Text style={styles.headerTitle}>Discover</Text>
+          <View style={styles.headerLeft}>
+            {navigation.canGoBack() && (
+              <TouchableOpacity onPress={() => navigation.goBack()} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
+                <Ionicons name="chevron-back" size={24} color={colors.textPrimary} />
+              </TouchableOpacity>
+            )}
+            <Text style={styles.headerTitle}>Discover</Text>
+          </View>
         </View>
         <View style={styles.centered}>
           <ActivityIndicator size="large" color={colors.primary} />
@@ -618,7 +625,14 @@ export const MatchScreen: React.FC<{ navigation: any; route?: any }> = ({ naviga
     return (
       <SafeAreaView style={styles.container}>
         <View style={styles.header}>
-          <Text style={styles.headerTitle}>Discover</Text>
+          <View style={styles.headerLeft}>
+            {navigation.canGoBack() && (
+              <TouchableOpacity onPress={() => navigation.goBack()} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
+                <Ionicons name="chevron-back" size={24} color={colors.textPrimary} />
+              </TouchableOpacity>
+            )}
+            <Text style={styles.headerTitle}>Discover</Text>
+          </View>
           <TouchableOpacity onPress={() => navigation.navigate('Likes')}>
             <View style={styles.likesBadge}>
               <Ionicons name="heart-outline" size={22} color={colors.textPrimary} />
@@ -669,7 +683,14 @@ export const MatchScreen: React.FC<{ navigation: any; route?: any }> = ({ naviga
   return (
     <SafeAreaView style={styles.container}>
       <View style={styles.header}>
-        <Text style={styles.headerTitle}>Discover</Text>
+        <View style={styles.headerLeft}>
+            {navigation.canGoBack() && (
+              <TouchableOpacity onPress={() => navigation.goBack()} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
+                <Ionicons name="chevron-back" size={24} color={colors.textPrimary} />
+              </TouchableOpacity>
+            )}
+            <Text style={styles.headerTitle}>Discover</Text>
+          </View>
         {/* Quiet swipe-budget counter — appears only when the free
               lifetime allowance runs low, so the paywall isn't a surprise */}
         {swipesRemaining !== null && swipesRemaining <= 5 && (
@@ -783,6 +804,7 @@ const styles = StyleSheet.create({
     paddingHorizontal: spacing.xxl,
     paddingVertical: spacing.md,
   },
+  headerLeft: { flexDirection: 'row', alignItems: 'center', gap: spacing.sm },
   headerTitle: { ...typography.h2, color: colors.textPrimary },
   swipeBudgetPill: {
     paddingHorizontal: spacing.md,
