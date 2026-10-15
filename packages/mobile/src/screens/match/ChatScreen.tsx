@@ -187,6 +187,8 @@ const ACTIVITY_GROUPS: {
 // Bounded so planner_data stays small — the whole blob is rewritten on
 // every save, so an unbounded notes field grows the row without limit.
 const MAX_NOTES = 5;
+/** Destructive red, matching the Delete buttons elsewhere in the app */
+const UNMATCH_RED = '#E53935';
 const MAX_NOTE_LEN = 200;
 
 /**
@@ -1748,13 +1750,14 @@ export const ChatScreen: React.FC<{ navigation: any; route: any }> = ({ navigati
             <Ionicons name="calendar-outline" size={20} color={colors.textPrimary} />
           </TouchableOpacity>
 
-          {/* Unmatch menu */}
+          {/* Unmatch — red so it reads as the destructive action it is */}
           <TouchableOpacity
-            style={styles.callBtn}
+            style={[styles.callBtn, styles.unmatchBtn]}
             onPress={openUnmatchModal}
             activeOpacity={0.7}
+            accessibilityLabel="Unmatch"
           >
-            <Ionicons name="ellipsis-vertical" size={20} color={colors.textPrimary} />
+            <Ionicons name="heart-dislike-outline" size={20} color={UNMATCH_RED} />
           </TouchableOpacity>
         </View>
 
@@ -2476,6 +2479,9 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
     marginLeft: spacing.sm,
+  },
+  unmatchBtn: {
+    backgroundColor: 'rgba(229, 57, 53, 0.12)',
   },
   chatArea: { flex: 1 },
   centered: { flex: 1, justifyContent: 'center', alignItems: 'center' },
