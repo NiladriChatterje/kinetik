@@ -29,6 +29,11 @@ export const REDIS_KEYS = {
   // the ledger is not queried on every request. Dropped by api-core whenever
   // the ledger changes (services/subscriptionEntitlement.ts).
   USER_PREMIUM: (userId: string) => `user:${userId}:premium`,
+  // The id of a free user's one free chat, kept for a short time. Only a
+  // found id is cached, never "none", so a match created a moment later can
+  // never be hidden behind a stale answer. Dropped by api-core when a match
+  // is created or unmatched (routes/matches.ts).
+  USER_FREE_CHAT: (userId: string) => `user:${userId}:freechat`,
 
   // New likes counter (for unread badge)
   USER_UNREAD_LIKES: (userId: string) => `user:${userId}:likes:unread`,

@@ -9,7 +9,7 @@ import { v4 as uuidv4 } from 'uuid';
 import { query, TABLES } from '../services/database';
 import { transaction } from '@kinetik/shared';
 import { notificationEvents } from '../services/notificationService';
-import { hasActivePremium, getChatAccess, isChatLocked, CHAT_LOCKED } from '../services/premiumAccess';
+import { hasActivePremium, getChatAccess, isChatLocked, invalidateFreeChatCache, CHAT_LOCKED } from '../services/premiumAccess';
 import { eventBus } from '../services/eventBus';
 import { getRedis, publishChatMessage } from '../services/redis';
 import { savePhoto, saveEncryptedChatFile, getEncryptedChatFileBuffer, deleteChatFile } from '../services/photoStorage';
@@ -954,6 +954,10 @@ export async function matchRoutes(app: FastifyInstance) {
       );
     });
 
+    // The unmatched chat may have been either user's free chat: drop the
+    // cached answer so the lock applies at once (never throws).
+    await Promise.all([invalidateFreeChatCache(userAId), invalidateFreeChatCache(userBId)]);
+
     // Publish unmatch event so partner's realtime client removes the conversation
     publishChatMessage(REDIS_KEYS.CHAT_MESSAGES_CHANNEL, {
       type: 'match:unmatched',
@@ -1861,6 +1865,9 @@ async function getOrCreateActiveMatch(
     [userAId, userBId],
   );
   if (inserted.rows[0]) {
+    // A new match may be either user's first: drop their cached free-chat
+    // answer so the next check reads the ledger of matches (never throws).
+    await Promise.all([invalidateFreeChatCache(userAId), invalidateFreeChatCache(userBId)]);
     return { match: inserted.rows[0], created: true };
   }
   const existing = await query(

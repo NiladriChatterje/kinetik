@@ -68,6 +68,13 @@ async function isChatLocked(userId: string, matchId: string, redis?: Redis): Pro
   }
   if (hasPremium) return false;
 
+  // The free-chat id is cached the same way (api-core drops it on match
+  // creation and unmatch). Only a found id is ever cached, so a miss means
+  // "ask the database", not "no free chat".
+  const freeKey = REDIS_KEYS.USER_FREE_CHAT(userId);
+  const cachedFreeId = await withPremiumCache(redis, (r) => r.get(freeKey));
+  if (cachedFreeId) return cachedFreeId !== matchId;
+
   const free = await query(
     `SELECT id, is_active FROM ${TABLES.MATCHES}
      WHERE user_a_id = $1 OR user_b_id = $1
@@ -76,7 +83,11 @@ async function isChatLocked(userId: string, matchId: string, redis?: Redis): Pro
     [userId],
   );
   const first = free.rows[0];
-  return !first?.is_active || first.id !== matchId;
+  const freeId: string | null = first?.is_active ? first.id : null;
+  if (freeId) {
+    void withPremiumCache(redis, (r) => r.set(freeKey, freeId, 'EX', PREMIUM_CACHE_TTL_SECONDS));
+  }
+  return !freeId || freeId !== matchId;
 }
 
 const PREMIUM_CACHE_TTL_SECONDS = 60;
