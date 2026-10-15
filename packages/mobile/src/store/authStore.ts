@@ -51,10 +51,10 @@ function writeSessionSnapshot(snapshot: SessionSnapshot | null): void {
   }
 }
 
-// Bookkeeping for the chat badge: the badge counts DISTINCT conversations
-// (users) with unseen messages, so track which matchIds have already been
-// counted by the live socket handler. Rebuilt from server truth by
-// fetchUnreadChatCount, cleared by resetUnreadChatCount/logout.
+// The chat tab badge counts the people there are to chat with (active
+// conversations), so it never hides on a visit; a new match raises it and an
+// unmatch lowers it on the next list load. (This set is kept only so the
+// older reset/logout paths still compile; nothing counts into it any more.)
 let countedUnreadMatchIds = new Set<string>();
 
 interface User {
@@ -568,12 +568,9 @@ export const useAuthStore = create<AuthState>((set, get) => ({
     // conversations with unseen messages ("how many users"), not messages:
     // a conversation already counted is not counted again until the badge is
     // reset or re-synced from the server.
-    const onChatMessage = (data: any) => {
-      if (!data || data.senderId === get().user?.id) return;
-      if (countedUnreadMatchIds.has(data.matchId)) return;
-      countedUnreadMatchIds.add(data.matchId);
-      set({ unreadChatCount: countedUnreadMatchIds.size });
-    };
+    // A message does not change how many people there are to chat with,
+    // so it leaves the badge alone (the list shows per-chat unread counts).
+    const onChatMessage = (_data: any) => {};
 
     // A new match opens a new chat room — join it so its messages arrive
     // here, and re-sync the badge from the server: a fresh match ships an
@@ -610,13 +607,9 @@ export const useAuthStore = create<AuthState>((set, get) => ({
     try {
       const res = await api.getConversations();
       if (res.success && res.data?.conversations) {
-        // Badge = number of distinct conversations (users) with at least one
-        // unseen message — not the total count of unseen messages.
-        const unreadConvs = res.data.conversations.filter(
-          (conv: any) => (conv.unreadCount || 0) > 0,
-        );
-        countedUnreadMatchIds = new Set(unreadConvs.map((conv: any) => conv.matchId));
-        set({ unreadChatCount: unreadConvs.length });
+        // Badge = how many people there are to chat with (active
+        // conversations), locked or not — it stays visible after a visit.
+        set({ unreadChatCount: res.data.conversations.length });
       }
     } catch {
       // Silently fail
