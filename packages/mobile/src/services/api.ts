@@ -903,7 +903,7 @@ class ApiClient {
   }
 
   async getIncomingLikes() {
-    // locked: free account, so likes is empty and totalCount is all there is
+    // locked: free account; likes holds only their newest few, totalCount counts them all
     return this.request<{ likes: any[]; totalCount: number; locked?: boolean }>('/api/v1/matches/likes');
   }
 

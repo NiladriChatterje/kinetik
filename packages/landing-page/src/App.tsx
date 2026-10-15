@@ -177,7 +177,7 @@ function HeroRadarSVG() {
         </div>
         <div className="hero-free-tier">
           <span className="free-badge">FREE</span>
-          30 likes to start &middot; chat with your first match — Premium unlocks the rest
+          30 likes to start &middot; Premium unlocks chat with your matches
         </div>
       </div>
     </section>
@@ -798,7 +798,7 @@ const FEATURES: { Icon: IconType; title: string; body: string }[] = [
   {
     Icon: FiHeart,
     title: 'See who liked you',
-    body: 'Free accounts see that someone liked them. Premium unblurs exactly who, so you can match back instantly.',
+    body: 'Free accounts see their five newest likes and can match back. Premium shows everyone who liked you.',
   },
   {
     Icon: FiShuffle,
@@ -836,8 +836,8 @@ function Features() {
 /* ─── Premium Pricing ────────────────────────────────────── */
 const PREMIUM_FEATURES = [
   'Unlimited likes',
-  'Unlimited active chats',
-  'See who liked you — no blur',
+  'Chat with all your matches',
+  'See everyone who liked you',
   'Cancel any time, from the app or Google Play',
 ];
 

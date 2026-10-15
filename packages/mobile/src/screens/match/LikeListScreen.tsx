@@ -34,7 +34,8 @@ export const LikeListScreen: React.FC<{ navigation: any }> = ({ navigation }) =>
   const [likes, setLikes] = useState<IncomingLike[]>([]);
   const [loading, setLoading] = useState(true);
   const [responding, setResponding] = useState<string | null>(null);
-  // Free account: the server sends only how many liked them, never who
+  // Free account: the server sends the newest few likes in full and only a
+  // count of the rest; the app shows that many blurred cards below them
   const [locked, setLocked] = useState(false);
   const [lockedCount, setLockedCount] = useState(0);
   const toast = useToast();
@@ -114,6 +115,10 @@ export const LikeListScreen: React.FC<{ navigation: any }> = ({ navigation }) =>
       setResponding(null);
     }
   };
+
+  // Likes the server counted but did not send (free account, beyond the
+  // newest few). Zero for Premium.
+  const hiddenCount = locked ? Math.max(0, lockedCount - likes.length) : 0;
 
   const renderLike = ({ item }: { item: IncomingLike }) => (
     <View style={styles.likeCard}>
@@ -229,55 +234,7 @@ export const LikeListScreen: React.FC<{ navigation: any }> = ({ navigation }) =>
         </TouchableOpacity>
       </View>
 
-      {locked ? (
-        lockedCount === 0 ? (
-          <View style={styles.centered}>
-            <Ionicons name="heart-outline" size={64} color={colors.textMuted} />
-            <Text style={styles.emptyTitle}>No Likes Yet</Text>
-            <Text style={styles.emptySubtitle}>When someone likes your profile, it will show here</Text>
-          </View>
-        ) : (
-          <View style={styles.lockedWrap}>
-            <Text style={styles.lockedTitle}>
-              {lockedCount === 1 ? '1 person likes you' : `${lockedCount} people like you`}
-            </Text>
-            <Text style={styles.lockedSubtitle}>Upgrade to Premium to see who they are and like them back.</Text>
-
-            {/* Placeholders only: no names, photos or ids reach the app.
-                Tapping one opens checkout, like the button below. */}
-            <View style={styles.blurGrid}>
-              {Array.from({ length: Math.min(lockedCount, BLURRED_CARDS_SHOWN) }).map((_, i) => (
-                <TouchableOpacity
-                  key={i}
-                  style={styles.blurCard}
-                  onPress={() => navigation.navigate('SubscriptionCheckout')}
-                  activeOpacity={0.7}
-                  accessibilityRole="button"
-                  accessibilityLabel="Upgrade to Premium to see who likes you"
-                >
-                  <View style={styles.blurAvatar}>
-                    <Ionicons name="lock-closed" size={20} color={colors.textMuted} />
-                  </View>
-                  <View style={styles.blurLineWide} />
-                  <View style={styles.blurLineShort} />
-                </TouchableOpacity>
-              ))}
-            </View>
-            {lockedCount > BLURRED_CARDS_SHOWN && (
-              <Text style={styles.moreText}>+{lockedCount - BLURRED_CARDS_SHOWN} more</Text>
-            )}
-
-            <TouchableOpacity
-              style={styles.upgradeButton}
-              onPress={() => navigation.navigate('SubscriptionCheckout')}
-              activeOpacity={0.8}
-            >
-              <Ionicons name="eye-outline" size={18} color={colors.textInverse} />
-              <Text style={styles.upgradeText}>See who likes you</Text>
-            </TouchableOpacity>
-          </View>
-        )
-      ) : likes.length === 0 ? (
+      {likes.length === 0 && hiddenCount === 0 ? (
         <View style={styles.centered}>
           <Ionicons name="heart-outline" size={64} color={colors.textMuted} />
           <Text style={styles.emptyTitle}>No Likes Yet</Text>
@@ -294,6 +251,50 @@ export const LikeListScreen: React.FC<{ navigation: any }> = ({ navigation }) =>
           maxToRenderPerBatch={10}
           windowSize={7}
           initialNumToRender={8}
+          // Free account: the likes beyond the newest few are counted but not
+          // sent. No names, photos or ids reach the app for them; tapping a
+          // placeholder opens checkout, like the button below.
+          ListFooterComponent={
+            hiddenCount > 0 ? (
+              <View style={styles.lockedWrap}>
+                <Text style={styles.lockedTitle}>
+                  {hiddenCount === 1 ? '1 more person likes you' : `${hiddenCount} more people like you`}
+                </Text>
+                <Text style={styles.lockedSubtitle}>Upgrade to Premium to see who they are and like them back.</Text>
+
+                <View style={styles.blurGrid}>
+                  {Array.from({ length: Math.min(hiddenCount, BLURRED_CARDS_SHOWN) }).map((_, i) => (
+                    <TouchableOpacity
+                      key={i}
+                      style={styles.blurCard}
+                      onPress={() => navigation.navigate('SubscriptionCheckout')}
+                      activeOpacity={0.7}
+                      accessibilityRole="button"
+                      accessibilityLabel="Upgrade to Premium to see who likes you"
+                    >
+                      <View style={styles.blurAvatar}>
+                        <Ionicons name="lock-closed" size={20} color={colors.textMuted} />
+                      </View>
+                      <View style={styles.blurLineWide} />
+                      <View style={styles.blurLineShort} />
+                    </TouchableOpacity>
+                  ))}
+                </View>
+                {hiddenCount > BLURRED_CARDS_SHOWN && (
+                  <Text style={styles.moreText}>+{hiddenCount - BLURRED_CARDS_SHOWN} more</Text>
+                )}
+
+                <TouchableOpacity
+                  style={styles.upgradeButton}
+                  onPress={() => navigation.navigate('SubscriptionCheckout')}
+                  activeOpacity={0.8}
+                >
+                  <Ionicons name="eye-outline" size={18} color={colors.textInverse} />
+                  <Text style={styles.upgradeText}>See everyone who likes you</Text>
+                </TouchableOpacity>
+              </View>
+            ) : null
+          }
         />
       )}
 

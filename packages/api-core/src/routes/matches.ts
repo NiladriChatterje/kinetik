@@ -1,7 +1,7 @@
 import { FastifyInstance, FastifyRequest, FastifyReply } from 'fastify';
 import {
-  ERROR_CODES, REDIS_KEYS, FREE_SWIPE_LIMIT, FREE_CHAT_LIMIT,
-  PREMIUM_CHAT_LIMIT, SUPER_LIKE_LIMIT_DAILY_FREE, SUPER_LIKE_LIMIT_DAILY_PREMIUM,
+  ERROR_CODES, REDIS_KEYS, FREE_SWIPE_LIMIT,
+  SUPER_LIKE_LIMIT_DAILY_FREE, SUPER_LIKE_LIMIT_DAILY_PREMIUM,
   EVENT_BUS_CHANNELS, encryptMessage, decryptMessage, getOpeningLine,
   h3ToGeo,
 } from '@kinetik/shared';
@@ -44,6 +44,9 @@ function sendChatLocked(reply: FastifyReply) {
 
 /** Push text for a message in a chat the recipient cannot open. */
 const LOCKED_MESSAGE_PREVIEW = 'New message. Upgrade to Premium to read it.';
+
+/** How many of their newest likes a free account sees in full. */
+const FREE_VISIBLE_LIKES = 5;
 
 export async function matchRoutes(app: FastifyInstance) {
   app.addHook('preHandler', async (request: FastifyRequest, reply: FastifyReply) => {
@@ -450,25 +453,8 @@ export async function matchRoutes(app: FastifyInstance) {
       );
 
       if (mutualCheck.rows.length > 0) {
-        // Mutual like! Check chat limit before creating a match.
-        const chatCheck = await checkChatLimit(userId, tier);
-        if (!chatCheck.allowed) {
-          // Still record the interaction as mutual (so the like shows up in likes list)
-          // but don't create a new match — the user must upgrade to unlock more chats.
-          await query(
-            `UPDATE ${TABLES.USER_INTERACTIONS} SET is_mutual = TRUE, responded_at = NOW()
-             WHERE actor_id = $1 AND target_id = $2`,
-            [targetUserId, userId],
-          );
-          return reply.status(429).send({
-            success: false,
-            error: {
-              code: ERROR_CODES.CHAT_LIMIT_REACHED,
-              message: `You've reached the ${chatCheck.limit} chat limit. Upgrade to Premium for unlimited matches.`,
-              details: { activeChats: chatCheck.activeCount, limit: chatCheck.limit },
-            },
-          });
-        }
+        // Mutual like! Matching is free for everyone; the chat that follows
+        // is what Premium unlocks (services/premiumAccess.ts).
 
         // Create a match (or reuse the active one if a racing
         // request / the Likes-screen respond flow already created it)
@@ -598,25 +584,10 @@ export async function matchRoutes(app: FastifyInstance) {
   app.get('/likes', async (request: FastifyRequest, reply: FastifyReply) => {
     const { sub: userId } = request.user as any;
 
-    // Free users learn only how many people liked them: no ids, names or
-    // photos leave the server. The app shows that many blurred cards.
-    if (!(await hasActivePremium(userId))) {
-      const countResult = await query(
-        `SELECT COUNT(*)::int AS cnt FROM (
-           SELECT 1 FROM ${TABLES.USER_INTERACTIONS} ui
-           WHERE ui.target_id = $1
-             AND ui.action IN ('like', 'super_like')
-             AND ui.is_mutual = FALSE
-             AND ui.responded_at IS NULL
-           LIMIT 50
-         ) pending`,
-        [userId],
-      );
-      return reply.send({
-        success: true,
-        data: { likes: [], totalCount: countResult.rows[0]?.cnt ?? 0, locked: true },
-      });
-    }
+    // A free account sees its FREE_VISIBLE_LIKES newest likes in full and
+    // may like them back; any older ones are counted but not sent, and the
+    // app shows that many blurred cards. Premium sees everyone.
+    const premium = await hasActivePremium(userId);
 
     const result = await query(
       `SELECT ui.created_at as liked_at,
@@ -652,7 +623,8 @@ export async function matchRoutes(app: FastifyInstance) {
     );
 
     const now = new Date();
-    const likes = result.rows.map((row: any) => ({
+    const rows = premium ? result.rows : result.rows.slice(0, FREE_VISIBLE_LIKES);
+    const likes = rows.map((row: any) => ({
       likedAt: row.liked_at,
       userId: row.user_id,
       displayName: row.display_name,
@@ -670,7 +642,7 @@ export async function matchRoutes(app: FastifyInstance) {
 
     return reply.send({
       success: true,
-      data: { likes, totalCount: likes.length, locked: false },
+      data: { likes, totalCount: result.rows.length, locked: !premium },
     });
   });
 
@@ -709,24 +681,8 @@ export async function matchRoutes(app: FastifyInstance) {
       return reply.send({ success: true, data: { matched: false } });
     }
 
-    // Like back — check chat limit before creating a match.
-    const chatCheck = await checkChatLimit(userId);
-    if (!chatCheck.allowed) {
-      // Mark as responded (so the like shows up as responded)
-      await query(
-        `UPDATE ${TABLES.USER_INTERACTIONS} SET responded_at = NOW()
-         WHERE actor_id = $1 AND target_id = $2`,
-        [targetUserId, userId],
-      );
-      return reply.status(429).send({
-        success: false,
-        error: {
-          code: ERROR_CODES.CHAT_LIMIT_REACHED,
-          message: `You've reached the ${chatCheck.limit} chat limit. Upgrade to Premium for unlimited matches.`,
-          details: { activeChats: chatCheck.activeCount, limit: chatCheck.limit },
-        },
-      });
-    }
+    // Like back. Matching is free for everyone; the chat that follows is
+    // what Premium unlocks (services/premiumAccess.ts).
 
     // Create match (or reuse the active one if a racing /swipe
     // from the other side already created it)
@@ -1822,41 +1778,6 @@ export async function matchRoutes(app: FastifyInstance) {
 // uniq_matches_active_pair partial unique index (order-insensitive on the
 // pair, active rows only), so two racing mutual-like requests can no longer
 // create duplicate active matches.
-/**
- * Check if a user has hit their active match (chat) limit.
- * Free users are limited to FREE_CHAT_LIMIT (3) active matches.
- * Premium users have unlimited matches.
- * Returns { allowed: boolean, activeCount: number, limit: number }.
- */
-// knownTier: pass the caller's already-loaded tier to skip a redundant read.
-async function checkChatLimit(userId: string, knownTier?: string): Promise<{ allowed: boolean; activeCount: number; limit: number }> {
-  let tier = knownTier;
-  if (!tier) {
-    const subResult = await query(
-      `SELECT tier FROM ${TABLES.SUBSCRIPTION_LEDGER} WHERE user_id = $1`,
-      [userId],
-    );
-    tier = subResult.rows[0]?.tier || 'free';
-  }
-
-  if (tier !== 'free') {
-    return { allowed: true, activeCount: 0, limit: PREMIUM_CHAT_LIMIT };
-  }
-
-  const countResult = await query(
-    `SELECT COUNT(*)::int as cnt FROM ${TABLES.MATCHES}
-     WHERE is_active = TRUE AND (user_a_id = $1 OR user_b_id = $1)`,
-    [userId],
-  );
-  const activeCount = countResult.rows[0]?.cnt ?? 0;
-
-  return {
-    allowed: activeCount < FREE_CHAT_LIMIT,
-    activeCount,
-    limit: FREE_CHAT_LIMIT,
-  };
-}
-
 async function getOrCreateActiveMatch(
   userAId: string,
   userBId: string,

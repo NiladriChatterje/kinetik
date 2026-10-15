@@ -176,12 +176,22 @@ const call = (method: 'GET' | 'POST', userId: string, url: string, payload?: obj
   });
 
 describe('who liked you', () => {
-  it('gives a free user only the count, with no liker ids or names', async () => {
-    const res = await call('GET', FREE, '/api/v1/matches/likes');
+  it('gives a free user their newest likes in full, up to five, and counts the rest', async () => {
+    // Two likes: both within the free allowance
+    let res = await call('GET', FREE, '/api/v1/matches/likes');
     expect(res.statusCode).toBe(200);
-    expect(res.json().data).toEqual({ likes: [], totalCount: 2, locked: true });
-    expect(res.body).not.toContain(PARTNER_1);
-    expect(res.body).not.toContain(PARTNER_2);
+    let data = res.json().data;
+    expect(data.locked).toBe(true);
+    expect(data.totalCount).toBe(2);
+    expect(data.likes.map((l: any) => l.userId).sort()).toEqual([PARTNER_1, PARTNER_2]);
+
+    // Seven likes: five come through, two are only counted
+    for (let i = 0; i < 5; i++) likers.push({ actor_id: `extra-${i}`, target_id: FREE });
+    res = await call('GET', FREE, '/api/v1/matches/likes');
+    data = res.json().data;
+    expect(data.locked).toBe(true);
+    expect(data.totalCount).toBe(7);
+    expect(data.likes).toHaveLength(5);
   });
 
   it('gives a Premium user the full list', async () => {
@@ -203,9 +213,10 @@ describe('who liked you', () => {
 });
 
 describe('chat lock', () => {
-  it('lets a free user read their oldest chat', async () => {
+  it('refuses a free user reading even their oldest chat', async () => {
     const res = await call('GET', FREE, `/api/v1/matches/conversations/match-${FREE}-old/messages`);
-    expect(res.statusCode).toBe(200);
+    expect(res.statusCode).toBe(402);
+    expect(res.json().error.code).toBe('CHAT_LOCKED');
   });
 
   it('refuses a free user reading any other chat, without marking it read', async () => {
@@ -248,9 +259,12 @@ describe('chat lock', () => {
     const convs = res.json().data.conversations;
     const open = convs.find((c: any) => c.matchId === `match-${FREE}-old`);
     const locked = convs.find((c: any) => c.matchId === `match-${FREE}-new`);
-    expect(open).toMatchObject({ locked: false, lastMessage: `secret in match-${FREE}-old` });
+    // Chat is Premium only: every conversation of a free account is locked
+    expect(open.locked).toBe(true);
+    expect(open.lastMessage).toBeUndefined();
     expect(locked.locked).toBe(true);
     expect(locked.lastMessage).toBeUndefined();
+    expect(res.body).not.toContain(`secret in match-${FREE}-old`);
     expect(res.body).not.toContain(`secret in match-${FREE}-new`);
   });
 
