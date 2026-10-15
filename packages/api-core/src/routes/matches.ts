@@ -997,7 +997,17 @@ export async function matchRoutes(app: FastifyInstance) {
          cm.height as media_height,
          cm.is_view_once as media_is_view_once,
          cm.viewed_at as media_viewed_at
-       FROM ${TABLES.MESSAGES} m
+       FROM (
+         -- The newest 200, not the oldest: with the limit applied in
+         -- ascending order a long chat never showed anything after its
+         -- 200th message. The outer ORDER BY keeps the response oldest-first,
+         -- which is the order the screen renders.
+         SELECT id, match_id, sender_id, content, created_at, read_at
+         FROM ${TABLES.MESSAGES}
+         WHERE match_id = $1
+         ORDER BY created_at DESC
+         LIMIT 200
+       ) m
        LEFT JOIN ${TABLES.CHAT_MEDIA} cm ON cm.message_id = m.id
        WHERE m.match_id = $1
        ORDER BY m.created_at ASC
