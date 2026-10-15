@@ -77,7 +77,7 @@ const mockQuery = vi.fn(async (sql: string, params: any[] = []) => {
       }));
     return { rows, rowCount: rows.length };
   }
-  if (text.includes('FROM messages m LEFT JOIN chat_media cm')) {
+  if (text.includes('LEFT JOIN chat_media cm ON cm.message_id = m.id')) {
     return { rows: [{ id: 'msg-1', match_id: params[0], sender_id: PARTNER_1, content: encryptMessage('hi', ''), created_at: new Date() }], rowCount: 1 };
   }
   if (text.startsWith('UPDATE messages SET read_at')) return { rows: [], rowCount: 0 };
