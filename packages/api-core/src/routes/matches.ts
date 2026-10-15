@@ -362,13 +362,19 @@ export async function matchRoutes(app: FastifyInstance) {
       });
     }
 
-    // Check for existing interaction
+    // Check for existing interaction. A pass, or a like the other person
+    // rejected, may be replaced: that person is browsable again in Explore,
+    // so swiping on them has to work. A like still pending, or a mutual one
+    // (they are matched), is refused as before.
     const existing = await query(
-      `SELECT id, action FROM ${TABLES.USER_INTERACTIONS}
+      `SELECT id, action, is_mutual, responded_at FROM ${TABLES.USER_INTERACTIONS}
        WHERE actor_id = $1 AND target_id = $2`,
       [userId, targetUserId],
     );
-    if (existing.rows.length > 0) {
+    const prior = existing.rows[0];
+    const priorCanBeReplaced =
+      prior && !prior.is_mutual && (prior.action === 'pass' || prior.responded_at !== null);
+    if (prior && !priorCanBeReplaced) {
       return reply.status(409).send({
         success: false,
         error: { code: ERROR_CODES.ALREADY_MATCHED, message: 'Already interacted with this user' },
@@ -434,10 +440,14 @@ export async function matchRoutes(app: FastifyInstance) {
       await multi.exec();
     }
 
-    // Record interaction
+    // Record interaction. The pair is unique, so a replaced pass or rejected
+    // like is rewritten in place as a fresh, pending one.
     await query(
       `INSERT INTO ${TABLES.USER_INTERACTIONS} (actor_id, target_id, action)
-       VALUES ($1, $2, $3) RETURNING *`,
+       VALUES ($1, $2, $3)
+       ON CONFLICT (actor_id, target_id) DO UPDATE
+         SET action = EXCLUDED.action, is_mutual = FALSE, responded_at = NULL, created_at = NOW()
+       RETURNING *`,
       [userId, targetUserId, action],
     );
 

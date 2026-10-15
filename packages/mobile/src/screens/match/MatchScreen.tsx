@@ -10,6 +10,7 @@ import { api } from '../../services/api';
 import { useToast } from '../../hooks/useToast';
 import { colors, typography, spacing, radius, shadows } from '../../theme';
 import { getPresenceSocket } from '../../services/presenceSocket';
+import { emitProfileLiked } from '../../services/appEvents';
 import { resolveUrl } from '../../config';
 import { MatchPopup } from '../../components/common/MatchPopup';
 import { PaywallModal, PaywallReason } from '../../components/common/PaywallModal';
@@ -522,6 +523,9 @@ export const MatchScreen: React.FC<{ navigation: any; route?: any }> = ({ naviga
         if (!data.matched && direction === 'right') {
           toast.showSuccess('Like sent!', 'Visible in their likes.');
         }
+        // The Explore grid drops this person's card at once (the server
+        // leaves pending likes out of Explore on its next load anyway)
+        if (direction === 'right') emitProfileLiked(profile.userId);
       } else if (res.error?.code === 'ALREADY_MATCHED') {
         // Stale card — the interaction/match already exists on the server
         // (e.g. matched via the Likes screen). Skip past it silently.

@@ -9,6 +9,7 @@ import { api } from '../../services/api';
 import { ProgressiveImage } from '../../components/common/ProgressiveImage';
 import { DatingCategoryBadge, DatingCategory } from '../../components/common/DatingCategoryBadge';
 import { getPresenceSocket } from '../../services/presenceSocket';
+import { onProfileLiked } from '../../services/appEvents';
 import { resolveUrl } from '../../config';
 import { colors, typography, spacing, radius } from '../../theme';
 
@@ -97,8 +98,12 @@ export const ExploreScreen: React.FC<{ navigation: any }> = ({ navigation }) => 
   // Live grid updates from the shared /presence socket:
   //  - match:new → drop the profile (matched users leave Explore)
   //  - likes:new → drop the liker's card: they now belong to the Likes list
+  //  - a like sent from the deck → drop that card (pending likes leave Explore)
   useEffect(() => {
     const socket = getPresenceSocket();
+    const offProfileLiked = onProfileLiked((userId) => {
+      setProfiles((prev) => prev.filter((p) => p.userId !== userId));
+    });
     const onMatchNew = (data: any) => {
       if (data?.partnerId) {
         setProfiles((prev) => prev.filter((p) => p.userId !== data.partnerId));
@@ -116,6 +121,7 @@ export const ExploreScreen: React.FC<{ navigation: any }> = ({ navigation }) => 
     return () => {
       socket.off('match:new', onMatchNew);
       socket.off('likes:new', onLikesNew);
+      offProfileLiked();
     };
   }, []);
 
