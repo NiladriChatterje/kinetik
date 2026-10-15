@@ -227,8 +227,8 @@ describe('ChatHandler', () => {
         if (sql.includes("tier IN ('premium', 'infinite')")) {
           return opts.premium ? { rowCount: 1, rows: [{}] } : { rowCount: 0, rows: [] };
         }
-        if (sql.includes('ORDER BY matched_at ASC')) {
-          return { rowCount: 1, rows: [{ id: opts.freeMatchId, is_active: true }] };
+        if (sql.includes('free_chat_match_id')) {
+          return { rowCount: 1, rows: [{ free_chat_match_id: opts.freeMatchId, free_chat_spent: false }] };
         }
         return { rowCount: 1, rows: [{ id: 'match-456' }] };
       }) as any);

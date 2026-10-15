@@ -943,6 +943,13 @@ export async function matchRoutes(app: FastifyInstance) {
       await q(`DELETE FROM ${TABLES.CHAT_MEDIA} WHERE message_id IN (SELECT id FROM ${TABLES.MESSAGES} WHERE match_id = $1)`, [matchId]);
       await q(`DELETE FROM ${TABLES.MESSAGES} WHERE match_id = $1`, [matchId]);
       await q(`UPDATE ${TABLES.MATCHES} SET is_active = FALSE WHERE id = $1`, [matchId]);
+      // If this was either user's free chat, it is spent for good: the next
+      // match does not take its place (see services/premiumAccess.ts).
+      await q(
+        `UPDATE ${TABLES.USERS} SET free_chat_spent = TRUE
+          WHERE id IN ($1, $2) AND free_chat_match_id = $3`,
+        [userAId, userBId, matchId],
+      );
       // Clear the pair's interaction history so both users can organically
       // meet and like again after an unmatch. Without this the UNIQUE
       // (actor_id, target_id) rows lock the pair forever: every future
@@ -1855,18 +1862,33 @@ async function getOrCreateActiveMatch(
   userAId: string,
   userBId: string,
 ): Promise<{ match: any | null; created: boolean }> {
-  const inserted = await query(
-    `INSERT INTO ${TABLES.MATCHES} (user_a_id, user_b_id, is_active)
-     VALUES ($1, $2, TRUE)
-     ON CONFLICT ((LEAST(user_a_id, user_b_id)), (GREATEST(user_a_id, user_b_id)))
-     WHERE is_active = TRUE
-     DO NOTHING
-     RETURNING *`,
-    [userAId, userBId],
-  );
+  // The insert and the first-match bookkeeping commit together: a match
+  // that exists without being recorded as a user's first would leave that
+  // user with no free chat at all.
+  const inserted = await transaction(async (q) => {
+    const result = await q(
+      `INSERT INTO ${TABLES.MATCHES} (user_a_id, user_b_id, is_active)
+       VALUES ($1, $2, TRUE)
+       ON CONFLICT ((LEAST(user_a_id, user_b_id)), (GREATEST(user_a_id, user_b_id)))
+       WHERE is_active = TRUE
+       DO NOTHING
+       RETURNING *`,
+      [userAId, userBId],
+    );
+    if (result.rows[0]) {
+      // A user's first match ever is their free chat; later matches never
+      // move it (see services/premiumAccess.ts).
+      await q(
+        `UPDATE ${TABLES.USERS} SET free_chat_match_id = $1
+          WHERE id IN ($2, $3) AND free_chat_match_id IS NULL`,
+        [result.rows[0].id, userAId, userBId],
+      );
+    }
+    return result;
+  });
   if (inserted.rows[0]) {
-    // A new match may be either user's first: drop their cached free-chat
-    // answer so the next check reads the ledger of matches (never throws).
+    // Drop both users' cached free-chat answer so the next check reads the
+    // row just written (never throws).
     await Promise.all([invalidateFreeChatCache(userAId), invalidateFreeChatCache(userBId)]);
     return { match: inserted.rows[0], created: true };
   }

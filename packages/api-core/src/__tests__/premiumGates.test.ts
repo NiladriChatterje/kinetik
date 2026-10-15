@@ -43,11 +43,15 @@ const mockQuery = vi.fn(async (sql: string, params: any[] = []) => {
   if (text.includes("tier IN ('premium', 'infinite')")) {
     return isPremium(params[0]) ? { rows: [{}], rowCount: 1 } : { rows: [], rowCount: 0 };
   }
-  if (text.includes('ORDER BY matched_at ASC, id ASC')) {
+  if (text.includes('SELECT free_chat_match_id, free_chat_spent FROM users')) {
+    // The user row records the first match; spent once that match ended
     const own = matches
       .filter((m) => m.user_a_id === params[0] || m.user_b_id === params[0])
       .sort((a, b) => a.matched_at.getTime() - b.matched_at.getTime() || a.id.localeCompare(b.id));
-    return { rows: own[0] ? [{ id: own[0].id, is_active: own[0].is_active }] : [], rowCount: own.length ? 1 : 0 };
+    return {
+      rows: [{ free_chat_match_id: own[0]?.id ?? null, free_chat_spent: own[0] ? !own[0].is_active : false }],
+      rowCount: 1,
+    };
   }
   if (/FROM matches WHERE id = \$1 AND \(user_a_id = \$2 OR user_b_id = \$2\) AND is_active = TRUE/.test(text)) {
     const m = matches.find((r) => r.id === params[0] && r.is_active && (r.user_a_id === params[1] || r.user_b_id === params[1]));

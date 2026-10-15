@@ -687,43 +687,23 @@ export async function authRoutes(app: FastifyInstance) {
           if (row.thumbnail_url) chatMediaUrls.push(row.thumbnail_url);
         }
 
-        // Matches end the way an unmatch ends them: the row stays, inactive.
-        // Deleting it would make a partner's next match their "first" one
-        // and hand a free user a fresh free chat after they had spent it.
-        // Everything the row linked to is removed, and the planner and the
-        // fixed date are cleared so nothing the two wrote together outlives
-        // the account; the row itself holds only two ids and a timestamp.
+        // A partner whose free chat was with this account has spent it, the
+        // same as if they had been unmatched: the next match does not take
+        // its place (see services/premiumAccess.ts). Recorded on the partner
+        // before the match rows go.
         const partnerRows = await q(
-          `SELECT CASE WHEN user_a_id = $1 THEN user_b_id ELSE user_a_id END AS partner_id
-           FROM ${TABLES.MATCHES}
-           WHERE (user_a_id = $1 OR user_b_id = $1) AND is_active = TRUE`,
+          `UPDATE ${TABLES.USERS} SET free_chat_spent = TRUE
+            WHERE free_chat_match_id IN (
+              SELECT id FROM ${TABLES.MATCHES} WHERE user_a_id = $1 OR user_b_id = $1
+            )
+            AND id <> $1 AND free_chat_spent = FALSE
+            RETURNING id`,
           [userId],
         );
-        partnerIds = partnerRows.rows.map((row: any) => row.partner_id);
-        await q(
-          `DELETE FROM ${TABLES.CHAT_MEDIA}
-           WHERE message_id IN (
-             SELECT id FROM ${TABLES.MESSAGES}
-             WHERE match_id IN (SELECT id FROM ${TABLES.MATCHES} WHERE user_a_id = $1 OR user_b_id = $1)
-           )`,
-          [userId],
-        );
-        await q(
-          `DELETE FROM ${TABLES.MESSAGES}
-           WHERE match_id IN (SELECT id FROM ${TABLES.MATCHES} WHERE user_a_id = $1 OR user_b_id = $1)`,
-          [userId],
-        );
-        await q(
-          `DELETE FROM ${TABLES.RESERVATIONS}
-           WHERE match_id IN (SELECT id FROM ${TABLES.MATCHES} WHERE user_a_id = $1 OR user_b_id = $1)`,
-          [userId],
-        );
-        await q(
-          `UPDATE ${TABLES.MATCHES}
-              SET is_active = FALSE, planner_data = NULL, date_scheduled = NULL
-            WHERE user_a_id = $1 OR user_b_id = $1`,
-          [userId],
-        );
+        partnerIds = partnerRows.rows.map((row: any) => row.id);
+
+        // Matches vanish — messages + chat_media and reservations cascade
+        await q(`DELETE FROM ${TABLES.MATCHES} WHERE user_a_id = $1 OR user_b_id = $1`, [userId]);
 
         // User-owned records
         await q(`DELETE FROM ${TABLES.PROFILE_PHOTOS} WHERE user_id = $1`, [userId]);
@@ -784,8 +764,8 @@ export async function authRoutes(app: FastifyInstance) {
       });
 
       // ── Post-commit best-effort cleanup (non-critical) ──
-      // A partner's cached free-chat id may name one of the matches just
-      // ended; drop it so their lock applies at once (never throws).
+      // Partners whose free chat was just spent may still have it cached;
+      // drop it so their lock applies at once (never throws).
       await Promise.all(partnerIds.map((partnerId) => invalidateFreeChatCache(partnerId)));
       await deleteAllUserPhotos(userId).catch((err: Error) => {
         console.error(`[DeleteAccount] Failed to delete MinIO photos for ${userId}:`, err.message);

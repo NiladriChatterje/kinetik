@@ -97,9 +97,11 @@ async function queryActivePremium(userId: string): Promise<boolean> {
 }
 
 /**
- * The one conversation a free user may use: their first match, active or
- * not. Null when they have no match yet, or when that first match has been
- * unmatched — then every chat is locked.
+ * The one conversation a free user may use: their first match, recorded on
+ * the user row when it is created (routes/matches.ts) and marked spent when
+ * it ends by unmatch or by the partner deleting their account. Null when
+ * they have no match yet or the free chat is spent — then every chat is
+ * locked.
  */
 export async function freeChatMatchId(userId: string): Promise<string | null> {
   const key = REDIS_KEYS.USER_FREE_CHAT(userId);
@@ -107,14 +109,11 @@ export async function freeChatMatchId(userId: string): Promise<string | null> {
   if (cached) return cached;
 
   const result = await query(
-    `SELECT id, is_active FROM ${TABLES.MATCHES}
-     WHERE user_a_id = $1 OR user_b_id = $1
-     ORDER BY matched_at ASC, id ASC
-     LIMIT 1`,
+    `SELECT free_chat_match_id, free_chat_spent FROM ${TABLES.USERS} WHERE id = $1`,
     [userId],
   );
-  const first = result.rows[0];
-  const freeId: string | null = first?.is_active ? first.id : null;
+  const row = result.rows[0];
+  const freeId: string | null = row && row.free_chat_match_id && !row.free_chat_spent ? row.free_chat_match_id : null;
   // Only a found id is cached. A cached "none" could outlive a match created
   // moments later and lock that chat for the cache's lifetime; a cached id
   // that has since been unmatched is harmless, because every chat route also

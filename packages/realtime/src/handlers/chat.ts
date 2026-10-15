@@ -76,14 +76,11 @@ async function isChatLocked(userId: string, matchId: string, redis?: Redis): Pro
   if (cachedFreeId) return cachedFreeId !== matchId;
 
   const free = await query(
-    `SELECT id, is_active FROM ${TABLES.MATCHES}
-     WHERE user_a_id = $1 OR user_b_id = $1
-     ORDER BY matched_at ASC, id ASC
-     LIMIT 1`,
+    `SELECT free_chat_match_id, free_chat_spent FROM ${TABLES.USERS} WHERE id = $1`,
     [userId],
   );
-  const first = free.rows[0];
-  const freeId: string | null = first?.is_active ? first.id : null;
+  const row = free.rows[0];
+  const freeId: string | null = row && row.free_chat_match_id && !row.free_chat_spent ? row.free_chat_match_id : null;
   if (freeId) {
     void withPremiumCache(redis, (r) => r.set(freeKey, freeId, 'EX', PREMIUM_CACHE_TTL_SECONDS));
   }
