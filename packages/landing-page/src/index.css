@@ -114,6 +114,12 @@ img {
   font-weight: 700;
 }
 
+.logo-mark img {
+  width: 22px;
+  height: auto;
+  display: block;
+}
+
 .nav {
   display: flex;
   gap: 28px;
