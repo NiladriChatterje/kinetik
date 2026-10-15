@@ -1,0 +1,12 @@
+# Production overlay: HTTPS termination in nginx.
+# On the server, .env sets  COMPOSE_FILE=docker-compose.yml:docker-compose.prod.yml
+# so every plain `docker compose` command picks this up. The certificate is
+# issued by certbot on the host (ORACLE_STEPS.md Part 8) and mounted read-only;
+# the same-path nginx.conf mount replaces the one in docker-compose.yml.
+services:
+  nginx:
+    ports:
+      - "443:443"
+    volumes:
+      - ./config/nginx.prod.conf:/etc/nginx/nginx.conf:ro
+      - /etc/letsencrypt:/etc/letsencrypt:ro
