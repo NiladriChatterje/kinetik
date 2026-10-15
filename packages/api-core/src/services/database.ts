@@ -141,20 +141,59 @@ export async function updateUser(id: string, data: Record<string, any>) {
 
 // ─── Preferences Queries ──────────────────────────────────
 
+// The API speaks camelCase (ageMin, maxDistanceKm); the table is snake_case
+// (age_min, max_distance_km). Using the API names as column names made every
+// save fail, since Postgres folds them to agemin and the like. Only columns a
+// user may set are listed; anything else in the body is ignored.
+const PREFERENCE_COLUMNS = new Set([
+  'age_min', 'age_max', 'max_distance_km', 'preferred_genders',
+  'values_ambition', 'values_social', 'values_adventure',
+  'values_tradition', 'values_intellect', 'values_emotional',
+  'weight_age', 'weight_distance', 'weight_values', 'weight_interests',
+  'comm_style_direct', 'comm_style_playful', 'comm_style_deep',
+]);
+const INTEGER_PREFERENCE_COLUMNS = new Set(['age_min', 'age_max', 'max_distance_km']);
+
+const camelToSnake = (key: string) => key.replace(/[A-Z]/g, (c) => '_' + c.toLowerCase());
+const snakeToCamel = (key: string) => key.replace(/_([a-z])/g, (_, c: string) => c.toUpperCase());
+
+/** A preferences row as the API returns it: camelCase, without the row plumbing. */
+export function preferencesRowToApi(row: Record<string, any> | null) {
+  if (!row) return null;
+  const out: Record<string, any> = {};
+  for (const [column, value] of Object.entries(row)) {
+    if (column === 'id' || column === 'user_id') continue;
+    out[snakeToCamel(column)] = value;
+  }
+  return out;
+}
+
 export async function upsertPreferences(userId: string, data: Record<string, any>) {
-  const keys = Object.keys(data);
-  const values = Object.values(data);
+  const keys: string[] = [];
+  const values: any[] = [];
+  for (const [field, value] of Object.entries(data)) {
+    if (value === undefined) continue;
+    const column = camelToSnake(field);
+    if (!PREFERENCE_COLUMNS.has(column)) continue;
+    keys.push(column);
+    // Sliders send fractions; the age and distance columns are integers.
+    values.push(INTEGER_PREFERENCE_COLUMNS.has(column) && typeof value === 'number' ? Math.round(value) : value);
+  }
   const updateClause = keys.map((key) => `${key} = EXCLUDED.${key}`).join(', ');
 
   try {
     const result = await query(
-      `INSERT INTO ${TABLES.USER_PREFERENCES} (user_id, ${keys.join(', ')})
-       VALUES ($1, ${values.map((_, i) => `$${i + 2}`).join(', ')})
-       ON CONFLICT (user_id) DO UPDATE SET ${updateClause}, updated_at = NOW()
-       RETURNING *`,
+      keys.length === 0
+        ? `INSERT INTO ${TABLES.USER_PREFERENCES} (user_id) VALUES ($1)
+           ON CONFLICT (user_id) DO UPDATE SET updated_at = NOW()
+           RETURNING *`
+        : `INSERT INTO ${TABLES.USER_PREFERENCES} (user_id, ${keys.join(', ')})
+           VALUES ($1, ${values.map((_, i) => `${i + 2}`).join(', ')})
+           ON CONFLICT (user_id) DO UPDATE SET ${updateClause}, updated_at = NOW()
+           RETURNING *`,
       [userId, ...values],
     );
-    return result.rows[0];
+    return preferencesRowToApi(result.rows[0]);
   } catch (error: any) {
     console.error(`[upsertPreferences] Failed for userId=${userId}, fields=[${keys.join(', ')}]`, {
       error: error?.message || error,
@@ -170,7 +209,7 @@ export async function getPreferences(userId: string) {
       `SELECT * FROM ${TABLES.USER_PREFERENCES} WHERE user_id = $1`,
       [userId],
     );
-    return result.rows[0] || null;
+    return preferencesRowToApi(result.rows[0] || null);
   } catch (error: any) {
     console.error(`[getPreferences] Failed for userId=${userId}`, {
       error: error?.message || error,

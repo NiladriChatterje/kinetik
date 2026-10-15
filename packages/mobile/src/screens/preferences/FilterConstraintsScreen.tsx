@@ -29,8 +29,8 @@ export const FilterConstraintsScreen: React.FC<{ navigation: any }> = ({ navigat
           <Text style={styles.sliderValue}>{ageMin} - {ageMax} years</Text>
           <View style={styles.sliderRow}>
             <Text style={styles.sliderMin}>18</Text>
-            <Slider style={styles.slider} minimumValue={18} maximumValue={80} value={ageMin} onValueChange={setAgeMin} minimumTrackTintColor={colors.textPrimary} maximumTrackTintColor={colors.surfaceHighlight} thumbTintColor={colors.textPrimary} />
-            <Slider style={styles.slider} minimumValue={18} maximumValue={80} value={ageMax} onValueChange={setAgeMax} minimumTrackTintColor={colors.textPrimary} maximumTrackTintColor={colors.surfaceHighlight} thumbTintColor={colors.textPrimary} />
+            <Slider style={styles.slider} step={1} minimumValue={18} maximumValue={80} value={ageMin} onValueChange={setAgeMin} minimumTrackTintColor={colors.textPrimary} maximumTrackTintColor={colors.surfaceHighlight} thumbTintColor={colors.textPrimary} />
+            <Slider style={styles.slider} step={1} minimumValue={18} maximumValue={80} value={ageMax} onValueChange={setAgeMax} minimumTrackTintColor={colors.textPrimary} maximumTrackTintColor={colors.surfaceHighlight} thumbTintColor={colors.textPrimary} />
             <Text style={styles.sliderMax}>80</Text>
           </View>
         </Card>
@@ -38,7 +38,7 @@ export const FilterConstraintsScreen: React.FC<{ navigation: any }> = ({ navigat
         <Card style={styles.sliderCard}>
           <Text style={styles.sliderLabel}>Maximum Distance</Text>
           <Text style={styles.sliderValue}>{maxDistance} km</Text>
-          <Slider style={styles.slider} minimumValue={1} maximumValue={300} value={maxDistance} onValueChange={setMaxDistance} minimumTrackTintColor={colors.textSecondary} maximumTrackTintColor={colors.surfaceHighlight} thumbTintColor={colors.textSecondary} />
+          <Slider style={styles.slider} step={1} minimumValue={1} maximumValue={300} value={maxDistance} onValueChange={setMaxDistance} minimumTrackTintColor={colors.textSecondary} maximumTrackTintColor={colors.surfaceHighlight} thumbTintColor={colors.textSecondary} />
           <View style={styles.distanceLabels}>
             <Text style={styles.distanceLabel}>1 km</Text>
             <Text style={styles.distanceLabel}>300 km</Text>

@@ -284,6 +284,13 @@ export async function userRoutes(app: FastifyInstance) {
         },
       });
     }
+    const { ageMin, ageMax } = validation.data;
+    if (ageMin !== undefined && ageMax !== undefined && ageMin > ageMax) {
+      return reply.status(400).send({
+        success: false,
+        error: { code: ERROR_CODES.VALIDATION_ERROR, message: 'ageMin must not exceed ageMax' },
+      });
+    }
 
     const prefs = await upsertPreferences(userId, validation.data);
 
