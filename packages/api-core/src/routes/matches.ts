@@ -561,9 +561,36 @@ export async function matchRoutes(app: FastifyInstance) {
         // concurrent request) — fall through and treat this as a plain like.
       }
 
-      // Who liked them is Premium only: a free recipient's live event and push
-      // say that someone liked them, never who
-      const targetCanSeeLikes = await hasActivePremium(targetUserId);
+      // Who liked them: Premium always. A free recipient learns who only if
+      // this like is revealed — which happens here, at like time, while
+      // their lifetime allowance (FREE_VISIBLE_LIKES) has room, in one
+      // statement so a concurrent load cannot over-reveal. An already
+      // revealed like (a repeat after a rejection) stays revealed and costs
+      // nothing. Otherwise the event and push say someone liked them, never
+      // who, and the like stays hidden until they subscribe.
+      let targetCanSeeLikes = await hasActivePremium(targetUserId);
+      if (!targetCanSeeLikes) {
+        await query(
+          `WITH need AS (
+             SELECT id FROM ${TABLES.USER_INTERACTIONS}
+             WHERE actor_id = $2 AND target_id = $1 AND revealed_at IS NULL
+           ),
+           slot AS (
+             UPDATE ${TABLES.USERS} SET free_likes_revealed = free_likes_revealed + 1
+             WHERE id = $1 AND free_likes_revealed < $3 AND EXISTS (SELECT 1 FROM need)
+             RETURNING id
+           )
+           UPDATE ${TABLES.USER_INTERACTIONS} SET revealed_at = NOW()
+           WHERE id IN (SELECT id FROM need) AND EXISTS (SELECT 1 FROM slot)`,
+          [targetUserId, userId, FREE_VISIBLE_LIKES],
+        );
+        const revealed = await query(
+          `SELECT revealed_at IS NOT NULL AS revealed FROM ${TABLES.USER_INTERACTIONS}
+           WHERE actor_id = $1 AND target_id = $2`,
+          [userId, targetUserId],
+        );
+        targetCanSeeLikes = Boolean(revealed.rows[0]?.revealed);
+      }
 
       // Publish `like.created` event via Redis event bus
       await eventBus.publish(EVENT_BUS_CHANNELS.MATCH_EVENTS, {
@@ -610,33 +637,6 @@ export async function matchRoutes(app: FastifyInstance) {
     // frees its slot. The rest are counted but not sent, and the app shows
     // that many blurred cards. Premium sees everyone and reveals nothing.
     const premium = await hasActivePremium(userId);
-
-    const result = await query(
-      `SELECT ui.created_at as liked_at,
-              ui.is_mutual,
-              ui.responded_at,
-              ui.action,
-              u.id as user_id,
-              u.display_name,
-              u.bio,
-              u.date_of_birth,
-              u.is_verified,
-              u.dating_category,
-              pp.url as photo_url,
-              pp.thumbnail_url as thumbnail_url
-       FROM ${TABLES.USER_INTERACTIONS} ui
-       JOIN ${TABLES.USERS} u ON u.id = ui.actor_id
-       LEFT JOIN LATERAL (
-         SELECT url, thumbnail_url
-         FROM ${TABLES.PROFILE_PHOTOS}
-         WHERE user_id = u.id AND is_primary = TRUE
-         LIMIT 1
-       ) pp ON TRUE
-       WHERE ui.target_id = $1
-        AND ui.action IN ('like', 'super_like')
-        AND ui.is_mutual = FALSE
-        -- Discarded likes are gone for good: /respond stamps responded_at,
-        -- and the UNIQUE (actor_id, target_id) constraint means the liker
     if (!premium) {
       // One statement, so two loads at once cannot reveal more than allowed.
       await query(
@@ -662,12 +662,39 @@ export async function matchRoutes(app: FastifyInstance) {
         [userId, FREE_VISIBLE_LIKES],
       );
     }
+
+    const result = await query(
+      `SELECT ui.created_at as liked_at,
+              ui.is_mutual,
+              ui.responded_at,
+              ui.revealed_at,
+              ui.action,
+              u.id as user_id,
+              u.display_name,
+              u.bio,
+              u.date_of_birth,
+              u.is_verified,
+              u.dating_category,
+              pp.url as photo_url,
+              pp.thumbnail_url as thumbnail_url
+       FROM ${TABLES.USER_INTERACTIONS} ui
+       JOIN ${TABLES.USERS} u ON u.id = ui.actor_id
+       LEFT JOIN LATERAL (
+         SELECT url, thumbnail_url
+         FROM ${TABLES.PROFILE_PHOTOS}
+         WHERE user_id = u.id AND is_primary = TRUE
+         LIMIT 1
+       ) pp ON TRUE
+       WHERE ui.target_id = $1
+        AND ui.action IN ('like', 'super_like')
+        AND ui.is_mutual = FALSE
+        -- Discarded likes are gone for good: /respond stamps responded_at,
+        -- and the UNIQUE (actor_id, target_id) constraint means the liker
         -- can never create a fresh row to reappear here.
         AND ui.responded_at IS NULL
        ORDER BY ui.created_at DESC
        LIMIT 50`,
       [userId],
-              ui.revealed_at,
     );
 
     const now = new Date();

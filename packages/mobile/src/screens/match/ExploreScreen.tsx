@@ -25,7 +25,10 @@ interface GridProfile {
   interests: { id: string; name: string; emoji: string; category: string }[];
   /** Attached on-device by rankByProximity */
   distanceKm?: number;
-  /** This profile has a pending like on the viewer (server flag + live socket) */
+  /** This person liked the viewer while the grid was open (live socket):
+   *  the card is greyed and labelled, and leaves on the next load, where
+   *  the server keeps pending likers out of Explore */
+  likedYou?: boolean;
 }
 
 const PAGE_SIZE = 24;
@@ -97,7 +100,7 @@ export const ExploreScreen: React.FC<{ navigation: any }> = ({ navigation }) => 
 
   // Live grid updates from the shared /presence socket:
   //  - match:new → drop the profile (matched users leave Explore)
-  //  - likes:new → drop the liker's card: they now belong to the Likes list
+  //  - likes:new → grey the liker's card in place: they are in the Likes list
   //  - a like sent from the deck → drop that card (pending likes leave Explore)
   useEffect(() => {
     const socket = getPresenceSocket();
@@ -110,10 +113,13 @@ export const ExploreScreen: React.FC<{ navigation: any }> = ({ navigation }) => 
       }
     };
     const onLikesNew = (data: any) => {
-      // A free viewer gets no id (they only ever see a count) — their grid
-      // catches up on its next load, where the server leaves the liker out.
+      // The id is present for Premium viewers and for a free viewer whose
+      // lifetime reveal allowance had room; otherwise nothing is shown and
+      // the grid catches up on its next load.
       if (data?.likedByUserId) {
-        setProfiles((prev) => prev.filter((p) => p.userId !== data.likedByUserId));
+        setProfiles((prev) =>
+          prev.map((p) => (p.userId === data.likedByUserId ? { ...p, likedYou: true } : p)),
+        );
       }
     };
     socket.on('match:new', onMatchNew);
@@ -145,11 +151,18 @@ export const ExploreScreen: React.FC<{ navigation: any }> = ({ navigation }) => 
         {photo ? (
           <ProgressiveImage
             uri={resolveUrl(photo.thumbnailUrl || photo.url)}
-            style={styles.cardImage}
+            style={[styles.cardImage, item.likedYou && styles.likedYouImage]}
           />
         ) : (
-          <View style={[styles.cardImage, styles.noPhoto]}>
+          <View style={[styles.cardImage, styles.noPhoto, item.likedYou && styles.likedYouImage]}>
             <Ionicons name="person-outline" size={36} color={colors.textMuted} />
+          </View>
+        )}
+
+        {item.likedYou && (
+          <View style={styles.likedYouPill}>
+            <Ionicons name="heart" size={11} color="#fff" />
+            <Text style={styles.photoCountText}>Liked you</Text>
           </View>
         )}
 
@@ -320,8 +333,22 @@ const styles = StyleSheet.create({
   },
   cardImage: { width: '100%', height: '100%' },
   noPhoto: { justifyContent: 'center', alignItems: 'center' },
-  // "Liked you" state — card scales to 0.85, the photo fades, and a pill
-  // labels it at the top; badges/scrim stay at full opacity above the photo
+  // "Liked you" state — the photo is greyed and a pill labels it at the
+  // top; badges and the scrim stay at full opacity above the photo
+  likedYouImage: { opacity: 0.35 },
+  likedYouPill: {
+    position: 'absolute',
+    top: spacing.sm,
+    alignSelf: 'center',
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    backgroundColor: 'rgba(0,0,0,0.65)',
+    paddingHorizontal: spacing.md,
+    paddingVertical: 3,
+    borderRadius: radius.full,
+    zIndex: 2,
+  },
   photoCountBadge: {
     position: 'absolute',
     top: spacing.sm,
