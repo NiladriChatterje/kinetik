@@ -37,6 +37,9 @@ interface SwipeProfile {
   approxLocation?: { latitude: number; longitude: number };
   /** Computed on-device by rankByProximity (utils/proximity.ts) */
   distanceKm?: number;
+  /** This person already liked the viewer. The server sets it only for
+   *  Premium viewers (free accounts see a likes count, never who). */
+  likedYou?: boolean;
   aboutAnswers?: {
     nature?: string[];
     hobbies?: string[];
@@ -222,6 +225,14 @@ function SwipeCard({
           <Animated.View style={[styles.sticker, styles.passSticker, { opacity: passOpacity }]}>
             <Text style={styles.stickerText}>PASS</Text>
           </Animated.View>
+
+          {/* Already liked the viewer — same pill as the Explore grid */}
+          {profile.likedYou && (
+            <View style={styles.likedYouPill} pointerEvents="none">
+              <Ionicons name="heart" size={11} color="#fff" />
+              <Text style={styles.likedYouText}>Liked you</Text>
+            </View>
+          )}
         </View>
 
         {/* Info */}
@@ -424,11 +435,22 @@ export const MatchScreen: React.FC<{ navigation: any; route?: any }> = ({ naviga
       fetchUnreadLikeCount();
     };
 
+    // A like that arrives while the deck is open tags that person's card at
+    // once. For a free viewer the server sends no id, so nothing changes.
+    const onLikesNew = (data: any) => {
+      if (!data?.likedByUserId) return;
+      setProfiles((prev) =>
+        prev.map((p) => (p.userId === data.likedByUserId ? { ...p, likedYou: true } : p)),
+      );
+    };
+
     socket.on('match:new', onMatchNew);
+    socket.on('likes:new', onLikesNew);
 
     return () => {
-      // Shared socket — detach this screen's listener only
+      // Shared socket — detach this screen's listeners only
       socket.off('match:new', onMatchNew);
+      socket.off('likes:new', onLikesNew);
     };
   }, []);
 
@@ -894,6 +916,20 @@ const styles = StyleSheet.create({
     borderRadius: radius.full,
   },
   photoCountText: { ...typography.caption, fontSize: 10, color: colors.textInverse, fontWeight: '600' },
+  likedYouPill: {
+    position: 'absolute',
+    top: spacing.sm,
+    alignSelf: 'center',
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    backgroundColor: 'rgba(0,0,0,0.65)',
+    paddingHorizontal: spacing.md,
+    paddingVertical: 4,
+    borderRadius: radius.full,
+    zIndex: 2,
+  },
+  likedYouText: { ...typography.caption, color: '#fff', fontWeight: '700' },
   sticker: {
     position: 'absolute',
     top: 30,
