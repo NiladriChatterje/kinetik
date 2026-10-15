@@ -38,7 +38,7 @@
       "channel": "production",
       "env": {
         "APP_ENV": "production",
-        "EXPO_PUBLIC_API_URL": "https://api.example.invalid"
+        "EXPO_PUBLIC_API_URL": "https://kinetik-dating.duckdns.org"
       }
     }
   },
