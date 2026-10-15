@@ -10,6 +10,15 @@ import { api } from '../../services/api';
 import { colors, typography, spacing, radius } from '../../theme';
 
 const GENDER_OPTIONS = ['Male', 'Female', 'Non-binary', 'Other', 'Prefer not to say'] as const;
+// What the server stores for each label (the gender_identity enum). Lowercasing
+// the label gave "non-binary" and "prefer not to say", which the server rejects.
+const GENDER_VALUES: Record<(typeof GENDER_OPTIONS)[number], string> = {
+  Male: 'male',
+  Female: 'female',
+  'Non-binary': 'non_binary',
+  Other: 'other',
+  'Prefer not to say': 'prefer_not_to_say',
+};
 const DATING_CATEGORIES = [
   { value: 'casual', label: 'Casual', description: 'Fun dates, new connections' },
   { value: 'serious', label: 'Serious', description: 'Looking for something real' },
@@ -95,7 +104,7 @@ export const IdentityScreen: React.FC<{ navigation: any }> = ({ navigation }) =>
       if (cancelled || !p) return;
       const iso = typeof p.dateOfBirth === 'string' ? p.dateOfBirth.match(/^(\d{4})-(\d{2})-(\d{2})/) : null;
       if (iso) setDob((prev) => prev || `${iso[3]}/${iso[2]}/${iso[1]}`);
-      const savedGender = GENDER_OPTIONS.find((g) => g.toLowerCase() === String(p.gender ?? '').toLowerCase());
+      const savedGender = GENDER_OPTIONS.find((g) => GENDER_VALUES[g] === p.gender);
       if (savedGender) setGender((prev) => prev ?? savedGender);
       if (DATING_CATEGORIES.some((c) => c.value === p.datingCategory)) {
         setDatingCategory((prev) => prev ?? p.datingCategory);
@@ -146,7 +155,13 @@ export const IdentityScreen: React.FC<{ navigation: any }> = ({ navigation }) =>
     const dobIso = `${parts[2]}-${parts[1]}-${parts[0]}`;
 
     setLoading(true);
-    const res = await api.updateProfile({ displayName: user?.displayName, dateOfBirth: dobIso, gender: gender.toLowerCase(), pronouns, datingCategory: datingCategory });
+    const res = await api.updateProfile({
+      displayName: user?.displayName,
+      dateOfBirth: dobIso,
+      gender: GENDER_VALUES[gender as (typeof GENDER_OPTIONS)[number]],
+      pronouns,
+      datingCategory: datingCategory,
+    });
     if (res.success) {
       await api.updateOnboardingStep('identity');
       navigation.navigate('About');
