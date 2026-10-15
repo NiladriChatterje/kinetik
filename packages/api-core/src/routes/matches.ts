@@ -191,8 +191,9 @@ export async function matchRoutes(app: FastifyInstance) {
     // Explore mode: paginated browse over everyone eligible. Active matches
     // (people you're already chatting with) and people with a pending like
     // on you are excluded — the latter belong to the Likes list, where a
-    // like-back makes the match. Passed and liked users stay visible so the
-    // whole platform is browsable.
+    // like-back makes the match — and so are people you have a pending like
+    // on, until they reject it. Passed users stay visible so the whole
+    // platform is browsable.
     let profilesResult;
     let hasMore = false;
     if (isExplore) {
@@ -217,6 +218,12 @@ export async function matchRoutes(app: FastifyInstance) {
             -- Pending incoming like: answered from the Likes list, not here
             SELECT actor_id FROM ${TABLES.USER_INTERACTIONS}
             WHERE target_id = $1 AND action IN ('like', 'super_like')
+              AND is_mutual = FALSE AND responded_at IS NULL
+            UNION
+            -- Pending outgoing like: the viewer already liked them; they come
+            -- back only if that like is rejected (responded_at set, no match)
+            SELECT target_id FROM ${TABLES.USER_INTERACTIONS}
+            WHERE actor_id = $1 AND action IN ('like', 'super_like')
               AND is_mutual = FALSE AND responded_at IS NULL
           )
         -- Explore browses everyone (no distance cut-off) but nearest first
