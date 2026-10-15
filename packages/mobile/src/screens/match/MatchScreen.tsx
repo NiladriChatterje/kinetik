@@ -218,6 +218,14 @@ function SwipeCard({
             </View>
           )}
 
+          {/* Primary photo — the one their selfie check is made against */}
+          {currentPhoto?.isPrimary && (
+            <View style={styles.primaryBadge} pointerEvents="none" accessibilityLabel="Primary photo">
+              <Ionicons name="star" size={12} color={colors.textInverse} />
+              <Text style={styles.photoCountText}>Primary</Text>
+            </View>
+          )}
+
           {/* Like / Pass stickers */}
           <Animated.View style={[styles.sticker, styles.likeSticker, { opacity: likeOpacity }]}>
             <Text style={styles.stickerText}>LIKE</Text>
@@ -902,6 +910,18 @@ const styles = StyleSheet.create({
     width: 16,
     borderRadius: 2.5,
     backgroundColor: colors.textInverse,
+  },
+  primaryBadge: {
+    position: 'absolute',
+    top: spacing.sm,
+    left: spacing.sm,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    backgroundColor: 'rgba(0,0,0,0.45)',
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+    borderRadius: radius.full,
   },
   photoCountBadge: {
     position: 'absolute',
