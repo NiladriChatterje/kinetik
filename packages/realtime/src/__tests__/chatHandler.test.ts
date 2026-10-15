@@ -234,14 +234,14 @@ describe('ChatHandler', () => {
       }) as any);
     };
 
-    it('should let a free user join their one free chat (oldest active match)', async () => {
+    it('should NOT let a free user join even their oldest chat (chat is Premium only)', async () => {
       const { socket } = simulateConnection(nsp);
       const handlerFn = registerHandler(socket, WsEvent.CHAT_JOIN);
       mockJoinChecks({ premium: false, freeMatchId: 'match-456' });
 
       await handlerFn({ matchId: 'match-456' });
 
-      expect(socket.join).toHaveBeenCalledWith('match:match-456');
+      expect(socket.join).not.toHaveBeenCalledWith('match:match-456');
     });
 
     it('should NOT let a free user join any other chat (locked)', async () => {

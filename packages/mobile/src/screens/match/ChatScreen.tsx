@@ -414,7 +414,7 @@ export const ChatScreen: React.FC<{ navigation: any; route: any }> = ({ navigati
   const initialScrollDoneRef = useRef(false);
   const [inputText, setInputText] = useState('');
   const [loading, setLoading] = useState(true);
-  // The server reports this chat as locked (free account, not their one free chat)
+  // The server reports this chat as locked (free account: chat is Premium only)
   const [locked, setLocked] = useState(false);
   const [sending, setSending] = useState(false);
   const [partnerTyping, setPartnerTyping] = useState(false);

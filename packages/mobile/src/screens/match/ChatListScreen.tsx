@@ -23,7 +23,7 @@ interface Conversation {
   lastMessageAt?: string;
   lastMessageSenderId?: string;
   unreadCount: number;
-  /** Free account and not their one free chat: the server sends no messages */
+  /** Free account: chat is Premium only, the server sends no messages */
   locked?: boolean;
 }
 

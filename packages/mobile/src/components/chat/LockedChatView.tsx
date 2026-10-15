@@ -13,7 +13,7 @@ interface LockedChatViewProps {
 
 /**
  * Shown in place of a chat the server reports as locked: free accounts can
- * chat with one match, and every other chat needs Premium. The server refuses
+ * need Premium to chat at all. The server refuses
  * the messages themselves, so this screen is the upsell, not the guard.
  */
 export const LockedChatView: React.FC<LockedChatViewProps> = ({ partnerName, onBack, onUpgrade }) => (
@@ -32,8 +32,8 @@ export const LockedChatView: React.FC<LockedChatViewProps> = ({ partnerName, onB
       </View>
       <Text style={styles.title}>This chat is locked</Text>
       <Text style={styles.subtitle}>
-        Free accounts can chat with one match. Upgrade to Premium to unlock your chat
-        with {partnerName} and every other match.
+        Chat is for Premium members. Subscribe to unlock your chat with {partnerName}
+        and every other match.
       </Text>
     </View>
 

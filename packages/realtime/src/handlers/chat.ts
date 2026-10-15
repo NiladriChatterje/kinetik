@@ -41,10 +41,9 @@ interface MessagePayload {
 }
 
 /**
- * Same rule as api-core services/premiumAccess.ts: a free user may chat only
- * in their first match, and not at all once that match has been unmatched;
+ * Same rule as api-core services/premiumAccess.ts: chat is Premium only.
  * Premium (a paid tier whose Play expiry has not passed, with a few hours of
- * renewal grace) unlocks every chat.
+ * renewal grace) unlocks every chat; without it every chat is locked.
  */
 async function isChatLocked(userId: string, matchId: string, redis?: Redis): Promise<boolean> {
   // api-core keeps the Premium answer in this Redis for a short time and drops
@@ -66,25 +65,7 @@ async function isChatLocked(userId: string, matchId: string, redis?: Redis): Pro
     hasPremium = (premium.rowCount ?? 0) > 0;
     void withPremiumCache(redis, (r) => r.set(key, hasPremium ? '1' : '0', 'EX', PREMIUM_CACHE_TTL_SECONDS));
   }
-  if (hasPremium) return false;
-
-  // The free-chat id is cached the same way (api-core drops it on match
-  // creation and unmatch). Only a found id is ever cached, so a miss means
-  // "ask the database", not "no free chat".
-  const freeKey = REDIS_KEYS.USER_FREE_CHAT(userId);
-  const cachedFreeId = await withPremiumCache(redis, (r) => r.get(freeKey));
-  if (cachedFreeId) return cachedFreeId !== matchId;
-
-  const free = await query(
-    `SELECT free_chat_match_id, free_chat_spent FROM ${TABLES.USERS} WHERE id = $1`,
-    [userId],
-  );
-  const row = free.rows[0];
-  const freeId: string | null = row && row.free_chat_match_id && !row.free_chat_spent ? row.free_chat_match_id : null;
-  if (freeId) {
-    void withPremiumCache(redis, (r) => r.set(freeKey, freeId, 'EX', PREMIUM_CACHE_TTL_SECONDS));
-  }
-  return !freeId || freeId !== matchId;
+  return !hasPremium;
 }
 
 const PREMIUM_CACHE_TTL_SECONDS = 60;

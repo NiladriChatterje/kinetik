@@ -6,11 +6,12 @@ import { getRedis } from './redis';
  * Server-side Premium gates for the two paid features:
  *
  *  - Who liked you: free users get only a count, never the likers.
- *  - Chat: a free user can chat in ONE conversation, their first match.
- *    Every other match is locked (no reading, sending, media or live events)
- *    until they subscribe. Once that first match is unmatched the free chat is
- *    spent: the next match does not take its place, or a free user could
- *    chat with everyone one at a time by unmatching between them.
+ *  - Chat: Premium only. Every chat is locked (no reading, sending, media
+ *    or live events) until the user subscribes. A subscription counts until
+ *    its paid period ends, so cancelling keeps chat open for the rest of the
+ *    month already paid for. (The first-match bookkeeping on the user row,
+ *    free_chat_match_id / free_chat_spent, is kept in case a free chat is
+ *    ever offered again; nothing reads it as a gate.)
  *
  * Every endpoint that exposes those features checks here, so the app hiding
  * a screen is never the only guard. The realtime service applies the same
@@ -133,8 +134,7 @@ export async function invalidateFreeChatCache(userId: string): Promise<void> {
 }
 
 /**
- * Which of the user's chats are locked. `isLocked(matchId)` is true for every
- * chat except the free one, unless the user has Premium.
+ * Which of the user's chats are locked: none with Premium, all without.
  */
 export async function getChatAccess(
   userId: string,
@@ -142,8 +142,7 @@ export async function getChatAccess(
   if (await hasActivePremium(userId)) {
     return { premium: true, isLocked: () => false };
   }
-  const freeId = await freeChatMatchId(userId);
-  return { premium: false, isLocked: (matchId) => matchId !== freeId };
+  return { premium: false, isLocked: () => true };
 }
 
 export async function isChatLocked(userId: string, matchId: string): Promise<boolean> {
