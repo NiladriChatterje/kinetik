@@ -91,8 +91,10 @@ export const LikeListScreen: React.FC<{ navigation: any }> = ({ navigation }) =>
       if (res.success && res.data) {
         // On a match, the match:new socket event drives the animated
         // MatchPopup — no extra dialog here.
-        // Remove from list; one fewer person waiting, so the badge drops too
+        // Remove from list; one fewer person waiting, so the total and the
+        // badge drop too (otherwise a blurred "one more" card would appear)
         setLikes((prev) => prev.filter((l) => l.userId !== targetUserId));
+        setLockedCount((count) => Math.max(0, count - 1));
         useAuthStore.setState((s) => ({ unreadLikeCount: Math.max(0, s.unreadLikeCount - 1) }));
       } else if (res.error?.code === 'CHAT_LIMIT_REACHED') {
         const details = (res.error as any)?.details;

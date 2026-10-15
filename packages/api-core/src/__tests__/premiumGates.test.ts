@@ -23,7 +23,9 @@ interface MatchRow { id: string; user_a_id: string; user_b_id: string; matched_a
 
 let ledger: Map<string, LedgerRow>;
 let matches: MatchRow[];
-let likers: { actor_id: string; target_id: string }[];
+let likers: { actor_id: string; target_id: string; revealed?: boolean; responded?: boolean }[];
+// users.free_likes_revealed per target (migration 025)
+let freeLikesRevealed: Map<string, number>;
 let sqlLog: string[];
 
 const isPremium = (userId: string) => {
@@ -60,10 +62,25 @@ const mockQuery = vi.fn(async (sql: string, params: any[] = []) => {
   if (text.includes('COUNT(*)::int AS cnt FROM (')) {
     return { rows: [{ cnt: likers.filter((l) => l.target_id === params[0]).length }], rowCount: 1 };
   }
+  if (text.startsWith('WITH slots AS')) {
+    // The reveal statement: newest-first (later fixture entries are newer),
+    // only while lifetime reveals remain
+    const target = params[0];
+    const used = freeLikesRevealed.get(target) ?? 0;
+    const slots = Math.max(0, params[1] - used);
+    const pick = likers
+      .filter((l) => l.target_id === target && !l.revealed && !l.responded)
+      .slice()
+      .reverse()
+      .slice(0, slots);
+    pick.forEach((l) => { l.revealed = true; });
+    freeLikesRevealed.set(target, used + pick.length);
+    return { rows: [], rowCount: 1 };
+  }
   if (text.includes('FROM user_interactions ui JOIN users u ON u.id = ui.actor_id')) {
     const rows = likers
-      .filter((l) => l.target_id === params[0])
-      .map((l) => ({ user_id: l.actor_id, display_name: `Name of ${l.actor_id}`, action: 'like' }));
+      .filter((l) => l.target_id === params[0] && !l.responded)
+      .map((l) => ({ user_id: l.actor_id, display_name: `Name of ${l.actor_id}`, action: 'like', revealed_at: l.revealed ? new Date() : null }));
     return { rows, rowCount: rows.length };
   }
   if (text.includes('m.id as match_id')) {
@@ -161,6 +178,7 @@ beforeEach(() => {
     matches.push({ id: `match-${user}-old`, user_a_id: user, user_b_id: PARTNER_1, matched_at: new Date(Date.now() - 10 * DAY), is_active: true });
     matches.push({ id: `match-${user}-new`, user_a_id: PARTNER_2, user_b_id: user, matched_at: new Date(Date.now() - DAY), is_active: true });
   }
+  freeLikesRevealed = new Map();
   likers = [FREE, PREMIUM, EXPIRED, NO_EXPIRY].flatMap((target) => [
     { actor_id: PARTNER_1, target_id: target },
     { actor_id: PARTNER_2, target_id: target },
@@ -176,7 +194,7 @@ const call = (method: 'GET' | 'POST', userId: string, url: string, payload?: obj
   });
 
 describe('who liked you', () => {
-  it('gives a free user their newest likes in full, up to five, and counts the rest', async () => {
+  it('reveals at most five likers to a free user, for life', async () => {
     // Two likes: both within the free allowance
     let res = await call('GET', FREE, '/api/v1/matches/likes');
     expect(res.statusCode).toBe(200);
@@ -185,13 +203,32 @@ describe('who liked you', () => {
     expect(data.totalCount).toBe(2);
     expect(data.likes.map((l: any) => l.userId).sort()).toEqual([PARTNER_1, PARTNER_2]);
 
-    // Seven likes: five come through, two are only counted
+    // Seven likes: five revealed (the two already shown plus the newest
+    // three), two only counted
     for (let i = 0; i < 5; i++) likers.push({ actor_id: `extra-${i}`, target_id: FREE });
     res = await call('GET', FREE, '/api/v1/matches/likes');
     data = res.json().data;
-    expect(data.locked).toBe(true);
     expect(data.totalCount).toBe(7);
     expect(data.likes).toHaveLength(5);
+    const shown = data.likes.map((l: any) => l.userId);
+    expect(shown).toEqual(expect.arrayContaining([PARTNER_1, PARTNER_2, 'extra-4', 'extra-3', 'extra-2']));
+
+    // Rejecting a revealed liker does not free the slot: four remain
+    // visible, the hidden two stay hidden
+    likers.find((l) => l.actor_id === PARTNER_1 && l.target_id === FREE)!.responded = true;
+    res = await call('GET', FREE, '/api/v1/matches/likes');
+    data = res.json().data;
+    expect(data.totalCount).toBe(6);
+    expect(data.likes).toHaveLength(4);
+    expect(data.likes.map((l: any) => l.userId)).not.toContain('extra-0');
+    expect(data.likes.map((l: any) => l.userId)).not.toContain('extra-1');
+
+    // A new like arriving now is counted but not shown either
+    likers.push({ actor_id: 'extra-new', target_id: FREE });
+    res = await call('GET', FREE, '/api/v1/matches/likes');
+    data = res.json().data;
+    expect(data.totalCount).toBe(7);
+    expect(data.likes).toHaveLength(4);
   });
 
   it('gives a Premium user the full list', async () => {

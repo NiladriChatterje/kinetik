@@ -45,7 +45,10 @@ function sendChatLocked(reply: FastifyReply) {
 /** Push text for a message in a chat the recipient cannot open. */
 const LOCKED_MESSAGE_PREVIEW = 'New message. Upgrade to Premium to read it.';
 
-/** How many of their newest likes a free account sees in full. */
+/**
+ * How many likers a free account may reveal in its lifetime. Answering a
+ * revealed like never frees the slot (migration 025).
+ */
 const FREE_VISIBLE_LIKES = 5;
 
 export async function matchRoutes(app: FastifyInstance) {
@@ -601,9 +604,11 @@ export async function matchRoutes(app: FastifyInstance) {
   app.get('/likes', async (request: FastifyRequest, reply: FastifyReply) => {
     const { sub: userId } = request.user as any;
 
-    // A free account sees its FREE_VISIBLE_LIKES newest likes in full and
-    // may like them back; any older ones are counted but not sent, and the
-    // app shows that many blurred cards. Premium sees everyone.
+    // A free account sees only the likers it has revealed, at most
+    // FREE_VISIBLE_LIKES in its lifetime: hidden pending likes are revealed
+    // newest-first while reveals remain, and answering a revealed like never
+    // frees its slot. The rest are counted but not sent, and the app shows
+    // that many blurred cards. Premium sees everyone and reveals nothing.
     const premium = await hasActivePremium(userId);
 
     const result = await query(
@@ -632,15 +637,41 @@ export async function matchRoutes(app: FastifyInstance) {
         AND ui.is_mutual = FALSE
         -- Discarded likes are gone for good: /respond stamps responded_at,
         -- and the UNIQUE (actor_id, target_id) constraint means the liker
+    if (!premium) {
+      // One statement, so two loads at once cannot reveal more than allowed.
+      await query(
+        `WITH slots AS (
+           SELECT GREATEST(0, $2 - free_likes_revealed) AS n
+           FROM ${TABLES.USERS} WHERE id = $1 FOR UPDATE
+         ),
+         pick AS (
+           SELECT ui.id FROM ${TABLES.USER_INTERACTIONS} ui
+           WHERE ui.target_id = $1 AND ui.action IN ('like', 'super_like')
+             AND ui.is_mutual = FALSE AND ui.responded_at IS NULL
+             AND ui.revealed_at IS NULL
+           ORDER BY ui.created_at DESC
+           LIMIT (SELECT n FROM slots)
+         ),
+         revealed AS (
+           UPDATE ${TABLES.USER_INTERACTIONS} SET revealed_at = NOW()
+           WHERE id IN (SELECT id FROM pick) RETURNING id
+         )
+         UPDATE ${TABLES.USERS}
+            SET free_likes_revealed = free_likes_revealed + (SELECT COUNT(*) FROM revealed)
+          WHERE id = $1`,
+        [userId, FREE_VISIBLE_LIKES],
+      );
+    }
         -- can never create a fresh row to reappear here.
         AND ui.responded_at IS NULL
        ORDER BY ui.created_at DESC
        LIMIT 50`,
       [userId],
+              ui.revealed_at,
     );
 
     const now = new Date();
-    const rows = premium ? result.rows : result.rows.slice(0, FREE_VISIBLE_LIKES);
+    const rows = premium ? result.rows : result.rows.filter((row: any) => row.revealed_at !== null);
     const likes = rows.map((row: any) => ({
       likedAt: row.liked_at,
       userId: row.user_id,
