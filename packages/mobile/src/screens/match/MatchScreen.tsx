@@ -65,12 +65,10 @@ function SwipeCard({
   profile,
   isTop,
   onSwipe,
-  superLikesRemaining,
 }: {
   profile: SwipeProfile;
   isTop: boolean;
   onSwipe: (direction: 'left' | 'right') => void;
-  superLikesRemaining: number;
 }) {
   const [photoIndex, setPhotoIndex] = useState(0);
   const position = useRef(new Animated.ValueXY()).current;
@@ -319,14 +317,6 @@ function SwipeCard({
           })()}
         </View>
       </ScrollView>
-
-      {/* Super Like badge on card when remaining */}
-      {isTop && superLikesRemaining > 0 && (
-        <View style={styles.superLikeHint}>
-          <Ionicons name="star" size={12} color={colors.textInverse} />
-          <Text style={styles.superLikeHintText}>{superLikesRemaining}</Text>
-        </View>
-      )}
     </Animated.View>
   );
 }
@@ -344,7 +334,6 @@ export const MatchScreen: React.FC<{ navigation: any; route?: any }> = ({ naviga
   const removedIdsRef = useRef<Set<string>>(new Set());
   const [loading, setLoading] = useState(true);
   const [swiping, setSwiping] = useState(false);
-  const [superLikesRemaining, setSuperLikesRemaining] = useState(5); // default: free tier daily limit
   // Lifetime swipe budget (free accounts) — shown quietly once it runs low,
   // so the paywall never lands as a surprise. null until the first swipe reports it.
   const [swipesRemaining, setSwipesRemaining] = useState<number | null>(null);
@@ -481,67 +470,6 @@ export const MatchScreen: React.FC<{ navigation: any; route?: any }> = ({ naviga
     ]);
     setCurrentIndex(0);
   }, [route?.params?.focusProfile]);
-
-  const handleSuperLike = async () => {
-    if (swiping || superLikesRemaining <= 0) return;
-    const profile = profiles[currentIndex];
-    if (!profile) return;
-
-    setSwiping(true);
-
-    try {
-      const res = await api.swipe(profile.userId, 'super_like');
-      if (res.success && res.data) {
-        const data = res.data;
-        if (data.superLikesRemaining !== undefined) {
-          setSuperLikesRemaining(data.superLikesRemaining);
-        }
-        if (typeof data.swipesRemaining === 'number') {
-          setSwipesRemaining(data.swipesRemaining);
-        }
-        // On a match, the match:new socket event drives the animated MatchPopup
-        if (!data.matched) {
-          hapticImpact();
-          toast.showSuccess('Super Like sent!', 'They\'ll be notified.');
-        }
-      } else if (res.error?.code === 'SWIPE_LIMIT_REACHED') {
-        const details = (res.error as any)?.details;
-        setPaywall({
-          visible: true,
-          reason: 'swipe_limit',
-          used: details?.used ?? 30,
-          limit: details?.limit ?? 30,
-        });
-      }
-    } catch (err: any) {
-      toast.showError('Failed', err.message || 'Super like failed.');
-    }
-
-    removedIdsRef.current.add(profile.userId);
-    if (pendingFocusRef.current?.userId === profile.userId) {
-      pendingFocusRef.current = null;
-    }
-    const nextIndex = currentIndex + 1;
-    setCurrentIndex(nextIndex);
-    setSwiping(false);
-
-    if (nextIndex >= profiles.length - 3) {
-      const res = await api.getSwipeProfiles().catch(() => null);
-      if (res?.success && res.data?.profiles) {
-        // Dedupe against the deck and drop already-swiped/matched users —
-        // the fetch may have been issued before those were recorded
-        setProfiles((prev) => {
-          const seen = new Set(prev.map((p) => p.userId));
-          return [
-            ...prev,
-            ...res.data!.profiles.filter(
-              (p: SwipeProfile) => !seen.has(p.userId) && !removedIdsRef.current.has(p.userId),
-            ),
-          ];
-        });
-      }
-    }
-  };
 
   const handleSwipe = async (direction: 'left' | 'right') => {
     if (swiping) return;
@@ -764,7 +692,6 @@ export const MatchScreen: React.FC<{ navigation: any; route?: any }> = ({ naviga
           profile={currentProfile}
           isTop={true}
           onSwipe={handleSwipe}
-          superLikesRemaining={superLikesRemaining}
         />
       </View>
 
@@ -778,13 +705,6 @@ export const MatchScreen: React.FC<{ navigation: any; route?: any }> = ({ naviga
             activeOpacity={0.7}
           >
             <Ionicons name="close" size={30} color={colors.textPrimary} />
-          </TouchableOpacity>
-          <TouchableOpacity
-            style={[styles.actionBtn, styles.superLikeBtn]}
-            onPress={handleSuperLike}
-            activeOpacity={0.7}
-          >
-            <Ionicons name="star" size={26} color={colors.textPrimary} />
           </TouchableOpacity>
           <TouchableOpacity
             style={[styles.actionBtn, styles.likeBtn]}
@@ -1087,26 +1007,5 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   passBtn: {},
-  superLikeBtn: {
-    width: 46,
-    height: 46,
-    borderRadius: 23,
-    borderWidth: 1.5,
-    borderColor: colors.textPrimary,
-    backgroundColor: 'transparent',
-  },
   likeBtn: {},
-  superLikeHint: {
-    position: 'absolute',
-    top: spacing.sm,
-    left: spacing.sm,
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 4,
-    backgroundColor: 'rgba(0, 0, 0, 0.85)',
-    paddingHorizontal: spacing.sm,
-    paddingVertical: 3,
-    borderRadius: radius.full,
-  },
-  superLikeHintText: { ...typography.caption, fontSize: 10, color: colors.textInverse, fontWeight: '700' },
 });

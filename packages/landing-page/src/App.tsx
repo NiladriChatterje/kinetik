@@ -837,7 +837,6 @@ function Features() {
 const PREMIUM_FEATURES = [
   'Unlimited likes',
   'Unlimited active chats',
-  '25 Super Likes every day (5 on free)',
   'See who liked you — no blur',
   'Cancel any time, from the app or Google Play',
 ];
