@@ -272,7 +272,7 @@ const STEPS = [
   {
     num: '04',
     title: 'Fix the date',
-    body: 'Pin a day to the chat, pick what you\'re doing, and tick off a checklist you both share. The plan lives in the conversation — not in someone\'s head.',
+    body: 'Pin a day to the chat, pick what you\'re doing, and add notes you both can see. The plan lives in the conversation — not in someone\'s head.',
   },
 ];
 
@@ -410,8 +410,8 @@ function CommunitySVG() {
         <p className="section-sub">
           And not out of virtue — out of arithmetic. Fake profiles cost money to build,
           servers to run and people to babysit, and all that spend buys you a chat that
-          can never end in a date. Why would we burn cash on that? Everyone here took a
-          selfie to get in.
+          can never end in a date. Why would we burn cash on that? Verified profiles
+          took a selfie to earn the badge.
         </p>
         <div className="community-visual">
           <svg viewBox="0 0 400 300" className="community-svg" fill="none">
@@ -631,10 +631,10 @@ function DatePlannerSVG() {
             no "so when are we doing this?" three days later.
           </p>
           <p>
-            Choose what you're actually doing from a set of activities, then build a
-            checklist together. Both of you can add items and tick them off, and it
-            syncs live — so booking the table and picking the spot don't quietly
-            become one person's job.
+            Choose what you're actually doing from a set of activities, then add notes
+            together. Both of you can add and remove them, and it syncs live — so
+            booking the table and picking the spot don't quietly become one person's
+            job.
           </p>
         </div>
         <div className="split-visual">
@@ -738,45 +738,25 @@ function DatePlannerSVG() {
               })}
             </g>
 
-            {/* Shared checklist */}
+            {/* Shared notes — the app's planner keeps a short list of notes
+                both people can add to; there is nothing to tick off */}
             <g opacity={todosReveal}>
               <text x="66" y="316" fill="var(--muted)" fontSize="8" fontWeight="700" letterSpacing="1" fontFamily="var(--font)">
-                SHARED CHECKLIST
+                NOTES
               </text>
               {PLANNER_TODOS.map((t, i) => {
                 const rowVis = clamp((todosReveal - i * 0.15) / 0.3, 0, 1);
                 const y = 332 + i * 28;
                 return (
                   <g key={t.text} opacity={rowVis} transform={`translate(${(1 - rowVis) * 12}, 0)`}>
-                    <rect
-                      x="66"
-                      y={y}
-                      width="16"
-                      height="16"
-                      rx="5"
-                      fill={t.done ? 'var(--primary)' : 'none'}
-                      stroke="var(--primary)"
-                      strokeWidth="1.2"
-                      opacity={t.done ? 0.85 : 0.25}
-                    />
-                    {t.done && (
-                      <path
-                        d={`M 70 ${y + 8} l 3 3 l 6 -6`}
-                        stroke="#fff"
-                        strokeWidth="1.6"
-                        strokeLinecap="round"
-                        strokeLinejoin="round"
-                        fill="none"
-                      />
-                    )}
+                    <circle cx="72" cy={y + 8} r="3" fill="var(--primary)" opacity="0.85" />
                     <text
-                      x="92"
+                      x="86"
                       y={y + 12}
                       fill="var(--secondary)"
                       fontSize="9"
                       fontFamily="var(--font)"
-                      opacity={t.done ? 0.5 : 0.9}
-                      textDecoration={t.done ? 'line-through' : 'none'}
+                      opacity="0.9"
                     >
                       {t.text}
                     </text>
@@ -798,7 +778,7 @@ const FEATURES: { Icon: IconType; title: string; body: string }[] = [
   {
     Icon: FiCalendar,
     title: 'Fix the date in the chat',
-    body: 'Pin a day to the conversation, pick the activity, and share a checklist you both tick off. The plan stays where you made it.',
+    body: 'Pin a day to the conversation, pick the activity, and add notes you both can see. The plan stays where you made it.',
   },
   {
     Icon: FiMessageSquare,
@@ -823,7 +803,7 @@ const FEATURES: { Icon: IconType; title: string; body: string }[] = [
   {
     Icon: FiShuffle,
     title: 'No matching algorithm',
-    body: 'Age, distance, and who you\'re looking for. That\'s the whole filter — no compatibility score deciding it for you.',
+    body: 'Age and distance, nearest first. That\'s the whole filter — no compatibility score deciding it for you.',
   },
 ];
 
@@ -1115,8 +1095,8 @@ function Terms() {
           </p>
           <h3>Eligibility</h3>
           <p>
-            You must be at least 18 years old to use Kinetik. Accounts are verified with photo and
-            face-match checks; impersonation and fake profiles are removed without notice.
+            You must be at least 18 years old to use Kinetik. Accounts can be verified with photo
+            and face-match checks; impersonation and fake profiles are removed without notice.
           </p>
           <h3>Premium subscription</h3>
           <ul>
@@ -1139,8 +1119,8 @@ function Terms() {
           </p>
           <h3>Your data</h3>
           <p>
-            We collect only what is needed to run the service (profile, photos, preferences,
-            device and payment status). We never sell personal data. You can request deletion at
+            We collect only what is needed to run the service (profile, photos, location,
+            preferences, device and payment status). We never sell personal data. You can request deletion at
             any time — deleting your account removes your data and cancels your subscription and
             payment mandate automatically.
           </p>
