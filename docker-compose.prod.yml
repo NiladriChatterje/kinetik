@@ -10,3 +10,24 @@ services:
     volumes:
       - ./config/nginx.prod.conf:/etc/nginx/nginx.conf:ro
       - /etc/letsencrypt:/etc/letsencrypt:ro
+
+  # ─── DuckDNS keep-alive ────────────────────────────────────
+  # Re-points kinetik-dating.duckdns.org at this server's current public IP
+  # every 6 hours (ip= empty means "use the caller's address"). Also keeps the
+  # free subdomain from being expired for inactivity. Needs DUCKDNS_TOKEN in
+  # .env (DuckDNS dashboard → token); with no token it logs KO and does nothing.
+  duckdns:
+    image: curlimages/curl:8.11.1
+    container_name: kinetik-duckdns
+    restart: unless-stopped
+    environment:
+      DUCKDNS_DOMAIN: ${DUCKDNS_DOMAIN:-kinetik-dating}
+      DUCKDNS_TOKEN: ${DUCKDNS_TOKEN:-}
+    entrypoint: ["/bin/sh", "-c"]
+    command:
+      - |
+        while true; do
+          r=$$(curl -s --max-time 30 "https://www.duckdns.org/update?domains=$${DUCKDNS_DOMAIN}&token=$${DUCKDNS_TOKEN}&ip=")
+          echo "$$(date -u +%FT%TZ) duckdns update for $${DUCKDNS_DOMAIN}: $${r:-no response}"
+          sleep 21600
+        done
