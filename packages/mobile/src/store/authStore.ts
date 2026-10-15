@@ -278,6 +278,9 @@ async function startSession(
   // Connect real-time sockets for like/match and chat updates
   get().connectLikesSocket();
   get().connectChatsSocket();
+  // Badges on the tab bar, same as initialize() does on an app restart
+  get().fetchUnreadLikeCount();
+  get().fetchUnreadChatCount();
 }
 
 export const useAuthStore = create<AuthState>((set, get) => ({

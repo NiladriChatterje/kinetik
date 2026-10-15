@@ -56,8 +56,9 @@ export const LikeListScreen: React.FC<{ navigation: any }> = ({ navigation }) =>
         setLocked(Boolean(res.data.locked));
         setLockedCount(res.data.totalCount || 0);
         setLikes(res.data.likes || []);
-        // Reset unread badge count — user has now seen all likes
-        useAuthStore.getState().resetUnreadLikeCount();
+        // The tab badge shows how many people are waiting here, so it
+        // follows the server's count rather than clearing on a visit
+        useAuthStore.setState({ unreadLikeCount: res.data.totalCount || 0 });
       }
     } catch (err: any) {
       toast.showError('Load failed', 'Could not load likes.');
@@ -83,14 +84,6 @@ export const LikeListScreen: React.FC<{ navigation: any }> = ({ navigation }) =>
     };
   }, []);
 
-  // Reset unread count every time this screen comes into focus
-  useEffect(() => {
-    const unsubscribe = navigation.addListener('focus', () => {
-      useAuthStore.getState().resetUnreadLikeCount();
-    });
-    return unsubscribe;
-  }, [navigation]);
-
   const handleRespond = async (targetUserId: string, action: 'like' | 'discard') => {
     setResponding(targetUserId);
     try {
@@ -98,8 +91,9 @@ export const LikeListScreen: React.FC<{ navigation: any }> = ({ navigation }) =>
       if (res.success && res.data) {
         // On a match, the match:new socket event drives the animated
         // MatchPopup — no extra dialog here.
-        // Remove from list
+        // Remove from list; one fewer person waiting, so the badge drops too
         setLikes((prev) => prev.filter((l) => l.userId !== targetUserId));
+        useAuthStore.setState((s) => ({ unreadLikeCount: Math.max(0, s.unreadLikeCount - 1) }));
       } else if (res.error?.code === 'CHAT_LIMIT_REACHED') {
         const details = (res.error as any)?.details;
         setPaywall({
