@@ -1009,18 +1009,23 @@ export async function matchRoutes(app: FastifyInstance) {
          LIMIT 200
        ) m
        LEFT JOIN ${TABLES.CHAT_MEDIA} cm ON cm.message_id = m.id
-       WHERE m.match_id = $1
-       ORDER BY m.created_at ASC
-       LIMIT 200`,
+       ORDER BY m.created_at ASC`,
       [matchId],
     );
 
-    // Mark unread messages as read
-    await query(
-      `UPDATE ${TABLES.MESSAGES} SET read_at = NOW()
-       WHERE match_id = $1 AND sender_id != $2 AND read_at IS NULL`,
-      [matchId, userId],
-    );
+    // Mark unread messages as read. Skipped when the page shows none from
+    // the partner, which is most opens and every reconnect resync. A full
+    // page (the 200 cap) may hide older unread rows, so it always runs then.
+    const mayHaveUnread =
+      messages.rows.length >= 200 ||
+      messages.rows.some((m: any) => m.sender_id !== userId && m.read_at === null);
+    if (mayHaveUnread) {
+      await query(
+        `UPDATE ${TABLES.MESSAGES} SET read_at = NOW()
+         WHERE match_id = $1 AND sender_id != $2 AND read_at IS NULL`,
+        [matchId, userId],
+      );
+    }
 
     return reply.send({
       success: true,
@@ -1080,28 +1085,42 @@ export async function matchRoutes(app: FastifyInstance) {
       });
     }
 
-    // Verify user is part of this match
-    const matchCheck = await query(
-      `SELECT id, user_a_id, user_b_id FROM ${TABLES.MATCHES}
-       WHERE id = $1 AND (user_a_id = $2 OR user_b_id = $2) AND is_active = TRUE`,
-      [matchId, userId],
-    );
+    // Verify user is part of this match. The lock check and the sender's
+    // name are read-only and independent of it, so the three round trips
+    // overlap instead of queueing; the decisions below are made in the
+    // same order as before.
+    const [matchCheck, senderLocked, senderResult] = await Promise.all([
+      query(
+        `SELECT id, user_a_id, user_b_id FROM ${TABLES.MATCHES}
+         WHERE id = $1 AND (user_a_id = $2 OR user_b_id = $2) AND is_active = TRUE`,
+        [matchId, userId],
+      ),
+      isChatLocked(userId, matchId),
+      query(`SELECT display_name FROM ${TABLES.USERS} WHERE id = $1`, [userId]),
+    ]);
     if (!matchCheck.rows[0]) {
       return reply.status(404).send({
         success: false,
         error: { code: ERROR_CODES.NOT_FOUND, message: 'Match not found or inactive' },
       });
     }
-    if (await isChatLocked(userId, matchId)) return sendChatLocked(reply);
+    if (senderLocked) return sendChatLocked(reply);
 
     const plainContent = content.trim();
     const encryptedContent = encryptMessage(plainContent, MESSAGE_ENCRYPTION_KEY);
 
-    const result = await query(
-      `INSERT INTO ${TABLES.MESSAGES} (match_id, sender_id, content)
-       VALUES ($1, $2, $3) RETURNING *`,
-      [matchId, userId, encryptedContent],
-    );
+    // The partner's lock state only feeds the push preview and needs nothing
+    // from the insert, so it is fetched while the insert runs.
+    const matchRow = matchCheck.rows[0];
+    const partnerId = matchRow.user_a_id === userId ? matchRow.user_b_id : matchRow.user_a_id;
+    const [result, partnerLocked] = await Promise.all([
+      query(
+        `INSERT INTO ${TABLES.MESSAGES} (match_id, sender_id, content)
+         VALUES ($1, $2, $3) RETURNING *`,
+        [matchId, userId, encryptedContent],
+      ),
+      isChatLocked(partnerId, matchId),
+    ]);
     const message = result.rows[0];
 
     // Publish to Redis pub/sub with PLAINTEXT (clients render plaintext)
@@ -1117,12 +1136,9 @@ export async function matchRoutes(app: FastifyInstance) {
     publishChatMessage(REDIS_KEYS.CHAT_MESSAGES_CHANNEL, messagePayload);
 
     // Notify the partner via push
-    const matchRow = matchCheck.rows[0];
-    const partnerId = matchRow.user_a_id === userId ? matchRow.user_b_id : matchRow.user_a_id;
-    const senderResult = await query(`SELECT display_name FROM ${TABLES.USERS} WHERE id = $1`, [userId]);
     const senderName = senderResult.rows[0]?.display_name || 'Someone';
     // A partner whose side of this chat is locked gets no message text
-    const preview = (await isChatLocked(partnerId, matchId))
+    const preview = partnerLocked
       ? LOCKED_MESSAGE_PREVIEW
       : plainContent.length > 80 ? plainContent.slice(0, 80) + '…' : plainContent;
 
