@@ -124,7 +124,7 @@ export type RootStackParamList = {
   // The swipe deck, opened on a profile tapped in Explore
   Discover: { focusProfile?: any } | undefined;
   ChatList: undefined;
-  Chat: { matchId: string; partnerName: string; partnerId?: string; partnerPhotoUrl?: string };
+  Chat: { matchId: string; partnerName: string; partnerId?: string; partnerPhotoUrl?: string; locked?: boolean };
   // Kept for profile access
   DuoWingman: undefined;
   KYCVerify: undefined;

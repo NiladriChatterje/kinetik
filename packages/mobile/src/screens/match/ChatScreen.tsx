@@ -392,7 +392,7 @@ const RecordingDot: React.FC = React.memo(() => {
 RecordingDot.displayName = 'RecordingDot';
 
 export const ChatScreen: React.FC<{ navigation: any; route: any }> = ({ navigation, route }) => {
-  const { matchId, partnerName: pName, partnerPhotoUrl: pPhoto } = route.params || {};
+  const { matchId, partnerName: pName, partnerPhotoUrl: pPhoto, locked: lockedParam } = route.params || {};
   const toast = useToast();
   const insets = useSafeAreaInsets();
   const [messages, setMessages] = useState<Message[]>([]);
@@ -414,8 +414,13 @@ export const ChatScreen: React.FC<{ navigation: any; route: any }> = ({ navigati
   const initialScrollDoneRef = useRef(false);
   const [inputText, setInputText] = useState('');
   const [loading, setLoading] = useState(true);
-  // The server reports this chat as locked (free account: chat is Premium only)
-  const [locked, setLocked] = useState(false);
+  // Whether this chat is locked (free account: chat is Premium only).
+  // null = not known yet. The chat interface is never rendered while it is
+  // unknown: a free account must not glimpse it before the lock arrives.
+  // The chat list already knows and passes it in, so a locked chat opened
+  // from there shows the lock immediately; otherwise the first history
+  // response decides.
+  const [locked, setLocked] = useState<boolean | null>(lockedParam === true ? true : null);
   const [sending, setSending] = useState(false);
   const [partnerTyping, setPartnerTyping] = useState(false);
   const [socketConnected, setSocketConnected] = useState(false);
@@ -1709,6 +1714,25 @@ export const ChatScreen: React.FC<{ navigation: any; route: any }> = ({ navigati
   const inputBarPaddingBottom = keyboardVisible
     ? spacing.xs
     : Math.max(MIN_INPUT_BOTTOM_GAP, insets.bottom + spacing.xs);
+
+  if (locked === null) {
+    // Access not known yet: a loader with a way back, nothing of the chat
+    return (
+      <SafeAreaView style={styles.container} edges={['top', 'left', 'right']}>
+        <View style={styles.header}>
+          <TouchableOpacity onPress={() => navigation.goBack()} style={styles.backBtn}>
+            <Ionicons name="chevron-back" size={24} color={colors.textPrimary} />
+          </TouchableOpacity>
+          <View style={styles.headerInfo}>
+            <Text style={styles.headerName}>{partnerName}</Text>
+          </View>
+        </View>
+        <View style={styles.centered}>
+          <ActivityIndicator size="large" color={colors.primary} />
+        </View>
+      </SafeAreaView>
+    );
+  }
 
   if (locked) {
     return (

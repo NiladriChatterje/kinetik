@@ -154,6 +154,9 @@ export const ChatListScreen: React.FC<{ navigation: any }> = ({ navigation }) =>
         partnerName: item.partnerName,
         partnerId: item.partnerId,
         partnerPhotoUrl: item.partnerPhotoUrl,
+        // Known here already: a locked chat shows its lock at once, with
+        // nothing of the chat interface in between
+        locked: item.locked,
       })}
       accessibilityHint={item.locked ? 'Locked. Upgrade to Premium to chat.' : undefined}
     >
