@@ -394,6 +394,22 @@ export const ChatScreen: React.FC<{ navigation: any; route: any }> = ({ navigati
   const toast = useToast();
   const insets = useSafeAreaInsets();
   const [messages, setMessages] = useState<Message[]>([]);
+  // ─── Older history (scroll-up paging) ────────────────
+  // The server returns the newest page; scrolling to the top fetches the
+  // page before the oldest message on screen until hasMore is false.
+  const [hasMoreHistory, setHasMoreHistory] = useState(false);
+  const [loadingOlder, setLoadingOlder] = useState(false);
+  const hasMoreHistoryRef = useRef(false);
+  const loadingOlderRef = useRef(false);
+  const messagesRef = useRef<Message[]>([]);
+  messagesRef.current = messages;
+  // The list scrolls to the end whenever its content changes (new message,
+  // first load). While an older page is being prepended that must not
+  // happen, or the view would jump away from what the user is reading.
+  const suppressAutoScrollRef = useRef(false);
+  // Until the first load has scrolled to the end, the list sits at offset 0
+  // and must not be mistaken for the user scrolling up.
+  const initialScrollDoneRef = useRef(false);
   const [inputText, setInputText] = useState('');
   const [loading, setLoading] = useState(true);
   // The server reports this chat as locked (free account, not their one free chat)
@@ -639,16 +655,52 @@ export const ChatScreen: React.FC<{ navigation: any; route: any }> = ({ navigati
       if (!res.success || !res.data) return;
       setLocked(false);
       const fetched = res.data.messages || [];
+      hasMoreHistoryRef.current = Boolean(res.data.hasMore);
+      setHasMoreHistory(hasMoreHistoryRef.current);
       setMessages((prev) => {
         // Keep only THIS match's pending sends — if the screen was re-used
         // with a new matchId param, temps from the previous DM must not leak
         const temps = prev.filter((m) => m.id.startsWith('temp-') && m.matchId === matchId);
-        const merged = [...fetched, ...temps];
+        // Older pages already scrolled into on this screen stay in place; a
+        // resync only refreshes the newest page.
+        const oldestFetchedAt = fetched.length > 0 ? fetched[0].createdAt : null;
+        const olderLoaded = oldestFetchedAt
+          ? prev.filter((m) => !m.id.startsWith('temp-') && m.matchId === matchId && m.createdAt < oldestFetchedAt)
+          : [];
+        const merged = [...olderLoaded, ...fetched, ...temps];
         const seen = new Set<string>();
         return merged.filter((m) => (seen.has(m.id) ? false : (seen.add(m.id), true)));
       });
     } catch {
       // Silent — retried on the next (re)connect
+    }
+  }, [matchId]);
+
+  /** The page of messages before the oldest one on screen, prepended. */
+  const loadOlderMessages = useCallback(async () => {
+    if (loadingOlderRef.current || !hasMoreHistoryRef.current) return;
+    const oldest = messagesRef.current.find((m) => !m.id.startsWith('temp-') && m.matchId === matchId);
+    if (!oldest) return;
+    loadingOlderRef.current = true;
+    suppressAutoScrollRef.current = true;
+    setLoadingOlder(true);
+    try {
+      const res = await api.getMessages(matchId, oldest.id);
+      if (!res.success || !res.data) return;
+      const older: Message[] = res.data.messages || [];
+      hasMoreHistoryRef.current = Boolean(res.data.hasMore);
+      setHasMoreHistory(hasMoreHistoryRef.current);
+      if (older.length === 0) return;
+      setMessages((prev) => {
+        const merged = [...older, ...prev];
+        const seen = new Set<string>();
+        return merged.filter((m) => (seen.has(m.id) ? false : (seen.add(m.id), true)));
+      });
+    } catch {
+      // Silent — the next scroll to the top tries again
+    } finally {
+      loadingOlderRef.current = false;
+      setLoadingOlder(false);
     }
   }, [matchId]);
 
@@ -1746,8 +1798,28 @@ export const ChatScreen: React.FC<{ navigation: any; route: any }> = ({ navigati
               maxToRenderPerBatch={12}
               windowSize={9}
               initialNumToRender={15}
-              onContentSizeChange={() =>
-                flatListRef.current?.scrollToEnd({ animated: false })
+              onContentSizeChange={() => {
+                if (suppressAutoScrollRef.current) {
+                  // Older page prepended (or its spinner shown/hidden): hold
+                  // the view. Release once the fetch is over and rendered.
+                  if (!loadingOlderRef.current) suppressAutoScrollRef.current = false;
+                  return;
+                }
+                if (messages.length > 0) initialScrollDoneRef.current = true;
+                flatListRef.current?.scrollToEnd({ animated: false });
+              }}
+              // Keep what the user is reading in place while older rows are
+              // inserted above it.
+              maintainVisibleContentPosition={{ minIndexForVisible: 0 }}
+              onScroll={(e) => {
+                if (!initialScrollDoneRef.current || !hasMoreHistory) return;
+                if (e.nativeEvent.contentOffset.y < 120) loadOlderMessages();
+              }}
+              scrollEventThrottle={100}
+              ListHeaderComponent={
+                loadingOlder ? (
+                  <ActivityIndicator size="small" color={colors.textMuted} style={styles.olderSpinner} />
+                ) : null
               }
               ListEmptyComponent={
                 <View style={styles.emptyChat}>
@@ -2408,6 +2480,7 @@ const styles = StyleSheet.create({
   chatArea: { flex: 1 },
   centered: { flex: 1, justifyContent: 'center', alignItems: 'center' },
   messagesList: { padding: spacing.lg, paddingBottom: spacing.md },
+  olderSpinner: { paddingVertical: spacing.md },
   messageRow: {
     width: '100%',
     flexDirection: 'row',

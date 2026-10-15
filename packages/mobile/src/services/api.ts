@@ -925,8 +925,14 @@ class ApiClient {
     });
   }
 
-  async getMessages(matchId: string) {
-    return this.request<{ messages: any[] }>(`/api/v1/matches/conversations/${matchId}/messages`);
+  /**
+   * The newest page of a conversation, or with `beforeId` the page of older
+   * messages strictly before that message. `hasMore` says whether an older
+   * page exists.
+   */
+  async getMessages(matchId: string, beforeId?: string) {
+    const cursor = beforeId ? `?beforeId=${encodeURIComponent(beforeId)}` : '';
+    return this.request<{ messages: any[]; hasMore?: boolean }>(`/api/v1/matches/conversations/${matchId}/messages${cursor}`);
   }
 
   async sendMessage(matchId: string, content: string) {

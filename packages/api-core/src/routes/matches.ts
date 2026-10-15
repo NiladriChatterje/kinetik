@@ -965,9 +965,18 @@ export async function matchRoutes(app: FastifyInstance) {
   });
 
   // ─── Get Messages for a Conversation ─────────────────
-  app.get('/conversations/:id/messages', async (request: FastifyRequest<{ Params: { id: string } }>, reply: FastifyReply) => {
+  app.get('/conversations/:id/messages', async (request: FastifyRequest<{ Params: { id: string }; Querystring: { beforeId?: string } }>, reply: FastifyReply) => {
     const { id: matchId } = request.params;
     const { sub: userId } = request.user as any;
+    // Older history is paged by message id: the page returned is the one
+    // strictly before that message. Without it, the newest page is returned.
+    const beforeId = typeof request.query?.beforeId === 'string' && request.query.beforeId ? request.query.beforeId : null;
+    if (beforeId !== null && !/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(beforeId)) {
+      return reply.status(400).send({
+        success: false,
+        error: { code: ERROR_CODES.VALIDATION_ERROR, message: 'beforeId must be a message id' },
+      });
+    }
 
     // Verify user is part of this match
     const matchCheck = await query(
@@ -983,7 +992,10 @@ export async function matchRoutes(app: FastifyInstance) {
     }
     if (await isChatLocked(userId, matchId)) return sendChatLocked(reply);
 
-    const messages = await query(
+    // One more than a page is fetched so hasMore is known without a second
+    // query; the extra (oldest) message is dropped below.
+    const PAGE = 200;
+    const rawMessages = await query(
       `SELECT
          m.id, m.match_id, m.sender_id, m.content, m.created_at, m.read_at,
          cm.id as media_id,
@@ -998,27 +1010,43 @@ export async function matchRoutes(app: FastifyInstance) {
          cm.is_view_once as media_is_view_once,
          cm.viewed_at as media_viewed_at
        FROM (
-         -- The newest 200, not the oldest: with the limit applied in
+         -- The newest page, not the oldest: with the limit applied in
          -- ascending order a long chat never showed anything after its
          -- 200th message. The outer ORDER BY keeps the response oldest-first,
-         -- which is the order the screen renders.
+         -- which is the order the screen renders. (created_at, id) is the
+         -- cursor order, so a page boundary inside one timestamp is exact.
          SELECT id, match_id, sender_id, content, created_at, read_at
          FROM ${TABLES.MESSAGES}
          WHERE match_id = $1
-         ORDER BY created_at DESC
-         LIMIT 200
+           ${beforeId ? `AND (created_at, id) < (SELECT created_at, id FROM ${TABLES.MESSAGES} WHERE id = $3 AND match_id = $1)` : ''}
+         ORDER BY created_at DESC, id DESC
+         LIMIT $2
        ) m
        LEFT JOIN ${TABLES.CHAT_MEDIA} cm ON cm.message_id = m.id
-       ORDER BY m.created_at ASC`,
-      [matchId],
+       ORDER BY m.created_at ASC, m.id ASC`,
+      beforeId ? [matchId, PAGE + 1, beforeId] : [matchId, PAGE + 1],
     );
 
-    // Mark unread messages as read. Skipped when the page shows none from
-    // the partner, which is most opens and every reconnect resync. A full
-    // page (the 200 cap) may hide older unread rows, so it always runs then.
+    // A message may carry more than one media row, so the page size is
+    // counted in distinct messages. Rows are oldest-first, so the extra
+    // message, when present, is the first distinct id.
+    const distinctIds: string[] = [];
+    for (const m of rawMessages.rows as any[]) {
+      if (distinctIds[distinctIds.length - 1] !== m.id && !distinctIds.includes(m.id)) distinctIds.push(m.id);
+    }
+    const hasMore = distinctIds.length > PAGE;
+    const messages = {
+      rows: hasMore ? rawMessages.rows.filter((m: any) => m.id !== distinctIds[0]) : rawMessages.rows,
+    };
+
+    // Mark unread messages as read. Only for the newest page: the update is
+    // match-wide, so older pages never need it. Skipped when the page shows
+    // none from the partner, which is most opens and every reconnect
+    // resync. A full page may hide older unread rows, so it always runs then.
     const mayHaveUnread =
-      messages.rows.length >= 200 ||
-      messages.rows.some((m: any) => m.sender_id !== userId && m.read_at === null);
+      beforeId === null &&
+      (hasMore ||
+        messages.rows.some((m: any) => m.sender_id !== userId && m.read_at === null));
     if (mayHaveUnread) {
       await query(
         `UPDATE ${TABLES.MESSAGES} SET read_at = NOW()
@@ -1030,6 +1058,7 @@ export async function matchRoutes(app: FastifyInstance) {
     return reply.send({
       success: true,
       data: {
+        hasMore,
         messages: messages.rows.map((m: any) => {
           // Build media object if this message has a media attachment
           let media: any = undefined;
