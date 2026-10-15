@@ -46,7 +46,7 @@ interface SubscriptionPayment {
 }
 
 const FEATURES = [
-  { icon: 'infinite-outline' as const, label: 'Unlimited daily swipes' },
+  { icon: 'infinite-outline' as const, label: 'Unlimited likes' },
   { icon: 'heart-outline' as const, label: '25 Super Likes every day' },
   { icon: 'eye-off-outline' as const, label: 'See who liked you — no blur' },
 ];

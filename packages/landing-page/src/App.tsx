@@ -177,7 +177,7 @@ function HeroRadarSVG() {
         </div>
         <div className="hero-free-tier">
           <span className="free-badge">FREE</span>
-          30 swipes &middot; 3 active chats — then upgrade to Premium
+          30 likes to start &middot; chat with your first match — Premium unlocks the rest
         </div>
       </div>
     </section>
@@ -257,7 +257,7 @@ const STEPS = [
   {
     num: '01',
     title: 'Explore',
-    body: 'Browse people near you. Everyone takes a selfie to get in, checked against their own photos on their own phone.',
+    body: 'Browse people near you. Take a selfie to earn the verified badge — it\'s checked against your own photos, on your own phone.',
   },
   {
     num: '02',
@@ -267,7 +267,7 @@ const STEPS = [
   {
     num: '03',
     title: 'Talk',
-    body: 'Real-time chat with read receipts, typing indicators and voice notes. Stuck for a reply? Tap a suggestion or an icebreaker and keep it moving.',
+    body: 'Real-time chat with read receipts and voice notes. Stuck for a reply? Tap a suggestion or an icebreaker and keep it moving.',
   },
   {
     num: '04',
@@ -808,7 +808,7 @@ const FEATURES: { Icon: IconType; title: string; body: string }[] = [
   {
     Icon: FiZap,
     title: 'Real-time chat',
-    body: 'Read receipts, typing indicators and push notifications, plus voice notes and view-once photos.',
+    body: 'Read receipts, voice notes and view-once photos, delivered the moment they\'re sent.',
   },
   {
     Icon: FiUserCheck,
@@ -855,11 +855,11 @@ function Features() {
 
 /* ─── Premium Pricing ────────────────────────────────────── */
 const PREMIUM_FEATURES = [
-  'Unlimited daily swipes',
+  'Unlimited likes',
   'Unlimited active chats',
   '25 Super Likes every day (5 on free)',
   'See who liked you — no blur',
-  'Cancel any time, from the app or Google Pay',
+  'Cancel any time, from the app or Google Play',
 ];
 
 function Premium() {
@@ -870,7 +870,7 @@ function Premium() {
         <span className="section-label">PRICING</span>
         <h2 className="section-title">One simple plan</h2>
         <p className="section-sub">
-          Billed monthly through Google Pay. Cancel whenever you like.
+          Billed monthly through Google Play. Cancel whenever you like.
         </p>
         <div className={`pricing-card ${visible ? 'visible' : ''}`}>
           <span className="pricing-badge">PREMIUM</span>
@@ -888,9 +888,9 @@ function Premium() {
             Questions? Contact support
           </a>
           <p className="pricing-note">
-            You approve a recurring autopay mandate once; ₹99 is charged each month and Google Pay
-            notifies you before every charge. Cancel any time — Premium stays active until the end
-            of the paid cycle.
+            You approve a UPI Autopay mandate once, through Google Play; ₹99 is charged each month
+            and your UPI app notifies you before every charge. Cancel any time — Premium stays
+            active until the end of the paid cycle.
           </p>
         </div>
       </div>
@@ -1070,8 +1070,8 @@ function Refunds() {
               not renew.
             </li>
             <li>
-              <strong>From Google Pay:</strong> open Google Pay → your Kinetik mandate → manage or
-              cancel the recurring payment.
+              <strong>From Google Play:</strong> open the Play Store → Payments &amp; subscriptions →
+              Subscriptions → Kinetik Premium → Cancel subscription.
             </li>
           </ul>
           <p>
@@ -1086,7 +1086,7 @@ function Refunds() {
             full Premium access until the cycle ends.
           </p>
           <p>
-            Payment disputes and chargebacks are handled by Google through your Google Pay
+            Payment disputes and chargebacks are handled by Google through your Google Play
             account, not by Kinetik. If you believe you were charged in error, raise it there.
           </p>
           <p>
@@ -1121,8 +1121,8 @@ function Terms() {
           <h3>Premium subscription</h3>
           <ul>
             <li>
-              Premium costs <strong>₹99 per month</strong>, billed in advance through Google Pay
-              as a recurring autopay mandate you authorise at signup.
+              Premium costs <strong>₹99 per month</strong>, billed in advance through Google Play
+              as a recurring UPI Autopay mandate you authorise when you subscribe.
             </li>
             <li>
               Each renewal grants one month of Premium features. Prices may change with 30 days'
