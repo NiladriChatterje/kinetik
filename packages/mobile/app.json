@@ -43,7 +43,8 @@
         "MODIFY_AUDIO_SETTINGS",
         "SYSTEM_ALERT_WINDOW",
         "WAKE_LOCK"
-      ]
+      ],
+      "versionCode": 2
     },
     "plugins": [
       "expo-dev-client",
