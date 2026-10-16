@@ -25,3 +25,8 @@ packages/pose-service/models/*.task
 SYSTEM_DESIGN_GOOGLE_PLAY.md
 LAUNCH_STEPS.md
 SSH_GUIDE.md
+
+google-cloud-config-json
+
+# Deployment secrets (Play service-account key etc.), never committed
+secrets/

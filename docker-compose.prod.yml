@@ -11,6 +11,15 @@ services:
       - ./config/nginx.prod.conf:/etc/nginx/nginx.conf:ro
       - /etc/letsencrypt:/etc/letsencrypt:ro
 
+  # ─── Play Billing service-account key ─────────────────────
+  # The JSON key lives outside git at ./secrets/ on the server (gitignored)
+  # and is mounted read-only; .env points GOOGLE_PLAY_SERVICE_ACCOUNT_FILE at
+  # the in-container path. The key is what lets api-core verify, acknowledge
+  # and cancel subscriptions against the Play Developer API.
+  api-core:
+    volumes:
+      - ./secrets/play-service-account.json:/run/secrets/play-service-account.json:ro
+
   # ─── DuckDNS keep-alive ────────────────────────────────────
   # Re-points kinetik-dating.duckdns.org at this server's current public IP
   # every 6 hours (ip= empty means "use the caller's address"). Also keeps the
