@@ -1,10 +1,10 @@
 # Payment Integration — Google Play Billing Subscriptions
 
-Kinetik Premium (₹99/month, a single plan) is sold as a **Google Play Billing subscription**.
+Kinetik Premium (₹99/week, a single plan) is sold as a **Google Play Billing subscription**.
 
 Google is the **merchant of record**. It shows the purchase sheet, takes whatever payment method
 the user has on their Google account — UPI Autopay, card, Play balance — holds the recurring
-mandate, charges monthly, retries failures, handles grace periods and refunds, and pays out
+mandate, charges weekly, retries failures, handles grace periods and refunds, and pays out
 minus its service fee. **There is no PSP, and nothing in this repo charges anyone.**
 
 > Play policy requires digital goods and services consumed in the app to be sold through Play
@@ -50,7 +50,7 @@ subscription and access should stop until it recovers.
 | Variable (`.env`) | Meaning |
 |---|---|
 | `GOOGLE_PLAY_PACKAGE_NAME` | Android package name; must match the Play Console listing. Default `com.kinetik.app`. |
-| `GOOGLE_PLAY_SUBSCRIPTION_PRODUCT_ID` | Subscription product id from Play Console. Default `kinetik_premium_monthly`. |
+| `GOOGLE_PLAY_SUBSCRIPTION_PRODUCT_ID` | Subscription product id from Play Console. Default `kinetik_premium_weekly`. |
 | `GOOGLE_PLAY_SERVICE_ACCOUNT_JSON` | Service-account key as inline JSON. |
 | `GOOGLE_PLAY_SERVICE_ACCOUNT_FILE` | …or a path to the key file. Preferred under Docker. |
 | `GOOGLE_PLAY_RTDN_SECRET` | Shared secret on the Pub/Sub push URL. Without it the RTDN endpoint rejects everything. |

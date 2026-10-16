@@ -302,7 +302,7 @@ export const SubscriptionCheckoutScreen: React.FC = () => {
   // Play sets the real price per region; the server figure is only a fallback
   // for the moment before the store connection is up.
   const displayPrice: string =
-    product?.displayPrice ?? product?.localizedPrice ?? pricing?.label ?? '₹99/month';
+    product?.displayPrice ?? product?.localizedPrice ?? pricing?.label ?? '₹99/week';
 
   return (
     <SafeAreaView style={styles.container}>
@@ -361,7 +361,7 @@ export const SubscriptionCheckoutScreen: React.FC = () => {
               </View>
             ))}
             <Text style={styles.disclaimer}>
-              Billed by Google Play. Your subscription renews automatically each month using the
+              Billed by Google Play. Your subscription renews automatically each week using the
               payment method on your Google account, and Google notifies you before every charge.
               Manage or cancel it any time in Google Play → Payments &amp; subscriptions.
             </Text>

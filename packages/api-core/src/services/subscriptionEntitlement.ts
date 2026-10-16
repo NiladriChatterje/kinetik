@@ -136,7 +136,7 @@ export async function applyPlayEntitlement(
         purchaseToken,
         priceHint?.amount ?? null,
         priceHint?.currency ?? null,
-        sub.isTestPurchase ? 'Kinetik Premium — test purchase' : 'Kinetik Premium — monthly',
+        sub.isTestPurchase ? 'Kinetik Premium — test purchase' : 'Kinetik Premium — weekly',
       ],
     );
   }

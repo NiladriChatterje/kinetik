@@ -1,7 +1,7 @@
 /**
  * Kinetik Premium pricing — a single global plan.
  *
- * There is exactly ONE premium plan: ₹99/month (INR), for every user
+ * There is exactly ONE premium plan: ₹99/week (INR), for every user
  * regardless of region or phone country code. The old per-country pricing
  * table was removed: dial-code detection misread local numbers stored
  * without a "+" prefix (e.g. an Indian mobile starting with 90 matched
@@ -13,11 +13,11 @@ export interface CurrencyConfig {
   currency: string;
   /** Display symbol (e.g. "₹") */
   symbol: string;
-  /** Monthly price in minor units (paise) for the payment gateway */
+  /** Weekly price in minor units (paise) for the payment gateway */
   amountMinor: number;
-  /** Monthly price in major units for display */
+  /** Weekly price in major units for display */
   amountMajor: number;
-  /** Human-readable label (e.g. "₹99/month") */
+  /** Human-readable label (e.g. "₹99/week") */
   label: string;
 }
 
@@ -27,7 +27,7 @@ export const PREMIUM_PLAN: CurrencyConfig = {
   symbol: '₹',
   amountMinor: 9900,
   amountMajor: 99,
-  label: '₹99/month',
+  label: '₹99/week',
 };
 
 /** Single global plan — the phone number no longer affects pricing. */

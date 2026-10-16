@@ -36,10 +36,10 @@ const ENTITLED_STATES = new Set([
   'SUBSCRIPTION_STATE_CANCELED',
 ]);
 
-export const PREMIUM_PLAN_PERIOD = 'monthly';
+export const PREMIUM_PLAN_PERIOD = 'weekly';
 
 export function getSubscriptionProductId(): string {
-  return process.env.GOOGLE_PLAY_SUBSCRIPTION_PRODUCT_ID || 'kinetik_premium_monthly';
+  return process.env.GOOGLE_PLAY_SUBSCRIPTION_PRODUCT_ID || 'kinetik_premium_weekly';
 }
 
 function getPackageName(): string {

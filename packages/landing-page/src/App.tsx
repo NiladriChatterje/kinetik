@@ -849,12 +849,12 @@ function Premium() {
         <span className="section-label">PRICING</span>
         <h2 className="section-title">One simple plan</h2>
         <p className="section-sub">
-          Billed monthly through Google Play. Cancel whenever you like.
+          Billed weekly through Google Play. Cancel whenever you like.
         </p>
         <div className={`pricing-card ${visible ? 'visible' : ''}`}>
           <span className="pricing-badge">PREMIUM</span>
           <div className="pricing-price">₹99</div>
-          <div className="pricing-period">per month · recurring</div>
+          <div className="pricing-period">per week · recurring</div>
           <ul className="pricing-list">
             {PREMIUM_FEATURES.map((f) => (
               <li key={f}>
@@ -867,7 +867,7 @@ function Premium() {
             Questions? Contact support
           </a>
           <p className="pricing-note">
-            You approve a UPI Autopay mandate once, through Google Play; ₹99 is charged each month
+            You approve a UPI Autopay mandate once, through Google Play; ₹99 is charged each week
             and your UPI app notifies you before every charge. Cancel any time — Premium stays
             active until the end of the paid cycle.
           </p>
@@ -1100,11 +1100,11 @@ function Terms() {
           <h3>Premium subscription</h3>
           <ul>
             <li>
-              Premium costs <strong>₹99 per month</strong>, billed in advance through Google Play
+              Premium costs <strong>₹99 per week</strong>, billed in advance through Google Play
               as a recurring UPI Autopay mandate you authorise when you subscribe.
             </li>
             <li>
-              Each renewal grants one month of Premium features. Prices may change with 30 days'
+              Each renewal grants one week of Premium features. Prices may change with 30 days'
               notice before your next renewal.
             </li>
             <li>

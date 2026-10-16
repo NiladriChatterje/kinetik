@@ -114,7 +114,7 @@ vi.mock('../services/redis', () => ({
 
 // ─── Fixtures ─────────────────────────────────────────────────────
 
-const PRODUCT = 'kinetik_premium_monthly';
+const PRODUCT = 'kinetik_premium_weekly';
 const IN_A_MONTH = new Date(Date.now() + 30 * 24 * 3600 * 1000);
 
 function playState(state: string, overrides: Partial<Record<string, any>> = {}) {
