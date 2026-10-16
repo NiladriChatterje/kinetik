@@ -1147,6 +1147,7 @@ function Footer() {
           <a href="#support">Support</a>
           <a href="#refunds">Refunds &amp; Cancellation</a>
           <a href="#terms">Terms</a>
+          <a href="/privacy.html">Privacy</a>
           <a href={`mailto:${SUPPORT_EMAIL}`}>{SUPPORT_EMAIL}</a>
         </div>
       </div>
@@ -1203,6 +1204,7 @@ function Header() {
           <a href="#support">Support</a>
           <a href="#refunds">Refunds</a>
           <a href="#terms">Terms</a>
+          <a href="/privacy.html">Privacy</a>
         </nav>
       </div>
     </header>
