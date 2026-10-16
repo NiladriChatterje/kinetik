@@ -1409,12 +1409,9 @@ export const ChatScreen: React.FC<{ navigation: any; route: any }> = ({ navigati
 
   // ─── Media picker handlers ─────────────────────────
   const pickFromGallery = async () => {
-    const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
-    if (status !== 'granted') {
-      Alert.alert('Permission needed', 'Allow access to your photo library to send images.');
-      return;
-    }
-
+    // The system photo picker needs no storage permission (and the build
+    // declares none: Play's photo/video policy reserves READ_MEDIA_* for
+    // gallery-type apps), so launch it directly.
     const result = await ImagePicker.launchImageLibraryAsync({
       mediaTypes: ['images'],
       quality: 0.8,
