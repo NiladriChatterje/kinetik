@@ -285,7 +285,7 @@ CREATE TABLE transactions (
     gateway_payment_id      VARCHAR(255),
     gateway_order_id        VARCHAR(255),
     gateway_subscription_id VARCHAR(255),
-    amount                  DECIMAL(10,2) NOT NULL,
+    amount                  DECIMAL(10,2),           -- NULL when Play did not report it (renewals over RTDN)
     currency                VARCHAR(3) DEFAULT 'INR',
     status                  VARCHAR(50),
     description             TEXT,
