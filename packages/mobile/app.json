@@ -77,6 +77,16 @@
     "web": {
       "bundler": "metro",
       "output": "single"
-    }
+    },
+    "extra": {
+      "appEnv": "development",
+      "apiUrl": "http://192.168.31.144:8080",
+      "wsUrl": "http://192.168.31.144:8080",
+      "productionFaceVerification": false,
+      "eas": {
+        "projectId": "a35c2c14-a58c-4e3d-9bf3-7e366237115e"
+      }
+    },
+    "owner": "niladrichatterjee"
   }
 }
