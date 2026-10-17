@@ -30,3 +30,15 @@ google-cloud-config-json
 
 # Deployment secrets (Play service-account key etc.), never committed
 secrets/
+
+# Native build output under the committed Expo android/ project. Git already
+# ignores these via packages/mobile/android/.gitignore, but the EAS CLI's
+# archive step does not apply that nested "build/" rule to subfolders, so a
+# local gradle run would otherwise upload android/app/build (with a cached
+# autolinking file full of Windows paths) and break the cloud build.
+packages/mobile/android/build/
+packages/mobile/android/app/build/
+packages/mobile/android/.gradle/
+packages/mobile/android/app/.cxx/
+packages/mobile/android/local.properties
+packages/mobile/android/app/src/main/assets/ggml-hexagon/

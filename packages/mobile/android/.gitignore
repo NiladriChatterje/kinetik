@@ -17,3 +17,6 @@ app/src/main/java/inline/
 
 # Bundle artifacts
 *.jsbundle
+
+# llama.rn copies its Hexagon libraries here at build time (syncRNLlamaHtpAssets)
+app/src/main/assets/ggml-hexagon/
