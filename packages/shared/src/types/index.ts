@@ -144,17 +144,6 @@ export interface Venue {
   bookingFee: number;
 }
 
-// ─── Duo Crew Types ───────────────────────────────────────
-
-export interface DuoCrew {
-  id: string;
-  creatorId: string;
-  inviteeId?: string;
-  inviteCode: string;
-  inviteAccepted: boolean;
-  isActive: boolean;
-}
-
 // ─── Subscription & Payment Types ─────────────────────────
 
 export interface SubscriptionLedger {
@@ -258,7 +247,6 @@ export enum NotificationType {
   MATCH_FOUND = 'match.found',
   NEW_MESSAGE = 'new.message',
   NEW_LIKE = 'new.like',
-  DUO_INVITE = 'duo.invite',
   MARKETING = 'marketing',
 }
 

@@ -122,11 +122,6 @@ export const API_ROUTES = {
   // Webhooks — Play real-time developer notifications (Pub/Sub push)
   WEBHOOK_PLAY_RTDN: '/api/v1/webhooks/play',
 
-  // Duo Crew
-  DUO_PREFIX: '/api/v1/duo',
-  DUO_CREATE: '/api/v1/duo/create',
-  DUO_JOIN: (code: string) => `/api/v1/duo/join/${code}`,
-
   // Notifications
   NOTIFICATIONS_PREFIX: '/api/v1/notifications',
   NOTIFICATIONS_REGISTER_TOKEN: '/api/v1/notifications/register-token',
@@ -140,7 +135,6 @@ export const NOTIFICATION_TYPE_LABELS: Record<string, string> = {
   'match.found': 'New Match',
   'new.message': 'Messages',
   'new.like': 'New Like',
-  'duo.invite': 'Duo Invites',
   'marketing': 'Marketing',
 } as const;
 

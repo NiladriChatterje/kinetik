@@ -12,7 +12,6 @@ import { onboardingRoutes } from './routes/onboarding';
 import { matchRoutes } from './routes/matches';
 import { paymentRoutes } from './routes/payments';
 import { venueRoutes } from './routes/venues';
-import { duoRoutes } from './routes/duo';
 import { webhookRoutes } from './routes/webhooks';
 import { notificationRoutes } from './routes/notifications';
 import { photoRoutes } from './routes/photos';
@@ -119,7 +118,6 @@ async function bootstrap() {
   await app.register(matchRoutes, { prefix: API_ROUTES.MATCHES_PREFIX });
   await app.register(venueRoutes, { prefix: API_ROUTES.VENUES_PREFIX });
   await app.register(paymentRoutes, { prefix: API_ROUTES.PAYMENTS_PREFIX });
-  await app.register(duoRoutes, { prefix: API_ROUTES.DUO_PREFIX });
   await app.register(webhookRoutes, { prefix: '/api/v1/webhooks' });
   await app.register(notificationRoutes, { prefix: API_ROUTES.NOTIFICATIONS_PREFIX });
   await app.register(photoRoutes, { prefix: '/api/v1/users/photos' });

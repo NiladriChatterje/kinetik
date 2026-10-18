@@ -54,16 +54,6 @@ export function generateOTP(length: number = 6): string {
   return otp;
 }
 
-export function generateInviteCode(length: number = 8): string {
-  const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
-  let code = '';
-  for (let i = 0; i < length; i++) {
-    code += chars[Math.floor(Math.random() * chars.length)];
-  }
-  // Add dash for readability
-  return `${code.slice(0, 4)}-${code.slice(4)}`;
-}
-
 export function clamp(value: number, min: number, max: number): number {
   return Math.min(Math.max(value, min), max);
 }

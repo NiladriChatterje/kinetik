@@ -193,12 +193,4 @@ export const notificationEvents = {
       data: { type: 'new.like', screen: 'Likes' },
     });
   },
-
-  async duoInvite(userId: string, inviterName: string): Promise<void> {
-    await sendPushNotification(userId, 'duo.invite', {
-      title: 'Duo Crew Invite',
-      body: `${inviterName} invited you to be their wingman!`,
-      data: { type: 'duo.invite', screen: 'DuoWingman' },
-    });
-  },
 };
