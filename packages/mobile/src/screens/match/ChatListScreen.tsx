@@ -43,6 +43,11 @@ export const ChatListScreen: React.FC<{ navigation: any }> = ({ navigation }) =>
         const list = res.data.conversations || [];
         conversationsRef.current = list;
         setConversations(list);
+        // The tab badge counts these same conversations. Keep it in step with
+        // the list on every load — the refresh button, a new conversation's
+        // first message and a new match all reload the list while this tab
+        // stays focused, and nothing else would update the badge then.
+        useAuthStore.getState().setChatCount(list.length);
         // Join all match rooms on the socket for real-time updates
         if (socketRef.current?.connected && list.length > 0) {
           list.forEach((conv: any) => {
@@ -121,13 +126,11 @@ export const ChatListScreen: React.FC<{ navigation: any }> = ({ navigation }) =>
     };
   }, []);
 
-  // Re-fetch when screen comes into focus (to sync read status) and refresh
-  // the tab badge, which counts the conversations and stays visible — an
-  // unmatch on the way back lowers it here
+  // Re-fetch when screen comes into focus (to sync read status). The reload
+  // also refreshes the tab badge — an unmatch on the way back lowers it here
   useEffect(() => {
     const unsubscribe = navigation.addListener('focus', () => {
       fetchConversations();
-      useAuthStore.getState().fetchUnreadChatCount();
     });
     return unsubscribe;
   }, [navigation]);

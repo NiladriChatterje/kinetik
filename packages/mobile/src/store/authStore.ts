@@ -117,6 +117,8 @@ interface AuthState {
   // Chat badge
   unreadChatCount: number;
   fetchUnreadChatCount: () => Promise<void>;
+  /** Badge from a conversation list already in hand (ChatListScreen sets it). */
+  setChatCount: (count: number) => void;
   resetUnreadChatCount: () => void;
 
   // Which DM conversation is currently open (ChatScreen sets this).
@@ -559,6 +561,9 @@ export const useAuthStore = create<AuthState>((set, get) => ({
         const res = await api.getConversations();
         const convs = res.data?.conversations || [];
         convs.forEach((conv: any) => socket.emit('chat:join', { matchId: conv.matchId }));
+        // A reconnect is the first chance to catch up on matches made while
+        // the socket was down (app in the background) — the list is in hand
+        if (res.success && res.data?.conversations) set({ unreadChatCount: convs.length });
       } catch {
         // Silent — the socket retries joining on the next connect event
       }
@@ -614,6 +619,10 @@ export const useAuthStore = create<AuthState>((set, get) => ({
     } catch {
       // Silently fail
     }
+  },
+
+  setChatCount: (count: number) => {
+    set({ unreadChatCount: count });
   },
 
   resetUnreadChatCount: () => {
