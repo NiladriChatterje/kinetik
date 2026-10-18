@@ -412,6 +412,23 @@ export class ChatHandler {
       // Uses local-only emit + Redis pub/sub (same pattern as typing indicators).
       socket.on(WsEvent.CHAT_READ, async (data: { matchId: string }) => {
         const { matchId } = data;
+
+        // Record the read too. Before, only loading the history marked
+        // messages read, so ones that arrived while the chat was open stayed
+        // unread and came back as counts in the chat list and tab badge.
+        // Only for a room this socket joined: chat:join has checked the user
+        // is in the match and has chat access, so no one can mark other
+        // chats read. A failure only leaves the counts as they were.
+        if (socket.rooms.has(`match:${matchId}`)) {
+          query(
+            `UPDATE ${TABLES.MESSAGES} SET read_at = NOW()
+             WHERE match_id = $1 AND sender_id != $2 AND read_at IS NULL`,
+            [matchId, userId],
+          ).catch((err: Error) => {
+            console.error('[Chat] Failed to record read:', err.message);
+          });
+        }
+
         const readPayload = {
           matchId,
           userId,
