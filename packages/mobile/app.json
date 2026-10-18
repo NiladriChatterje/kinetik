@@ -86,8 +86,7 @@
       "expo-audio",
       "expo-asset",
       "./plugins/withoutForegroundServices.js",
-      "react-native-fast-tflite",
-      "llama.rn"
+      "react-native-fast-tflite"
     ],
     "web": {
       "bundler": "metro",

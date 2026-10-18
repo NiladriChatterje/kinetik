@@ -20,8 +20,6 @@ import { compressPhoto } from '../../services/photoService';
 import { getChatSocket } from '../../services/chatSocket';
 import { useAuthStore } from '../../store/authStore';
 import { useToast } from '../../hooks/useToast';
-import { DmSuggestionChips } from '../../components/chat/DmSuggestionChips';
-import { ReplyAssistantOffer } from '../../components/chat/ReplyAssistantOffer';
 import { LockedChatView } from '../../components/chat/LockedChatView';
 import { resolveUrl } from '../../config';
 import { colors, typography, spacing, radius } from '../../theme';
@@ -1983,22 +1981,6 @@ export const ChatScreen: React.FC<{ navigation: any; route: any }> = ({ navigati
               ))}
             </View>
           )}
-
-          {/* Offer to fetch the on-device reply assistant once the chat has
-            some history; shows download progress while it runs */}
-          <ReplyAssistantOffer
-            messageCount={messages.length}
-            visible={inputText.trim().length === 0}
-          />
-
-          {/* Ambient reply suggestions — refresh as the conversation evolves;
-            tap inserts into the input, hidden while the user is typing */}
-          <DmSuggestionChips
-            messages={messages}
-            partnerName={partnerName}
-            visible={inputText.trim().length === 0}
-            onPick={setInputText}
-          />
 
           {/* Input bar */}
           <View style={[styles.inputBar, { paddingBottom: inputBarPaddingBottom }]}>

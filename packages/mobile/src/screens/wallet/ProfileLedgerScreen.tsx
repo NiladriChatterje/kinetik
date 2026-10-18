@@ -11,7 +11,6 @@ import { LocationPicker, LocationSelection } from '../../components/common/Locat
 import { DatingCategoryBadge, DatingCategory } from '../../components/common/DatingCategoryBadge';
 import { PhotoOptionsModal } from '../../components/profile/PhotoOptionsModal';
 import { useToast } from '../../hooks/useToast';
-import { useReplyAssistant } from '../../hooks/useReplyAssistant';
 import { useAuthStore } from '../../store/authStore';
 import { api } from '../../services/api';
 import { compressAndUploadPhoto } from '../../services/photoService';
@@ -65,7 +64,6 @@ const SETTINGS = [
   { icon: 'people-outline' as const, label: 'Duo Wingman', screen: 'DuoWingman' as const },
   { icon: 'shield-checkmark-outline' as const, label: 'KYC Verification', screen: 'KYCVerify' as const },
   { icon: 'lock-closed-outline' as const, label: 'Privacy', screen: 'Privacy' as const },
-  { icon: 'sparkles-outline' as const, label: 'Reply assistant', screen: 'ReplyAssistant' as const },
   { icon: 'card-outline' as const, label: 'Subscription', screen: 'SubscriptionCheckout' as const },
   { icon: 'mail-outline' as const, label: 'Support', screen: undefined, action: 'support' as const },
 ];
@@ -88,7 +86,6 @@ export const ProfileLedgerScreen: React.FC = () => {
   const [mutatingPhotoId, setMutatingPhotoId] = useState<string | null>(null);
   const [modalPhoto, setModalPhoto] = useState<ProfilePhoto | null>(null);
   const [kycStatus, setKycStatus] = useState<string | null>(null);
-  const assistant = useReplyAssistant();
   const [deletingAccount, setDeletingAccount] = useState(false);
   const [deleteModalVisible, setDeleteModalVisible] = useState(false);
   const [preferredLocation, setPreferredLocation] = useState<LocationSelection | null>(null);
@@ -484,12 +481,6 @@ export const ProfileLedgerScreen: React.FC = () => {
         <Card style={styles.settingsCard}>
           {SETTINGS.map((s, i) => {
             const isKycRow = s.screen === 'KYCVerify';
-            const isAssistantRow = s.screen === 'ReplyAssistant';
-            const assistantBadge =
-              assistant.phase === 'ready' ? 'On device' :
-              assistant.phase === 'paused' ? 'Paused' :
-              assistant.phase === 'downloading' ? `${Math.round(assistant.progress * 100)}%` :
-              null;
             return (
               <React.Fragment key={s.label}>
                 <TouchableOpacity
@@ -528,24 +519,6 @@ export const ProfileLedgerScreen: React.FC = () => {
                         {kycStatus === 'verified' ? 'Verified' :
                          kycStatus === 'pending' ? 'Pending' :
                          'Not Verified'}
-                      </Text>
-                    </View>
-                  )}
-                  {isAssistantRow && assistantBadge && (
-                    <View style={[
-                      styles.kycStatusBadge,
-                      assistant.phase === 'ready' ? styles.kycBadgeVerified : styles.kycBadgePending,
-                    ]}>
-                      <Ionicons
-                        name={assistant.phase === 'ready' ? 'checkmark-circle' : assistant.phase === 'paused' ? 'pause-circle-outline' : 'cloud-download-outline'}
-                        size={12}
-                        color={assistant.phase === 'ready' ? colors.textInverse : '#FFA500'}
-                      />
-                      <Text style={[
-                        styles.kycStatusText,
-                        assistant.phase === 'ready' ? styles.kycStatusTextVerified : styles.kycStatusTextPending,
-                      ]}>
-                        {assistantBadge}
                       </Text>
                     </View>
                   )}
