@@ -673,14 +673,32 @@ export async function authRoutes(app: FastifyInstance) {
       await revokeAllRefreshTokens(userId);
 
       await transaction(async (q) => {
+        // Chats that either person reported are evidence: they are kept
+        // (ended, so neither side can open them) for review and for the
+        // authorities where the law requires, and purged by the moderation
+        // tool once their reports are resolved (src/admin/moderation.ts).
+        // Every other chat goes with the account as before.
+        const keptResult = await q<{ id: string }>(
+          `SELECT m.id FROM ${TABLES.MATCHES} m
+           WHERE (m.user_a_id = $1 OR m.user_b_id = $1)
+             AND EXISTS (
+               SELECT 1 FROM ${TABLES.USER_REPORTS} r
+               WHERE (r.reporter_id = m.user_a_id AND r.reported_id = m.user_b_id)
+                  OR (r.reporter_id = m.user_b_id AND r.reported_id = m.user_a_id)
+             )`,
+          [userId],
+        );
+        const keptMatchIds = keptResult.rows.map((row) => row.id);
+
         // Collect chat media files for MinIO cleanup after commit
         const mediaResult = await q(
           `SELECT cm.url, cm.thumbnail_url
            FROM ${TABLES.CHAT_MEDIA} cm
            JOIN ${TABLES.MESSAGES} msg ON msg.id = cm.message_id
            JOIN ${TABLES.MATCHES} m ON m.id = msg.match_id
-           WHERE m.user_a_id = $1 OR m.user_b_id = $1`,
-          [userId],
+           WHERE (m.user_a_id = $1 OR m.user_b_id = $1)
+             AND NOT (m.id = ANY($2::uuid[]))`,
+          [userId, keptMatchIds],
         );
         for (const row of mediaResult.rows) {
           if (row.url) chatMediaUrls.push(row.url);
@@ -702,8 +720,16 @@ export async function authRoutes(app: FastifyInstance) {
         );
         partnerIds = partnerRows.rows.map((row: any) => row.id);
 
-        // Matches vanish — messages + chat_media and reservations cascade
-        await q(`DELETE FROM ${TABLES.MATCHES} WHERE user_a_id = $1 OR user_b_id = $1`, [userId]);
+        // Matches vanish — messages + chat_media and reservations cascade —
+        // except the reported ones kept above, which are only ended
+        await q(
+          `DELETE FROM ${TABLES.MATCHES}
+           WHERE (user_a_id = $1 OR user_b_id = $1) AND NOT (id = ANY($2::uuid[]))`,
+          [userId, keptMatchIds],
+        );
+        if (keptMatchIds.length > 0) {
+          await q(`UPDATE ${TABLES.MATCHES} SET is_active = FALSE WHERE id = ANY($1::uuid[])`, [keptMatchIds]);
+        }
 
         // User-owned records
         await q(`DELETE FROM ${TABLES.PROFILE_PHOTOS} WHERE user_id = $1`, [userId]);
@@ -716,6 +742,9 @@ export async function authRoutes(app: FastifyInstance) {
         // clearing a user's rows here keeps deletion safe on any database
         await q(`DELETE FROM ${TABLES.DUO_CREWS} WHERE creator_id = $1 OR invitee_id = $1`, [userId]);
         await q(`DELETE FROM ${TABLES.USER_INTERACTIONS} WHERE actor_id = $1 OR target_id = $1`, [userId]);
+        // Blocks go with the account. Reports stay as safety records; the
+        // tombstoned user row they point at keeps no personal data.
+        await q(`DELETE FROM ${TABLES.USER_BLOCKS} WHERE blocker_id = $1 OR blocked_id = $1`, [userId]);
         await q(`DELETE FROM ${TABLES.TRANSACTIONS} WHERE user_id = $1`, [userId]);
         // audit_log: retained by design
 

@@ -13,6 +13,7 @@ import { matchRoutes } from './routes/matches';
 import { paymentRoutes } from './routes/payments';
 import { venueRoutes } from './routes/venues';
 import { webhookRoutes } from './routes/webhooks';
+import { safetyRoutes } from './routes/safety';
 import { notificationRoutes } from './routes/notifications';
 import { photoRoutes } from './routes/photos';
 import { faceVerificationRoutes } from './routes/faceVerification';
@@ -124,6 +125,7 @@ async function bootstrap() {
   await app.register(faceVerificationRoutes, { prefix: '/api/v1/users/face-verification' });
   await app.register(kycRoutes, { prefix: '/api/v1/kyc' });
   await app.register(locationRoutes, { prefix: '/api/v1/locations' });
+  await app.register(safetyRoutes, { prefix: '/api/v1/safety' });
 
   // ─── Start ───────────────────────────────────────────
   try {

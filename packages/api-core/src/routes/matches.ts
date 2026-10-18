@@ -11,6 +11,7 @@ import { transaction } from '@kinetik/shared';
 import { notificationEvents } from '../services/notificationService';
 import { hasActivePremium, getChatAccess, isChatLocked, invalidateFreeChatCache, CHAT_LOCKED } from '../services/premiumAccess';
 import { eventBus } from '../services/eventBus';
+import { isBlockedPair, isReportedPair } from '../services/blocks';
 import { getRedis, publishChatMessage } from '../services/redis';
 import { savePhoto, saveEncryptedChatFile, getEncryptedChatFileBuffer, deleteChatFile } from '../services/photoStorage';
 
@@ -186,6 +187,11 @@ export async function matchRoutes(app: FastifyInstance) {
           SELECT user_b_id FROM ${TABLES.MATCHES} WHERE user_a_id = $1 AND is_active = TRUE
           UNION
           SELECT user_a_id FROM ${TABLES.MATCHES} WHERE user_b_id = $1 AND is_active = TRUE
+          UNION
+          -- Blocked either way (routes/safety.ts)
+          SELECT blocked_id FROM ${TABLES.USER_BLOCKS} WHERE blocker_id = $1
+          UNION
+          SELECT blocker_id FROM ${TABLES.USER_BLOCKS} WHERE blocked_id = $1
         )
       ${swipeOrderBy}
       LIMIT 20
@@ -228,6 +234,11 @@ export async function matchRoutes(app: FastifyInstance) {
             SELECT target_id FROM ${TABLES.USER_INTERACTIONS}
             WHERE actor_id = $1 AND action IN ('like', 'super_like')
               AND is_mutual = FALSE AND responded_at IS NULL
+            UNION
+            -- Blocked either way (routes/safety.ts)
+            SELECT blocked_id FROM ${TABLES.USER_BLOCKS} WHERE blocker_id = $1
+            UNION
+            SELECT blocker_id FROM ${TABLES.USER_BLOCKS} WHERE blocked_id = $1
           )
         -- Explore browses everyone (no distance cut-off) but nearest first
         -- when the viewer has an origin; profiles without a location go last.
@@ -362,6 +373,14 @@ export async function matchRoutes(app: FastifyInstance) {
       return reply.status(400).send({
         success: false,
         error: { code: ERROR_CODES.VALIDATION_ERROR, message: 'Cannot interact with yourself' },
+      });
+    }
+
+    // A blocked pair can never like each other (only a stale card reaches here)
+    if (await isBlockedPair(userId, targetUserId)) {
+      return reply.status(404).send({
+        success: false,
+        error: { code: ERROR_CODES.NOT_FOUND, message: 'This profile is no longer available' },
       });
     }
 
@@ -733,6 +752,15 @@ export async function matchRoutes(app: FastifyInstance) {
       });
     }
 
+    // A blocked pair can never match: block closes their likes, but a closed
+    // like is still found below and could otherwise be liked back
+    if (await isBlockedPair(userId, targetUserId)) {
+      return reply.status(404).send({
+        success: false,
+        error: { code: ERROR_CODES.NOT_FOUND, message: 'No incoming like from this user' },
+      });
+    }
+
     // Verify there's an incoming like from targetUserId (regular or super)
     const incomingLike = await query(
       `SELECT id FROM ${TABLES.USER_INTERACTIONS}
@@ -905,7 +933,9 @@ export async function matchRoutes(app: FastifyInstance) {
 
   // ─── Unmatch (Delete Conversation) ──────────────────
   // Permanently deletes all messages, media files, and deactivates the match.
-  // Both users lose access to the conversation.
+  // Both users lose access to the conversation. Exception: when either person
+  // has reported the other, the messages and media are kept for review and
+  // only the match is ended.
   //
   // Deletion order makes the operation atomic from the user's perspective:
   // media files are removed from object storage FIRST, and only if every
@@ -931,8 +961,15 @@ export async function matchRoutes(app: FastifyInstance) {
 
 
 
+    // A chat that either person has reported is evidence: unmatching ends it
+    // for both but keeps its messages and media for review (and for the
+    // authorities, where the law requires). The moderation tool purges it
+    // once the reports are resolved (src/admin/moderation.ts).
+    const { user_a_id: pairA, user_b_id: pairB } = matchCheck.rows[0];
+    const keepForReview = await isReportedPair(pairA, pairB);
+
     // ─── 1. Collect media file keys (read-only) ─────────
-    const mediaResult = await query(
+    const mediaResult = keepForReview ? { rows: [] as any[] } : await query(
       `SELECT cm.url, cm.thumbnail_url FROM ${TABLES.CHAT_MEDIA} cm
        WHERE cm.message_id IN (SELECT id FROM ${TABLES.MESSAGES} WHERE match_id = $1)`,
       [matchId],
@@ -970,8 +1007,10 @@ export async function matchRoutes(app: FastifyInstance) {
     // ─── 3. Delete records in a single transaction ───────
     const { user_a_id: userAId, user_b_id: userBId } = matchCheck.rows[0];
     await transaction(async (q) => {
-      await q(`DELETE FROM ${TABLES.CHAT_MEDIA} WHERE message_id IN (SELECT id FROM ${TABLES.MESSAGES} WHERE match_id = $1)`, [matchId]);
-      await q(`DELETE FROM ${TABLES.MESSAGES} WHERE match_id = $1`, [matchId]);
+      if (!keepForReview) {
+        await q(`DELETE FROM ${TABLES.CHAT_MEDIA} WHERE message_id IN (SELECT id FROM ${TABLES.MESSAGES} WHERE match_id = $1)`, [matchId]);
+        await q(`DELETE FROM ${TABLES.MESSAGES} WHERE match_id = $1`, [matchId]);
+      }
       await q(`UPDATE ${TABLES.MATCHES} SET is_active = FALSE WHERE id = $1`, [matchId]);
       // If this was either user's free chat, it is spent for good: the next
       // match does not take its place (see services/premiumAccess.ts).

@@ -177,3 +177,82 @@ export async function sendOtpEmail(email: string, otp: string): Promise<boolean>
   console.error(`[Email] Every Brevo account failed for ${masked}; the user is asked to retry.`);
   return false;
 }
+
+// ─── Safety reports ────────────────────────────────────
+// Each new in-app report is emailed to the support inbox so a person reviews
+// it (Google Play's Child Safety Standards ask for reports to be acted on).
+// Kept apart from sendOtpEmail so the sign-up path is untouched; it shares the
+// Brevo accounts and their daily cap, and reports are rare by comparison.
+
+const SAFETY_REPORT_EMAIL = process.env.SAFETY_REPORT_EMAIL || 'kinetik.dating@gmail.com';
+
+export interface SafetyReportEmail {
+  reportId: string;
+  reason: string;
+  reasonLabel: string;
+  reporterId: string;
+  reportedId: string;
+  reportedName: string;
+  matchId: string | null;
+  details: string;
+  urgent: boolean;
+}
+
+/** Never throws; false when no account could send it (the report is still stored). */
+export async function sendSafetyReportEmail(report: SafetyReportEmail): Promise<boolean> {
+  const subject = `${report.urgent ? '[URGENT] ' : ''}Kinetik report: ${report.reasonLabel} (${report.reportId.slice(0, 8)})`;
+  const lines = [
+    `A member filed a report in the Kinetik app.`,
+    ``,
+    `Report id: ${report.reportId}`,
+    `Reason: ${report.reasonLabel} (${report.reason})`,
+    `Reported member: ${report.reportedName} (${report.reportedId})`,
+    `Reported by: ${report.reporterId}`,
+    `Match: ${report.matchId ?? 'none'}`,
+    ``,
+    `Details from the reporter:`,
+    report.details || '(none given)',
+    ``,
+    report.urgent
+      ? 'This report concerns a minor or child sexual abuse. Review it at once; if it is credible, remove the account and report it at https://cybercrime.gov.in as Indian law requires.'
+      : 'Review it and act on the account if it breaks the rules.',
+  ];
+  const textContent = lines.join('\n');
+  const htmlContent = `<pre style="font-family:monospace;white-space:pre-wrap">${escapeHtml(textContent)}</pre>`;
+
+  if (accounts.length === 0) {
+    console.log(`[Email] DEV MODE — safety report ${report.reportId} (${report.reason}) not emailed`);
+    return true;
+  }
+
+  const now = Date.now();
+  const ordered = [
+    ...accounts.filter((a) => a.skipUntil <= now),
+    ...accounts.filter((a) => a.skipUntil > now),
+  ];
+  for (const account of ordered) {
+    try {
+      await account.client.transactionalEmails.sendTransacEmail({
+        sender: { email: account.senderEmail, name: BREVO_SENDER_NAME },
+        to: [{ email: SAFETY_REPORT_EMAIL }],
+        subject,
+        textContent,
+        htmlContent,
+        tags: ['safety-report'],
+      });
+      account.skipUntil = 0;
+      console.log(`[Email] Safety report ${report.reportId} emailed via Brevo ${account.label}`);
+      return true;
+    } catch (error: unknown) {
+      if (error instanceof BrevoError && isCapError(error.statusCode)) {
+        account.skipUntil = Date.now() + CAP_COOLDOWN_MS;
+      }
+      console.error(
+        `[Email] Brevo ${account.label} failed to send safety report ${report.reportId}:`,
+        (error as Error)?.message || error,
+      );
+    }
+  }
+  console.error(`[Email] Safety report ${report.reportId} could not be emailed; it is stored in user_reports.`);
+  return false;
+}

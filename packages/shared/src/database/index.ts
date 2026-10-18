@@ -108,4 +108,6 @@ export const TABLES = {
   CHAT_MEDIA: 'chat_media',
   PUSH_TOKENS: 'push_tokens',
   AUDIT_LOG: 'audit_log',
+  USER_REPORTS: 'user_reports',
+  USER_BLOCKS: 'user_blocks',
 } as const;
