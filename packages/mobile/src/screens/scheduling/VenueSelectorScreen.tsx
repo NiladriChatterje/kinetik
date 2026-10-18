@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import { View, Text, StyleSheet, ScrollView, TouchableOpacity } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { Ionicons, MaterialCommunityIcons } from '@expo/vector-icons';
+import { Ionicons } from '@expo/vector-icons';
 import { Button } from '../../components/common/Button';
 import { Card } from '../../components/common/Card';
 import { colors, typography, spacing } from '../../theme';
@@ -18,7 +18,7 @@ export const VenueSelectorScreen: React.FC<{ navigation: any; route: any }> = ({
 
   const renderVenueIcon = (venueId: string, color: string) => {
     switch (venueId) {
-      case '1': return <MaterialCommunityIcons name={'cafe-outline' as any} size={32} color={color} />;
+      case '1': return <Ionicons name="cafe-outline" size={32} color={color} />;
       case '2': return <Ionicons name="wine-outline" size={32} color={color} />;
       case '3': return <Ionicons name="restaurant-outline" size={32} color={color} />;
       case '4': return <Ionicons name="pizza-outline" size={32} color={color} />;
