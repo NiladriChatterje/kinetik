@@ -392,7 +392,16 @@ const RecordingDot: React.FC = React.memo(() => {
 RecordingDot.displayName = 'RecordingDot';
 
 export const ChatScreen: React.FC<{ navigation: any; route: any }> = ({ navigation, route }) => {
-  const { matchId, partnerName: pName, partnerPhotoUrl: pPhoto, locked: lockedParam } = route.params || {};
+  const {
+    matchId,
+    partnerName: pName,
+    partnerPhotoUrl: pPhoto,
+    partnerThumbnailUrl: pThumb,
+    locked: lockedParam,
+  } = route.params || {};
+  // The 300px thumbnail serves the small header and message avatars; the
+  // full photo is only the fallback for callers that do not have one
+  const pAvatar: string | undefined = pThumb || pPhoto;
   const toast = useToast();
   const insets = useSafeAreaInsets();
   const [messages, setMessages] = useState<Message[]>([]);
@@ -1663,8 +1672,8 @@ export const ChatScreen: React.FC<{ navigation: any; route: any }> = ({ navigati
 
     return (
       <View style={[styles.messageRow, isMine && styles.messageRowMine]}>
-        {showAvatar && pPhoto ? (
-          <Image source={{ uri: resolveUrl(pPhoto) }} style={styles.messageAvatar} />
+        {showAvatar && pAvatar ? (
+          <Image source={{ uri: resolveUrl(pAvatar) }} style={styles.messageAvatar} resizeMethod="resize" />
         ) : showAvatar ? (
           <View style={[styles.messageAvatar, styles.noMsgAvatar]}>
             <Ionicons name="person-outline" size={16} color={colors.textMuted} />
@@ -1750,8 +1759,8 @@ export const ChatScreen: React.FC<{ navigation: any; route: any }> = ({ navigati
             <Ionicons name="chevron-back" size={24} color={colors.textPrimary} />
           </TouchableOpacity>
 
-          {pPhoto ? (
-            <Image source={{ uri: resolveUrl(pPhoto) }} style={styles.headerAvatar} />
+          {pAvatar ? (
+            <Image source={{ uri: resolveUrl(pAvatar) }} style={styles.headerAvatar} resizeMethod="resize" />
           ) : (
             <View style={[styles.headerAvatar, styles.noHeaderAvatar]}>
               <Ionicons name="person-outline" size={20} color={colors.textMuted} />

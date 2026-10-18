@@ -24,6 +24,7 @@ export const Avatar: React.FC<AvatarProps> = React.memo(({
     <Image
       source={{ uri }}
       style={[styles.image, { width: size, height: size, borderRadius: size / 2 }]}
+      resizeMethod="resize"
     />
   ) : (
     <View style={[styles.placeholder, { width: size, height: size, borderRadius: size / 2 }]}>

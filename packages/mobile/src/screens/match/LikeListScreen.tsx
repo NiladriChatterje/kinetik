@@ -21,6 +21,7 @@ interface IncomingLike {
   bio: string;
   age: number;
   photoUrl?: string;
+  thumbnailUrl?: string;
   isVerified: boolean;
   datingCategory?: DatingCategory;
   isMutual: boolean;
@@ -121,8 +122,12 @@ export const LikeListScreen: React.FC<{ navigation: any }> = ({ navigation }) =>
       <View style={styles.likeHeader}>
         {/* Photo with ring — super likes get a star badge on the corner */}
         <View style={styles.avatarWrap}>
-          {item.photoUrl ? (
-            <Image source={{ uri: resolveUrl(item.photoUrl) }} style={styles.avatar} />
+          {item.thumbnailUrl || item.photoUrl ? (
+            <Image
+              source={{ uri: resolveUrl(item.thumbnailUrl || item.photoUrl!) }}
+              style={styles.avatar}
+              resizeMethod="resize"
+            />
           ) : (
             <View style={[styles.avatar, styles.noAvatar]}>
               <Ionicons name="person-outline" size={26} color={colors.textMuted} />

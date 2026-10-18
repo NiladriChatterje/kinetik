@@ -158,6 +158,7 @@ export const ChatListScreen: React.FC<{ navigation: any }> = ({ navigation }) =>
         partnerName: item.partnerName,
         partnerId: item.partnerId,
         partnerPhotoUrl: item.partnerPhotoUrl,
+        partnerThumbnailUrl: item.partnerThumbnailUrl,
         // Known here already: a locked chat shows its lock at once, with
         // nothing of the chat interface in between
         locked: item.locked,
@@ -165,8 +166,14 @@ export const ChatListScreen: React.FC<{ navigation: any }> = ({ navigation }) =>
       accessibilityHint={item.locked ? 'Locked. Upgrade to Premium to chat.' : undefined}
     >
       <View style={styles.avatarContainer}>
-        {item.partnerPhotoUrl ? (
-          <Image source={{ uri: resolveUrl(item.partnerPhotoUrl) }} style={styles.avatar} />
+        {item.partnerThumbnailUrl || item.partnerPhotoUrl ? (
+          // 300px thumbnail for a 56px circle; `resize` decodes it at the view
+          // size instead of holding the full bitmap for every row
+          <Image
+            source={{ uri: resolveUrl(item.partnerThumbnailUrl || item.partnerPhotoUrl!) }}
+            style={styles.avatar}
+            resizeMethod="resize"
+          />
         ) : (
           <View style={[styles.avatar, styles.noAvatar]}>
             <Ionicons name="person-outline" size={24} color={colors.textMuted} />
