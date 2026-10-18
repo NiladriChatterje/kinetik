@@ -6,6 +6,8 @@ import {
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { Socket } from 'socket.io-client';
+import { useFocusEffect } from '@react-navigation/native';
+import { preventScreenCaptureAsync, allowScreenCaptureAsync } from 'expo-screen-capture';
 import { api } from '../../services/api';
 import { getChatSocket } from '../../services/chatSocket';
 import { useToast } from '../../hooks/useToast';
@@ -26,6 +28,8 @@ interface Conversation {
   /** Free account: chat is Premium only, the server sends no messages */
   locked?: boolean;
 }
+
+const CHAT_LIST_CAPTURE_KEY = 'chat-list';
 
 export const ChatListScreen: React.FC<{ navigation: any }> = ({ navigation }) => {
   const [conversations, setConversations] = useState<Conversation[]>([]);
@@ -125,6 +129,22 @@ export const ChatListScreen: React.FC<{ navigation: any }> = ({ navigation }) =>
       socketRef.current = null;
     };
   }, []);
+
+  // ─── Prevent screenshots while the chat list is on screen ───
+  // FLAG_SECURE on Android, as in ChatScreen. Tied to focus, not mount: the
+  // list lives in a tab that stays mounted after the user switches tabs, and
+  // a mount-scoped block would cover the whole app from then on. The key is
+  // our own, and the library lifts the flag only once every key is released,
+  // so opening a chat from here (ChatScreen holds its own key) stays blocked
+  // throughout, and leaving the list never unblocks an open chat.
+  useFocusEffect(
+    useCallback(() => {
+      preventScreenCaptureAsync(CHAT_LIST_CAPTURE_KEY).catch(() => {});
+      return () => {
+        allowScreenCaptureAsync(CHAT_LIST_CAPTURE_KEY).catch(() => {});
+      };
+    }, []),
+  );
 
   // Re-fetch when screen comes into focus (to sync read status). The reload
   // also refreshes the tab badge — an unmatch on the way back lowers it here
