@@ -51,11 +51,20 @@ function writeSessionSnapshot(snapshot: SessionSnapshot | null): void {
   }
 }
 
-// The chat tab badge counts the people there are to chat with (active
-// conversations), so it never hides on a visit; a new match raises it and an
-// unmatch lowers it on the next list load. (This set is kept only so the
-// older reset/logout paths still compile; nothing counts into it any more.)
+// The chat tab badge counts conversations with unread messages: chats not
+// opened since the other person wrote. The set is seeded from the conversation
+// list (each one's unreadCount), raised live by a message for a chat that is
+// not open, and lowered when that chat is opened (opening it reads it).
 let countedUnreadMatchIds = new Set<string>();
+
+/** Match ids with something unread, leaving out the chat on screen. */
+function unreadMatchIds(conversations: any[], openMatchId: string | null): Set<string> {
+  const ids = new Set<string>(
+    conversations.filter((c) => (c?.unreadCount ?? 0) > 0).map((c) => c.matchId),
+  );
+  if (openMatchId) ids.delete(openMatchId);
+  return ids;
+}
 
 interface User {
   id: string;
@@ -118,7 +127,7 @@ interface AuthState {
   unreadChatCount: number;
   fetchUnreadChatCount: () => Promise<void>;
   /** Badge from a conversation list already in hand (ChatListScreen sets it). */
-  setChatCount: (count: number) => void;
+  syncChatBadge: (conversations: any[]) => void;
   resetUnreadChatCount: () => void;
 
   // Which DM conversation is currently open (ChatScreen sets this).
@@ -561,21 +570,25 @@ export const useAuthStore = create<AuthState>((set, get) => ({
         const res = await api.getConversations();
         const convs = res.data?.conversations || [];
         convs.forEach((conv: any) => socket.emit('chat:join', { matchId: conv.matchId }));
-        // A reconnect is the first chance to catch up on matches made while
-        // the socket was down (app in the background) — the list is in hand
-        if (res.success && res.data?.conversations) set({ unreadChatCount: convs.length });
+        // A reconnect is the first chance to catch up on messages that came
+        // while the socket was down (app in the background) — the list is in hand
+        if (res.success && res.data?.conversations) get().syncChatBadge(convs);
       } catch {
         // Silent — the socket retries joining on the next connect event
       }
     };
 
     // Real-time incoming message -> unread badge count. Counts DISTINCT
-    // conversations with unseen messages ("how many users"), not messages:
-    // a conversation already counted is not counted again until the badge is
-    // reset or re-synced from the server.
-    // A message does not change how many people there are to chat with,
-    // so it leaves the badge alone (the list shows per-chat unread counts).
-    const onChatMessage = (_data: any) => {};
+    // conversations with unseen messages, not messages. Our own messages and
+    // ones for the chat on screen (being read right now) do not count.
+    const onChatMessage = (data: any) => {
+      const matchId = data?.matchId;
+      if (!matchId || data.senderId === get().user?.id) return;
+      if (matchId === get().openChatMatchId) return;
+      if (countedUnreadMatchIds.has(matchId)) return;
+      countedUnreadMatchIds.add(matchId);
+      set({ unreadChatCount: countedUnreadMatchIds.size });
+    };
 
     // A new match opens a new chat room — join it so its messages arrive
     // here, and re-sync the badge from the server: a fresh match ships an
@@ -612,17 +625,16 @@ export const useAuthStore = create<AuthState>((set, get) => ({
     try {
       const res = await api.getConversations();
       if (res.success && res.data?.conversations) {
-        // Badge = how many people there are to chat with (active
-        // conversations), locked or not — it stays visible after a visit.
-        set({ unreadChatCount: res.data.conversations.length });
+        get().syncChatBadge(res.data.conversations);
       }
     } catch {
       // Silently fail
     }
   },
 
-  setChatCount: (count: number) => {
-    set({ unreadChatCount: count });
+  syncChatBadge: (conversations: any[]) => {
+    countedUnreadMatchIds = unreadMatchIds(conversations, get().openChatMatchId);
+    set({ unreadChatCount: countedUnreadMatchIds.size });
   },
 
   resetUnreadChatCount: () => {
@@ -631,6 +643,11 @@ export const useAuthStore = create<AuthState>((set, get) => ({
   },
 
   setOpenChatMatchId: (matchId: string | null) => {
+    // Opening a chat reads it (its history load marks the messages read)
+    if (matchId && countedUnreadMatchIds.delete(matchId)) {
+      set({ openChatMatchId: matchId, unreadChatCount: countedUnreadMatchIds.size });
+      return;
+    }
     set({ openChatMatchId: matchId });
   },
 
