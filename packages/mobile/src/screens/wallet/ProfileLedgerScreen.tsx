@@ -61,7 +61,10 @@ const METRIC_DEFS: {
 
 const SETTINGS = [
   { icon: 'notifications-outline' as const, label: 'Notifications', screen: 'NotificationPreferences' as const },
-  { icon: 'shield-checkmark-outline' as const, label: 'KYC Verification', screen: 'KYCVerify' as const },
+  // KYC hidden 2026-10-18, same as the onboarding step: Aadhaar offline
+  // e-KYC now needs UIDAI OVSE registration. Restore this row and the
+  // getKycStatus call below to bring it back; the badge code still renders it.
+  // { icon: 'shield-checkmark-outline' as const, label: 'KYC Verification', screen: 'KYCVerify' as const },
   { icon: 'lock-closed-outline' as const, label: 'Privacy', screen: 'Privacy' as const },
   { icon: 'card-outline' as const, label: 'Subscription', screen: 'SubscriptionCheckout' as const },
   { icon: 'mail-outline' as const, label: 'Support', screen: undefined, action: 'support' as const },
@@ -146,7 +149,9 @@ export const ProfileLedgerScreen: React.FC = () => {
       const [profileRes, photosRes, kycRes, statsRes] = await Promise.all([
         api.getProfile(),
         api.getPhotos(),
-        api.getKycStatus().catch(() => null),
+        // KYC hidden (see SETTINGS): the status only fed that row's badge
+        // api.getKycStatus().catch(() => null),
+        Promise.resolve(null),
         api.getProfileStats().catch(() => null),
       ]);
       if (profileRes.success && profileRes.data) {
@@ -159,9 +164,11 @@ export const ProfileLedgerScreen: React.FC = () => {
       if (photosRes.success && Array.isArray(photosRes.data)) {
         setPhotos(photosRes.data as ProfilePhoto[]);
       }
-      if (kycRes && kycRes.kycStatus) {
-        setKycStatus(kycRes.kycStatus);
-      }
+      // KYC hidden (see SETTINGS)
+      // if (kycRes && kycRes.kycStatus) {
+      //   setKycStatus(kycRes.kycStatus);
+      // }
+      void kycRes;
       if (statsRes?.success && statsRes.data) {
         setStats(statsRes.data as ProfileStats);
       }
@@ -479,7 +486,8 @@ export const ProfileLedgerScreen: React.FC = () => {
         {/* Settings */}
         <Card style={styles.settingsCard}>
           {SETTINGS.map((s, i) => {
-            const isKycRow = s.screen === 'KYCVerify';
+            // Widened while the KYC row is hidden, so the badge code compiles unchanged
+            const isKycRow = (s.screen as string | undefined) === 'KYCVerify';
             return (
               <React.Fragment key={s.label}>
                 <TouchableOpacity
