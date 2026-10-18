@@ -97,6 +97,12 @@ export const LikeListScreen: React.FC<{ navigation: any }> = ({ navigation }) =>
         setLikes((prev) => prev.filter((l) => l.userId !== targetUserId));
         setLockedCount((count) => Math.max(0, count - 1));
         useAuthStore.setState((s) => ({ unreadLikeCount: Math.max(0, s.unreadLikeCount - 1) }));
+      } else if (res.error?.code === 'NOT_FOUND') {
+        // The like no longer exists for this viewer (withdrawn by a block,
+        // or already answered elsewhere): drop the card quietly
+        setLikes((prev) => prev.filter((l) => l.userId !== targetUserId));
+        setLockedCount((count) => Math.max(0, count - 1));
+        useAuthStore.setState((s) => ({ unreadLikeCount: Math.max(0, s.unreadLikeCount - 1) }));
       } else if (res.error?.code === 'CHAT_LIMIT_REACHED') {
         const details = (res.error as any)?.details;
         setPaywall({

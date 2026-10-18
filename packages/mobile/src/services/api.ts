@@ -916,6 +916,24 @@ class ApiClient {
     });
   }
 
+  // ─── Safety: report and block ───────────────────────
+
+  /** Report a member. `reason` is one of the keys in ReportBlockSheet's REASONS. */
+  async reportUser(reportedUserId: string, reason: string, details?: string, matchId?: string) {
+    return this.request<{ reportId: string }>('/api/v1/safety/report', {
+      method: 'POST',
+      body: JSON.stringify({ reportedUserId, reason, details, matchId }),
+    });
+  }
+
+  /** Block a member: hides both people from each other and ends their chat. */
+  async blockUser(userId: string) {
+    return this.request<{ blocked: boolean }>('/api/v1/safety/block', {
+      method: 'POST',
+      body: JSON.stringify({ userId }),
+    });
+  }
+
   /**
    * The newest page of a conversation, or with `beforeId` the page of older
    * messages strictly before that message. `hasMore` says whether an older

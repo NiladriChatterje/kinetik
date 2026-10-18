@@ -13,6 +13,14 @@ export function emitProfileLiked(userId: string): void {
   DeviceEventEmitter.emit(PROFILE_LIKED, { userId });
 }
 
+/**
+ * A block removes the person everywhere at once. The Explore grid drops the
+ * card exactly as it does for a like, so this shares that event.
+ */
+export function emitProfileBlocked(userId: string): void {
+  DeviceEventEmitter.emit(PROFILE_LIKED, { userId });
+}
+
 /** Subscribe; the returned function unsubscribes. */
 export function onProfileLiked(handler: (userId: string) => void): () => void {
   const subscription = DeviceEventEmitter.addListener(PROFILE_LIKED, (event: { userId?: string }) => {

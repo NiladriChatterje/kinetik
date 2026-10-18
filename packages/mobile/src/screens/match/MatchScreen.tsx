@@ -10,7 +10,8 @@ import { api } from '../../services/api';
 import { useToast } from '../../hooks/useToast';
 import { colors, typography, spacing, radius, shadows } from '../../theme';
 import { getPresenceSocket } from '../../services/presenceSocket';
-import { emitProfileLiked } from '../../services/appEvents';
+import { emitProfileLiked, emitProfileBlocked } from '../../services/appEvents';
+import { ReportBlockSheet } from '../../components/safety/ReportBlockSheet';
 import { resolveUrl } from '../../config';
 import { MatchPopup } from '../../components/common/MatchPopup';
 import { PaywallModal, PaywallReason } from '../../components/common/PaywallModal';
@@ -502,6 +503,25 @@ export const MatchScreen: React.FC<{ navigation: any; route?: any }> = ({ naviga
     setCurrentIndex(0);
   }, [route?.params?.focusProfile]);
 
+  // ─── Report / block the profile on top ───────────────
+  // Held in state (not read from the deck) so the sheet keeps its person
+  // while the deck changes underneath it.
+  const [safetyProfile, setSafetyProfile] = useState<SwipeProfile | null>(null);
+
+  // A blocked person leaves the deck at once, the same way a new match does:
+  // dropped from the current card onward and from every later fetch, and
+  // from the Explore grid
+  const removeBlockedProfile = (userId: string) => {
+    removedIdsRef.current.add(userId);
+    if (pendingFocusRef.current?.userId === userId) {
+      pendingFocusRef.current = null;
+    }
+    setProfiles((prev) =>
+      prev.filter((p, i) => i < currentIndexRef.current || p.userId !== userId),
+    );
+    emitProfileBlocked(userId);
+  };
+
   const handleSwipe = async (direction: 'left' | 'right') => {
     if (swiping) return;
     const profile = profiles[currentIndex];
@@ -526,9 +546,11 @@ export const MatchScreen: React.FC<{ navigation: any; route?: any }> = ({ naviga
         // The Explore grid drops this person's card at once (the server
         // leaves pending likes out of Explore on its next load anyway)
         if (direction === 'right') emitProfileLiked(profile.userId);
-      } else if (res.error?.code === 'ALREADY_MATCHED') {
+      } else if (res.error?.code === 'ALREADY_MATCHED' || res.error?.code === 'NOT_FOUND') {
         // Stale card — the interaction/match already exists on the server
-        // (e.g. matched via the Likes screen). Skip past it silently.
+        // (e.g. matched via the Likes screen), or the profile is no longer
+        // available to this viewer (a block either way). Skip past it
+        // silently: a pass would be refused too, so the card would stick.
         shouldAdvance = true;
       } else {
         // API returned an error — don't advance, show feedback
@@ -754,6 +776,15 @@ export const MatchScreen: React.FC<{ navigation: any; route?: any }> = ({ naviga
           transparency), no border, no shadow. */}
       {currentProfile && (
         <View style={styles.actionBar}>
+          {/* Report or block — small, beside the main actions */}
+          <TouchableOpacity
+            style={styles.safetyBtn}
+            onPress={() => setSafetyProfile(currentProfile)}
+            activeOpacity={0.7}
+            accessibilityLabel="Report or block"
+          >
+            <Ionicons name="flag-outline" size={20} color={colors.textSecondary} />
+          </TouchableOpacity>
           <TouchableOpacity
             style={[styles.actionBtn, styles.passBtn]}
             onPress={() => handleSwipe('left')}
@@ -768,6 +799,8 @@ export const MatchScreen: React.FC<{ navigation: any; route?: any }> = ({ naviga
           >
             <Ionicons name="heart" size={30} color={colors.textPrimary} />
           </TouchableOpacity>
+          {/* Balances the report button so pass and like stay centred */}
+          <View style={styles.safetySpacer} />
         </View>
       )}
 
@@ -792,6 +825,17 @@ export const MatchScreen: React.FC<{ navigation: any; route?: any }> = ({ naviga
           navigation.navigate('SubscriptionCheckout');
         }}
       />
+
+      {/* Report / block — last, so it covers the whole screen */}
+      {safetyProfile ? (
+        <ReportBlockSheet
+          visible
+          userId={safetyProfile.userId}
+          name={safetyProfile.displayName}
+          onClose={() => setSafetyProfile(null)}
+          onBlocked={() => removeBlockedProfile(safetyProfile.userId)}
+        />
+      ) : null}
     </SafeAreaView>
   );
 };
@@ -1090,4 +1134,13 @@ const styles = StyleSheet.create({
   },
   passBtn: {},
   likeBtn: {},
+  safetyBtn: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    backgroundColor: colors.surface,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  safetySpacer: { width: 40, height: 40 },
 });

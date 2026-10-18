@@ -21,6 +21,7 @@ import { getChatSocket } from '../../services/chatSocket';
 import { useAuthStore } from '../../store/authStore';
 import { useToast } from '../../hooks/useToast';
 import { LockedChatView } from '../../components/chat/LockedChatView';
+import { ReportBlockSheet } from '../../components/safety/ReportBlockSheet';
 import { resolveUrl } from '../../config';
 import { colors, typography, spacing, radius } from '../../theme';
 
@@ -608,6 +609,7 @@ export const ChatScreen: React.FC<{ navigation: any; route: any }> = ({ navigati
     partnerName: pName,
     partnerPhotoUrl: pPhoto,
     partnerThumbnailUrl: pThumb,
+    partnerId,
     locked: lockedParam,
   } = route.params || {};
   // The 300px thumbnail serves the small header and message avatars; the
@@ -680,6 +682,20 @@ export const ChatScreen: React.FC<{ navigation: any; route: any }> = ({ navigati
   // ─── Vibe Check State ──────────────────────────────────
   const [showVibeCheck, setShowVibeCheck] = useState(false);
 
+  // ─── Leaving the chat ─────────────────────────────────────
+  // Unmatch, block and the server's match:unmatched event (which also reaches
+  // the person who unmatched or blocked) can each end this chat. Go back once,
+  // whichever comes first; a second goBack would pop the screen underneath.
+  const leavingRef = useRef(false);
+  const leaveChat = () => {
+    if (leavingRef.current) return;
+    leavingRef.current = true;
+    navigation.goBack();
+  };
+
+  // ─── Report / block sheet ────────────────────────────────
+  const [safetyVisible, setSafetyVisible] = useState(false);
+
   // ─── Unmatch confirmation modal state ────────────────────
   const [unmatchModalVisible, setUnmatchModalVisible] = useState(false);
   const unmatchOverlayOpacity = useRef(new Animated.Value(0)).current;
@@ -715,7 +731,7 @@ export const ChatScreen: React.FC<{ navigation: any; route: any }> = ({ navigati
           toast.showGlass('Server busy', res.error?.message || 'Try again.');
           return;
         }
-        navigation.goBack();
+        leaveChat();
       } catch {
         toast.showGlass('Server busy', 'Try again.');
       }
@@ -1055,7 +1071,7 @@ export const ChatScreen: React.FC<{ navigation: any; route: any }> = ({ navigati
     // Partner unmatched — pop back to the chat list
     const onMatchUnmatched = (data: any) => {
       if (data?.matchId !== matchId) return;
-      navigation.goBack();
+      leaveChat();
     };
 
     socket.on('connect', onConnect);
@@ -1788,11 +1804,24 @@ export const ChatScreen: React.FC<{ navigation: any; route: any }> = ({ navigati
 
   if (locked) {
     return (
-      <LockedChatView
-        partnerName={partnerName}
-        onBack={() => navigation.goBack()}
-        onUpgrade={() => navigation.navigate('SubscriptionCheckout')}
-      />
+      <View style={{ flex: 1 }}>
+        <LockedChatView
+          partnerName={partnerName}
+          onBack={() => navigation.goBack()}
+          onUpgrade={() => navigation.navigate('SubscriptionCheckout')}
+          onSafety={partnerId ? () => setSafetyVisible(true) : undefined}
+        />
+        {partnerId ? (
+          <ReportBlockSheet
+            visible={safetyVisible}
+            userId={partnerId}
+            name={partnerName}
+            matchId={matchId}
+            onClose={() => setSafetyVisible(false)}
+            onBlocked={leaveChat}
+          />
+        ) : null}
+      </View>
     );
   }
 
@@ -1825,6 +1854,18 @@ export const ChatScreen: React.FC<{ navigation: any; route: any }> = ({ navigati
           >
             <Ionicons name="calendar-outline" size={20} color={colors.textPrimary} />
           </TouchableOpacity>
+
+          {/* Report or block — Play requires both for profiles and chat */}
+          {partnerId ? (
+            <TouchableOpacity
+              style={styles.callBtn}
+              onPress={() => setSafetyVisible(true)}
+              activeOpacity={0.7}
+              accessibilityLabel="Report or block"
+            >
+              <Ionicons name="flag-outline" size={20} color={colors.textPrimary} />
+            </TouchableOpacity>
+          ) : null}
 
           {/* Unmatch — red so it reads as the destructive action it is */}
           <TouchableOpacity
@@ -2241,7 +2282,7 @@ export const ChatScreen: React.FC<{ navigation: any; route: any }> = ({ navigati
             </View>
             <Text style={styles.unmatchTitle}>Unmatch {partnerName}?</Text>
             <Text style={styles.unmatchBody}>
-              This will permanently delete all messages and media exchanged. This cannot be undone.
+              This will permanently delete all messages and media exchanged. This cannot be undone. If either of you reported the other, the chat is kept for review instead.
             </Text>
 
             <TouchableOpacity
@@ -2511,6 +2552,18 @@ export const ChatScreen: React.FC<{ navigation: any; route: any }> = ({ navigati
           </Animated.View>
         </Animated.View>
       </Modal>
+
+      {/* Report / block — last, so it covers the whole screen */}
+      {partnerId ? (
+        <ReportBlockSheet
+          visible={safetyVisible}
+          userId={partnerId}
+          name={partnerName}
+          matchId={matchId}
+          onClose={() => setSafetyVisible(false)}
+          onBlocked={leaveChat}
+        />
+      ) : null}
     </SafeAreaView>
   );
 };

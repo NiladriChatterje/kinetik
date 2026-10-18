@@ -7,6 +7,7 @@ import { Card } from '../../components/common/Card';
 import { colors, typography, spacing, radius } from '../../theme';
 
 const SUPPORT_EMAIL = 'kinetik.dating@gmail.com';
+const CHILD_SAFETY_URL = 'https://kinetik-dating.vercel.app/child-safety.html';
 
 // Every line below describes something the code actually does. If a
 // behaviour changes, change the line with it.
@@ -27,7 +28,7 @@ const SECTIONS: { title: string; icon: keyof typeof Ionicons.glyphMap; points: s
       'Messages are encrypted before they are stored.',
       'Photos, voice notes and files in chat are encrypted at rest with AES-256.',
       'One-time photos are deleted from storage the moment they are viewed. No copy is kept.',
-      'Unmatching deletes the whole conversation and its media for both sides.',
+      'Unmatching deletes the whole conversation and its media for both sides, unless one of you reported the other. A reported chat is kept for review instead.',
     ],
   },
   {
@@ -38,6 +39,18 @@ const SECTIONS: { title: string; icon: keyof typeof Ionicons.glyphMap; points: s
       'Face verification runs on your device. Your selfie never leaves the phone.',
       'Aadhaar e-KYC files are checked against UIDAI\'s signature and then discarded. We keep only a verified flag and your date of birth.',
       'Any other ID document is used only to verify you and is never shown to other users.',
+    ],
+  },
+  {
+    title: 'Safety',
+    icon: 'flag-outline',
+    points: [
+      'Report or block anyone with the flag button on their profile card or in your chat with them.',
+      'Blocking hides you from each other everywhere and closes your chat. They are not told.',
+      'A blocked chat stays stored, unseen by either of you, until either account is deleted.',
+      'A reported chat is kept for review even after an unmatch or an account deletion, and deleted 180 days after the report is resolved.',
+      "Every report is reviewed. Reports about a child's safety are treated as urgent, and accounts that break the rules are banned and reported to the authorities as the law requires.",
+      'Kinetik is for adults. Our servers refuse any date of birth under 18.',
     ],
   },
   {
@@ -80,6 +93,18 @@ export const PrivacyScreen: React.FC = () => {
             ))}
           </Card>
         ))}
+
+        <TouchableOpacity
+          style={styles.contactRow}
+          onPress={() => Linking.openURL(CHILD_SAFETY_URL).catch(() => {})}
+          activeOpacity={0.7}
+          accessibilityRole="link"
+        >
+          <Ionicons name="shield-outline" size={16} color={colors.textSecondary} />
+          <Text style={styles.contactText}>
+            Our <Text style={styles.contactEmail}>child safety standards</Text>
+          </Text>
+        </TouchableOpacity>
 
         <TouchableOpacity
           style={styles.contactRow}

@@ -9,6 +9,8 @@ interface LockedChatViewProps {
   partnerName: string;
   onBack: () => void;
   onUpgrade: () => void;
+  /** Opens report / block; the button shows only when this is given */
+  onSafety?: () => void;
 }
 
 /**
@@ -16,14 +18,20 @@ interface LockedChatViewProps {
  * need Premium to chat at all. The server refuses
  * the messages themselves, so this screen is the upsell, not the guard.
  */
-export const LockedChatView: React.FC<LockedChatViewProps> = ({ partnerName, onBack, onUpgrade }) => (
+export const LockedChatView: React.FC<LockedChatViewProps> = ({ partnerName, onBack, onUpgrade, onSafety }) => (
   <SafeAreaView style={styles.container}>
     <View style={styles.header}>
       <TouchableOpacity onPress={onBack} hitSlop={8} accessibilityLabel="Go back">
         <Ionicons name="chevron-back" size={24} color={colors.textPrimary} />
       </TouchableOpacity>
       <Text style={styles.headerTitle} numberOfLines={1}>{partnerName}</Text>
-      <View style={{ width: 24 }} />
+      {onSafety ? (
+        <TouchableOpacity onPress={onSafety} hitSlop={8} accessibilityLabel="Report or block">
+          <Ionicons name="flag-outline" size={22} color={colors.textPrimary} />
+        </TouchableOpacity>
+      ) : (
+        <View style={{ width: 24 }} />
+      )}
     </View>
 
     <View style={styles.body}>
