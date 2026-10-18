@@ -268,7 +268,12 @@ const MainTabNavigator = React.memo(function MainTabNavigator() {
 MainTabNavigator.displayName = 'MainTabNavigator';
 
 export function RootNavigator() {
-  const { isAuthenticated, isLoading, onboardingStep, welcomePending } = useAuthStore();
+  // Per-field selectors: a bare useAuthStore() re-rendered the whole
+  // navigator on every store change (badge counts, socket state, open chat)
+  const isAuthenticated = useAuthStore((s) => s.isAuthenticated);
+  const isLoading = useAuthStore((s) => s.isLoading);
+  const onboardingStep = useAuthStore((s) => s.onboardingStep);
+  const welcomePending = useAuthStore((s) => s.welcomePending);
 
   // When the user logs out or deletes their account, reset the navigator
   // back to the Onboarding screen so they can't swipe back into Main.
