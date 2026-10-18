@@ -323,3 +323,33 @@ upgrades and tuning for Postgres yourself, which Layerbase currently handles.
 - [ ] Mobile `apiUrl` / `wsUrl` updated · app rebuilt
 - [ ] UptimeRobot monitors · boot-volume backups · database `pg_dump` cron
 - [ ] End-to-end: signup → onboarding → photo upload → like → match → chat
+
+## 13. Safety reports and moderation
+
+Members report and block each other in the app (`/api/v1/safety`). Every new
+report, or a report whose reason changes, is emailed to `SAFETY_REPORT_EMAIL`
+(default `kinetik.dating@gmail.com`); child-safety reports arrive marked
+`[URGENT]`. Reports are also stored in `user_reports`, so a failed email loses
+nothing. Act on them with the moderation tool, run inside the API container:
+
+```sh
+cd ~/kinetik
+M="docker compose exec api-core node packages/api-core/dist/admin/moderation.js"
+
+$M reports                          # open reports, child safety first
+$M show <reportId>                  # one report with the reported chat
+$M ban <userId> --yes               # ban, sign out, end chats, close its reports
+$M resolve <reportId> dismissed     # or: actioned
+$M purge                            # dry run: reported chats past retention
+$M purge --yes                      # delete them
+```
+
+- A ban sets `is_banned` and `is_active`: the account cannot log in or sign up
+  again with that email, disappears from every feed and Likes, is signed out
+  within 15 minutes, and its chats end but are kept as evidence.
+- A chat between two people where either reported the other survives unmatch
+  and account deletion. `purge` deletes it 180 days after its last report is
+  resolved (IT Rules 2021, rule 3(1)(g)). Run it monthly; the child safety page
+  promises the deletion.
+- Child sexual abuse material: ban the account, then report it at
+  https://cybercrime.gov.in and to the police (POCSO Act, section 19).
