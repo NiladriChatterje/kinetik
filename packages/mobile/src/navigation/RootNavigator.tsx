@@ -80,10 +80,6 @@ import { CalendarSyncScreen } from '../screens/scheduling/CalendarSyncScreen';
 import { VenueSelectorScreen } from '../screens/scheduling/VenueSelectorScreen';
 import { ReservationLockerScreen } from '../screens/scheduling/ReservationLockerScreen';
 
-// Viral (Duo screens kept for profile access)
-import { DuoWingmanScreen } from '../screens/viral/DuoWingmanScreen';
-import { DoubleDateScreen } from '../screens/viral/DoubleDateScreen';
-
 // Match
 import { ExploreScreen } from '../screens/match/ExploreScreen';
 import { MatchScreen } from '../screens/match/MatchScreen';
@@ -116,15 +112,12 @@ export type RootStackParamList = {
   CalendarSync: { matchId: string };
   VenueSelector: { matchId: string };
   ReservationLocker: { matchId: string; venueId: string };
-  DoubleDate: { roomId: string };
   // Match screens shown as modal overlays
   Likes: undefined;
   // The swipe deck, opened on a profile tapped in Explore
   Discover: { focusProfile?: any } | undefined;
   ChatList: undefined;
   Chat: { matchId: string; partnerName: string; partnerId?: string; partnerPhotoUrl?: string; locked?: boolean };
-  // Kept for profile access
-  DuoWingman: undefined;
   KYCVerify: undefined;
   // Selfie check before a photo becomes the primary profile photo
   PrimaryPhotoSelfie: { photoId: string; photoUrl: string };
@@ -309,14 +302,11 @@ export function RootNavigator() {
         <RootStack.Screen name="Discover" component={MatchScreen} />
         <RootStack.Screen name="ChatList" component={ChatListScreen} />
         <RootStack.Screen name="Chat" component={ChatScreen} />
-        {/* Screens navigated from Profile */}
-        <RootStack.Screen name="DuoWingman" component={DuoWingmanScreen} />
         {/* Existing root overlay screens */}
         <RootStack.Screen name="LockStatus" component={LockStatusScreen} />
         <RootStack.Screen name="CalendarSync" component={CalendarSyncScreen} />
         <RootStack.Screen name="VenueSelector" component={VenueSelectorScreen} />
         <RootStack.Screen name="ReservationLocker" component={ReservationLockerScreen} />
-        <RootStack.Screen name="DoubleDate" component={DoubleDateScreen} />
         <RootStack.Screen name="NotificationPreferences" component={NotificationPreferencesScreen} />
         <RootStack.Screen name="Privacy" component={PrivacyScreen} />
         <RootStack.Screen name="KYCVerify" component={KYCScreen} />

@@ -645,15 +645,6 @@ class ApiClient {
     }>('/api/v1/payments/subscription/cancel', { method: 'POST' });
   }
 
-  // ─── Duo Crew ───────────────────────────────────────
-  async createDuoCrew() {
-    return this.request('/api/v1/duo/create', { method: 'POST' });
-  }
-
-  async joinDuoCrew(code: string) {
-    return this.request(`/api/v1/duo/join/${code}`, { method: 'POST' });
-  }
-
   // ─── Notifications ──────────────────────────────────
   async registerPushToken(token: string, platform: 'ios' | 'android' | 'web') {
     return this.request('/api/v1/notifications/register-token', {
