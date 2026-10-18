@@ -6,6 +6,7 @@ import { eventBus } from '../services/eventBus';
 import { getRedis } from '../services/redis';
 import { reverseGeocode } from '../services/geocoding';
 import { resolveCity } from '../services/locations';
+import { isAdultBirthDate, UNDERAGE_MESSAGE } from '../services/age';
 
 const UpdateProfileSchema = z.object({
   displayName: z.string().min(1).max(100).optional(),
@@ -198,6 +199,15 @@ export async function userRoutes(app: FastifyInstance) {
     }
 
     const { preferredLocation, ...data } = validation.data;
+
+    // 18+ is enforced here, not only in the app: no date of birth that makes
+    // the member a minor (or is not a real date) is ever stored
+    if (data.dateOfBirth !== undefined && !isAdultBirthDate(data.dateOfBirth)) {
+      return reply.status(400).send({
+        success: false,
+        error: { code: ERROR_CODES.VALIDATION_ERROR, message: UNDERAGE_MESSAGE },
+      });
+    }
 
     const updateData: Record<string, any> = {};
     if (preferredLocation === null) {
