@@ -173,7 +173,16 @@ export const ChatListScreen: React.FC<{ navigation: any }> = ({ navigation }) =>
   const renderConversation = ({ item }: { item: Conversation }) => (
     <TouchableOpacity
       style={styles.conversationCard}
-      onPress={() => navigation.navigate('Chat', {
+      onPress={() => {
+        // Opening the chat reads it, so drop its count here at once rather
+        // than showing the old number on the way back until the reload lands.
+        // Locked chats stay unread on the server; the reload restores theirs.
+        if (item.unreadCount > 0) {
+          setConversations((prev) =>
+            prev.map((c) => (c.matchId === item.matchId ? { ...c, unreadCount: 0 } : c)),
+          );
+        }
+        navigation.navigate('Chat', {
         matchId: item.matchId,
         partnerName: item.partnerName,
         partnerId: item.partnerId,
@@ -182,7 +191,8 @@ export const ChatListScreen: React.FC<{ navigation: any }> = ({ navigation }) =>
         // Known here already: a locked chat shows its lock at once, with
         // nothing of the chat interface in between
         locked: item.locked,
-      })}
+        });
+      }}
       accessibilityHint={item.locked ? 'Locked. Upgrade to Premium to chat.' : undefined}
     >
       <View style={styles.avatarContainer}>
