@@ -66,5 +66,14 @@
   },
   "allowScripts": {
     "llama.rn@0.12.9": true
+  },
+  "expo": {
+    "autolinking": {
+      "android": {
+        "buildFromSource": [
+          "expo-camera"
+        ]
+      }
+    }
   }
 }
