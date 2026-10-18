@@ -66,7 +66,12 @@
         }
       ],
       "expo-location",
-      "expo-camera",
+      [
+        "expo-camera",
+        {
+          "barcodeScannerEnabled": false
+        }
+      ],
       "expo-document-picker",
       "expo-image-picker",
       "expo-secure-store",
