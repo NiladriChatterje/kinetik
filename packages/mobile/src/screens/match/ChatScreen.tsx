@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef, useCallback, useMemo } from 'react';
+import React, { useState, useEffect, useLayoutEffect, useRef, useCallback, useMemo } from 'react';
 import {
   View, Text, StyleSheet, FlatList, TextInput, TouchableOpacity,
   Image, KeyboardAvoidingView, Platform, Keyboard, ActivityIndicator,
@@ -390,6 +390,219 @@ const RecordingDot: React.FC = React.memo(() => {
   return <Animated.View style={[styles.recordingDot, { opacity }]} pointerEvents="none" />;
 });
 RecordingDot.displayName = 'RecordingDot';
+
+// ─── Message row ─────────────────────────────────────
+// Memoised so the list redraws only the rows whose props changed, instead of
+// every mounted row on each keystroke or recording tick. Everything a row
+// shows arrives through these props. Every update to a message (read
+// receipt, view-once opened, temp id swapped for the real one) replaces the
+// message object rather than mutating it, so a changed message always
+// arrives as a new `item` and its row redraws.
+interface MessageRowProps {
+  item: Message;
+  isMine: boolean;
+  avatarUri?: string;
+  isAudioPlaying: boolean;
+  onOpenOneTimeView: (media: ChatMedia) => void;
+  onPreviewPhoto: (url: string) => void;
+  onToggleAudio: (messageId: string, url: string) => void;
+}
+
+const MessageRow = React.memo(function MessageRow({
+  item,
+  isMine,
+  avatarUri,
+  isAudioPlaying,
+  onOpenOneTimeView,
+  onPreviewPhoto,
+  onToggleAudio,
+}: MessageRowProps) {
+  const renderMediaContent = (item: Message, isMine: boolean) => {
+    if (!item.media) return null;
+    const media = item.media;
+
+    // View-once media that has been viewed — show "Opened" placeholder
+    if (media.isViewOnce && media.viewedAt) {
+      return (
+        <View style={[styles.viewOnceViewed, isMine && styles.viewOnceViewedMine]}>
+          <Ionicons
+            name="lock-open-outline"
+            size={isMine ? 12 : 14}
+            color={isMine ? 'rgba(255,255,255,0.55)' : colors.textMuted}
+          />
+          <Text style={[styles.viewOnceViewedText, isMine && styles.viewOnceViewedTextMine]}>
+            {isMine ? 'Opened' : 'Viewed'}
+          </Text>
+        </View>
+      );
+    }
+
+    // View-once media NOT yet viewed (receiver side) — show "View once" card
+    if (media.isViewOnce && !media.viewedAt && !isMine) {
+      return (
+        <TouchableOpacity
+          onPress={() => onOpenOneTimeView(media)}
+          activeOpacity={0.85}
+          style={styles.viewOnceCard}
+        >
+          <Ionicons name="eye-outline" size={16} color={colors.textPrimary} />
+          <Text style={styles.viewOnceCardLabel}>Tap to open</Text>
+        </TouchableOpacity>
+      );
+    }
+
+    // Regular media content (including sender's own view-once)
+    if (media.mediaType === 'image') {
+      return (
+        <TouchableOpacity
+          onPress={() => {
+            // Sender can preview their own view-once images normally
+            onPreviewPhoto(resolveUrl(media.thumbnailUrl || media.url));
+          }}
+          activeOpacity={0.9}
+        >
+          <View style={styles.mediaImageWrap}>
+            <Image
+              source={{
+                uri: resolveUrl(media.thumbnailUrl || media.url),
+              }}
+              style={styles.mediaImage}
+              resizeMode="cover"
+            />
+            {media.isViewOnce && (
+              <View style={styles.viewOnceOverlay}>
+                <Ionicons name={isMine ? 'time-outline' : 'eye-outline'} size={16} color="#fff" />
+                <Text style={styles.viewOnceOverlayText}>
+                  {isMine ? 'Not opened' : 'View once'}
+                </Text>
+              </View>
+            )}
+          </View>
+        </TouchableOpacity>
+      );
+    }
+
+    if (media.mediaType === 'video') {
+      return (
+        <TouchableOpacity
+          onPress={() => {
+            // For view-once video on receiver side, this shouldn't be reached
+            // as we show the viewOnceCta above instead
+            const baseUrl = resolveUrl(media.url);
+            const token = api.getToken();
+            const separator = baseUrl.includes('?') ? '&' : '?';
+            const videoUrl = token
+              ? `${baseUrl}${separator}token=${encodeURIComponent(token)}`
+              : baseUrl;
+            Linking.openURL(videoUrl).catch(() =>
+              Alert.alert('Error', 'Could not open video player.')
+            );
+          }}
+          activeOpacity={0.8}
+        >
+          <View style={[styles.videoThumbContainer, isMine && styles.videoThumbMine]}>
+            <Ionicons name="videocam" size={28} color="#fff" />
+            <View style={styles.videoPlayBadge}>
+              <Ionicons name="play" size={14} color="#fff" />
+            </View>
+            <Text style={styles.videoThumbText}>Tap to play</Text>
+          </View>
+        </TouchableOpacity>
+      );
+    }
+
+    if (media.mediaType === 'audio') {
+      return (
+        <TouchableOpacity
+          onPress={() => onToggleAudio(item.id, media.url)}
+          activeOpacity={0.7}
+          style={styles.audioPlayer}
+        >
+          <Ionicons
+            name={isAudioPlaying ? 'pause-circle' : 'play-circle'}
+            size={36}
+            color={isMine ? colors.textInverse : colors.textPrimary}
+          />
+          <View style={styles.audioWaveform}>
+            <View style={[styles.audioWaveBar, { backgroundColor: isMine ? 'rgba(255,255,255,0.5)' : colors.textMuted }]} />
+            <View style={[styles.audioWaveBar, styles.audioWaveBarTall, { backgroundColor: isMine ? 'rgba(255,255,255,0.6)' : colors.textSecondary }]} />
+            <View style={[styles.audioWaveBar, { backgroundColor: isMine ? 'rgba(255,255,255,0.5)' : colors.textMuted }]} />
+            <View style={[styles.audioWaveBar, styles.audioWaveBarTall, { backgroundColor: isMine ? 'rgba(255,255,255,0.6)' : colors.textSecondary }]} />
+            <View style={[styles.audioWaveBar, { backgroundColor: isMine ? 'rgba(255,255,255,0.5)' : colors.textMuted }]} />
+          </View>
+          {media.durationSecs ? (
+            <Text style={[styles.audioDuration, isMine && { color: 'rgba(255,255,255,0.7)' }]}>
+              {media.durationSecs}s
+            </Text>
+          ) : null}
+        </TouchableOpacity>
+      );
+    }
+
+    if (media.mediaType === 'file') {
+      return (
+        <TouchableOpacity onPress={() => Alert.alert('File', resolveUrl(media.url))} activeOpacity={0.7}>
+          <View style={styles.mediaFileContainer}>
+            <Ionicons name="document" size={32} color={isMine ? colors.textInverse : colors.textPrimary} />
+            <Text style={[styles.mediaFileText, isMine && styles.myMessageText]} numberOfLines={1}>
+              {media.fileName || 'File'}
+            </Text>
+          </View>
+        </TouchableOpacity>
+      );
+    }
+
+    return null;
+  };
+
+  const showAvatar = !isMine;
+  const isTemp = item.id.startsWith('temp-');
+  const isRead = !!item.readAt;
+  const hasMedia = !!item.media;
+
+  const metaIconColor = isMine ? 'rgba(255,255,255,0.65)' : colors.textMuted;
+  const readIconColor = isMine ? colors.textInverse : colors.success;
+
+  const displayContent = item.content;
+
+  return (
+    <View style={[styles.messageRow, isMine && styles.messageRowMine]}>
+      {showAvatar && avatarUri ? (
+        <Image source={{ uri: resolveUrl(avatarUri) }} style={styles.messageAvatar} resizeMethod="resize" />
+      ) : showAvatar ? (
+        <View style={[styles.messageAvatar, styles.noMsgAvatar]}>
+          <Ionicons name="person-outline" size={16} color={colors.textMuted} />
+        </View>
+      ) : null}
+
+      <View style={[styles.messageBubble, isMine ? styles.myBubble : styles.theirBubble]}>
+        {/* Media attachment */}
+        {hasMedia && renderMediaContent(item, isMine)}
+
+        {/* Text content (caption or description) — hidden for view-once media */}
+        {hasMedia && item.media?.isViewOnce && item.media?.viewedAt ? null : hasMedia ? null : (
+          <Text style={[styles.messageText, isMine && styles.myMessageText]}>
+            {displayContent}
+          </Text>
+        )}
+
+        {/* Read receipt */}
+        {isMine && (
+          <View style={styles.messageMeta}>
+            {isTemp ? (
+              <Ionicons name="time-outline" size={12} color={metaIconColor} />
+            ) : isRead ? (
+              <Ionicons name="checkmark-done" size={14} color={readIconColor} />
+            ) : (
+              <Ionicons name="checkmark" size={14} color={metaIconColor} />
+            )}
+          </View>
+        )}
+      </View>
+    </View>
+  );
+});
+MessageRow.displayName = 'MessageRow';
 
 export const ChatScreen: React.FC<{ navigation: any; route: any }> = ({ navigation, route }) => {
   const {
@@ -1518,195 +1731,30 @@ export const ChatScreen: React.FC<{ navigation: any; route: any }> = ({ navigati
     }
   };
 
-  // ─── Render media content for a message ────────────
-  const renderMediaContent = (item: Message, isMine: boolean) => {
-    if (!item.media) return null;
-    const media = item.media;
-
-    // View-once media that has been viewed — show "Opened" placeholder
-    if (media.isViewOnce && media.viewedAt) {
-      return (
-        <View style={[styles.viewOnceViewed, isMine && styles.viewOnceViewedMine]}>
-          <Ionicons
-            name="lock-open-outline"
-            size={isMine ? 12 : 14}
-            color={isMine ? 'rgba(255,255,255,0.55)' : colors.textMuted}
-          />
-          <Text style={[styles.viewOnceViewedText, isMine && styles.viewOnceViewedTextMine]}>
-            {isMine ? 'Opened' : 'Viewed'}
-          </Text>
-        </View>
-      );
-    }
-
-    // View-once media NOT yet viewed (receiver side) — show "View once" card
-    if (media.isViewOnce && !media.viewedAt && !isMine) {
-      return (
-        <TouchableOpacity
-          onPress={() => openOneTimeView(media)}
-          activeOpacity={0.85}
-          style={styles.viewOnceCard}
-        >
-          <Ionicons name="eye-outline" size={16} color={colors.textPrimary} />
-          <Text style={styles.viewOnceCardLabel}>Tap to open</Text>
-        </TouchableOpacity>
-      );
-    }
-
-    // Regular media content (including sender's own view-once)
-    if (media.mediaType === 'image') {
-      return (
-        <TouchableOpacity
-          onPress={() => {
-            // Sender can preview their own view-once images normally
-            setPreviewPhotoUrl(resolveUrl(media.thumbnailUrl || media.url));
-          }}
-          activeOpacity={0.9}
-        >
-          <View style={styles.mediaImageWrap}>
-            <Image
-              source={{
-                uri: resolveUrl(media.thumbnailUrl || media.url),
-              }}
-              style={styles.mediaImage}
-              resizeMode="cover"
-            />
-            {media.isViewOnce && (
-              <View style={styles.viewOnceOverlay}>
-                <Ionicons name={isMine ? 'time-outline' : 'eye-outline'} size={16} color="#fff" />
-                <Text style={styles.viewOnceOverlayText}>
-                  {isMine ? 'Not opened' : 'View once'}
-                </Text>
-              </View>
-            )}
-          </View>
-        </TouchableOpacity>
-      );
-    }
-
-    if (media.mediaType === 'video') {
-      return (
-        <TouchableOpacity
-          onPress={() => {
-            // For view-once video on receiver side, this shouldn't be reached
-            // as we show the viewOnceCta above instead
-            const baseUrl = resolveUrl(media.url);
-            const token = api.getToken();
-            const separator = baseUrl.includes('?') ? '&' : '?';
-            const videoUrl = token
-              ? `${baseUrl}${separator}token=${encodeURIComponent(token)}`
-              : baseUrl;
-            Linking.openURL(videoUrl).catch(() =>
-              Alert.alert('Error', 'Could not open video player.')
-            );
-          }}
-          activeOpacity={0.8}
-        >
-          <View style={[styles.videoThumbContainer, isMine && styles.videoThumbMine]}>
-            <Ionicons name="videocam" size={28} color="#fff" />
-            <View style={styles.videoPlayBadge}>
-              <Ionicons name="play" size={14} color="#fff" />
-            </View>
-            <Text style={styles.videoThumbText}>Tap to play</Text>
-          </View>
-        </TouchableOpacity>
-      );
-    }
-
-    if (media.mediaType === 'audio') {
-      return (
-        <TouchableOpacity
-          onPress={() => togglePlayAudio(item.id, media.url)}
-          activeOpacity={0.7}
-          style={styles.audioPlayer}
-        >
-          <Ionicons
-            name={playingAudioId === item.id ? 'pause-circle' : 'play-circle'}
-            size={36}
-            color={isMine ? colors.textInverse : colors.textPrimary}
-          />
-          <View style={styles.audioWaveform}>
-            <View style={[styles.audioWaveBar, { backgroundColor: isMine ? 'rgba(255,255,255,0.5)' : colors.textMuted }]} />
-            <View style={[styles.audioWaveBar, styles.audioWaveBarTall, { backgroundColor: isMine ? 'rgba(255,255,255,0.6)' : colors.textSecondary }]} />
-            <View style={[styles.audioWaveBar, { backgroundColor: isMine ? 'rgba(255,255,255,0.5)' : colors.textMuted }]} />
-            <View style={[styles.audioWaveBar, styles.audioWaveBarTall, { backgroundColor: isMine ? 'rgba(255,255,255,0.6)' : colors.textSecondary }]} />
-            <View style={[styles.audioWaveBar, { backgroundColor: isMine ? 'rgba(255,255,255,0.5)' : colors.textMuted }]} />
-          </View>
-          {media.durationSecs ? (
-            <Text style={[styles.audioDuration, isMine && { color: 'rgba(255,255,255,0.7)' }]}>
-              {media.durationSecs}s
-            </Text>
-          ) : null}
-        </TouchableOpacity>
-      );
-    }
-
-    if (media.mediaType === 'file') {
-      return (
-        <TouchableOpacity onPress={() => Alert.alert('File', resolveUrl(media.url))} activeOpacity={0.7}>
-          <View style={styles.mediaFileContainer}>
-            <Ionicons name="document" size={32} color={isMine ? colors.textInverse : colors.textPrimary} />
-            <Text style={[styles.mediaFileText, isMine && styles.myMessageText]} numberOfLines={1}>
-              {media.fileName || 'File'}
-            </Text>
-          </View>
-        </TouchableOpacity>
-      );
-    }
-
-    return null;
-  };
-
   // ─── Render message ────────────────────────────────
-  const renderMessage = ({ item }: { item: Message }) => {
-    const isMine = item.senderId === authUser?.id;
-    const showAvatar = !isMine;
-    const isTemp = item.id.startsWith('temp-');
-    const isRead = !!item.readAt;
-    const hasMedia = !!item.media;
+  // togglePlayAudio is recreated on every render (it reads playingAudioId),
+  // but the memoised rows need a stable callback. The ref is refreshed after
+  // every commit, before the user can tap, so a tap always runs the latest one.
+  const togglePlayAudioRef = useRef(togglePlayAudio);
+  useLayoutEffect(() => {
+    togglePlayAudioRef.current = togglePlayAudio;
+  });
+  const handleToggleAudio = useCallback((messageId: string, url: string) => {
+    void togglePlayAudioRef.current(messageId, url);
+  }, []);
 
-    const metaIconColor = isMine ? 'rgba(255,255,255,0.65)' : colors.textMuted;
-    const readIconColor = isMine ? colors.textInverse : colors.success;
-
-    const displayContent = item.content;
-
-    return (
-      <View style={[styles.messageRow, isMine && styles.messageRowMine]}>
-        {showAvatar && pAvatar ? (
-          <Image source={{ uri: resolveUrl(pAvatar) }} style={styles.messageAvatar} resizeMethod="resize" />
-        ) : showAvatar ? (
-          <View style={[styles.messageAvatar, styles.noMsgAvatar]}>
-            <Ionicons name="person-outline" size={16} color={colors.textMuted} />
-          </View>
-        ) : null}
-
-        <View style={[styles.messageBubble, isMine ? styles.myBubble : styles.theirBubble]}>
-          {/* Media attachment */}
-          {hasMedia && renderMediaContent(item, isMine)}
-
-          {/* Text content (caption or description) — hidden for view-once media */}
-          {hasMedia && item.media?.isViewOnce && item.media?.viewedAt ? null : hasMedia ? null : (
-            <Text style={[styles.messageText, isMine && styles.myMessageText]}>
-              {displayContent}
-            </Text>
-          )}
-
-          {/* Read receipt */}
-          {isMine && (
-            <View style={styles.messageMeta}>
-              {isTemp ? (
-                <Ionicons name="time-outline" size={12} color={metaIconColor} />
-              ) : isRead ? (
-                <Ionicons name="checkmark-done" size={14} color={readIconColor} />
-              ) : (
-                <Ionicons name="checkmark" size={14} color={metaIconColor} />
-              )}
-            </View>
-          )}
-        </View>
-      </View>
-    );
-  };
+  const myUserId = authUser?.id;
+  const renderMessage = useCallback(({ item }: { item: Message }) => (
+    <MessageRow
+      item={item}
+      isMine={item.senderId === myUserId}
+      avatarUri={pAvatar}
+      isAudioPlaying={playingAudioId === item.id}
+      onOpenOneTimeView={openOneTimeView}
+      onPreviewPhoto={setPreviewPhotoUrl}
+      onToggleAudio={handleToggleAudio}
+    />
+  ), [myUserId, pAvatar, playingAudioId, openOneTimeView, handleToggleAudio]);
 
   // ─── Input bar bottom spacing ──────────────────────
   // The SafeAreaView deliberately excludes the bottom edge, so this is the
