@@ -13,7 +13,6 @@ import { usePreventScreenCapture } from 'expo-screen-capture';
 import * as FileSystem from 'expo-file-system/legacy';
 import { Ionicons } from '@expo/vector-icons';
 import * as ImagePicker from 'expo-image-picker';
-import * as DocumentPicker from 'expo-document-picker';
 import { Socket } from 'socket.io-client';
 import { api } from '../../services/api';
 import { compressPhoto } from '../../services/photoService';
@@ -1711,28 +1710,6 @@ export const ChatScreen: React.FC<{ navigation: any; route: any }> = ({ navigati
     }
   };
 
-  const pickDocument = async () => {
-    try {
-      const result = await DocumentPicker.getDocumentAsync({
-        type: '*/*',
-        copyToCacheDirectory: true,
-      });
-
-      if (!result.canceled && result.assets[0]) {
-        const asset = result.assets[0];
-        // Determine media type from mime type
-        let mediaType = 'file';
-        if (asset.mimeType?.startsWith('image/')) mediaType = 'image';
-        else if (asset.mimeType?.startsWith('video/')) mediaType = 'video';
-        else if (asset.mimeType?.startsWith('audio/')) mediaType = 'audio';
-
-        await sendMedia(asset.uri, mediaType);
-      }
-    } catch {
-      Alert.alert('Error', 'Could not pick document.');
-    }
-  };
-
   // ─── Typing indicator ──────────────────────────────
   // Throttled: "typing" is sent at most once per 2.5s (each event fans out
   // through Redis + every room socket server-side); the trailing "stopped"
@@ -2275,13 +2252,6 @@ export const ChatScreen: React.FC<{ navigation: any; route: any }> = ({ navigati
                   <Ionicons name="camera-outline" size={24} color={colors.textPrimary} />
                 </View>
                 <Text style={styles.mediaOptionLabel}>Camera</Text>
-              </TouchableOpacity>
-
-              <TouchableOpacity style={styles.mediaOption} onPress={() => closeMediaPicker(() => pickDocument())} activeOpacity={0.6}>
-                <View style={styles.mediaOptionIcon}>
-                  <Ionicons name="document-outline" size={24} color={colors.textPrimary} />
-                </View>
-                <Text style={styles.mediaOptionLabel}>Document</Text>
               </TouchableOpacity>
             </View>
 
