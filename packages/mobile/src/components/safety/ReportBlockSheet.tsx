@@ -1,7 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import {
   View, Text, StyleSheet, TouchableOpacity, TextInput, ScrollView,
-  KeyboardAvoidingView, Platform, BackHandler, ActivityIndicator,
+  KeyboardAvoidingView, Platform, BackHandler, ActivityIndicator, Linking,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
@@ -31,6 +31,7 @@ const REASONS: Array<{ key: string; label: string }> = [
 ];
 
 const DANGER = '#E53935';
+const CYBERCRIME_URL = 'https://cybercrime.gov.in';
 const MAX_DETAILS = 1000;
 
 type Step = 'menu' | 'report' | 'block';
@@ -195,7 +196,15 @@ export const ReportBlockSheet: React.FC<ReportBlockSheetProps> = ({
                   <Ionicons name="alert-circle-outline" size={18} color={DANGER} />
                   <Text style={styles.urgentText}>
                     If a child is in immediate danger, call the police on 112. You can also report
-                    online at cybercrime.gov.in.
+                    online at{' '}
+                    <Text
+                      style={styles.urgentLink}
+                      onPress={() => Linking.openURL(CYBERCRIME_URL).catch(() => {})}
+                      accessibilityRole="link"
+                    >
+                      cybercrime.gov.in
+                    </Text>
+                    .
                   </Text>
                 </View>
               )}
@@ -328,6 +337,7 @@ const styles = StyleSheet.create({
     marginTop: spacing.sm,
   },
   urgentText: { ...typography.body2, color: colors.textSecondary, flex: 1 },
+  urgentLink: { color: colors.textPrimary, fontWeight: '600', textDecorationLine: 'underline' },
   details: {
     ...typography.body1,
     color: colors.textPrimary,
