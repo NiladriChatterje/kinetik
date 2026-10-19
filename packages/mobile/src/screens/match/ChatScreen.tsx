@@ -603,6 +603,9 @@ const MessageRow = React.memo(function MessageRow({
 });
 MessageRow.displayName = 'MessageRow';
 
+/** Waits between automatic retries of a chat's first load that failed */
+const FIRST_LOAD_RETRY_DELAYS_MS = [3000, 6000, 12000];
+
 export const ChatScreen: React.FC<{ navigation: any; route: any }> = ({ navigation, route }) => {
   const {
     matchId,
@@ -643,6 +646,7 @@ export const ChatScreen: React.FC<{ navigation: any; route: any }> = ({ navigati
   // from there shows the lock immediately; otherwise the first history
   // response decides.
   const [locked, setLocked] = useState<boolean | null>(lockedParam === true ? true : null);
+  const [loadFailed, setLoadFailed] = useState(false);
   const [sending, setSending] = useState(false);
   const [partnerTyping, setPartnerTyping] = useState(false);
   const [socketConnected, setSocketConnected] = useState(false);
@@ -888,15 +892,20 @@ export const ChatScreen: React.FC<{ navigation: any; route: any }> = ({ navigati
   // messages, pending temp-* sends) so a refetch never wipes anything.
   // Called on mount AND on every socket (re)connect so messages missed
   // during a disconnect / dropped broadcast show up without leaving the DM.
-  const syncMessages = useCallback(async () => {
+  /** True when the server answered (messages, or the lock). */
+  const syncMessages = useCallback(async (): Promise<boolean> => {
     try {
       const res = await api.getMessages(matchId);
       if (!res.success && res.error?.code === 'CHAT_LOCKED') {
         setLocked(true);
-        return;
+        setLoadFailed(false);
+        return true;
       }
-      if (!res.success || !res.data) return;
+      if (!res.success || !res.data) return false;
       setLocked(false);
+      // The server answered, so any earlier failed load is over (this also
+      // runs when the socket's resync succeeds after the first load gave up)
+      setLoadFailed(false);
       const fetched = res.data.messages || [];
       hasMoreHistoryRef.current = Boolean(res.data.hasMore);
       setHasMoreHistory(hasMoreHistoryRef.current);
@@ -914,8 +923,10 @@ export const ChatScreen: React.FC<{ navigation: any; route: any }> = ({ navigati
         const seen = new Set<string>();
         return merged.filter((m) => (seen.has(m.id) ? false : (seen.add(m.id), true)));
       });
+      return true;
     } catch {
-      // Silent — retried on the next (re)connect
+      // Retried by the first-load loop below and on the next (re)connect
+      return false;
     }
   }, [matchId]);
 
@@ -1114,13 +1125,38 @@ export const ChatScreen: React.FC<{ navigation: any; route: any }> = ({ navigati
   }, [matchId]);
 
   // ─── Fetch message history ─────────────────────────
+  // The first load is retried on its own (the database may still be waking
+  // up) while the spinner shows; only then is "Try again" offered. Messages
+  // that arrive in the meantime through the socket's resync count as loaded.
   useEffect(() => {
-    (async () => {
-      setLoading(true);
-      await syncMessages();
-      setLoading(false);
-    })();
+    let cancelled = false;
+    let timer: ReturnType<typeof setTimeout> | null = null;
+    const attempt = async (n: number) => {
+      const ok = await syncMessages();
+      if (cancelled) return;
+      if (ok || messagesRef.current.length > 0 || n >= FIRST_LOAD_RETRY_DELAYS_MS.length) {
+        setLoading(false);
+        setLoadFailed(!ok && messagesRef.current.length === 0);
+        return;
+      }
+      timer = setTimeout(() => attempt(n + 1), FIRST_LOAD_RETRY_DELAYS_MS[n]);
+    };
+    setLoading(true);
+    setLoadFailed(false);
+    attempt(0);
+    return () => {
+      cancelled = true;
+      if (timer) clearTimeout(timer);
+    };
   }, [syncMessages]);
+
+  const retryFirstLoad = async () => {
+    setLoadFailed(false);
+    setLoading(true);
+    const ok = await syncMessages();
+    setLoading(false);
+    setLoadFailed(!ok && messagesRef.current.length === 0);
+  };
 
   // ─── Fetch the pinned scheduled date on mount ───────
   useEffect(() => {
@@ -1783,6 +1819,19 @@ export const ChatScreen: React.FC<{ navigation: any; route: any }> = ({ navigati
     ? spacing.xs
     : Math.max(MIN_INPUT_BOTTOM_GAP, insets.bottom + spacing.xs);
 
+  // A first load that failed even after its retries: say so, never show an
+  // empty chat that looks like the messages are gone
+  const renderLoadFailed = () => (
+    <View style={styles.centered}>
+      <Ionicons name="cloud-offline-outline" size={48} color={colors.textMuted} />
+      <Text style={styles.loadFailedTitle}>Couldn't load this chat</Text>
+      <Text style={styles.loadFailedText}>The connection is slow right now. Your messages are safe.</Text>
+      <TouchableOpacity style={styles.loadFailedBtn} onPress={retryFirstLoad} accessibilityRole="button">
+        <Text style={styles.loadFailedBtnText}>Try again</Text>
+      </TouchableOpacity>
+    </View>
+  );
+
   if (locked === null) {
     // Access not known yet: a loader with a way back, nothing of the chat
     return (
@@ -1795,9 +1844,13 @@ export const ChatScreen: React.FC<{ navigation: any; route: any }> = ({ navigati
             <Text style={styles.headerName}>{partnerName}</Text>
           </View>
         </View>
-        <View style={styles.centered}>
-          <ActivityIndicator size="large" color={colors.primary} />
-        </View>
+        {loadFailed ? (
+          renderLoadFailed()
+        ) : (
+          <View style={styles.centered}>
+            <ActivityIndicator size="large" color={colors.primary} />
+          </View>
+        )}
       </SafeAreaView>
     );
   }
@@ -1906,6 +1959,8 @@ export const ChatScreen: React.FC<{ navigation: any; route: any }> = ({ navigati
             <View style={styles.centered}>
               <ActivityIndicator size="large" color={colors.primary} />
             </View>
+          ) : loadFailed && messages.length === 0 ? (
+            renderLoadFailed()
           ) : (
             <FlatList
               ref={flatListRef}
@@ -2569,6 +2624,16 @@ export const ChatScreen: React.FC<{ navigation: any; route: any }> = ({ navigati
 };
 
 const styles = StyleSheet.create({
+  loadFailedTitle: { ...typography.h3, color: colors.textPrimary, marginTop: spacing.md, textAlign: 'center' },
+  loadFailedText: { ...typography.body2, color: colors.textMuted, marginTop: spacing.xs, textAlign: 'center' },
+  loadFailedBtn: {
+    marginTop: spacing.lg,
+    paddingHorizontal: spacing.xl,
+    paddingVertical: spacing.md,
+    borderRadius: 9999,
+    backgroundColor: colors.primary,
+  },
+  loadFailedBtnText: { ...typography.button, color: colors.textInverse },
   container: { flex: 1, backgroundColor: colors.background },
   header: {
     flexDirection: 'row',

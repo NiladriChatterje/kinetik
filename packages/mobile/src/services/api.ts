@@ -39,6 +39,15 @@ interface ApiResponse<T = any> {
  */
 type RefreshOutcome = 'refreshed' | 'rejected' | 'unavailable';
 
+
+/**
+ * How long a request may take before the app gives up on it. The database
+ * sleeps when idle and takes 20-30 s to wake; the server waits for it (up to
+ * about 48 s, see connectWithRetry in packages/shared) and nginx allows 60 s.
+ * Giving up earlier showed an empty chat list or chat on a cold start.
+ */
+const REQUEST_TIMEOUT_MS = 55000;
+
 class ApiClient {
   private token: string | null = null;
   private refreshTokenValue: string | null = null;
@@ -124,7 +133,7 @@ class ApiClient {
     this.refreshPromise = (async (): Promise<RefreshOutcome> => {
       try {
         const controller = new AbortController();
-        const timeout = setTimeout(() => controller.abort(), 10000);
+        const timeout = setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS);
         const res = await fetch(`${API_URL}/api/v1/auth/refresh`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
@@ -234,7 +243,7 @@ class ApiClient {
     }
 
     const controller = new AbortController();
-    const timeout = setTimeout(() => controller.abort(), 15000);
+    const timeout = setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS);
 
     try {
       const response = await fetch(`${API_URL}${endpoint}`, {

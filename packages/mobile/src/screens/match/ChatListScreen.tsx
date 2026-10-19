@@ -10,7 +10,6 @@ import { useFocusEffect } from '@react-navigation/native';
 import { preventScreenCaptureAsync, allowScreenCaptureAsync } from 'expo-screen-capture';
 import { api } from '../../services/api';
 import { getChatSocket } from '../../services/chatSocket';
-import { useToast } from '../../hooks/useToast';
 import { useAuthStore } from '../../store/authStore';
 import { resolveUrl } from '../../config';
 import { colors, typography, spacing } from '../../theme';
@@ -31,19 +30,39 @@ interface Conversation {
 
 const CHAT_LIST_CAPTURE_KEY = 'chat-list';
 
+/** Waits between automatic retries of a first load that failed */
+const LOAD_RETRY_DELAYS_MS = [3000, 6000, 12000];
+
 export const ChatListScreen: React.FC<{ navigation: any }> = ({ navigation }) => {
   const [conversations, setConversations] = useState<Conversation[]>([]);
   const [loading, setLoading] = useState(true);
   const authUser = useAuthStore((s) => s.user);
-  const toast = useToast();
   const socketRef = useRef<Socket | null>(null);
   const conversationsRef = useRef<Conversation[]>([]);
 
+  // A list that could not be loaded at all (the database may still be waking
+  // up) is retried on its own while the spinner shows, then offered as "Try
+  // again", never shown as "No Conversations". A list already on screen stays.
+  const [loadFailed, setLoadFailed] = useState(false);
+  const retryTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const retryAttemptRef = useRef(0);
+  const mountedRef = useRef(true);
+  useEffect(() => () => {
+    mountedRef.current = false;
+    if (retryTimerRef.current) clearTimeout(retryTimerRef.current);
+  }, []);
+
   const fetchConversations = useCallback(async () => {
+    if (retryTimerRef.current) {
+      clearTimeout(retryTimerRef.current);
+      retryTimerRef.current = null;
+    }
+    let loaded = false;
     try {
       setLoading(true);
       const res = await api.getConversations();
       if (res.success && res.data) {
+        loaded = true;
         const list = res.data.conversations || [];
         conversationsRef.current = list;
         setConversations(list);
@@ -59,11 +78,28 @@ export const ChatListScreen: React.FC<{ navigation: any }> = ({ navigation }) =>
           });
         }
       }
-    } catch (err: any) {
-      toast.showError('Load failed', 'Could not load chats.');
-    } finally {
-      setLoading(false);
+    } catch {
+      // Handled below like any other failed load
     }
+    if (!mountedRef.current) return;
+    if (loaded || conversationsRef.current.length > 0) {
+      retryAttemptRef.current = 0;
+      setLoadFailed(false);
+      setLoading(false);
+      return;
+    }
+    const attempt = retryAttemptRef.current;
+    if (attempt < LOAD_RETRY_DELAYS_MS.length) {
+      retryAttemptRef.current = attempt + 1;
+      retryTimerRef.current = setTimeout(() => {
+        retryTimerRef.current = null;
+        fetchConversations();
+      }, LOAD_RETRY_DELAYS_MS[attempt]);
+      return;
+    }
+    retryAttemptRef.current = 0;
+    setLoading(false);
+    setLoadFailed(true);
   }, []);
 
   useEffect(() => {
@@ -279,7 +315,16 @@ export const ChatListScreen: React.FC<{ navigation: any }> = ({ navigation }) =>
         </TouchableOpacity>
       </View>
 
-      {conversations.length === 0 ? (
+      {conversations.length === 0 && loadFailed ? (
+        <View style={styles.centered}>
+          <Ionicons name="cloud-offline-outline" size={64} color={colors.textMuted} />
+          <Text style={styles.emptyTitle}>Couldn't load your chats</Text>
+          <Text style={styles.emptySubtitle}>The connection is slow right now. Your chats are safe.</Text>
+          <TouchableOpacity style={styles.retryBtn} onPress={() => fetchConversations()} accessibilityRole="button">
+            <Text style={styles.retryText}>Try again</Text>
+          </TouchableOpacity>
+        </View>
+      ) : conversations.length === 0 ? (
         <View style={styles.centered}>
           <Ionicons name="chatbubbles-outline" size={64} color={colors.textMuted} />
           <Text style={styles.emptyTitle}>No Conversations</Text>
@@ -315,6 +360,14 @@ const styles = StyleSheet.create({
   centered: { flex: 1, justifyContent: 'center', alignItems: 'center', padding: spacing.xxl },
   emptyTitle: { ...typography.h2, color: colors.textPrimary, marginTop: spacing.lg },
   emptySubtitle: { ...typography.body1, color: colors.textMuted, marginTop: spacing.sm, textAlign: 'center' },
+  retryBtn: {
+    marginTop: spacing.lg,
+    paddingHorizontal: spacing.xl,
+    paddingVertical: spacing.md,
+    borderRadius: 9999,
+    backgroundColor: colors.primary,
+  },
+  retryText: { ...typography.button, color: colors.textInverse },
   list: { padding: spacing.xxl },
   conversationCard: {
     flexDirection: 'row',

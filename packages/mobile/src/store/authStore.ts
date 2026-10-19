@@ -622,13 +622,20 @@ export const useAuthStore = create<AuthState>((set, get) => ({
   },
 
   fetchUnreadChatCount: async () => {
-    try {
-      const res = await api.getConversations();
-      if (res.success && res.data?.conversations) {
-        get().syncChatBadge(res.data.conversations);
+    // Retried a few times: on a cold start the database may still be waking
+    // up, and a missed load would leave the badge stale until the next sync
+    for (const delay of [0, 3000, 6000, 12000]) {
+      if (delay > 0) await new Promise((resolve) => setTimeout(resolve, delay));
+      if (!get().isAuthenticated) return;
+      try {
+        const res = await api.getConversations();
+        if (res.success && res.data?.conversations) {
+          get().syncChatBadge(res.data.conversations);
+          return;
+        }
+      } catch {
+        // Try again after the next pause
       }
-    } catch {
-      // Silently fail
     }
   },
 
