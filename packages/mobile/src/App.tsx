@@ -82,7 +82,8 @@ export default function App() {
 
         {/* Connection status — persistent Dynamic Island pill while offline */}
         <IslandStatus
-          visible={connectionStatus === 'disconnected'}
+          visible={connectionStatus === 'disconnected' || connectionStatus === 'slow'}
+          tone={connectionStatus === 'slow' ? 'waiting' : 'error'}
           message={connectionError || 'Server unreachable'}
           retrying={isRetrying}
           onRetry={async () => {

@@ -13,6 +13,11 @@ interface IslandStatusProps {
   message: string;
   onRetry: () => void;
   retrying?: boolean;
+  /**
+   * error (default): red dot and a Retry action, the server cannot be reached.
+   * waiting: amber dot and no action, the server is slow but answering.
+   */
+  tone?: 'error' | 'waiting';
 }
 
 const DOT_SIZE = 14;
@@ -31,6 +36,7 @@ export const IslandStatus: React.FC<IslandStatusProps> = ({
   message,
   onRetry,
   retrying = false,
+  tone = 'error',
 }) => {
   const slide = useRef(new Animated.Value(0)).current; // 0 hidden above, 1 parked
   const expand = useRef(new Animated.Value(0)).current; // 0 dot, 1 pill
@@ -71,19 +77,21 @@ export const IslandStatus: React.FC<IslandStatusProps> = ({
     >
       <Animated.View style={[styles.island, { width, height, borderRadius }]}>
         <Animated.View style={[styles.inner, { width: MAX_WIDTH, opacity: contentOpacity }]}>
-          <View style={styles.statusDot} />
+          <View style={[styles.statusDot, tone === 'waiting' && styles.statusDotWaiting]} />
           <Text style={styles.message} numberOfLines={1}>
             {message}
           </Text>
-          <TouchableOpacity
-            onPress={onRetry}
-            disabled={retrying}
-            hitSlop={{ top: 10, bottom: 10, left: 8, right: 8 }}
-          >
-            <Text style={[styles.retry, retrying && styles.retryDisabled]}>
-              {retrying ? 'Checking…' : 'Retry'}
-            </Text>
-          </TouchableOpacity>
+          {tone === 'error' && (
+            <TouchableOpacity
+              onPress={onRetry}
+              disabled={retrying}
+              hitSlop={{ top: 10, bottom: 10, left: 8, right: 8 }}
+            >
+              <Text style={[styles.retry, retrying && styles.retryDisabled]}>
+                {retrying ? 'Checking…' : 'Retry'}
+              </Text>
+            </TouchableOpacity>
+          )}
         </Animated.View>
       </Animated.View>
     </Animated.View>
@@ -124,6 +132,9 @@ const styles = StyleSheet.create({
     height: 7,
     borderRadius: 3.5,
     backgroundColor: '#F87171',
+  },
+  statusDotWaiting: {
+    backgroundColor: '#FBBF24',
   },
   message: {
     fontSize: 12,

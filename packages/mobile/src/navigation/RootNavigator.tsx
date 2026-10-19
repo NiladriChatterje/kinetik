@@ -258,6 +258,35 @@ const MainTabNavigator = React.memo(function MainTabNavigator() {
 });
 MainTabNavigator.displayName = 'MainTabNavigator';
 
+/**
+ * Shown while the stored session is checked at launch. The server runs on a
+ * free tier and its database sleeps when idle, so a cold open can take up to
+ * a minute; after a few seconds the spinner says so instead of leaving the
+ * user wondering whether the app is stuck.
+ */
+const SLOW_START_AFTER_MS = 6000;
+
+function StartupLoader() {
+  const [slow, setSlow] = React.useState(false);
+  React.useEffect(() => {
+    const timer = setTimeout(() => setSlow(true), SLOW_START_AFTER_MS);
+    return () => clearTimeout(timer);
+  }, []);
+  return (
+    <View style={styles.loading}>
+      <ActivityIndicator size="large" color={colors.primary} />
+      {slow && (
+        <View style={styles.loadingNote}>
+          <Text style={styles.loadingTitle}>Waking up the server…</Text>
+          <Text style={styles.loadingText}>
+            We run on a free tier for now, so this can take up to a minute. Thanks for your patience.
+          </Text>
+        </View>
+      )}
+    </View>
+  );
+}
+
 export function RootNavigator() {
   // Per-field selectors: a bare useAuthStore() re-rendered the whole
   // navigator on every store change (badge counts, socket state, open chat)
@@ -277,11 +306,7 @@ export function RootNavigator() {
   }, [isAuthenticated]);
 
   if (isLoading) {
-    return (
-      <View style={styles.loading}>
-        <ActivityIndicator size="large" color={colors.primary} />
-      </View>
-    );
+    return <StartupLoader />;
   }
 
   const showOnboarding = !isAuthenticated || onboardingStep !== 'complete';
@@ -323,5 +348,21 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     alignItems: 'center',
     backgroundColor: colors.background,
+  },
+  loadingNote: {
+    marginTop: 28,
+    paddingHorizontal: 40,
+    alignItems: 'center',
+    gap: 6,
+  },
+  loadingTitle: {
+    ...typography.h4,
+    color: colors.textPrimary,
+    textAlign: 'center',
+  },
+  loadingText: {
+    ...typography.body2,
+    color: colors.textSecondary,
+    textAlign: 'center',
   },
 });

@@ -48,6 +48,13 @@ type RefreshOutcome = 'refreshed' | 'rejected' | 'unavailable';
  */
 const REQUEST_TIMEOUT_MS = 55000;
 
+/**
+ * A request still unanswered after this long is almost always the database
+ * waking up. The app is told so it can say "server waking up" instead of
+ * leaving a silent spinner (see onSlowChange).
+ */
+const SLOW_AFTER_MS = 8000;
+
 class ApiClient {
   private token: string | null = null;
   private refreshTokenValue: string | null = null;
@@ -56,6 +63,8 @@ class ApiClient {
   private accountMissingListener: (() => void) | null = null;
   private reachabilityListener: ((reachable: boolean) => void) | null = null;
   private serverReachable = true;
+  private slowListener: ((slow: boolean) => void) | null = null;
+  private slowInFlight = 0;
 
   async init() {
     this.token = await SecureStore.getItemAsync('auth_token');
@@ -116,6 +125,32 @@ class ApiClient {
   }
 
   /**
+   * Called with `true` when some request has been waiting longer than
+   * SLOW_AFTER_MS without an answer, and with `false` once no such request
+   * is left. Fires once per transition. The auth store shows the
+   * "server waking up" pill from it.
+   */
+  onSlowChange(listener: ((slow: boolean) => void) | null) {
+    this.slowListener = listener;
+  }
+
+  /** Starts the slow-request clock; call the returned function when the request ends. */
+  private watchSlow(): () => void {
+    let counted = false;
+    const timer = setTimeout(() => {
+      counted = true;
+      this.slowInFlight += 1;
+      if (this.slowInFlight === 1) this.slowListener?.(true);
+    }, SLOW_AFTER_MS);
+    return () => {
+      clearTimeout(timer);
+      if (!counted) return;
+      this.slowInFlight -= 1;
+      if (this.slowInFlight === 0) this.slowListener?.(false);
+    };
+  }
+
+  /**
    * Attempt to silently refresh the access token using the refresh token.
    * Deduplicates concurrent calls so only one refresh request fires.
    */
@@ -131,6 +166,7 @@ class ApiClient {
 
     this.isRefreshing = true;
     this.refreshPromise = (async (): Promise<RefreshOutcome> => {
+      const doneSlow = this.watchSlow();
       try {
         const controller = new AbortController();
         const timeout = setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS);
@@ -150,10 +186,12 @@ class ApiClient {
           return 'refreshed';
         }
 
-        // Only an explicit rejection ends the session. A 5xx, a gateway error
-        // page or a half-asleep database is the server's problem: keep the
-        // tokens and let the caller treat it as an outage.
-        if (res.status === 401 || res.status === 403 || res.status === 404) {
+        // Only an explicit, well-formed rejection ends the session: api-core's
+        // own JSON envelope with 401 or 403 (token never issued, replayed, or
+        // account gone). A 404 from a misrouted proxy, an nginx HTML error
+        // page, a 5xx or a half-asleep database is the server's problem: keep
+        // the tokens and let the caller treat it as an outage.
+        if ((res.status === 401 || res.status === 403) && body && body.success === false) {
           this.setToken(null);
           this.setRefreshToken(null);
           return 'rejected';
@@ -163,6 +201,7 @@ class ApiClient {
         // Timeout or no network: the session is fine, the connection is not.
         return 'unavailable';
       } finally {
+        doneSlow();
         this.isRefreshing = false;
         this.refreshPromise = null;
       }
@@ -244,6 +283,7 @@ class ApiClient {
 
     const controller = new AbortController();
     const timeout = setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS);
+    const doneSlow = this.watchSlow();
 
     try {
       const response = await fetch(`${API_URL}${endpoint}`, {
@@ -253,6 +293,7 @@ class ApiClient {
       });
 
       clearTimeout(timeout);
+      doneSlow();
       this.reportReachable(true);
 
       // Parse the body defensively — proxies/gateways can return non-JSON
@@ -334,6 +375,7 @@ class ApiClient {
       return data as ApiResponse<T>;
     } catch (error: any) {
       clearTimeout(timeout);
+      doneSlow();
       this.reportReachable(false);
 
       // Terminal only (see above): a raw "java.net.ConnectException ..."

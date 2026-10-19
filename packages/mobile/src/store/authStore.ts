@@ -75,7 +75,7 @@ interface User {
   onboardingStep?: string;
 }
 
-type ConnectionStatus = 'checking' | 'connected' | 'disconnected';
+type ConnectionStatus = 'checking' | 'connected' | 'disconnected' | 'slow';
 
 interface AuthResult {
   success: boolean;
@@ -733,13 +733,14 @@ function signOutMissingAccount(): void {
 
 api.onAccountMissing(signOutMissingAccount);
 
-// ─── Server outage: show the pill, retry 3 times, then sign out ──────
+// ─── Server outage: show the pill and keep retrying, never sign out ──
 // The first request that cannot reach the server shows the offline pill and
-// starts three automatic health-check retries, spaced 5 s, 10 s and 15 s
-// apart. Any request or retry that gets through clears the pill and stops
-// the loop. If all three retries fail, a signed-in user is signed out with
-// a toast; a user on the sign-in screen just keeps the pill and its Retry.
-const OUTAGE_RETRY_DELAYS_MS = [5000, 10000, 15000];
+// starts automatic health-check retries, spaced 5 s, 10 s, 15 s and then
+// every 30 s for as long as it takes. Any request or retry that gets through
+// clears the pill and stops the loop. Nobody is signed out for this: the
+// session is valid, the server is what is missing, and the hosting is on a
+// free tier that can take a minute to come back.
+const OUTAGE_RETRY_DELAYS_MS = [5000, 10000, 15000, 30000];
 let outageRetryTimer: ReturnType<typeof setTimeout> | null = null;
 
 function stopOutageRetries(): void {
@@ -759,25 +760,11 @@ function scheduleOutageRetry(attempt: number): void {
       return;
     }
     const failed = attempt + 1;
-    if (failed < OUTAGE_RETRY_DELAYS_MS.length) {
-      useAuthStore.setState({
-        connectionStatus: 'disconnected',
-        connectionError: `Server unreachable · retry ${failed}/${OUTAGE_RETRY_DELAYS_MS.length}`,
-      });
-      scheduleOutageRetry(failed);
-      return;
-    }
-
-    // Every retry failed.
-    useAuthStore.setState({ connectionStatus: 'disconnected', connectionError: 'Server unreachable' });
-    if (!useAuthStore.getState().isAuthenticated) return;
-    useAuthStore.getState().logout();
-    Toast.show({
-      type: 'glass',
-      text1: 'Signed out',
-      text2: `Couldn't reach the server after ${OUTAGE_RETRY_DELAYS_MS.length} attempts. Please sign in again.`,
-      visibilityTime: 5000,
+    useAuthStore.setState({
+      connectionStatus: 'disconnected',
+      connectionError: `Server unreachable · retry ${failed}`,
     });
+    scheduleOutageRetry(Math.min(failed, OUTAGE_RETRY_DELAYS_MS.length - 1));
   }, OUTAGE_RETRY_DELAYS_MS[attempt]);
 }
 
@@ -787,11 +774,32 @@ function onReachabilityChange(reachable: boolean): void {
     useAuthStore.setState({ connectionStatus: 'connected', connectionError: null });
     return;
   }
-  useAuthStore.setState({ connectionStatus: 'disconnected', connectionError: 'Server unreachable' });
+  useAuthStore.setState({ connectionStatus: 'disconnected', connectionError: 'Server unreachable · retrying' });
   if (!outageRetryTimer) scheduleOutageRetry(0);
 }
 
 api.onReachabilityChange(onReachabilityChange);
+
+// ─── Slow server: say why instead of spinning in silence ─────────────
+// A request unanswered for more than a few seconds is almost always the
+// database waking up after idling (the hosting is a free tier for now). The
+// pill says so in amber, without a Retry, and goes away with the answer.
+const SLOW_SERVER_MESSAGE = 'Free-tier server waking up · hang tight';
+
+function onSlowChange(slow: boolean): void {
+  const status = useAuthStore.getState().connectionStatus;
+  if (slow) {
+    // The outage pill already says more than this would
+    if (status === 'disconnected') return;
+    useAuthStore.setState({ connectionStatus: 'slow', connectionError: SLOW_SERVER_MESSAGE });
+    return;
+  }
+  if (status === 'slow') {
+    useAuthStore.setState({ connectionStatus: 'connected', connectionError: null });
+  }
+}
+
+api.onSlowChange(onSlowChange);
 
 // Keep the on-device session snapshot in step with the store: written while
 // signed in, removed on sign out or account deletion. Doing it here, rather
