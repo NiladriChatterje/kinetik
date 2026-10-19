@@ -1,6 +1,49 @@
-import { Pool, PoolConfig, QueryResult, QueryResultRow } from 'pg';
+import { Pool, PoolClient, PoolConfig, QueryResult, QueryResultRow } from 'pg';
 
 let pool: Pool | null = null;
+
+// ─── Waiting for a database that is waking up ─────────────
+// The hosted Postgres sleeps when idle and takes 20-30 s to accept
+// connections again. Getting a connection is retried, so a request waits for
+// the wake-up instead of failing: three attempts of CONNECT_TIMEOUT_MS plus
+// the pauses stay under nginx's 60 s proxy timeout. Only the connect step is
+// retried. A query that was already sent is never sent again, so a write can
+// never run twice.
+const CONNECT_TIMEOUT_MS = Number(process.env.DB_CONNECT_TIMEOUT_MS) || 15000;
+const CONNECT_ATTEMPTS = 3;
+const CONNECT_RETRY_DELAYS_MS = [1000, 2000];
+
+/** Failures while obtaining a connection that a wake-up or a blip explains. */
+export function isTransientConnectError(error: any): boolean {
+  const message = String(error?.message || '');
+  return (
+    message.includes('timeout exceeded when trying to connect') ||
+    message.includes('Connection terminated due to connection timeout') ||
+    message.includes('Connection terminated unexpectedly') ||
+    ['ECONNREFUSED', 'ECONNRESET', 'ETIMEDOUT', 'ENOTFOUND', 'EAI_AGAIN', '57P03'].includes(error?.code)
+  );
+}
+
+const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
+
+/** A pooled connection, retrying while the database wakes up (see above). */
+export async function connectWithRetry(
+  target: Pick<Pool, 'connect'> = getDatabasePool(),
+  wait: (ms: number) => Promise<unknown> = sleep,
+): Promise<PoolClient> {
+  for (let attempt = 1; ; attempt++) {
+    try {
+      return await target.connect();
+    } catch (error: any) {
+      if (attempt >= CONNECT_ATTEMPTS || !isTransientConnectError(error)) throw error;
+      console.warn(
+        `[DB] Connect attempt ${attempt}/${CONNECT_ATTEMPTS} failed (${error?.message || error}); ` +
+          'retrying, the database may be waking up',
+      );
+      await wait(CONNECT_RETRY_DELAYS_MS[attempt - 1] ?? CONNECT_RETRY_DELAYS_MS[CONNECT_RETRY_DELAYS_MS.length - 1]);
+    }
+  }
+}
 
 export function getDatabasePool(config?: PoolConfig): Pool {
   if (!pool) {
@@ -10,7 +53,7 @@ export function getDatabasePool(config?: PoolConfig): Pool {
       // the sum across services must stay under the managed Postgres limit.
       max: Number(process.env.DB_POOL_MAX) || 5,
       idleTimeoutMillis: 30000,
-      connectionTimeoutMillis: 5000,
+      connectionTimeoutMillis: CONNECT_TIMEOUT_MS,
       ...config,
     });
 
@@ -25,10 +68,21 @@ export async function query<T extends QueryResultRow = any>(
   text: string,
   params?: any[],
 ): Promise<QueryResult<T>> {
-  const client = getDatabasePool();
   const start = Date.now();
+  let conn: PoolClient | null = null;
   try {
-    const result = await client.query<T>(text, params);
+    conn = await connectWithRetry();
+    let result: QueryResult<T>;
+    try {
+      result = await conn.query<T>(text, params);
+    } catch (queryError: any) {
+      // As pool.query does: a connection that failed a query is discarded
+      conn.release(queryError);
+      conn = null;
+      throw queryError;
+    }
+    conn.release();
+    conn = null;
     const duration = Date.now() - start;
 
     if (duration > 1000) {
@@ -65,8 +119,7 @@ export async function query<T extends QueryResultRow = any>(
 export async function transaction<T>(
   callback: (query: <R extends QueryResultRow>(text: string, params?: any[]) => Promise<QueryResult<R>>) => Promise<T>,
 ): Promise<T> {
-  const client = getDatabasePool();
-  const conn = await client.connect();
+  const conn = await connectWithRetry();
   try {
     await conn.query('BEGIN');
     const result = await callback(<R extends QueryResultRow = any>(text: string, params?: any[]) => conn.query<R>(text, params));
