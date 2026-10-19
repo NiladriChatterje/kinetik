@@ -109,10 +109,10 @@ function signupLocked(retryAfterSeconds: number) {
 const REFRESH_TOKEN_TTL_DAYS = 3650;
 
 // A token that was just rotated may be presented again when the response
-// carrying its successor was lost (network drop, app killed mid-refresh) or
-// when two refreshes race. Inside this window that is treated as a retry and
-// a new pair is issued; outside it, it is treated as replay and the whole
-// family is revoked.
+// carrying its successor was lost (network drop, app killed mid-refresh, the
+// app gave up waiting while the database was waking) or when two refreshes
+// race. Inside this window that is treated as a retry and a new pair is
+// issued.
 const REFRESH_REUSE_GRACE_MS = 2 * 60 * 1000;
 
 function hashToken(token: string): string {
@@ -128,12 +128,40 @@ async function storeRefreshToken(userId: string, tokenHash: string, familyId: st
   );
 }
 
+/**
+ * Ends tokens for good. Rotation only sets revoked_at, which the grace rules
+ * above may still honour; a killed token is also expired on the spot, which
+ * nothing honours. Used for replay, retired successors and sign-out.
+ */
+async function killTokens(where: string, params: unknown[]): Promise<void> {
+  await query(
+    `UPDATE refresh_tokens SET revoked_at = NOW(), expires_at = NOW()
+     WHERE ${where} AND revoked_at IS NULL`,
+    params,
+  );
+}
+
+/**
+ * Looks a refresh token up and decides whether it may be used.
+ *
+ * A revoked token is still honoured when the device evidently never received
+ * its successor: either it was rotated moments ago (two refreshes racing, or
+ * the first answer lost), or no later token in the family has ever been used.
+ * In the second case the unused successors are revoked so a token lost in
+ * transit cannot be picked up by anyone else. Only when a later token in the
+ * family HAS been used, proof that the device did get its successor, is the
+ * old token treated as a replay and the whole family revoked.
+ *
+ * The rule exists so that a slow server can never sign a user out: the only
+ * refusals left are a token that was never issued, has passed its ten-year
+ * ceiling, or belongs to a revoked family.
+ */
 async function verifyRefreshToken(
   token: string,
 ): Promise<{ userId: string; familyId: string; graceReuse: boolean } | null> {
   const tokenHash = hashToken(token);
   const result = await query(
-    `SELECT user_id, family_id, revoked_at, expires_at
+    `SELECT user_id, family_id, revoked_at, expires_at, created_at
      FROM refresh_tokens
      WHERE token_hash = $1`,
     [tokenHash],
@@ -141,27 +169,40 @@ async function verifyRefreshToken(
   const row = result.rows[0];
   if (!row) return null;
 
-  // Token expired
-  if (new Date(row.expires_at) < new Date()) return null;
+  // Token expired (killTokens sets expires_at to the current instant)
+  if (new Date(row.expires_at) <= new Date()) return null;
 
-  if (row.revoked_at) {
-    // Rotated moments ago: the client most likely never received the
-    // successor. Let it through once more as a retry.
-    const revokedAgo = Date.now() - new Date(row.revoked_at).getTime();
-    if (revokedAgo >= 0 && revokedAgo < REFRESH_REUSE_GRACE_MS) {
-      return { userId: row.user_id, familyId: row.family_id, graceReuse: true };
-    }
+  if (!row.revoked_at) {
+    return { userId: row.user_id, familyId: row.family_id, graceReuse: false };
+  }
 
-    // Token was revoked well before this — possible replay attack, revoke entire family
-    await query(
-      `UPDATE refresh_tokens SET revoked_at = NOW()
-       WHERE family_id = $1 AND revoked_at IS NULL`,
-      [row.family_id],
-    );
+  // Rotated moments ago: the client most likely never received the
+  // successor. Let it through once more as a retry.
+  const revokedAgo = Date.now() - new Date(row.revoked_at).getTime();
+  if (revokedAgo >= 0 && revokedAgo < REFRESH_REUSE_GRACE_MS) {
+    return { userId: row.user_id, familyId: row.family_id, graceReuse: true };
+  }
+
+  // Revoked longer ago. Was the successor ever used? A later token in the
+  // family that was rotated (revoked but not killed, see killTokens) proves
+  // the device held it, since only its holder could rotate it.
+  const usedLater = await query(
+    `SELECT 1 FROM refresh_tokens
+     WHERE family_id = $1 AND created_at > $2 AND revoked_at IS NOT NULL AND expires_at > NOW()
+     LIMIT 1`,
+    [row.family_id, row.created_at],
+  );
+  if (usedLater.rows.length > 0) {
+    // The device had the successor and is presenting the old token anyway:
+    // replay. Kill the entire family.
+    await killTokens(`family_id = $1`, [row.family_id]);
     return null;
   }
 
-  return { userId: row.user_id, familyId: row.family_id, graceReuse: false };
+  // The successor was issued but never used: the answer carrying it was
+  // lost. Retire it and let this token stand in for one more rotation.
+  await killTokens(`family_id = $1 AND created_at > $2`, [row.family_id, row.created_at]);
+  return { userId: row.user_id, familyId: row.family_id, graceReuse: true };
 }
 
 async function rotateRefreshToken(oldToken: string, newTokenHash: string): Promise<boolean> {
@@ -180,11 +221,7 @@ async function rotateRefreshToken(oldToken: string, newTokenHash: string): Promi
 }
 
 async function revokeAllRefreshTokens(userId: string): Promise<void> {
-  await query(
-    `UPDATE refresh_tokens SET revoked_at = NOW()
-     WHERE user_id = $1 AND revoked_at IS NULL`,
-    [userId],
-  );
+  await killTokens(`user_id = $1`, [userId]);
 }
 
 const EmailSchema = z.string().trim().toLowerCase().email().max(255);
@@ -558,10 +595,19 @@ export async function authRoutes(app: FastifyInstance) {
       } else {
         const rotated = await rotateRefreshToken(refreshToken, hashToken(newRefreshToken));
         if (!rotated) {
-          return reply.status(401).send({
-            success: false,
-            error: { code: ERROR_CODES.TOKEN_EXPIRED, message: 'Refresh token already used. Please login again.' },
-          });
+          // Lost the race: another refresh with the same token revoked it
+          // between our lookup and this update (seen live on 2026-10-19
+          // while the database was waking: the app retried, both requests
+          // ran, the loser answered 401 and the app signed the user out).
+          // Re-check; the grace rule above now treats it as a retry.
+          const again = await verifyRefreshToken(refreshToken);
+          if (!again) {
+            return reply.status(401).send({
+              success: false,
+              error: { code: ERROR_CODES.TOKEN_EXPIRED, message: 'Refresh token already used. Please login again.' },
+            });
+          }
+          await storeRefreshToken(user.id, hashToken(newRefreshToken), again.familyId);
         }
       }
 
