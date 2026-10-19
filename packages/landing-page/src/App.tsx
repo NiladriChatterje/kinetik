@@ -1129,7 +1129,7 @@ function Terms() {
           <h3>Contact</h3>
           <p>
             Questions about these terms: <a href={`mailto:${SUPPORT_EMAIL}`}>{SUPPORT_EMAIL}</a>.
-            Grievance Officer: Niladri Chatterjee, at the same address. Complaints are acknowledged
+            Grievance Officer: our team, at the same address. Complaints are acknowledged
             within 24 hours and resolved within 15 days (<a href="/terms.html#grievance">details</a>).
           </p>
         </div>
