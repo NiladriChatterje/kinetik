@@ -1089,8 +1089,9 @@ function Terms() {
         <h2 className="section-title">Terms of service — summary</h2>
         <div className="prose">
           <p>
-            By creating a Kinetik account you agree to the terms below. The full terms are
-            available in-app; this summary covers the points most relevant to subscribers.
+            By creating a Kinetik account you agree to our{' '}
+            <a href="/terms.html">Terms of Use</a>. This summary covers the points most relevant
+            to subscribers; the full terms take precedence.
           </p>
           <h3>Eligibility</h3>
           <p>
@@ -1113,8 +1114,10 @@ function Terms() {
           </ul>
           <h3>Acceptable use</h3>
           <p>
-            Harassment, hate speech, nudity in profile photos, spam, and commercial solicitation
-            are prohibited. Violations can lead to suspension without refund for the current cycle.
+            Harassment, hate speech, nudity and sexual content, anything harmful to a child,
+            impersonation, scams, spam and commercial solicitation are prohibited; the full list
+            is in our <a href="/terms.html">Terms of Use</a>. Violations can lead to removal of
+            content, suspension or a permanent ban, without refund for the current cycle.
           </p>
           <h3>Your data</h3>
           <p>
@@ -1126,6 +1129,8 @@ function Terms() {
           <h3>Contact</h3>
           <p>
             Questions about these terms: <a href={`mailto:${SUPPORT_EMAIL}`}>{SUPPORT_EMAIL}</a>.
+            Grievance Officer: Niladri Chatterjee, at the same address. Complaints are acknowledged
+            within 24 hours and resolved within 15 days (<a href="/terms.html#grievance">details</a>).
           </p>
         </div>
       </div>
@@ -1146,7 +1151,7 @@ function Footer() {
           <a href="#premium">Premium</a>
           <a href="#support">Support</a>
           <a href="#refunds">Refunds &amp; Cancellation</a>
-          <a href="#terms">Terms</a>
+          <a href="/terms.html">Terms</a>
           <a href="/privacy.html">Privacy</a>
           <a href="/child-safety.html">Child Safety</a>
           <a href={`mailto:${SUPPORT_EMAIL}`}>{SUPPORT_EMAIL}</a>
@@ -1204,7 +1209,7 @@ function Header() {
           <a href="#premium">Premium</a>
           <a href="#support">Support</a>
           <a href="#refunds">Refunds</a>
-          <a href="#terms">Terms</a>
+          <a href="/terms.html">Terms</a>
           <a href="/privacy.html">Privacy</a>
         </nav>
       </div>
