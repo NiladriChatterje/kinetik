@@ -67,8 +67,37 @@ The phone must be on the same Wi-Fi as the machine running the docker stack,
 and `extra.apiUrl` must be that machine's current LAN IP.
 
 Locally built release APKs are signed with the **debug keystore** (see
-`android/app/build.gradle`). Fine for sideloading, not valid for Play — use EAS
-for anything you distribute.
+`android/app/build.gradle`). Fine for sideloading, not valid for Play.
+
+For an APK against production, build `:app:assembleRelease` from `android/`
+with `APP_ENV=production` and `EXPO_PUBLIC_API_URL` set, plus
+`--offline --no-daemon -PreactNativeArchitectures=arm64-v8a
+-Dorg.gradle.workers.max=2 -Dorg.gradle.parallel=false`: more workers make
+clang run out of memory on a 16 GB machine. A debug-signed APK cannot be
+installed over a Play or EAS build; uninstall that first.
+
+## Play AAB without an EAS cloud build
+
+`npm run build:aab:local` builds the store bundle on this machine, offline by
+default (`-- --online` lets Gradle download dependencies), signed with the
+Play upload key. It takes APP_ENV and the API URL from `eas.json`'s
+production profile.
+
+The upload key lives on Expo's servers. Download it once (no build quota):
+
+```powershell
+npx eas credentials -p android
+# production → credentials.json → Download credentials from EAS to credentials.json
+```
+
+That writes `credentials.json` and `credentials/android/keystore.jks` here;
+both are gitignored, and the root `.gitignore` keeps them out of EAS uploads.
+Keep a backup outside the repo.
+
+Bump `versionCode` in both `app.json` and `android/app/build.gradle` first —
+EAS `autoIncrement` does not run locally, and the script refuses to build
+when the two differ. Output:
+`android/app/build/outputs/bundle/release/app-release.aab`.
 
 ## Face verification and R8
 

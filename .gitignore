@@ -42,3 +42,10 @@ packages/mobile/android/.gradle/
 packages/mobile/android/app/.cxx/
 packages/mobile/android/local.properties
 packages/mobile/android/app/src/main/assets/ggml-hexagon/
+
+# Play upload key, downloaded with eas credentials for local release builds.
+# Holds the keystore and its passwords: never commit it or let the EAS CLI
+# archive it (that step reads this root file, see the note above).
+packages/mobile/credentials.json
+packages/mobile/credentials/
+*.jks
