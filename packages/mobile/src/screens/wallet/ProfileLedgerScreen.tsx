@@ -78,6 +78,8 @@ const UNVERIFIED_RED = '#E53935';
 export const ProfileLedgerScreen: React.FC = () => {
   const authUser = useAuthStore((s) => s.user);
   const logout = useAuthStore((s) => s.logout);
+  // Shown on the Subscription row; purchases and the server's push keep it current
+  const isPremium = useAuthStore((s) => s.isPremium);
   const deleteAccount = useAuthStore((s) => s.deleteAccount);
   const navigation = useNavigation();
   const toast = useToast();
@@ -182,6 +184,20 @@ export const ProfileLedgerScreen: React.FC = () => {
   useEffect(() => {
     fetchProfileAndPhotos();
   }, [fetchProfileAndPhotos]);
+
+  // Premium for the Subscription row: one status read, and only while the
+  // app does not know yet. Not on every focus, so the tab stays as fast.
+  useEffect(() => {
+    if (useAuthStore.getState().isPremium !== null) return;
+    api
+      .getSubscriptionStatus()
+      .then((res) => {
+        const tier = res.success ? res.data?.tier : undefined;
+        // Same tiers the server's chat and likes gates treat as Premium
+        if (tier) useAuthStore.getState().setPremium(tier === 'premium' || tier === 'infinite');
+      })
+      .catch(() => {});
+  }, []);
 
   // Refresh KYC status when returning from KYC Verification screen
   useEffect(() => {
@@ -488,6 +504,7 @@ export const ProfileLedgerScreen: React.FC = () => {
           {SETTINGS.map((s, i) => {
             // Widened while the KYC row is hidden, so the badge code compiles unchanged
             const isKycRow = (s.screen as string | undefined) === 'KYCVerify';
+            const isSubscriptionRow = s.screen === 'SubscriptionCheckout';
             return (
               <React.Fragment key={s.label}>
                 <TouchableOpacity
@@ -527,6 +544,12 @@ export const ProfileLedgerScreen: React.FC = () => {
                          kycStatus === 'pending' ? 'Pending' :
                          'Not Verified'}
                       </Text>
+                    </View>
+                  )}
+                  {isSubscriptionRow && isPremium && (
+                    <View style={[styles.kycStatusBadge, styles.premiumBadge]}>
+                      <Ionicons name="diamond" size={12} color={colors.textInverse} />
+                      <Text style={[styles.kycStatusText, styles.kycStatusTextVerified]}>Premium</Text>
                     </View>
                   )}
                 </TouchableOpacity>
@@ -740,6 +763,9 @@ const styles = StyleSheet.create({
   },
   kycStatusTextUnverified: {
     color: colors.textMuted,
+  },
+  premiumBadge: {
+    backgroundColor: colors.textPrimary,
   },
 
   // Delete account
