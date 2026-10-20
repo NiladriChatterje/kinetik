@@ -929,6 +929,18 @@ export const ChatScreen: React.FC<{ navigation: any; route: any }> = ({ navigati
     }
   }, [matchId]);
 
+  // A locked chat offers Premium. Coming back to it (from the checkout) asks
+  // again, so a new subscriber gets the chat at once instead of after leaving
+  // and reopening it. Loading the history marks it read; joining the room,
+  // which the server refused while locked, brings live messages. Unlocked
+  // chats are kept fresh by the socket.
+  useEffect(() => {
+    if (!locked) return;
+    return navigation.addListener('focus', async () => {
+      if (await syncMessages()) getChatSocket().emit('chat:join', { matchId });
+    });
+  }, [navigation, locked, syncMessages, matchId]);
+
   /** The page of messages before the oldest one on screen, prepended. */
   const loadOlderMessages = useCallback(async () => {
     if (loadingOlderRef.current || !hasMoreHistoryRef.current) return;
