@@ -209,7 +209,8 @@ export async function paymentRoutes(app: FastifyInstance) {
     // Acknowledge only after the entitlement is durably granted. Google
     // auto-refunds and revokes anything unacknowledged after three days.
     // A failure here is logged, not surfaced: the user has their subscription,
-    // and the RTDN for this purchase gives us another chance.
+    // and the RTDN for this purchase or the hourly sweep
+    // (services/subscriptionSweep.ts) acknowledges it within the three days.
     if (playSub.entitled && playSub.needsAcknowledgement) {
       try {
         await acknowledgeSubscription(purchaseToken);

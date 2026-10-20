@@ -22,6 +22,7 @@ import { locationRoutes } from './routes/locations';
 import { errorHandler } from './middleware/errorHandler';
 import { eventBus } from './services/eventBus';
 import { initializeRedis } from './services/redis';
+import { startSubscriptionSweep } from './services/subscriptionSweep';
 
 const PORT = parseInt(process.env.PORT || '3001', 10);
 const JWT_SECRET = process.env.JWT_SECRET || 'super-secret-jwt-key-change-in-production-2024';
@@ -132,6 +133,9 @@ async function bootstrap() {
     await app.listen({ port: PORT, host: '0.0.0.0' });
     console.log(`🚀 Kinetik Core API running on port ${PORT}`);
     console.log(`📝 Environment: ${process.env.NODE_ENV || 'development'}`);
+
+    // Picks up Play renewals and missed acknowledgements when RTDN is absent
+    startSubscriptionSweep();
 
     // Graceful shutdown — must be inside bootstrap() so eventBus/redis are in scope
     const shutdown = async (signal: string) => {
