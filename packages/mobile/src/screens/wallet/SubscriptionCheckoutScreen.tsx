@@ -70,7 +70,6 @@ export const SubscriptionCheckoutScreen: React.FC = () => {
   const [pricing, setPricing] = useState<PricingInfo | null>(null);
   const [history, setHistory] = useState<{ payments: SubscriptionPayment[]; monthsPaid: number } | null>(null);
   const [product, setProduct] = useState<any | null>(null);
-  const [storeReady, setStoreReady] = useState(false);
   const [loading, setLoading] = useState(true);
   const [subscribing, setSubscribing] = useState(false);
   const [cancelling, setCancelling] = useState(false);
@@ -80,6 +79,12 @@ export const SubscriptionCheckoutScreen: React.FC = () => {
   // ref rather than closing over stale state.
   const pricingRef = useRef<PricingInfo | null>(null);
   pricingRef.current = pricing;
+
+  // The Play connection is opened once per visit (see the store effect) and
+  // closed when the screen goes. Refs, not state, so no re-render can end it.
+  const mountedRef = useRef(true);
+  const connectedRef = useRef(false);
+  const storeLoadRef = useRef<Promise<any | null> | null>(null);
 
   const fetchStatus = useCallback(async () => {
     try {
@@ -95,6 +100,8 @@ export const SubscriptionCheckoutScreen: React.FC = () => {
         setHistory(hist.data);
       }
       if (priceRes.success && priceRes.data) {
+        // Also into the ref now, so loadStore can use it before the re-render
+        pricingRef.current = priceRes.data as PricingInfo;
         setPricing(priceRes.data as PricingInfo);
       }
       return priceRes.success ? (priceRes.data as PricingInfo) : null;
@@ -148,9 +155,44 @@ export const SubscriptionCheckoutScreen: React.FC = () => {
     [toast, fetchStatus],
   );
 
+  /**
+   * Connect to Play (once per visit) and look up the subscription product.
+   * Concurrent calls share one attempt. A failed or empty attempt can be
+   * retried, and the subscribe button does: the first one may have run while
+   * the server's database was waking up, with no product id to look up.
+   */
+  const loadStore = useCallback((): Promise<any | null> => {
+    if (!storeLoadRef.current) {
+      storeLoadRef.current = (async () => {
+        const productId = pricingRef.current?.productId ?? (await fetchStatus())?.productId;
+        if (!productId) return null;
+        if (!connectedRef.current) {
+          await initConnection();
+          connectedRef.current = true;
+        }
+        const products = await fetchProducts({ skus: [productId], type: 'subs' });
+        const found = products?.[0] ?? null;
+        if (found && mountedRef.current) setProduct(found);
+        return found;
+      })().finally(() => {
+        storeLoadRef.current = null;
+      });
+    }
+    return storeLoadRef.current;
+  }, [fetchStatus]);
+
+  // The listeners below are registered once, so they call the latest version
+  const redeemRef = useRef(redeemPurchase);
+  redeemRef.current = redeemPurchase;
+
   // ─── Store connection, product lookup, and restore ────
+  // Runs once per visit. It must not depend on anything that can change
+  // between renders: re-running it ends the Play connection (cleanup) and
+  // starts a new one, and in a re-render loop Play never stays connected long
+  // enough to return the product (seen in versionCode 10: "Google Play is not
+  // ready" on every tap).
   useEffect(() => {
-    let cancelled = false;
+    mountedRef.current = true;
 
     const purchaseSub = purchaseUpdatedListener(async (purchase: any) => {
       // Android reports 'pending' for a purchase awaiting a UPI mandate. It is
@@ -161,16 +203,16 @@ export const SubscriptionCheckoutScreen: React.FC = () => {
       // transaction unfinished.
       if (!purchase?.purchaseToken) return;
       try {
-        await redeemPurchase(purchase);
+        await redeemRef.current(purchase);
       } catch (error: any) {
         toast.showError('Verification failed', error?.message || 'Please reopen this screen.');
       } finally {
-        if (!cancelled) setSubscribing(false);
+        if (mountedRef.current) setSubscribing(false);
       }
     });
 
     const errorSub = purchaseErrorListener((error: any) => {
-      if (!cancelled) setSubscribing(false);
+      if (mountedRef.current) setSubscribing(false);
       const code = error?.code || '';
       if (/cancel/i.test(code) || /cancel/i.test(error?.message || '')) {
         toast.showError('Cancelled', 'Try again any time.');
@@ -180,18 +222,12 @@ export const SubscriptionCheckoutScreen: React.FC = () => {
     });
 
     (async () => {
-      const price = await fetchStatus();
-      const productId = price?.productId;
+      await fetchStatus();
 
       try {
-        await initConnection();
-        if (cancelled) return;
-        setStoreReady(true);
-
-        if (productId) {
-          const products = await fetchProducts({ skus: [productId], type: 'subs' });
-          if (!cancelled && products?.length) setProduct(products[0]);
-        }
+        await loadStore();
+        if (!mountedRef.current || !connectedRef.current) return;
+        const productId = pricingRef.current?.productId;
 
         // Reinstalled the app, or switched device: Play still knows about an
         // active subscription, so re-send it rather than making the user pay
@@ -200,26 +236,30 @@ export const SubscriptionCheckoutScreen: React.FC = () => {
         for (const purchase of owned ?? []) {
           if (productId && purchase?.productId !== productId) continue;
           try {
-            await redeemPurchase(purchase, { silent: true });
+            await redeemRef.current(purchase, { silent: true });
           } catch {
             // Another account may own it, or the network is down — the
             // subscribe button still works.
           }
         }
       } catch (error: any) {
-        if (!cancelled) {
+        if (mountedRef.current) {
           console.warn('[subscription] Store unavailable:', error?.message || error);
         }
       }
     })();
 
     return () => {
-      cancelled = true;
+      mountedRef.current = false;
       purchaseSub?.remove?.();
       errorSub?.remove?.();
+      connectedRef.current = false;
+      storeLoadRef.current = null;
       endConnection().catch(() => {});
     };
-  }, [fetchStatus, redeemPurchase, toast]);
+    // Deliberately once per visit; see the comment above
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   const isPremium = status?.tier === 'premium';
   const isAutoRenew = Boolean(status?.autoRenew);
@@ -265,19 +305,27 @@ export const SubscriptionCheckoutScreen: React.FC = () => {
   const handleSubscribe = useCallback(async () => {
     if (subscribing) return;
 
-    const productId = pricing?.productId;
-    if (!storeReady || !product || !productId) {
-      toast.showError('Store unavailable', 'Google Play is not ready. Try again in a moment.');
-      return;
-    }
-
     setSubscribing(true);
     try {
+      // The product may not have loaded when the screen opened; try again now
+      const current =
+        product ??
+        (await loadStore().catch((err: any) => {
+          console.warn('[subscription] Store unavailable:', err?.message || err);
+          return null;
+        }));
+      const productId = pricingRef.current?.productId ?? current?.id;
+      if (!current || !productId) {
+        setSubscribing(false);
+        toast.showError('Store unavailable', 'Google Play is not ready. Try again in a moment.');
+        return;
+      }
+
       // Play requires the offer token for the base plan being purchased; a
       // subscription with no offers cannot be bought.
-      const offers = (product.subscriptionOffers ?? [])
+      const offers = (current.subscriptionOffers ?? [])
         .filter((o: any) => o?.offerTokenAndroid)
-        .map((o: any) => ({ sku: product.id ?? productId, offerToken: o.offerTokenAndroid }));
+        .map((o: any) => ({ sku: current.id ?? productId, offerToken: o.offerTokenAndroid }));
 
       if (!offers.length) {
         throw new Error('This plan is not available on your account yet');
@@ -297,7 +345,7 @@ export const SubscriptionCheckoutScreen: React.FC = () => {
         toast.showError('Failed', message || 'Try again.');
       }
     }
-  }, [subscribing, storeReady, product, pricing, toast]);
+  }, [subscribing, product, loadStore, toast]);
 
   // Play sets the real price per region; the server figure is only a fallback
   // for the moment before the store connection is up.
@@ -370,7 +418,7 @@ export const SubscriptionCheckoutScreen: React.FC = () => {
               title={isPremium && !isAutoRenew ? 'Resubscribe' : `Subscribe — ${displayPrice}`}
               onPress={handleSubscribe}
               loading={subscribing}
-              disabled={(isPremium && isAutoRenew) || !storeReady}
+              disabled={isPremium && isAutoRenew}
               fullWidth
               style={styles.subscribeBtn}
             />

@@ -1,4 +1,4 @@
-import { useCallback } from 'react';
+import { useCallback, useMemo } from 'react';
 import Toast, { type ToastShowParams } from 'react-native-toast-message';
 
 /** Ensure text2 is never undefined to avoid rendering issues in React Native 0.85+ */
@@ -27,5 +27,11 @@ export function useToast() {
     Toast.show({ type: 'glass', ...safeParams(title, message), visibilityTime: 3000 });
   }, []);
 
-  return { showError, showSuccess, showInfo, showGlass };
+  // One object for the component's lifetime. Screens list `toast` in effect
+  // dependencies; a fresh object per render re-ran those effects after every
+  // render (the subscription screen tore down its Play connection each time).
+  return useMemo(
+    () => ({ showError, showSuccess, showInfo, showGlass }),
+    [showError, showSuccess, showInfo, showGlass],
+  );
 }
