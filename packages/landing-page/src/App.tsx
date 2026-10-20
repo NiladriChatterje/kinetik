@@ -1199,7 +1199,7 @@ function Header() {
       <div className="container header-inner">
         <a href="#top" className="logo">
           <span className="logo-mark">
-            <img src="/logo-white.png" alt="" width="22" height="19" />
+            <img src="/logo-white.png" alt="" width="22" height="22" />
           </span>
           {BUSINESS_NAME}
         </a>
