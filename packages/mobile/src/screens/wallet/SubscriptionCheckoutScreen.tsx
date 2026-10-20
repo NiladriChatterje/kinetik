@@ -56,6 +56,64 @@ const PAYMENT_METHODS = [
   'Managed entirely by Google Play — cancel any time',
 ];
 
+// expo-iap error codes, grouped by what the user can do about them
+const STORE_UNREACHABLE_CODES = new Set([
+  'network-error',
+  'service-disconnected',
+  'service-timeout',
+  'service-error',
+  'connection-closed',
+  'billing-unavailable',
+  'iap-not-available',
+  'init-connection',
+  'remote-error',
+]);
+const PLAN_UNAVAILABLE_CODES = new Set([
+  'item-unavailable',
+  'sku-not-found',
+  'sku-offer-mismatch',
+  'query-product',
+  'empty-sku-list',
+  'developer-error',
+  'feature-not-supported',
+]);
+
+type PurchaseErrorOutcome =
+  | { kind: 'cancelled' }
+  | { kind: 'owned' }
+  | { kind: 'message'; title: string; message: string };
+
+/**
+ * What to tell the user about a failed Play purchase. Play's own text is
+ * technical, so it only goes to the log.
+ */
+function describePurchaseError(error: any): PurchaseErrorOutcome {
+  const code = String(error?.code || '');
+  const raw = String(error?.message || '');
+  if (/cancel/i.test(code) || /cancel/i.test(raw)) return { kind: 'cancelled' };
+  console.warn('[subscription] Purchase failed:', code || '(no code)', raw);
+  if (code === 'already-owned') return { kind: 'owned' };
+  if (STORE_UNREACHABLE_CODES.has(code)) {
+    return {
+      kind: 'message',
+      title: 'Google Play unavailable',
+      message: 'Check your connection and try again.',
+    };
+  }
+  if (PLAN_UNAVAILABLE_CODES.has(code)) {
+    return {
+      kind: 'message',
+      title: 'Plan unavailable',
+      message: 'This plan is not available right now. Try again later.',
+    };
+  }
+  return {
+    kind: 'message',
+    title: 'Purchase failed',
+    message: 'Google Play could not complete the purchase. Try again.',
+  };
+}
+
 function formatDate(iso: string | null): string {
   if (!iso) return '';
   const d = new Date(iso);
@@ -145,7 +203,14 @@ export const SubscriptionCheckoutScreen: React.FC = () => {
         return;
       }
 
-      await finishTransaction({ purchase, isConsumable: false });
+      // The server has granted the entitlement and acknowledged the purchase
+      // (with the hourly sweep as its backup), so a failure here must not be
+      // reported as a failed purchase: Play re-delivers an unfinished one.
+      try {
+        await finishTransaction({ purchase, isConsumable: false });
+      } catch (error: any) {
+        console.warn('[subscription] finishTransaction failed:', error?.code || error?.message || error);
+      }
 
       if (res.data?.activated && !silent) {
         toast.showSuccess('Premium active!', 'Subscription is live.');
@@ -185,6 +250,33 @@ export const SubscriptionCheckoutScreen: React.FC = () => {
   const redeemRef = useRef(redeemPurchase);
   redeemRef.current = redeemPurchase;
 
+  /**
+   * Re-send subscriptions Play already holds for this Google account
+   * (reinstall, new device, or Play saying "already owned") rather than
+   * making the user pay again. Silent on the visit-time run; when the user
+   * asked, a failure is reported.
+   */
+  const restoreOwned = useCallback(async ({ silent }: { silent: boolean }) => {
+    const productId = pricingRef.current?.productId;
+    const owned = (await getAvailablePurchases() ?? []).filter(
+      (purchase: any) => !productId || purchase?.productId === productId,
+    );
+    if (!owned.length && !silent) {
+      toast.showError('Nothing to restore', 'Google Play found no subscription on this account.');
+    }
+    for (const purchase of owned) {
+      try {
+        await redeemRef.current(purchase, { silent });
+      } catch (error: any) {
+        // Another account may own it, or the network is down — the
+        // subscribe button still works.
+        if (!silent) {
+          toast.showError('Could not restore', error?.message || 'Reopen this screen to try again.');
+        }
+      }
+    }
+  }, [toast]);
+
   // ─── Store connection, product lookup, and restore ────
   // Runs once per visit. It must not depend on anything that can change
   // between renders: re-running it ends the Play connection (cleanup) and
@@ -213,11 +305,14 @@ export const SubscriptionCheckoutScreen: React.FC = () => {
 
     const errorSub = purchaseErrorListener((error: any) => {
       if (mountedRef.current) setSubscribing(false);
-      const code = error?.code || '';
-      if (/cancel/i.test(code) || /cancel/i.test(error?.message || '')) {
+      const outcome = describePurchaseError(error);
+      if (outcome.kind === 'cancelled') {
         toast.showError('Cancelled', 'Try again any time.');
+      } else if (outcome.kind === 'owned') {
+        toast.showSuccess('Already subscribed', 'Restoring your subscription.');
+        restoreOwned({ silent: false }).catch(() => {});
       } else {
-        toast.showError('Purchase failed', error?.message || 'Try again.');
+        toast.showError(outcome.title, outcome.message);
       }
     });
 
@@ -227,21 +322,8 @@ export const SubscriptionCheckoutScreen: React.FC = () => {
       try {
         await loadStore();
         if (!mountedRef.current || !connectedRef.current) return;
-        const productId = pricingRef.current?.productId;
-
-        // Reinstalled the app, or switched device: Play still knows about an
-        // active subscription, so re-send it rather than making the user pay
-        // again. Silent because this runs on every visit to the screen.
-        const owned = await getAvailablePurchases();
-        for (const purchase of owned ?? []) {
-          if (productId && purchase?.productId !== productId) continue;
-          try {
-            await redeemRef.current(purchase, { silent: true });
-          } catch {
-            // Another account may own it, or the network is down — the
-            // subscribe button still works.
-          }
-        }
+        // Silent because this runs on every visit to the screen
+        await restoreOwned({ silent: true });
       } catch (error: any) {
         if (mountedRef.current) {
           console.warn('[subscription] Store unavailable:', error?.message || error);
@@ -328,7 +410,9 @@ export const SubscriptionCheckoutScreen: React.FC = () => {
         .map((o: any) => ({ sku: current.id ?? productId, offerToken: o.offerTokenAndroid }));
 
       if (!offers.length) {
-        throw new Error('This plan is not available on your account yet');
+        setSubscribing(false);
+        toast.showError('Plan unavailable', 'This plan is not available on your account yet.');
+        return;
       }
 
       // Resolution arrives on purchaseUpdatedListener, which clears `subscribing`.
@@ -338,14 +422,17 @@ export const SubscriptionCheckoutScreen: React.FC = () => {
       });
     } catch (error: any) {
       setSubscribing(false);
-      const message = error?.message || '';
-      if (/cancel/i.test(message)) {
+      const outcome = describePurchaseError(error);
+      if (outcome.kind === 'cancelled') {
         toast.showError('Cancelled', 'Try again any time.');
+      } else if (outcome.kind === 'owned') {
+        toast.showSuccess('Already subscribed', 'Restoring your subscription.');
+        restoreOwned({ silent: false }).catch(() => {});
       } else {
-        toast.showError('Failed', message || 'Try again.');
+        toast.showError(outcome.title, outcome.message);
       }
     }
-  }, [subscribing, product, loadStore, toast]);
+  }, [subscribing, product, loadStore, restoreOwned, toast]);
 
   // Play sets the real price per region; the server figure is only a fallback
   // for the moment before the store connection is up.
@@ -458,8 +545,10 @@ export const SubscriptionCheckoutScreen: React.FC = () => {
             {history && history.payments.length > 0 && (
               <>
                 <Text style={styles.sectionTitle}>Billing history</Text>
+                {/* The server counts completed payments (monthsPaid predates
+                    weekly billing), so the label counts payments, not months */}
                 <Text style={styles.historySummary}>
-                  {history.monthsPaid} month{history.monthsPaid === 1 ? '' : 's'} of Premium paid
+                  {history.monthsPaid} payment{history.monthsPaid === 1 ? '' : 's'} made
                 </Text>
                 {history.payments.map((p, i) => (
                   <View key={p.paymentId || `${p.paidAt}-${i}`} style={styles.historyRow}>
