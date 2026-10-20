@@ -22,6 +22,7 @@
  */
 
 import FaceDetection, { Face } from '@react-native-ml-kit/face-detection';
+import { Asset } from 'expo-asset';
 import * as ImageManipulator from 'expo-image-manipulator';
 import { File } from 'expo-file-system';
 import * as LegacyFileSystem from 'expo-file-system/legacy';
@@ -62,11 +63,21 @@ let modelPromise: Promise<import('react-native-fast-tflite').TensorflowModel> | 
 
 async function getModel(): Promise<import('react-native-fast-tflite').TensorflowModel> {
   if (!modelPromise) {
-    const { loadTensorflowModel } = await getFastTflite();
-    modelPromise = loadTensorflowModel(
-      require('../assets/models/mobile_face_net.tflite'),
-      [], // CPU — a single 112×112 inference is a few ms; delegates not worth the setup
-    ).catch((err) => {
+    modelPromise = (async () => {
+      const { loadTensorflowModel } = await getFastTflite();
+      // fast-tflite reads the model with java.net.URL, which needs a real URL.
+      // A release build has no Metro server: require() resolves to a bare
+      // res/raw resource name (src_assets_models_mobile_face_net) and URL()
+      // throws MalformedURLException; only dev builds get an http URL.
+      // expo-asset copies the resource (or downloads it, in dev) to a cache
+      // file, so the model always loads from a file:// URL.
+      const [asset] = await Asset.loadAsync(require('../assets/models/mobile_face_net.tflite'));
+      if (!asset?.localUri) throw new Error('Face model asset has no local file');
+      return loadTensorflowModel(
+        { url: asset.localUri },
+        [], // CPU — a single 112×112 inference is a few ms; delegates not worth the setup
+      );
+    })().catch((err) => {
       modelPromise = null; // Allow retry on next call
       throw err;
     });
