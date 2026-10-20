@@ -74,9 +74,11 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     marginBottom: spacing.xxl,
   },
+  // Same tile as the sign-in screen: logo.png has wide transparent margins,
+  // so the box overhangs the tile to draw the couple ~46 tall
   logoImage: {
-    width: 46,
-    height: 46,
+    width: 81,
+    height: 81,
     tintColor: colors.textInverse,
   },
   title: { ...typography.h1, color: colors.textPrimary, textAlign: 'center', marginBottom: spacing.sm },
