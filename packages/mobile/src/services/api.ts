@@ -1071,7 +1071,8 @@ class ApiClient {
    * itself runs on the device (see services/faceVerification.ts) — the server
    * only records the outcome.
    */
-  async reportFaceVerification(payload: { verified: boolean; confidence?: number }) {
+  /** `skipped` marks the profile Face unverified even if an earlier selfie matched */
+  async reportFaceVerification(payload: { verified: boolean; confidence?: number; skipped?: boolean }) {
     return this.request<{ status: string }>('/api/v1/users/face-verification', {
       method: 'POST',
       body: JSON.stringify(payload),

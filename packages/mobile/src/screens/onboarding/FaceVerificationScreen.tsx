@@ -221,19 +221,30 @@ export const FaceVerificationScreen: React.FC<{ navigation: any }> = ({ navigati
   }, [navigation, toast]);
 
   /**
-   * Skip the selfie and finish onboarding. Nothing is reported: a new account
-   * starts unverified, so the profile shows the Face unverified tag.
+   * Skip the selfie and finish onboarding. The skip is recorded first so the
+   * profile shows the Face unverified tag, even if an earlier selfie matched
+   * (the user may have changed their photos since). Onboarding only finishes
+   * once the server has it, like Continue.
    */
+  const confirmSkip = useCallback(async () => {
+    const res = await api.reportFaceVerification({ verified: false, skipped: true });
+    if (!res?.success) {
+      toast.showError('Could not finish', res?.error?.message || 'Check your connection and try again.');
+      return;
+    }
+    await handleContinue();
+  }, [handleContinue, toast]);
+
   const handleSkip = useCallback(() => {
     Alert.alert(
       'Skip face verification?',
       'Your profile will show a "Face unverified" tag to others.',
       [
         { text: 'Cancel', style: 'cancel' },
-        { text: 'Skip', onPress: handleContinue },
+        { text: 'Skip', onPress: confirmSkip },
       ],
     );
-  }, [handleContinue]);
+  }, [confirmSkip]);
 
   // ─── Permission states ──────────────────────────────────
   if (!permission) {
