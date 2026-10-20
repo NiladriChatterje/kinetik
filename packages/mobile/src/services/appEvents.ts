@@ -21,6 +21,14 @@ export function emitProfileBlocked(userId: string): void {
   DeviceEventEmitter.emit(PROFILE_LIKED, { userId });
 }
 
+/**
+ * A pass keeps the person out of the viewer's Explore for a while (server
+ * side, REJECT_COOLDOWN_DAYS), so the grid drops the card as for a like.
+ */
+export function emitProfilePassed(userId: string): void {
+  DeviceEventEmitter.emit(PROFILE_LIKED, { userId });
+}
+
 /** Subscribe; the returned function unsubscribes. */
 export function onProfileLiked(handler: (userId: string) => void): () => void {
   const subscription = DeviceEventEmitter.addListener(PROFILE_LIKED, (event: { userId?: string }) => {

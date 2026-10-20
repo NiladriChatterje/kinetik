@@ -57,6 +57,9 @@ export const ExploreScreen: React.FC<{ navigation: any }> = ({ navigation }) => 
   const [hasMore, setHasMore] = useState(true);
   const loadingMoreRef = useRef(false);
   const offsetRef = useRef(0);
+  // Mirrors `profiles` for the socket/event handlers, which are set up once
+  const profilesRef = useRef<GridProfile[]>([]);
+  profilesRef.current = profiles;
 
   const fetchProfiles = useCallback(async (asRefresh = false) => {
     asRefresh ? setRefreshing(true) : setLoading(true);
@@ -104,16 +107,21 @@ export const ExploreScreen: React.FC<{ navigation: any }> = ({ navigation }) => 
   // Live grid updates from the shared /presence socket:
   //  - match:new → drop the profile (matched users leave Explore)
   //  - likes:new → grey the liker's card in place: they are in the Likes list
-  //  - a like sent from the deck → drop that card (pending likes leave Explore)
+  //  - a like or pass sent from the deck → drop that card (the server leaves
+  //    pending likes, and passes for a while, out of Explore)
   useEffect(() => {
     const socket = getPresenceSocket();
-    const offProfileLiked = onProfileLiked((userId) => {
-      setProfiles((prev) => prev.filter((p) => p.userId !== userId));
-    });
-    const onMatchNew = (data: any) => {
-      if (data?.partnerId) {
-        setProfiles((prev) => prev.filter((p) => p.userId !== data.partnerId));
+    // A loaded card the server now leaves out shifts every later row up one:
+    // step the offset back with it so the next page does not skip a profile
+    const dropProfile = (userId: string) => {
+      if (profilesRef.current.some((p) => p.userId === userId)) {
+        offsetRef.current = Math.max(0, offsetRef.current - 1);
       }
+      setProfiles((prev) => prev.filter((p) => p.userId !== userId));
+    };
+    const offProfileLiked = onProfileLiked(dropProfile);
+    const onMatchNew = (data: any) => {
+      if (data?.partnerId) dropProfile(data.partnerId);
     };
     const onLikesNew = (data: any) => {
       // The id is present for Premium viewers and for a free viewer whose

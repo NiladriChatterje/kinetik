@@ -10,7 +10,7 @@ import { api } from '../../services/api';
 import { useToast } from '../../hooks/useToast';
 import { colors, typography, spacing, radius, shadows } from '../../theme';
 import { getPresenceSocket } from '../../services/presenceSocket';
-import { emitProfileLiked, emitProfileBlocked, onPremiumChanged } from '../../services/appEvents';
+import { emitProfileLiked, emitProfilePassed, emitProfileBlocked, onPremiumChanged } from '../../services/appEvents';
 import { ReportBlockSheet } from '../../components/safety/ReportBlockSheet';
 import { resolveUrl } from '../../config';
 import { MatchPopup } from '../../components/common/MatchPopup';
@@ -553,8 +553,9 @@ export const MatchScreen: React.FC<{ navigation: any; route?: any }> = ({ naviga
           toast.showSuccess('Like sent!', 'Visible in their likes.');
         }
         // The Explore grid drops this person's card at once (the server
-        // leaves pending likes out of Explore on its next load anyway)
+        // leaves pending likes, and passes for a while, out of Explore anyway)
         if (direction === 'right') emitProfileLiked(profile.userId);
+        else emitProfilePassed(profile.userId);
       } else if (res.error?.code === 'ALREADY_MATCHED' || res.error?.code === 'NOT_FOUND') {
         // Stale card — the interaction/match already exists on the server
         // (e.g. matched via the Likes screen), or the profile is no longer
