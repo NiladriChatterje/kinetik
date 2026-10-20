@@ -110,6 +110,15 @@ describe('GET /matches/profiles — distance-aware feed', () => {
       expect(q.sql).not.toContain('NULLS LAST');
       expect(q.sql).toContain('ORDER BY u.created_at DESC');
     });
+
+    it('explore leaves out people the viewer rejected, for the cooldown only', async () => {
+      await getProfiles('?scope=explore&offset=0&limit=10');
+      const [q] = feedQueries();
+      expectPlaceholdersMatchParams(q);
+      // a pass of theirs, and a like from them they discarded
+      expect(q.sql).toMatch(/action = 'pass'\s+AND created_at > NOW\(\) - INTERVAL '7 days'/);
+      expect(q.sql).toMatch(/responded_at IS NULL\s+OR responded_at > NOW\(\) - INTERVAL '7 days'/);
+    });
   });
 
   describe('viewer with own GPS location only', () => {

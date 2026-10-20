@@ -52,6 +52,13 @@ const LOCKED_MESSAGE_PREVIEW = 'New message. Upgrade to Premium to read it.';
  */
 const FREE_VISIBLE_LIKES = 5;
 
+/**
+ * Days a profile the viewer rejected stays out of their Explore: one they
+ * passed on, or whose like they discarded. After that it circulates again.
+ * Other viewers are unaffected.
+ */
+const REJECT_COOLDOWN_DAYS = 7;
+
 export async function matchRoutes(app: FastifyInstance) {
   app.addHook('preHandler', async (request: FastifyRequest, reply: FastifyReply) => {
     // Skip JWT auth ONLY for the GET media proxy endpoint — native audio/video
@@ -201,8 +208,8 @@ export async function matchRoutes(app: FastifyInstance) {
     // (people you're already chatting with) and people with a pending like
     // on you are excluded — the latter belong to the Likes list, where a
     // like-back makes the match — and so are people you have a pending like
-    // on, until they reject it. Passed users stay visible so the whole
-    // platform is browsable.
+    // on, until they reject it. People you rejected (passed on, or whose like
+    // you discarded) stay out for REJECT_COOLDOWN_DAYS, then come back.
     let profilesResult;
     let hasMore = false;
     if (isExplore) {
@@ -224,16 +231,21 @@ export async function matchRoutes(app: FastifyInstance) {
             UNION
             SELECT user_a_id FROM ${TABLES.MATCHES} WHERE user_b_id = $1 AND is_active = TRUE
             UNION
-            -- Pending incoming like: answered from the Likes list, not here
+            -- Incoming like: a pending one is answered from the Likes list,
+            -- not here; one the viewer discarded stays out for the cooldown
             SELECT actor_id FROM ${TABLES.USER_INTERACTIONS}
-            WHERE target_id = $1 AND action IN ('like', 'super_like')
-              AND is_mutual = FALSE AND responded_at IS NULL
+            WHERE target_id = $1 AND action IN ('like', 'super_like') AND is_mutual = FALSE
+              AND (responded_at IS NULL
+                   OR responded_at > NOW() - INTERVAL '${REJECT_COOLDOWN_DAYS} days')
             UNION
             -- Pending outgoing like: the viewer already liked them; they come
-            -- back only if that like is rejected (responded_at set, no match)
+            -- back only if that like is rejected (responded_at set, no match).
+            -- A pass keeps them out for the cooldown.
             SELECT target_id FROM ${TABLES.USER_INTERACTIONS}
-            WHERE actor_id = $1 AND action IN ('like', 'super_like')
-              AND is_mutual = FALSE AND responded_at IS NULL
+            WHERE actor_id = $1 AND is_mutual = FALSE
+              AND ((action IN ('like', 'super_like') AND responded_at IS NULL)
+                   OR (action = 'pass'
+                       AND created_at > NOW() - INTERVAL '${REJECT_COOLDOWN_DAYS} days'))
             UNION
             -- Blocked either way (routes/safety.ts)
             SELECT blocked_id FROM ${TABLES.USER_BLOCKS} WHERE blocker_id = $1
@@ -385,8 +397,8 @@ export async function matchRoutes(app: FastifyInstance) {
     }
 
     // Check for existing interaction. A pass, or a like the other person
-    // rejected, may be replaced: that person is browsable again in Explore,
-    // so swiping on them has to work. A like still pending, or a mutual one
+    // rejected, may be replaced: that person is browsable again in Explore
+    // (a pass after REJECT_COOLDOWN_DAYS), so swiping on them has to work. A like still pending, or a mutual one
     // (they are matched), is refused as before.
     const existing = await query(
       `SELECT id, action, is_mutual, responded_at FROM ${TABLES.USER_INTERACTIONS}
