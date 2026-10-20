@@ -24,9 +24,10 @@ export async function faceVerificationRoutes(app: FastifyInstance) {
   // guarantee — see FACE_VERIFICATION_ONDEVICE.md.
   app.post('/', async (request: FastifyRequest, reply: FastifyReply) => {
     const { sub: userId } = request.user as any;
-    const { verified, confidence } = (request.body ?? {}) as {
+    const { verified, confidence, skipped } = (request.body ?? {}) as {
       verified?: boolean;
       confidence?: number;
+      skipped?: boolean;
     };
 
     if (typeof verified !== 'boolean') {
@@ -34,6 +35,21 @@ export async function faceVerificationRoutes(app: FastifyInstance) {
         success: false,
         error: { code: 'INVALID_BODY', message: '`verified` (boolean) is required.' },
       });
+    }
+
+    if (skipped === true) {
+      // The user skipped the selfie step. Clear any earlier face match too:
+      // they may have changed their photos since, and the profile must show
+      // Face unverified. is_verified stays TRUE only for a KYC-verified account.
+      await query(
+        `UPDATE ${TABLES.USERS}
+         SET face_verification_status = 'unverified',
+             is_verified = COALESCE(kyc_status = 'verified', FALSE)
+         WHERE id = $1`,
+        [userId],
+      );
+      console.log(`[face-verification] User ${userId} skipped face verification`);
+      return reply.status(201).send({ success: true, data: { status: 'unverified' } });
     }
 
     if (verified) {
