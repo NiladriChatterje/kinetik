@@ -10,6 +10,7 @@ import {
 } from '@kinetik/shared';
 import { PresenceHandler } from './handlers/presence';
 import { ChatHandler } from './handlers/chat';
+import { toSubscriptionChanged } from './handlers/subscription';
 
 const PORT = parseInt(process.env.PORT || '3002', 10);
 const JWT_SECRET = process.env.JWT_SECRET || 'super-secret-jwt-key-change-in-production-2024';
@@ -144,7 +145,7 @@ io.on('connection', (socket) => {
 // ─── Start Event Bus Subscriber (replaces Kafka consumer) ─
 async function startEventBusSubscriber() {
   // Subscribe to event bus channels
-  await eventBusClient.subscribe(EVENT_BUS_CHANNELS.MATCH_EVENTS);
+  await eventBusClient.subscribe(EVENT_BUS_CHANNELS.MATCH_EVENTS, EVENT_BUS_CHANNELS.PAYMENT_EVENTS);
 
   eventBusClient.on('message', (channel: string, message: string) => {
     try {
@@ -202,13 +203,25 @@ async function startEventBusSubscriber() {
             chatNsp.to(`user:${userBId}`).emit(WsEvent.MATCH_NEW, payloadForB);
           }
           break;
+
+        case EVENT_BUS_CHANNELS.PAYMENT_EVENTS: {
+          // Premium gained or lost: the app listens on presence, which every
+          // signed-in session keeps open (see handlers/subscription.ts)
+          const change = toSubscriptionChanged(event);
+          if (change) {
+            presenceNsp.to(`user:${change.userId}`).emit(WsEvent.SUBSCRIPTION_CHANGED, change.payload);
+          }
+          break;
+        }
       }
     } catch (err) {
       console.error('[EventBus] Failed to parse message:', err);
     }
   });
 
-  console.log(`📡 Subscribed to event bus channels: ${EVENT_BUS_CHANNELS.MATCH_EVENTS}`);
+  console.log(
+    `📡 Subscribed to event bus channels: ${EVENT_BUS_CHANNELS.MATCH_EVENTS}, ${EVENT_BUS_CHANNELS.PAYMENT_EVENTS}`,
+  );
 }
 
 // ─── Start Server ─────────────────────────────────────────

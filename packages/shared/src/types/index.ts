@@ -275,6 +275,10 @@ export enum WsEvent {
   CHAT_MESSAGE = 'chat:message',
   CHAT_TYPING = 'chat:typing',
   CHAT_READ = 'chat:read',
+
+  // Premium gained or lost (purchase, renewal, expiry, refund, account hold),
+  // sent to the user's own room on the presence namespace
+  SUBSCRIPTION_CHANGED = 'subscription:changed',
 }
 
 // ─── API Response Types ───────────────────────────────────
