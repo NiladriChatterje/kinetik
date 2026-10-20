@@ -291,7 +291,7 @@ export const LikeListScreen: React.FC<{ navigation: any }> = ({ navigation }) =>
                     <TouchableOpacity
                       key={i}
                       style={styles.blurCard}
-                      onPress={() => navigation.navigate('SubscriptionCheckout')}
+                      onPress={() => navigation.navigate('SubscriptionCheckout', { fromPaywall: true })}
                       activeOpacity={0.7}
                       accessibilityRole="button"
                       accessibilityLabel="Upgrade to Premium to see who likes you"
@@ -310,7 +310,7 @@ export const LikeListScreen: React.FC<{ navigation: any }> = ({ navigation }) =>
 
                 <TouchableOpacity
                   style={styles.upgradeButton}
-                  onPress={() => navigation.navigate('SubscriptionCheckout')}
+                  onPress={() => navigation.navigate('SubscriptionCheckout', { fromPaywall: true })}
                   activeOpacity={0.8}
                 >
                   <Ionicons name="eye-outline" size={18} color={colors.textInverse} />
@@ -331,7 +331,7 @@ export const LikeListScreen: React.FC<{ navigation: any }> = ({ navigation }) =>
         onDismiss={() => setPaywall((prev) => ({ ...prev, visible: false }))}
         onUpgrade={() => {
           setPaywall((prev) => ({ ...prev, visible: false }));
-          navigation.navigate('SubscriptionCheckout');
+          navigation.navigate('SubscriptionCheckout', { fromPaywall: true });
         }}
       />
     </SafeAreaView>

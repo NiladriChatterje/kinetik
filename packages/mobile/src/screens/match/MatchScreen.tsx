@@ -647,7 +647,7 @@ export const MatchScreen: React.FC<{ navigation: any; route?: any }> = ({ naviga
           onDismiss={() => setPaywall((prev) => ({ ...prev, visible: false }))}
           onUpgrade={() => {
             setPaywall((prev) => ({ ...prev, visible: false }));
-            navigation.navigate('SubscriptionCheckout');
+            navigation.navigate('SubscriptionCheckout', { fromPaywall: true });
           }}
         />
       </SafeAreaView>
@@ -708,7 +708,7 @@ export const MatchScreen: React.FC<{ navigation: any; route?: any }> = ({ naviga
           onDismiss={() => setPaywall((prev) => ({ ...prev, visible: false }))}
           onUpgrade={() => {
             setPaywall((prev) => ({ ...prev, visible: false }));
-            navigation.navigate('SubscriptionCheckout');
+            navigation.navigate('SubscriptionCheckout', { fromPaywall: true });
           }}
         />
       </SafeAreaView>
@@ -831,7 +831,7 @@ export const MatchScreen: React.FC<{ navigation: any; route?: any }> = ({ naviga
         onDismiss={() => setPaywall((prev) => ({ ...prev, visible: false }))}
         onUpgrade={() => {
           setPaywall((prev) => ({ ...prev, visible: false }));
-          navigation.navigate('SubscriptionCheckout');
+          navigation.navigate('SubscriptionCheckout', { fromPaywall: true });
         }}
       />
 

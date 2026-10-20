@@ -1,6 +1,7 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { View, Text, StyleSheet, ScrollView, ActivityIndicator, Alert, Linking } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
+import { useNavigation, useRoute } from '@react-navigation/native';
 import { Ionicons } from '@expo/vector-icons';
 import {
   initConnection,
@@ -125,6 +126,9 @@ function formatDate(iso: string | null): string {
 
 export const SubscriptionCheckoutScreen: React.FC = () => {
   const toast = useToast();
+  const navigation = useNavigation<any>();
+  // Opened from a chat, likes or swipe paywall (see RootNavigator)
+  const fromPaywall = Boolean((useRoute<any>().params as { fromPaywall?: boolean } | undefined)?.fromPaywall);
 
   const [status, setStatus] = useState<SubscriptionStatus | null>(null);
   const [pricing, setPricing] = useState<PricingInfo | null>(null);
@@ -231,11 +235,17 @@ export const SubscriptionCheckoutScreen: React.FC = () => {
         }
         if (!silent) {
           announcePremiumActive();
+          // Bought from a paywall: go straight back to the chat, likes or
+          // card that asked for Premium, which has already reloaded unlocked
+          if (fromPaywall && navigation.canGoBack()) {
+            navigation.goBack();
+            return;
+          }
         }
       }
       await fetchStatus();
     },
-    [toast, fetchStatus],
+    [toast, fetchStatus, fromPaywall, navigation],
   );
 
   /**

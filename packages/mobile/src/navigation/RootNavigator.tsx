@@ -121,7 +121,9 @@ export type RootStackParamList = {
   KYCVerify: undefined;
   // Selfie check before a photo becomes the primary profile photo
   PrimaryPhotoSelfie: { photoId: string; photoUrl: string };
-  SubscriptionCheckout: undefined;
+  // fromPaywall: opened from a chat, likes or swipe paywall; a completed
+  // purchase goes straight back there
+  SubscriptionCheckout: { fromPaywall?: boolean } | undefined;
 };
 
 export type OnboardingStackParamList = {

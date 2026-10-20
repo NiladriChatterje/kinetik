@@ -1877,7 +1877,7 @@ export const ChatScreen: React.FC<{ navigation: any; route: any }> = ({ navigati
         <LockedChatView
           partnerName={partnerName}
           onBack={() => navigation.goBack()}
-          onUpgrade={() => navigation.navigate('SubscriptionCheckout')}
+          onUpgrade={() => navigation.navigate('SubscriptionCheckout', { fromPaywall: true })}
           onSafety={partnerId ? () => setSafetyVisible(true) : undefined}
         />
         {partnerId ? (
