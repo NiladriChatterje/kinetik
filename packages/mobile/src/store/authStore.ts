@@ -8,6 +8,13 @@ import { closePresenceSocket, getPresenceSocket } from '../services/presenceSock
 import { emitPremiumChanged } from '../services/appEvents';
 import { isWelcomePending } from '../services/welcomeNotice';
 
+/**
+ * Play states in which Google could not charge the renewal (same as the
+ * server's isPaymentIssueState): a grace period keeps Premium for a few
+ * days, an account hold has lost it until the payment is fixed.
+ */
+const PAYMENT_ISSUE_STATES = new Set(['SUBSCRIPTION_STATE_IN_GRACE_PERIOD', 'SUBSCRIPTION_STATE_ON_HOLD']);
+
 let lastPremiumActiveToastAt = 0;
 
 /**
@@ -161,6 +168,9 @@ interface AuthState {
    * purchase or a push), which also counts when nothing was known before.
    */
   setPremium: (isPremium: boolean, options?: { isChange?: boolean }) => void;
+  /** Google could not charge the renewal (grace period or account hold) */
+  paymentIssue: boolean;
+  setPaymentIssue: (paymentIssue: boolean) => void;
 
   // Socket for real-time like/match updates
   likesSocket: Socket | null;
@@ -335,6 +345,7 @@ export const useAuthStore = create<AuthState>((set, get) => ({
   unreadChatCount: 0,
   openChatMatchId: null,
   isPremium: null,
+  paymentIssue: false,
   likesSocket: null,
   chatSocket: null,
 
@@ -575,6 +586,7 @@ export const useAuthStore = create<AuthState>((set, get) => ({
     socket.on('subscription:changed', (data: any) => {
       if (typeof data?.premium !== 'boolean') return;
       const previous = get().isPremium;
+      get().setPaymentIssue(PAYMENT_ISSUE_STATES.has(data.state));
       get().setPremium(data.premium, { isChange: true });
       if (data.premium && previous === false) {
         announcePremiumActive();
@@ -714,6 +726,10 @@ export const useAuthStore = create<AuthState>((set, get) => ({
     }
   },
 
+  setPaymentIssue: (paymentIssue) => {
+    if (get().paymentIssue !== paymentIssue) set({ paymentIssue });
+  },
+
   logout: () => {
     get().disconnectLikesSocket();
     get().disconnectChatsSocket();
@@ -724,7 +740,7 @@ export const useAuthStore = create<AuthState>((set, get) => ({
     set({
       user: null, token: null, isAuthenticated: false,
       onboardingStep: 'splash', pendingSignup: null,
-      unreadLikeCount: 0, unreadChatCount: 0, isPremium: null,
+      unreadLikeCount: 0, unreadChatCount: 0, isPremium: null, paymentIssue: false,
     });
   },
 
@@ -743,7 +759,7 @@ export const useAuthStore = create<AuthState>((set, get) => ({
         set({
           user: null, token: null, isAuthenticated: false,
           onboardingStep: 'splash', pendingSignup: null,
-          unreadLikeCount: 0, unreadChatCount: 0, isPremium: null,
+          unreadLikeCount: 0, unreadChatCount: 0, isPremium: null, paymentIssue: false,
         });
         return { success: true };
       }

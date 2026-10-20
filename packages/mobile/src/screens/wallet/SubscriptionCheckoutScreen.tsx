@@ -36,8 +36,13 @@ interface SubscriptionStatus {
   autoRenew: boolean;
   expiresAt: string | null;
   hasPurchase: boolean;
+  /** Google could not charge the renewal (grace period or account hold) */
+  paymentIssue?: boolean;
   manageUrl: string;
 }
+
+/** The payment problem notice, the same orange as Profile's pending badge */
+const PAYMENT_ISSUE_ORANGE = '#FFA500';
 
 interface SubscriptionPayment {
   paymentId: string | null;
@@ -164,6 +169,7 @@ export const SubscriptionCheckoutScreen: React.FC = () => {
         // Same tiers the server's chat and likes gates treat as Premium
         const tier = (res.data as SubscriptionStatus).tier;
         useAuthStore.getState().setPremium(tier === 'premium' || tier === 'infinite');
+        useAuthStore.getState().setPaymentIssue(Boolean((res.data as SubscriptionStatus).paymentIssue));
       }
       if (hist.success && hist.data) {
         setHistory(hist.data);
@@ -380,6 +386,8 @@ export const SubscriptionCheckoutScreen: React.FC = () => {
   }, []);
 
   const isPremium = status?.tier === 'premium';
+  // From the status read and the server's push (authStore)
+  const paymentIssue = useAuthStore((s) => s.paymentIssue);
   const isAutoRenew = Boolean(status?.autoRenew);
 
   const handleCancel = useCallback(() => {
@@ -487,6 +495,30 @@ export const SubscriptionCheckoutScreen: React.FC = () => {
           </View>
         ) : (
           <>
+            {/* Google could not charge the renewal: in a grace period the user
+                is still Premium for a few days, on hold they have lost it.
+                The fix is always the payment method in Google Play. */}
+            {paymentIssue && (
+              <View style={styles.issueBox}>
+                <Ionicons name="alert-circle" size={22} color={PAYMENT_ISSUE_ORANGE} />
+                <View style={styles.issueBody}>
+                  <Text style={styles.issueTitle}>Payment problem</Text>
+                  <Text style={styles.issueText}>
+                    Google Play could not charge your renewal. Update your payment method to keep Premium.
+                  </Text>
+                  {status?.manageUrl ? (
+                    <Button
+                      title="Fix in Google Play"
+                      onPress={handleOpenPlay}
+                      variant="outline"
+                      size="sm"
+                      style={styles.issueButton}
+                    />
+                  ) : null}
+                </View>
+              </View>
+            )}
+
             {/* Plan card */}
             <Card style={styles.planCard}>
               <View style={styles.planBadge}>
@@ -617,6 +649,21 @@ const styles = StyleSheet.create({
   title: { ...typography.h1, color: colors.textPrimary, marginBottom: spacing.sm },
   subtitle: { ...typography.body1, color: colors.textSecondary, marginBottom: spacing.xxl },
   loadingBox: { alignItems: 'center', paddingVertical: spacing.xxl * 2 },
+  issueBox: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    gap: spacing.md,
+    marginBottom: spacing.xl,
+    padding: spacing.md,
+    borderRadius: radius.md,
+    borderWidth: 1,
+    borderColor: PAYMENT_ISSUE_ORANGE,
+    backgroundColor: 'rgba(255, 165, 0, 0.08)',
+  },
+  issueBody: { flex: 1 },
+  issueTitle: { ...typography.body1, color: colors.textPrimary, fontWeight: '600', marginBottom: spacing.xs },
+  issueText: { ...typography.body2, color: colors.textSecondary, lineHeight: 20 },
+  issueButton: { marginTop: spacing.md, alignSelf: 'flex-start' },
   planCard: { alignItems: 'center', padding: spacing.xl, marginBottom: spacing.xl },
   planBadge: {
     flexDirection: 'row',

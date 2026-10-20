@@ -80,6 +80,7 @@ export const ProfileLedgerScreen: React.FC = () => {
   const logout = useAuthStore((s) => s.logout);
   // Shown on the Subscription row; purchases and the server's push keep it current
   const isPremium = useAuthStore((s) => s.isPremium);
+  const paymentIssue = useAuthStore((s) => s.paymentIssue);
   const deleteAccount = useAuthStore((s) => s.deleteAccount);
   const navigation = useNavigation();
   const toast = useToast();
@@ -195,6 +196,9 @@ export const ProfileLedgerScreen: React.FC = () => {
         const tier = res.success ? res.data?.tier : undefined;
         // Same tiers the server's chat and likes gates treat as Premium
         if (tier) useAuthStore.getState().setPremium(tier === 'premium' || tier === 'infinite');
+        if (res.success) {
+          useAuthStore.getState().setPaymentIssue(Boolean((res.data as { paymentIssue?: boolean })?.paymentIssue));
+        }
       })
       .catch(() => {});
   }, []);
@@ -546,7 +550,14 @@ export const ProfileLedgerScreen: React.FC = () => {
                       </Text>
                     </View>
                   )}
-                  {isSubscriptionRow && isPremium && (
+                  {isSubscriptionRow && paymentIssue && (
+                    // Google could not charge the renewal; the Subscription screen explains
+                    <View style={[styles.kycStatusBadge, styles.kycBadgePending]}>
+                      <Ionicons name="alert-circle-outline" size={12} color="#FFA500" />
+                      <Text style={[styles.kycStatusText, styles.kycStatusTextPending]}>Payment issue</Text>
+                    </View>
+                  )}
+                  {isSubscriptionRow && !paymentIssue && isPremium && (
                     <View style={[styles.kycStatusBadge, styles.premiumBadge]}>
                       <Ionicons name="diamond" size={12} color={colors.textInverse} />
                       <Text style={[styles.kycStatusText, styles.kycStatusTextVerified]}>Premium</Text>
