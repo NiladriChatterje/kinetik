@@ -159,24 +159,11 @@ async function jpegToTensor(jpegUri: string): Promise<Float32Array> {
  */
 export async function embedFace(
   imageUri: string,
-  debugLabel = 'face', // TEMP DEBUG
 ): Promise<{ embedding: Float32Array | null; face: Face | null; faceCount: number }> {
   const { face, count } = await detectFace(imageUri);
-  // TEMP DEBUG
-  console.log(`[face-debug] ${debugLabel} faces=${count}`, face ? JSON.stringify({ frame: face.frame, yaw: face.rotationY, pitch: face.rotationX, roll: face.rotationZ }) : '');
   if (!face) return { embedding: null, face: null, faceCount: 0 };
 
   const cropUri = await cropFace(imageUri, face);
-  // TEMP DEBUG: keep a copy of exactly what the model sees
-  try {
-    const probe = await ImageManipulator.manipulateAsync(imageUri, [], { base64: false });
-    console.log(`[face-debug] ${debugLabel} image=${probe.width}x${probe.height}`);
-    await LegacyFileSystem.makeDirectoryAsync(`${LegacyFileSystem.cacheDirectory}face-debug`, { intermediates: true }).catch(() => {});
-    await LegacyFileSystem.copyAsync({ from: cropUri, to: `${LegacyFileSystem.cacheDirectory}face-debug/${debugLabel}.jpg` });
-    await LegacyFileSystem.copyAsync({ from: imageUri, to: `${LegacyFileSystem.cacheDirectory}face-debug/${debugLabel}-full${imageUri.endsWith('.webp') ? '.webp' : '.jpg'}` });
-  } catch (e) {
-    console.log('[face-debug] copy failed', e);
-  }
   try {
     const tensor = await jpegToTensor(cropUri);
     const model = await getModel();
@@ -226,7 +213,7 @@ export async function embedProfilePhotos(photoUrls: string[]): Promise<Float32Ar
     const localPath = `${LegacyFileSystem.cacheDirectory}face-verify-profile-${i}.webp`;
     try {
       await LegacyFileSystem.downloadAsync(photoUrls[i], localPath);
-      const { embedding } = await embedFace(localPath, `profile-${i}`); // TEMP DEBUG label
+      const { embedding } = await embedFace(localPath);
       if (embedding) embeddings.push(embedding);
     } catch (err) {
       console.warn('[faceVerification] Skipping profile photo:', err);
@@ -252,7 +239,7 @@ export async function verifySelfie(
 ): Promise<FaceVerificationResult> {
   const rejectionReasons: string[] = [];
 
-  const { embedding, face, faceCount } = await embedFace(selfieUri, 'selfie'); // TEMP DEBUG label
+  const { embedding, face, faceCount } = await embedFace(selfieUri);
 
   if (!embedding || !face) {
     return {
@@ -283,8 +270,6 @@ export async function verifySelfie(
   }
 
   const scores = profileEmbeddings.map((p) => cosineSimilarity(embedding, p));
-  // TEMP DEBUG: raw dot products, before the clamp to [0, 1]
-  console.log('[face-debug] raw dots', profileEmbeddings.map((p) => p.reduce((acc, v, i) => acc + v * embedding[i], 0).toFixed(3)).join(', '));
   const best = scores.length ? Math.max(...scores) : 0;
   const avg = scores.length ? scores.reduce((s, v) => s + v, 0) / scores.length : 0;
   const confidence = best * 0.7 + avg * 0.3;
