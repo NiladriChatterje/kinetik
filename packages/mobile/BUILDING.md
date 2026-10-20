@@ -14,19 +14,21 @@ Selected with `APP_ENV`. EAS sets it per build profile in `eas.json`.
 | `EXPO_PUBLIC_API_URL` | optional, defaults to the LAN dev box | **required** | **required**, must be `https://` |
 | Cleartext HTTP (Android) | allowed | allowed if the URL is `http://` | **blocked** |
 | iOS `NSAllowsLocalNetworking` | on | on | removed |
-| Face-match blocks onboarding | no | no | **yes** |
 
 The config **fails the build** rather than producing a broken binary when
 production is misconfigured — a missing URL, a plaintext `http://` URL, or an
 unedited `*.invalid` placeholder from `eas.json` each stop the build with a
 message naming the key to fix.
 
-Override the face-verification gate in any environment with
-`EXPO_PUBLIC_PRODUCTION_FACE_VERIFICATION=true|false`. A *technical* failure
-(ML Kit or TFLite unavailable) never blocks a user in either mode — only a
-genuine mismatch they can fix by retaking. The check confirms that the selfie
-matches the uploaded profile photos; it is not a liveness or anti-spoofing
-check. See `src/services/faceVerification.ts`.
+Face verification behaves the same in every environment: a selfie that does
+not match shows the match percentage with Retake and Skip for now, and a
+technical failure shows Try Again and Skip for now, never error text. The
+check confirms that the selfie matches the uploaded profile photos; it is not
+a liveness or anti-spoofing check. See `src/services/faceVerification.ts`.
+
+Test the selfie step on a **release** build before shipping. A dev build
+loads the face model from Metro over http, which hides release-only asset
+problems (versionCode 7 to 9 failed every check this way).
 
 ## The native project is committed
 

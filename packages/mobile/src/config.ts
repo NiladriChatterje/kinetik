@@ -71,34 +71,10 @@ export const WS_URL: string = configuredWsUrl
     ? API_URL // WS goes through nginx on the same host:port
     : 'http://localhost:3002'; // Dev mode: standalone WS on port 3002
 
-// ─── Feature Flags ─────────────────────────────────────────────
-
-/**
- * Enforce on-device face verification during onboarding.
- *
- * The check confirms only that the selfie shows the same person as the
- * profile photos the user uploaded. There is no liveness or pose challenge.
- *
- *   false — a failed match is shown but onboarding continues.
- *   true  — a failed match blocks until the user retakes.
- *
- * Defaults to true when APP_ENV=production, false otherwise. Override either
- * way with EXPO_PUBLIC_PRODUCTION_FACE_VERIFICATION — a build-time value, so
- * changing it needs a rebuild.
- *
- * A TECHNICAL failure (TFLite/ML Kit unavailable, model missing) never blocks
- * in either mode: a broken build must not stop every signup. Only a genuine
- * mismatch the user can fix by retaking is enforced.
- */
-export const PRODUCTION_FACE_VERIFICATION: boolean =
-  String(process.env.EXPO_PUBLIC_PRODUCTION_FACE_VERIFICATION ?? '').toLowerCase() === 'true' ||
-  Constants.expoConfig?.extra?.productionFaceVerification === true;
-
 if (typeof __DEV__ !== 'undefined' && __DEV__) {
   console.log('[Config] APP_ENV:', APP_ENV);
   console.log('[Config] API_URL:', API_URL);
   console.log('[Config] WS_URL:', WS_URL);
-  console.log('[Config] PRODUCTION_FACE_VERIFICATION:', PRODUCTION_FACE_VERIFICATION);
 }
 
 // ─── URL Resolution ────────────────────────────────────────────

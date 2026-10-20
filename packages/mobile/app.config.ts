@@ -104,18 +104,6 @@ function resolveUrls(appEnv: AppEnv): { apiUrl: string; wsUrl: string } {
 }
 
 /**
- * Whether a failed face match blocks onboarding until the user retakes.
- * Defaults on in production, off elsewhere; override with
- * EXPO_PUBLIC_PRODUCTION_FACE_VERIFICATION. A *technical* failure never blocks
- * in either mode — see services/faceVerification.ts.
- */
-function resolveProductionFaceVerification(appEnv: AppEnv): boolean {
-  const raw = process.env.EXPO_PUBLIC_PRODUCTION_FACE_VERIFICATION;
-  if (raw != null && raw !== '') return raw.toLowerCase() === 'true';
-  return appEnv === 'production';
-}
-
-/**
  * Wire up `google-services.json` only when a real Firebase config for this
  * package is present. There is none by default: Android push is not set up,
  * and the Google Services Gradle plugin hard-fails on a missing or non-matching
@@ -174,7 +162,6 @@ const FACE_VERIFICATION_PROGUARD_RULES = `
 export default ({ config }: ConfigContext): ExpoConfig => {
   const appEnv = resolveAppEnv();
   const { apiUrl, wsUrl } = resolveUrls(appEnv);
-  const productionFaceVerification = resolveProductionFaceVerification(appEnv);
 
   const androidPackage = config.android?.package ?? 'com.kinetik.app';
   const googleServicesFile = resolveGoogleServicesFile(
@@ -228,7 +215,6 @@ export default ({ config }: ConfigContext): ExpoConfig => {
       appEnv,
       apiUrl,
       wsUrl,
-      productionFaceVerification,
     },
   };
 };
