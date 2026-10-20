@@ -9,6 +9,7 @@ import {
   getSubscriptionPurchase,
   acknowledgeSubscription,
   cancelSubscription,
+  isPaymentIssueState,
   PREMIUM_PLAN_PERIOD,
 } from '../services/playBilling';
 import {
@@ -246,6 +247,7 @@ export async function paymentRoutes(app: FastifyInstance) {
           autoRenew: false,
           expiresAt: null,
           hasPurchase: false,
+          paymentIssue: false,
           manageUrl: getManageSubscriptionUrl(),
         },
       });
@@ -260,6 +262,8 @@ export async function paymentRoutes(app: FastifyInstance) {
         // The purchase token itself is deliberately NOT returned — the app has
         // no use for it and it is the credential Play verification turns on.
         hasPurchase: true,
+        // Google could not charge the renewal (grace period or account hold)
+        paymentIssue: isPaymentIssueState(ledger.play_state),
         manageUrl: getManageSubscriptionUrl(),
       },
     });

@@ -36,6 +36,20 @@ const ENTITLED_STATES = new Set([
   'SUBSCRIPTION_STATE_CANCELED',
 ]);
 
+/**
+ * States in which Google could not charge a renewal: in a grace period the
+ * user keeps Premium for a few days, on hold they have lost it. Either way
+ * the fix is the payment method in Google Play, and the app says so.
+ */
+const PAYMENT_ISSUE_STATES = new Set([
+  'SUBSCRIPTION_STATE_IN_GRACE_PERIOD',
+  'SUBSCRIPTION_STATE_ON_HOLD',
+]);
+
+export function isPaymentIssueState(state: string | null | undefined): boolean {
+  return Boolean(state && PAYMENT_ISSUE_STATES.has(state));
+}
+
 export const PREMIUM_PLAN_PERIOD = 'weekly';
 
 export function getSubscriptionProductId(): string {

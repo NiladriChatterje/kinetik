@@ -92,8 +92,8 @@ export async function applyPlayEntitlement(
     await query(
       `INSERT INTO ${TABLES.SUBSCRIPTION_LEDGER}
          (user_id, tier, swipe_allowance, fast_passes_remaining, rain_checks_remaining,
-          gateway_subscription_id, expires_at, auto_renew, updated_at)
-       VALUES ($1, 'premium', $2, 5, 3, $3, $4, $5, NOW())
+          gateway_subscription_id, expires_at, auto_renew, updated_at, play_state)
+       VALUES ($1, 'premium', $2, 5, 3, $3, $4, $5, NOW(), $6)
        ON CONFLICT (user_id) DO UPDATE SET
          tier = 'premium',
          swipe_allowance = $2,
@@ -102,8 +102,9 @@ export async function applyPlayEntitlement(
          gateway_subscription_id = $3,
          expires_at = $4,
          auto_renew = $5,
-         updated_at = NOW()`,
-      [userId, PREMIUM_SWIPE_LIMIT, purchaseToken, sub.expiresAt, sub.autoRenewing],
+         updated_at = NOW(),
+         play_state = $6`,
+      [userId, PREMIUM_SWIPE_LIMIT, purchaseToken, sub.expiresAt, sub.autoRenewing, sub.state],
     );
   } else {
     // Keep the token on the row: Play may later report the same subscription
@@ -114,10 +115,11 @@ export async function applyPlayEntitlement(
               swipe_allowance = $2,
               auto_renew = FALSE,
               expires_at = $3,
-              updated_at = NOW()
+              updated_at = NOW(),
+              play_state = $5
         WHERE user_id = $1
           AND gateway_subscription_id = $4`,
-      [userId, FREE_SWIPE_LIMIT, sub.expiresAt, purchaseToken],
+      [userId, FREE_SWIPE_LIMIT, sub.expiresAt, purchaseToken, sub.state],
     );
     ledgerChanged = (result.rowCount ?? 0) > 0;
   }
