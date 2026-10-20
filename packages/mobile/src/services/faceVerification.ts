@@ -43,18 +43,49 @@ async function getFastTflite() {
 // selfie is rejected as unusable rather than judged as a mismatch.
 const MAX_HEAD_YAW_DEG = 30; // |rotationY| — left/right turn
 const MAX_HEAD_PITCH_DEG = 25; // |rotationX| — up/down nod
-const MIN_MATCH_THRESHOLD = 0.55; // cosine similarity on MobileFaceNet embeddings
+export const MIN_MATCH_THRESHOLD = 0.55; // cosine similarity on MobileFaceNet embeddings
 export const MIN_PROFILE_FACES = 2; // profile photos that must contain a face
 const MODEL_INPUT_SIZE = 112; // MobileFaceNet input is 112×112×3
 const FACE_CROP_EXPANSION = 0.25; // grow the detection box to include full face
 
+/** Why a selfie did not verify. Screens turn these into plain-language tips. */
+export type FaceIssue =
+  | 'no_face' // no face found in the selfie
+  | 'multiple_faces' // more than one face in the selfie
+  | 'head_turned' // yaw beyond MAX_HEAD_YAW_DEG
+  | 'head_tilted' // pitch beyond MAX_HEAD_PITCH_DEG
+  | 'few_profile_faces' // too few profile photos with a usable face
+  | 'low_match'; // confidence below MIN_MATCH_THRESHOLD
+
 export interface FaceVerificationResult {
   verified: boolean;
+  /** 0–1; 0 when there was nothing to compare */
   confidence: number;
   scores: number[];
   faceDetectedInSelfie: boolean;
   profileFacesDetected: number;
-  rejectionReasons: string[];
+  issues: FaceIssue[];
+}
+
+/** One plain-language tip per issue, for the result screens. */
+export const FACE_ISSUE_TIPS: Record<FaceIssue, string> = {
+  no_face: 'Fill the frame with your face, in good light',
+  multiple_faces: 'Make sure only you are in the selfie',
+  head_turned: 'Look straight at the camera',
+  head_tilted: 'Hold your phone at eye level and keep your head straight',
+  few_profile_faces: 'Your photos need a clear, front-facing view of your face',
+  low_match: 'Use bright, even light and remove sunglasses, masks or hats',
+};
+
+/** Profile photo embeddings, and whether any photo could not be processed. */
+export interface ProfileEmbeddings {
+  embeddings: Float32Array[];
+  /**
+   * True when a photo failed to download or process (network, decoding,
+   * model). Its face count is then unknown, so a low count must not be
+   * blamed on the photos: the caller offers a retry instead.
+   */
+  incomplete: boolean;
 }
 
 // ─── Model loading (lazy singleton) ──────────────────────────────
@@ -203,26 +234,32 @@ export function cosineSimilarity(a: Float32Array, b: Float32Array): number {
 
 /**
  * Download each profile photo (absolute URL) to the cache and compute its
- * face embedding. Photos without a detectable face are skipped.
+ * face embedding. Photos without a detectable face are skipped; a photo that
+ * fails to download or process marks the result incomplete.
  */
-export async function embedProfilePhotos(photoUrls: string[]): Promise<Float32Array[]> {
+export async function embedProfilePhotos(photoUrls: string[]): Promise<ProfileEmbeddings> {
   const embeddings: Float32Array[] = [];
+  let incomplete = false;
 
   for (let i = 0; i < photoUrls.length; i++) {
     // Profile photos are stored as WebP (see services/photoService.ts)
     const localPath = `${LegacyFileSystem.cacheDirectory}face-verify-profile-${i}.webp`;
     try {
-      await LegacyFileSystem.downloadAsync(photoUrls[i], localPath);
+      // downloadAsync resolves on any HTTP status, so a 404 or 5xx error
+      // page would otherwise be read as a photo without a face
+      const download = await LegacyFileSystem.downloadAsync(photoUrls[i], localPath);
+      if (download.status < 200 || download.status >= 300) throw new Error(`Photo download returned ${download.status}`);
       const { embedding } = await embedFace(localPath);
       if (embedding) embeddings.push(embedding);
     } catch (err) {
-      console.warn('[faceVerification] Skipping profile photo:', err);
+      incomplete = true;
+      console.warn('[faceVerification] Could not process profile photo:', err);
     } finally {
       LegacyFileSystem.deleteAsync(localPath, { idempotent: true }).catch(() => {});
     }
   }
 
-  return embeddings;
+  return { embeddings, incomplete };
 }
 
 // ─── Verification ────────────────────────────────────────────────
@@ -237,7 +274,7 @@ export async function verifySelfie(
   profileEmbeddings: Float32Array[],
   minProfileFaces = MIN_PROFILE_FACES,
 ): Promise<FaceVerificationResult> {
-  const rejectionReasons: string[] = [];
+  const issues: FaceIssue[] = [];
 
   const { embedding, face, faceCount } = await embedFace(selfieUri);
 
@@ -248,44 +285,28 @@ export async function verifySelfie(
       scores: [],
       faceDetectedInSelfie: false,
       profileFacesDetected: profileEmbeddings.length,
-      rejectionReasons: ['No face detected'],
+      issues: ['no_face'],
     };
   }
 
-  if (faceCount > 1) {
-    rejectionReasons.push(`More than one face in frame (${faceCount})`);
-  }
-  if (Math.abs(face.rotationY) > MAX_HEAD_YAW_DEG) {
-    rejectionReasons.push(`Head turned too far (${face.rotationY.toFixed(0)}°)`);
-  }
-  if (Math.abs(face.rotationX) > MAX_HEAD_PITCH_DEG) {
-    rejectionReasons.push(`Head tilted too far (${face.rotationX.toFixed(0)}°)`);
-  }
-  if (profileEmbeddings.length < minProfileFaces) {
-    rejectionReasons.push(
-      minProfileFaces === 1
-        ? 'No clear face found in this photo'
-        : `Need ${minProfileFaces} profile photos with a clear face (found ${profileEmbeddings.length})`,
-    );
-  }
+  if (faceCount > 1) issues.push('multiple_faces');
+  if (Math.abs(face.rotationY) > MAX_HEAD_YAW_DEG) issues.push('head_turned');
+  if (Math.abs(face.rotationX) > MAX_HEAD_PITCH_DEG) issues.push('head_tilted');
+  if (profileEmbeddings.length < minProfileFaces) issues.push('few_profile_faces');
 
   const scores = profileEmbeddings.map((p) => cosineSimilarity(embedding, p));
   const best = scores.length ? Math.max(...scores) : 0;
   const avg = scores.length ? scores.reduce((s, v) => s + v, 0) / scores.length : 0;
   const confidence = best * 0.7 + avg * 0.3;
 
-  if (scores.length && confidence < MIN_MATCH_THRESHOLD) {
-    rejectionReasons.push(
-      `Face match too low (${confidence.toFixed(2)}, need ${MIN_MATCH_THRESHOLD})`,
-    );
-  }
+  if (scores.length && confidence < MIN_MATCH_THRESHOLD) issues.push('low_match');
 
   return {
-    verified: rejectionReasons.length === 0,
+    verified: issues.length === 0,
     confidence: Math.round(confidence * 1000) / 1000,
     scores: scores.map((s) => Math.round(s * 10000) / 10000),
     faceDetectedInSelfie: true,
     profileFacesDetected: profileEmbeddings.length,
-    rejectionReasons,
+    issues,
   };
 }

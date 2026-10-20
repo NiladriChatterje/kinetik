@@ -1,7 +1,7 @@
 import React, { useState, useRef, useCallback, useEffect } from 'react';
 import {
   View, Text, StyleSheet, TouchableOpacity,
-  Image, ActivityIndicator, Dimensions,
+  Image, ActivityIndicator, Dimensions, ScrollView,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Gesture, GestureDetector } from 'react-native-gesture-handler';
@@ -13,7 +13,9 @@ import { StepLabel } from '../../components/common/StepLabel';
 import { useToast } from '../../hooks/useToast';
 import { api } from '../../services/api';
 import { resolveUrl } from '../../config';
-import { embedProfilePhotos, verifySelfie } from '../../services/faceVerification';
+import {
+  embedProfilePhotos, verifySelfie, MIN_MATCH_THRESHOLD, FACE_ISSUE_TIPS, FaceIssue, ProfileEmbeddings,
+} from '../../services/faceVerification';
 import { hapticSuccess } from '../../utils/haptics';
 import { colors, typography, spacing, radius } from '../../theme';
 
@@ -52,7 +54,11 @@ export const PrimaryPhotoSelfieScreen: React.FC<{ navigation: any; route: any }>
   const [permission, requestPermission] = useCameraPermissions();
   const [phase, setPhase] = useState<Phase>('camera');
   const [capturedUri, setCapturedUri] = useState<string | null>(null);
-  const [reasons, setReasons] = useState<string[]>([]);
+  const [issues, setIssues] = useState<FaceIssue[]>([]);
+  // Match score (0–1), or null when nothing could be compared
+  const [score, setScore] = useState<number | null>(null);
+  // The check itself failed (network, model); details stay in the log
+  const [checkFailed, setCheckFailed] = useState(false);
   // False when the photo itself has no usable face — retaking cannot help
   const [retakeable, setRetakeable] = useState(true);
   const [proceeding, setProceeding] = useState(false);
@@ -73,13 +79,18 @@ export const PrimaryPhotoSelfieScreen: React.FC<{ navigation: any; route: any }>
     });
 
   // Embed the photo while the user lines up the selfie
-  const photoEmbeddingsRef = useRef<Promise<Float32Array[]> | null>(null);
-  useEffect(() => {
-    photoEmbeddingsRef.current = embedProfilePhotos([resolveUrl(photoUrl)]).catch((err) => {
+  const photoEmbeddingsRef = useRef<Promise<ProfileEmbeddings> | null>(null);
+  const preparePhotoEmbeddings = useCallback(() => {
+    const pending = embedProfilePhotos([resolveUrl(photoUrl)]).catch((err) => {
       console.warn('[primary-selfie] Failed to embed photo:', err);
-      return [];
+      return { embeddings: [], incomplete: true };
     });
+    photoEmbeddingsRef.current = pending;
+    return pending;
   }, [photoUrl]);
+  useEffect(() => {
+    preparePhotoEmbeddings();
+  }, [preparePhotoEmbeddings]);
 
   const handleCapture = useCallback(async () => {
     if (!cameraRef.current) return;
@@ -97,17 +108,22 @@ export const PrimaryPhotoSelfieScreen: React.FC<{ navigation: any; route: any }>
       setCapturedUri(manipulated.uri);
       setPhase('preview');
     } catch (err: any) {
-      toast.showError('Capture failed', err?.message || 'Try again.');
+      console.warn('[primary-selfie] Selfie capture failed:', err?.message || err);
+      toast.showError('Capture failed', 'Try again.');
     }
   }, [toast]);
 
   const handleRetake = useCallback(() => {
+    // After a failed check, reload the photo too: the failure may have been there
+    if (checkFailed) preparePhotoEmbeddings();
     setCapturedUri(null);
     setZoom(0);
-    setReasons([]);
+    setIssues([]);
+    setScore(null);
+    setCheckFailed(false);
     setRetakeable(true);
     setPhase('camera');
-  }, []);
+  }, [checkFailed, preparePhotoEmbeddings]);
 
   /** Make the photo primary, then record whether the selfie matched it. */
   const applyPrimary = useCallback(async (verified: boolean, confidence: number) => {
@@ -125,16 +141,26 @@ export const PrimaryPhotoSelfieScreen: React.FC<{ navigation: any; route: any }>
     let verified = false;
     let confidence = 0;
     try {
-      const embeddings = (await photoEmbeddingsRef.current) ?? [];
-      const result = await verifySelfie(capturedUri, embeddings, MIN_FACES_IN_PHOTO);
+      const photo = await (photoEmbeddingsRef.current ?? preparePhotoEmbeddings());
+      const result = await verifySelfie(capturedUri, photo.embeddings, MIN_FACES_IN_PHOTO);
+      const noPhotoFace = result.issues.includes('few_profile_faces');
+      if (noPhotoFace && photo.incomplete) {
+        // The photo failed to load, so it may well show a face: retry
+        throw new Error('Photo could not be processed');
+      }
       verified = result.verified;
       confidence = result.confidence;
-      setReasons(result.rejectionReasons);
-      setRetakeable(result.profileFacesDetected >= MIN_FACES_IN_PHOTO);
+      setIssues(result.issues);
+      // A score is only meaningful when both images had a face to compare
+      setScore(result.faceDetectedInSelfie && !noPhotoFace ? result.confidence : null);
+      setCheckFailed(false);
+      setRetakeable(!noPhotoFace);
     } catch (err: any) {
       // A broken model or ML Kit is a mismatch the user can retry or skip
       console.warn('[primary-selfie] On-device check failed:', err?.message || err);
-      setReasons([`Check failed: ${err?.message || 'unknown error'}`]);
+      setIssues([]);
+      setScore(null);
+      setCheckFailed(true);
       setRetakeable(true);
     }
 
@@ -152,7 +178,7 @@ export const PrimaryPhotoSelfieScreen: React.FC<{ navigation: any; route: any }>
       toast.showError('Failed', e?.message || 'Try again.');
       setPhase('preview');
     }
-  }, [capturedUri, applyPrimary, toast, navigation]);
+  }, [capturedUri, preparePhotoEmbeddings, applyPrimary, toast, navigation]);
 
   const handleProceedUnverified = useCallback(async () => {
     setProceeding(true);
@@ -208,7 +234,8 @@ export const PrimaryPhotoSelfieScreen: React.FC<{ navigation: any; route: any }>
   if (phase === 'mismatch') {
     return (
       <SafeAreaView style={styles.container}>
-        <View style={styles.content}>
+        {/* Scrolls so the tips stay reachable on short screens */}
+        <ScrollView style={styles.resultScroll} contentContainerStyle={styles.resultContent}>
           {heading('We match your selfie against the photo you chose')}
 
           <View style={styles.resultContainer}>
@@ -219,30 +246,48 @@ export const PrimaryPhotoSelfieScreen: React.FC<{ navigation: any; route: any }>
               )}
             </View>
             <Ionicons name="close-circle" size={40} color={DANGER} />
-            <Text style={styles.resultTitle}>Selfie did not match</Text>
+            <Text style={styles.resultTitle}>
+              {checkFailed ? "Couldn't check your selfie" : 'Selfie did not match'}
+            </Text>
+            {score !== null && (
+              <View style={styles.scoreRow}>
+                <Text style={styles.scoreValue}>{Math.round(score * 100)}%</Text>
+                <Text style={styles.scoreLabel}>
+                  match · {Math.round(MIN_MATCH_THRESHOLD * 100)}% needed
+                </Text>
+              </View>
+            )}
             <Text style={styles.resultSubtitle}>
-              {retakeable
-                ? 'Retake your selfie, or set this photo anyway. Your profile will then show Face Unverified.'
-                : 'This photo has no clear face to match. You can set it anyway, and your profile will show Face Unverified.'}
+              {checkFailed
+                ? 'Something went wrong while checking. Try again, or set this photo anyway. Your profile will then show Face Unverified.'
+                : retakeable
+                  ? 'Retake your selfie, or set this photo anyway. Your profile will then show Face Unverified.'
+                  : 'This photo has no clear face to match. You can set it anyway, and your profile will show Face Unverified.'}
             </Text>
           </View>
 
-          {reasons.length > 0 && (
+          {/* Plain-language tips only, never raw error text */}
+          {retakeable && issues.length > 0 && (
             <View style={styles.reasonsBox}>
-              <Text style={styles.reasonsTitle}>Why it didn't match</Text>
-              {reasons.map((reason, i) => (
-                <View key={i} style={styles.reasonRow}>
-                  <Ionicons name="alert-circle-outline" size={14} color={colors.textMuted} />
-                  <Text style={styles.reasonText}>{reason}</Text>
+              <Text style={styles.reasonsTitle}>Tips for your next selfie</Text>
+              {issues.map((issue) => (
+                <View key={issue} style={styles.reasonRow}>
+                  <Ionicons name="bulb-outline" size={14} color={colors.textMuted} />
+                  <Text style={styles.reasonText}>{FACE_ISSUE_TIPS[issue]}</Text>
                 </View>
               ))}
             </View>
           )}
-        </View>
+        </ScrollView>
 
         <View style={[styles.footer, styles.footerStacked]}>
           {retakeable && (
-            <Button title="Retake Selfie" onPress={handleRetake} disabled={proceeding} fullWidth />
+            <Button
+              title={checkFailed ? 'Try Again' : 'Retake Selfie'}
+              onPress={handleRetake}
+              disabled={proceeding}
+              fullWidth
+            />
           )}
           <Button
             title="Proceed Unverified"
@@ -455,6 +500,11 @@ const styles = StyleSheet.create({
   pairImage: { width: 96, height: 96, borderRadius: radius.md, backgroundColor: colors.surfaceHighlight },
   resultTitle: { ...typography.h2, color: colors.textPrimary, textAlign: 'center' },
   resultSubtitle: { ...typography.body1, color: colors.textSecondary, textAlign: 'center' },
+  resultScroll: { flex: 1 },
+  resultContent: { paddingHorizontal: spacing.xxl, paddingTop: spacing.lg, paddingBottom: spacing.sm, alignItems: 'center' },
+  scoreRow: { flexDirection: 'row', alignItems: 'baseline', gap: spacing.sm },
+  scoreValue: { ...typography.h1, color: colors.textPrimary },
+  scoreLabel: { ...typography.body2, color: colors.textSecondary },
 
   reasonsBox: {
     alignSelf: 'stretch',

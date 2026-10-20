@@ -1,7 +1,7 @@
 import React, { useState, useRef, useCallback, useEffect } from 'react';
 import {
   View, Text, StyleSheet, TouchableOpacity,
-  Image, ActivityIndicator, Dimensions, Alert,
+  Image, ActivityIndicator, Dimensions, Alert, ScrollView,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Gesture, GestureDetector } from 'react-native-gesture-handler';
@@ -15,8 +15,11 @@ import { useToast } from '../../hooks/useToast';
 import { useAuthStore } from '../../store/authStore';
 import { markWelcomePending } from '../../services/welcomeNotice';
 import { api } from '../../services/api';
-import { resolveUrl, PRODUCTION_FACE_VERIFICATION } from '../../config';
-import { embedProfilePhotos, verifySelfie, MIN_PROFILE_FACES } from '../../services/faceVerification';
+import { resolveUrl } from '../../config';
+import {
+  embedProfilePhotos, verifySelfie, MIN_PROFILE_FACES, MIN_MATCH_THRESHOLD,
+  FACE_ISSUE_TIPS, FaceIssue, ProfileEmbeddings,
+} from '../../services/faceVerification';
 import { hapticSuccess } from '../../utils/haptics';
 import { colors, typography, spacing, radius } from '../../theme';
 
@@ -25,7 +28,21 @@ const { width: SCREEN_WIDTH } = Dimensions.get('window');
 const CAMERA_WIDTH = SCREEN_WIDTH - spacing.xxl * 2;
 const CAMERA_HEIGHT = Math.round(CAMERA_WIDTH * (16 / 9));
 
-type Phase = 'camera' | 'preview' | 'uploading' | 'success';
+type Phase = 'camera' | 'preview' | 'uploading' | 'result';
+
+/**
+ * What the result page shows. Every outcome but `matched` offers a way to try
+ * again and Skip for now, so the step never dead-ends. Technical details stay
+ * in the logs; the user only ever sees plain language.
+ */
+type Outcome =
+  | { kind: 'matched'; confidence: number }
+  | { kind: 'mismatch'; confidence: number; issues: FaceIssue[] } // fixable by a retake
+  | { kind: 'no_face' } // no face in the selfie
+  | { kind: 'photos'; found: number } // too few profile photos with a face
+  | { kind: 'error' }; // the check itself failed (network, model, ML Kit)
+
+const toPercent = (confidence: number) => Math.round(confidence * 100);
 
 /** How much of the camera's zoom range (0–1) one full pinch spread covers */
 const PINCH_ZOOM_SPEED = 0.4;
@@ -33,9 +50,7 @@ const PINCH_ZOOM_SPEED = 0.4;
 export const FaceVerificationScreen: React.FC<{ navigation: any }> = ({ navigation }) => {
   const [permission, requestPermission] = useCameraPermissions();
   const [phase, setPhase] = useState<Phase>('camera');
-  const [verified, setVerified] = useState(false);
-  const [reasons, setReasons] = useState<string[]>([]);
-  const [blocked, setBlocked] = useState(false);
+  const [outcome, setOutcome] = useState<Outcome | null>(null);
   const [capturedUri, setCapturedUri] = useState<string | null>(null);
   const [zoom, setZoom] = useState(0);
   const cameraRef = useRef<any>(null);
@@ -60,23 +75,31 @@ export const FaceVerificationScreen: React.FC<{ navigation: any }> = ({ navigati
     });
 
   // Profile photo face embeddings, precomputed on-device while the user
-  // lines up their selfie. null = still loading (or failed — treated as empty).
-  const profileEmbeddingsRef = useRef<Promise<Float32Array[]> | null>(null);
+  // lines up their selfie. Never rejects: a failure comes back incomplete.
+  const profileEmbeddingsRef = useRef<Promise<ProfileEmbeddings> | null>(null);
 
-  useEffect(() => {
-    profileEmbeddingsRef.current = (async () => {
+  const prepareProfileEmbeddings = useCallback(() => {
+    const pending = (async (): Promise<ProfileEmbeddings> => {
       try {
         const photosRes = await api.getPhotos();
-        const urls: string[] = Array.isArray(photosRes.data)
-          ? (photosRes.data as any[]).map((p) => resolveUrl(p.url)).filter(Boolean)
-          : [];
+        if (!photosRes.success || !Array.isArray(photosRes.data)) {
+          console.warn('[face] Could not load profile photos:', photosRes.error?.code);
+          return { embeddings: [], incomplete: true };
+        }
+        const urls: string[] = (photosRes.data as any[]).map((p) => resolveUrl(p.url)).filter(Boolean);
         return await embedProfilePhotos(urls);
       } catch (err) {
         console.warn('[face] Failed to prepare profile embeddings:', err);
-        return [];
+        return { embeddings: [], incomplete: true };
       }
     })();
+    profileEmbeddingsRef.current = pending;
+    return pending;
   }, []);
+
+  useEffect(() => {
+    prepareProfileEmbeddings();
+  }, [prepareProfileEmbeddings]);
 
   /**
    * Capture a selfie from the front camera, compress it, and move to preview.
@@ -105,7 +128,8 @@ export const FaceVerificationScreen: React.FC<{ navigation: any }> = ({ navigati
       setCapturedUri(manipulated.uri);
       setPhase('preview');
     } catch (err: any) {
-      toast.showError('Capture failed', err?.message || 'Try again.');
+      console.warn('[face] Selfie capture failed:', err?.message || err);
+      toast.showError('Capture failed', 'Try again.');
     }
   }, [toast]);
 
@@ -118,48 +142,43 @@ export const FaceVerificationScreen: React.FC<{ navigation: any }> = ({ navigati
     if (!capturedUri) return;
 
     setPhase('uploading');
-    let isVerified = false;
+    let next: Outcome;
     try {
-      const profileEmbeddings = (await profileEmbeddingsRef.current) ?? [];
-      const result = await verifySelfie(capturedUri, profileEmbeddings);
-      isVerified = result.verified;
-      setReasons(result.rejectionReasons);
+      const profiles = await (profileEmbeddingsRef.current ?? prepareProfileEmbeddings());
+      const result = await verifySelfie(capturedUri, profiles.embeddings);
+      const fewPhotos = result.issues.includes('few_profile_faces');
 
-      // Enforce only a mismatch the user can fix by retaking. Too few profile
-      // photos with faces is not retakeable — blocking on it would dead-end.
-      const retakeable = result.profileFacesDetected >= MIN_PROFILE_FACES;
-      setBlocked(PRODUCTION_FACE_VERIFICATION && !result.verified && retakeable);
+      if (fewPhotos && profiles.incomplete) {
+        // A photo that failed to load may well show a face: retry, don't
+        // tell the user their photos are the problem
+        throw new Error('Profile photos could not all be processed');
+      }
 
       if (result.verified) {
+        next = { kind: 'matched', confidence: result.confidence };
         hapticSuccess();
         toast.showSuccess('Face verified!', 'Selfie matches your photos.');
+      } else if (fewPhotos) {
+        next = { kind: 'photos', found: result.profileFacesDetected };
+      } else if (!result.faceDetectedInSelfie) {
+        next = { kind: 'no_face' };
       } else {
-        console.log('[face] Not verified:', result.rejectionReasons.join('; '));
-        if (PRODUCTION_FACE_VERIFICATION && retakeable) {
-          toast.showError('Face not matched', 'Retake your selfie to continue.');
-        } else {
-          toast.showSuccess('Selfie submitted', 'Continue onboarding.');
-        }
+        next = { kind: 'mismatch', confidence: result.confidence, issues: result.issues };
       }
+      if (!result.verified) console.log('[face] Not verified:', result.issues.join(', '), result.confidence);
 
       // Self-report the on-device result (fire-and-forget on failure)
       api
         .reportFaceVerification({ verified: result.verified, confidence: result.confidence })
         .catch((err) => console.warn('[face] Failed to report verification:', err));
     } catch (err: any) {
-      // A technical failure never blocks, even under PRODUCTION_FACE_VERIFICATION — a
-      // broken model or unlinked ML Kit must not stop every signup.
+      // The details stay in the log; the user gets Try Again or Skip
       console.warn('[face] On-device verification failed:', err?.message || err);
-      setReasons([`Check failed: ${err?.message || 'unknown error'}`]);
-      setBlocked(false);
-      toast.showSuccess(
-        'Selfie Submitted',
-        'You can continue with onboarding.',
-      );
+      next = { kind: 'error' };
     }
-    setVerified(isVerified);
-    setPhase('success');
-  }, [capturedUri, toast]);
+    setOutcome(next);
+    setPhase('result');
+  }, [capturedUri, prepareProfileEmbeddings, toast]);
 
   /**
    * Retake — go back to camera phase.
@@ -167,10 +186,18 @@ export const FaceVerificationScreen: React.FC<{ navigation: any }> = ({ navigati
   const handleRetake = useCallback(() => {
     setCapturedUri(null);
     setZoom(0);
-    setReasons([]);
-    setBlocked(false);
+    setOutcome(null);
     setPhase('camera');
   }, []);
+
+  /**
+   * After a technical failure: reload the profile photos (the failure may
+   * have been there) and take a fresh selfie.
+   */
+  const handleTryAgain = useCallback(() => {
+    prepareProfileEmbeddings();
+    handleRetake();
+  }, [prepareProfileEmbeddings, handleRetake]);
 
   /**
    * Finish onboarding. The selfie is the last step while the KYC step is
@@ -241,54 +268,100 @@ export const FaceVerificationScreen: React.FC<{ navigation: any }> = ({ navigati
     );
   }
 
-  // ─── Success state ──────────────────────────────────────
-  if (phase === 'success') {
+  // ─── Result state ───────────────────────────────────────
+  if (phase === 'result' && outcome) {
+    const matched = outcome.kind === 'matched';
+    const showScore = outcome.kind === 'matched' || outcome.kind === 'mismatch';
+    const needed = toPercent(MIN_MATCH_THRESHOLD);
+
+    let title: string;
+    let message: string;
+    let tips: string[] = [];
+    switch (outcome.kind) {
+      case 'matched':
+        title = 'Face Verified!';
+        message = 'Your selfie matches your profile photos.';
+        break;
+      case 'mismatch':
+        title = 'Not Matched';
+        message = outcome.issues.includes('low_match')
+          ? `Your selfie needs at least a ${needed}% match with your photos. Retake it, or skip for now.`
+          : 'Your face matched, but the selfie needs a retake. Retake it, or skip for now.';
+        tips = outcome.issues.map((issue) => FACE_ISSUE_TIPS[issue]);
+        break;
+      case 'no_face':
+        title = 'No Face Found';
+        message = "We couldn't see a face in your selfie. Retake it, or skip for now.";
+        tips = [FACE_ISSUE_TIPS.no_face, FACE_ISSUE_TIPS.head_turned];
+        break;
+      case 'photos':
+        title = 'Check Your Photos';
+        message = outcome.found > 0
+          ? `We found a clear face in only ${outcome.found} of your photos, and need at least ${MIN_PROFILE_FACES}. Add clearer photos of yourself, or skip for now.`
+          : `We couldn't find a clear face in your photos, and need at least ${MIN_PROFILE_FACES}. Add clearer photos of yourself, or skip for now.`;
+        tips = [FACE_ISSUE_TIPS.few_profile_faces];
+        break;
+      case 'error':
+        title = "Couldn't Check Your Selfie";
+        message = 'Something went wrong while checking your selfie. Try again, or skip for now.';
+        break;
+    }
+
     return (
       <SafeAreaView style={styles.container}>
-        <View style={styles.content}>
+        {/* Scrolls so the tips stay reachable on short screens */}
+        <ScrollView style={styles.resultScroll} contentContainerStyle={styles.resultContent}>
           <StepLabel label="Step 5 of 5" onBack={goBack} />
           <Text style={styles.title}>Verify You're Real</Text>
           <Text style={styles.subtitle}>We match your selfie against the photos you uploaded</Text>
 
           <View style={styles.successContainer}>
             <Ionicons
-              name={blocked ? 'alert-circle' : 'checkmark-circle'}
+              name={matched ? 'checkmark-circle' : 'alert-circle'}
               size={64}
               color={colors.textPrimary}
             />
-            <Text style={styles.successTitle}>
-              {verified ? 'Face Verified!' : blocked ? 'Not Matched' : 'Selfie Submitted'}
-            </Text>
-            <Text style={styles.successSubtitle}>
-              {verified
-                ? 'Your selfie matches your profile photos.'
-                : blocked
-                  ? 'This selfie did not match your profile photos. Retake it to continue.'
-                  : 'Your selfie has been submitted. You can continue with onboarding.'}
-            </Text>
+            <Text style={styles.successTitle}>{title}</Text>
+            {showScore && (
+              <View style={styles.scoreRow}>
+                <Text style={styles.scoreValue}>{toPercent(outcome.confidence)}%</Text>
+                <Text style={styles.scoreLabel}>
+                  {matched ? 'match' : `match · ${needed}% needed`}
+                </Text>
+              </View>
+            )}
+            <Text style={styles.successSubtitle}>{message}</Text>
           </View>
 
-          {!verified && reasons.length > 0 && (
+          {tips.length > 0 && (
             <View style={styles.reasonsBox}>
-              <Text style={styles.reasonsTitle}>Why it didn't match</Text>
-              {reasons.map((reason, i) => (
-                <View key={i} style={styles.reasonRow}>
-                  <Ionicons name="alert-circle-outline" size={14} color={colors.textMuted} />
-                  <Text style={styles.reasonText}>{reason}</Text>
+              <Text style={styles.reasonsTitle}>
+                {outcome.kind === 'photos' ? 'What helps' : 'Tips for your next selfie'}
+              </Text>
+              {tips.map((tip) => (
+                <View key={tip} style={styles.reasonRow}>
+                  <Ionicons name="bulb-outline" size={14} color={colors.textMuted} />
+                  <Text style={styles.reasonText}>{tip}</Text>
                 </View>
               ))}
             </View>
           )}
-        </View>
+        </ScrollView>
 
         <View style={styles.footer}>
-          {blocked ? (
+          {matched ? (
+            <Button title="Continue" onPress={handleContinue} fullWidth />
+          ) : (
             <>
-              <Button title="Retake Selfie" onPress={handleRetake} fullWidth />
+              {outcome.kind === 'photos' ? (
+                <Button title="Change Photos" onPress={goBack} fullWidth />
+              ) : outcome.kind === 'error' ? (
+                <Button title="Try Again" onPress={handleTryAgain} fullWidth />
+              ) : (
+                <Button title="Retake Selfie" onPress={handleRetake} fullWidth />
+              )}
               <Button title="Skip for now" variant="ghost" onPress={handleSkip} fullWidth style={styles.skipButton} />
             </>
-          ) : (
-            <Button title="Continue" onPress={handleContinue} fullWidth />
           )}
         </View>
       </SafeAreaView>
@@ -533,16 +606,21 @@ const styles = StyleSheet.create({
   },
   captureHint: { ...typography.caption, color: colors.textMuted },
 
-  // Success
+  // Result
+  resultScroll: { flex: 1 },
+  resultContent: { paddingHorizontal: spacing.xxl, paddingTop: spacing.lg, paddingBottom: spacing.sm, alignItems: 'center' },
   successContainer: {
     alignItems: 'center',
-    marginTop: spacing.huge,
+    marginTop: spacing.xxxl,
     gap: spacing.md,
   },
   successTitle: { ...typography.h2, color: colors.textPrimary },
   successSubtitle: { ...typography.body1, color: colors.textSecondary, textAlign: 'center' },
+  scoreRow: { flexDirection: 'row', alignItems: 'baseline', gap: spacing.sm },
+  scoreValue: { ...typography.h1, color: colors.textPrimary },
+  scoreLabel: { ...typography.body2, color: colors.textSecondary },
 
-  // Rejection reasons — surfaced so a failed match is diagnosable
+  // Plain-language tips for the next attempt (never raw error text)
   reasonsBox: {
     alignSelf: 'stretch',
     marginTop: spacing.xxl,
