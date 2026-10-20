@@ -1206,6 +1206,18 @@ export const ChatScreen: React.FC<{ navigation: any; route: any }> = ({ navigati
   }, []);
 
   // ─── Send a text message ───────────────────────────
+  /**
+   * The server refused a send because this chat is locked (Premium ended
+   * while it was open). Take the message back, return typed text to the
+   * input so nothing is lost, and show the lock with its Upgrade button.
+   */
+  const handleSendLocked = (tempId: string, text?: string) => {
+    setMessages((prev) => prev.filter((m) => m.id !== tempId));
+    if (text) setInputText((current) => current || text);
+    setLocked(true);
+    toast.showError('Message not sent', 'Chatting with this match needs Premium.');
+  };
+
   const handleSend = async () => {
     const text = inputText.trim();
     if (!text || sending) return;
@@ -1234,6 +1246,8 @@ export const ChatScreen: React.FC<{ navigation: any; route: any }> = ({ navigati
         setMessages((prev) => prev.some((m) => m.id === res.data!.id)
           ? prev.filter((m) => m.id !== tempId)
           : prev.map((m) => (m.id === tempId ? { ...m, id: res.data!.id } : m)));
+      } else if (res.error?.code === 'CHAT_LOCKED') {
+        handleSendLocked(tempId, text);
       }
     } catch {
       // Keep the message
@@ -1300,6 +1314,10 @@ export const ChatScreen: React.FC<{ navigation: any; route: any }> = ({ navigati
           ));
       }
     } catch (err: any) {
+      if (err?.code === 'CHAT_LOCKED') {
+        handleSendLocked(tempId);
+        return;
+      }
       // Remove failed temp message and show error
       setMessages((prev) => prev.filter((m) => m.id !== tempId));
       Alert.alert('Send Failed', err.message || 'Could not send media. Please try again.');

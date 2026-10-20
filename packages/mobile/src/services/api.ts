@@ -1055,7 +1055,13 @@ class ApiClient {
       return body;
     }
 
-    throw new Error(body?.error?.message || `Upload failed (HTTP ${result.status})`);
+    // The server's error code rides along (e.g. CHAT_LOCKED), so the caller
+    // can react to the reason rather than only show the text
+    const error: Error & { code?: string } = new Error(
+      body?.error?.message || `Upload failed (HTTP ${result.status})`,
+    );
+    if (body?.error?.code) error.code = body.error.code;
+    throw error;
   }
 
   // ─── Mark One-Time View Media as Viewed ───────────────
