@@ -31,6 +31,9 @@ interface IncomingLike {
 /** Blurred placeholder cards shown to a free user; the rest is a "+N more" */
 const BLURRED_CARDS_SHOWN = 6;
 
+/** Cross on the Face unverified tag, as on the Discover card */
+const UNVERIFIED_RED = '#E53935';
+
 export const LikeListScreen: React.FC<{ navigation: any }> = ({ navigation }) => {
   const [likes, setLikes] = useState<IncomingLike[]>([]);
   const [loading, setLoading] = useState(true);
@@ -152,10 +155,16 @@ export const LikeListScreen: React.FC<{ navigation: any }> = ({ navigation }) =>
               {item.displayName}
               <Text style={styles.age}>  {item.age}</Text>
             </Text>
-            {item.isVerified && (
-              <Ionicons name="checkmark-circle" size={16} color={colors.textPrimary} style={{ marginLeft: 5 }} accessibilityLabel="Face verified" />
-            )}
+            {/* Face tag: tick when their selfie matched, cross when unverified or skipped */}
+            <Ionicons
+              name={item.isVerified ? 'checkmark-circle' : 'close-circle'}
+              size={16}
+              color={item.isVerified ? colors.textPrimary : UNVERIFIED_RED}
+              style={{ marginLeft: 5 }}
+              accessibilityLabel={item.isVerified ? 'Face verified' : 'Face unverified'}
+            />
           </View>
+          {!item.isVerified && <Text style={styles.unverified}>Face unverified</Text>}
           <DatingCategoryBadge category={item.datingCategory} compact style={styles.categoryBadge} />
           {item.bio ? <Text style={styles.bio} numberOfLines={2}>{item.bio}</Text> : null}
           {item.isSuperLike && (
@@ -406,6 +415,7 @@ const styles = StyleSheet.create({
   name: { ...typography.h3, color: colors.textPrimary },
   age: { ...typography.body1, color: colors.textMuted, fontWeight: '400' },
   bio: { ...typography.body2, color: colors.textSecondary, marginTop: spacing.xs },
+  unverified: { ...typography.caption, color: colors.textSecondary, fontWeight: '600', marginTop: 2 },
   categoryBadge: { marginTop: spacing.xs },
   actions: {
     flexDirection: 'row',

@@ -47,6 +47,9 @@ const cardHeight = (index: number) => {
 
 const COLS = 2;
 
+/** Cross on the Face unverified tag, as on the Discover card */
+const UNVERIFIED_RED = '#E53935';
+
 export const ExploreScreen: React.FC<{ navigation: any }> = ({ navigation }) => {
   const [profiles, setProfiles] = useState<GridProfile[]>([]);
   const [loading, setLoading] = useState(true);
@@ -185,10 +188,17 @@ export const ExploreScreen: React.FC<{ navigation: any }> = ({ navigation }) => 
             <Text style={styles.cardName} numberOfLines={1}>
               {item.displayName}, {item.age}
             </Text>
-            {item.isVerified && (
-              <Ionicons name="checkmark-circle" size={14} color={colors.success} accessibilityLabel="Face verified" />
-            )}
+            {/* Face tag: tick when their selfie matched, cross when unverified or skipped */}
+            <Ionicons
+              name={item.isVerified ? 'checkmark-circle' : 'close-circle'}
+              size={14}
+              color={item.isVerified ? colors.success : UNVERIFIED_RED}
+              accessibilityLabel={item.isVerified ? 'Face verified' : 'Face unverified'}
+            />
           </View>
+          {!item.isVerified && (
+            <Text style={styles.cardUnverified} numberOfLines={1}>Face unverified</Text>
+          )}
           <DatingCategoryBadge category={item.datingCategory} onDark compact style={styles.cardCategory} />
           {item.occupation ? (
             <Text style={styles.cardSub} numberOfLines={1}>{item.occupation}</Text>
@@ -386,6 +396,7 @@ const styles = StyleSheet.create({
   },
   nameRow: { flexDirection: 'row', alignItems: 'center', gap: 4 },
   cardName: { ...typography.body2, color: '#fff', fontWeight: '700', flexShrink: 1 },
+  cardUnverified: { ...typography.caption, color: 'rgba(255,255,255,0.75)', fontSize: 11, fontWeight: '600', marginTop: 1 },
   cardCategory: { marginTop: 3, marginBottom: 2 },
   cardSub: { ...typography.caption, color: 'rgba(255,255,255,0.75)', fontSize: 11, marginTop: 1 },
   footerHint: {
