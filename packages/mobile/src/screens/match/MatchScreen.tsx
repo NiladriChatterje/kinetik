@@ -10,7 +10,7 @@ import { api } from '../../services/api';
 import { useToast } from '../../hooks/useToast';
 import { colors, typography, spacing, radius, shadows } from '../../theme';
 import { getPresenceSocket } from '../../services/presenceSocket';
-import { emitProfileLiked, emitProfileBlocked } from '../../services/appEvents';
+import { emitProfileLiked, emitProfileBlocked, onPremiumChanged } from '../../services/appEvents';
 import { ReportBlockSheet } from '../../components/safety/ReportBlockSheet';
 import { resolveUrl } from '../../config';
 import { MatchPopup } from '../../components/common/MatchPopup';
@@ -457,10 +457,19 @@ export const MatchScreen: React.FC<{ navigation: any; route?: any }> = ({ naviga
     socket.on('match:new', onMatchNew);
     socket.on('likes:new', onLikesNew);
 
+    // Premium gained or lost: "Liked you" tags come only to Premium viewers,
+    // so reload the deck once (as a new match does), and drop the free
+    // account's swipe counter; the next swipe reports it again if it applies
+    const offPremiumChanged = onPremiumChanged(() => {
+      setSwipesRemaining(null);
+      fetchProfiles();
+    });
+
     return () => {
       // Shared socket — detach this screen's listeners only
       socket.off('match:new', onMatchNew);
       socket.off('likes:new', onLikesNew);
+      offPremiumChanged();
     };
   }, []);
 

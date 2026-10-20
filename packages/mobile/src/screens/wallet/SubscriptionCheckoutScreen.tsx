@@ -16,6 +16,8 @@ import { Card } from '../../components/common/Card';
 import { Button } from '../../components/common/Button';
 import { useToast } from '../../hooks/useToast';
 import { api } from '../../services/api';
+import { useAuthStore, announcePremiumActive } from '../../store/authStore';
+import { onPremiumChanged } from '../../services/appEvents';
 import { colors, typography, spacing, radius } from '../../theme';
 
 interface PricingInfo {
@@ -143,6 +145,8 @@ export const SubscriptionCheckoutScreen: React.FC = () => {
   const mountedRef = useRef(true);
   const connectedRef = useRef(false);
   const storeLoadRef = useRef<Promise<any | null> | null>(null);
+  // True while this screen reports its own purchase to the store
+  const reportingOwnPurchaseRef = useRef(false);
 
   const fetchStatus = useCallback(async () => {
     try {
@@ -153,6 +157,9 @@ export const SubscriptionCheckoutScreen: React.FC = () => {
       ]);
       if (res.success && res.data) {
         setStatus(res.data as SubscriptionStatus);
+        // Same tiers the server's chat and likes gates treat as Premium
+        const tier = (res.data as SubscriptionStatus).tier;
+        useAuthStore.getState().setPremium(tier === 'premium' || tier === 'infinite');
       }
       if (hist.success && hist.data) {
         setHistory(hist.data);
@@ -212,8 +219,19 @@ export const SubscriptionCheckoutScreen: React.FC = () => {
         console.warn('[subscription] finishTransaction failed:', error?.code || error?.message || error);
       }
 
-      if (res.data?.activated && !silent) {
-        toast.showSuccess('Premium active!', 'Subscription is live.');
+      if (res.data?.activated) {
+        // Every screen that locked something reloads (appEvents). The event
+        // is delivered synchronously; this screen's own listener skips it,
+        // because the lines below refresh or leave the screen anyway.
+        reportingOwnPurchaseRef.current = true;
+        try {
+          useAuthStore.getState().setPremium(true, { isChange: true });
+        } finally {
+          reportingOwnPurchaseRef.current = false;
+        }
+        if (!silent) {
+          announcePremiumActive();
+        }
       }
       await fetchStatus();
     },
@@ -316,6 +334,13 @@ export const SubscriptionCheckoutScreen: React.FC = () => {
       }
     });
 
+    // Premium changed elsewhere while this screen is open (a UPI mandate
+    // confirmed, an expiry): show the new state. Never navigates, so it
+    // cannot add to the paywall return in redeemPurchase.
+    const offPremiumChanged = onPremiumChanged(() => {
+      if (!reportingOwnPurchaseRef.current && mountedRef.current) fetchStatus();
+    });
+
     (async () => {
       await fetchStatus();
 
@@ -335,6 +360,7 @@ export const SubscriptionCheckoutScreen: React.FC = () => {
       mountedRef.current = false;
       purchaseSub?.remove?.();
       errorSub?.remove?.();
+      offPremiumChanged();
       connectedRef.current = false;
       storeLoadRef.current = null;
       endConnection().catch(() => {});

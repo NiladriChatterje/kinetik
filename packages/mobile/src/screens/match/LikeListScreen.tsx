@@ -7,6 +7,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { api } from '../../services/api';
 import { getPresenceSocket } from '../../services/presenceSocket';
+import { onPremiumChanged } from '../../services/appEvents';
 import { useToast } from '../../hooks/useToast';
 import { useAuthStore } from '../../store/authStore';
 import { resolveUrl } from '../../config';
@@ -83,8 +84,15 @@ export const LikeListScreen: React.FC<{ navigation: any }> = ({ navigation }) =>
     };
     socket.on('likes:new', onLikesNew);
 
+    // Premium gained or lost (e.g. bought from this screen's paywall): the
+    // server now sends the full list, or the blurred one
+    const offPremiumChanged = onPremiumChanged(() => {
+      fetchLikes();
+    });
+
     return () => {
       socket.off('likes:new', onLikesNew);
+      offPremiumChanged();
     };
   }, []);
 

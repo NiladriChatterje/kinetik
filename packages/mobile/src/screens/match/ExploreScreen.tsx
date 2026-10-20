@@ -9,7 +9,7 @@ import { api } from '../../services/api';
 import { ProgressiveImage } from '../../components/common/ProgressiveImage';
 import { DatingCategoryBadge, DatingCategory } from '../../components/common/DatingCategoryBadge';
 import { getPresenceSocket } from '../../services/presenceSocket';
-import { onProfileLiked } from '../../services/appEvents';
+import { onProfileLiked, onPremiumChanged } from '../../services/appEvents';
 import { resolveUrl } from '../../config';
 import { colors, typography, spacing, radius } from '../../theme';
 
@@ -127,12 +127,18 @@ export const ExploreScreen: React.FC<{ navigation: any }> = ({ navigation }) => 
     };
     socket.on('match:new', onMatchNew);
     socket.on('likes:new', onLikesNew);
+    // Premium gained or lost: "Liked you" is only sent to Premium viewers,
+    // so reload the grid once, quietly, as a pull-to-refresh would
+    const offPremiumChanged = onPremiumChanged(() => {
+      fetchProfiles(true);
+    });
     return () => {
       socket.off('match:new', onMatchNew);
       socket.off('likes:new', onLikesNew);
       offProfileLiked();
+      offPremiumChanged();
     };
-  }, []);
+  }, [fetchProfiles]);
 
   const openProfile = (profile: GridProfile) => {
     navigation.navigate('Discover', { focusProfile: profile });

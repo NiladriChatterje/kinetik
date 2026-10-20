@@ -28,3 +28,24 @@ export function onProfileLiked(handler: (userId: string) => void): () => void {
   });
   return () => subscription.remove();
 }
+
+const PREMIUM_CHANGED = 'kinetik:premium:changed';
+
+/**
+ * Premium was gained or lost: a purchase, a UPI mandate confirmed later, an
+ * expiry, a refund. Screens whose content depends on it (chats, likes, the
+ * deck and the grid) reload once. Raised only by the auth store's
+ * setPremium, and only when its known value really changes, so a renewal or
+ * a repeat answer costs nothing.
+ */
+export function emitPremiumChanged(isPremium: boolean): void {
+  DeviceEventEmitter.emit(PREMIUM_CHANGED, { isPremium });
+}
+
+/** Subscribe; the returned function unsubscribes. */
+export function onPremiumChanged(handler: (isPremium: boolean) => void): () => void {
+  const subscription = DeviceEventEmitter.addListener(PREMIUM_CHANGED, (event: { isPremium?: boolean }) => {
+    handler(Boolean(event?.isPremium));
+  });
+  return () => subscription.remove();
+}

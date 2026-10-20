@@ -5,7 +5,23 @@ import { Socket } from 'socket.io-client';
 import { api, SignupForm, SignupCodeInfo } from '../services/api';
 import { closeChatSocket, getChatSocket } from '../services/chatSocket';
 import { closePresenceSocket, getPresenceSocket } from '../services/presenceSocket';
+import { emitPremiumChanged } from '../services/appEvents';
 import { isWelcomePending } from '../services/welcomeNotice';
+
+let lastPremiumActiveToastAt = 0;
+
+/**
+ * The "Premium is active" toast. A purchase is announced by both the
+ * subscription screen (when its verify call returns) and the server's push
+ * (which can arrive first), so whichever comes second within a few seconds
+ * stays quiet.
+ */
+export function announcePremiumActive(): void {
+  const now = Date.now();
+  if (now - lastPremiumActiveToastAt < 15000) return;
+  lastPremiumActiveToastAt = now;
+  Toast.show({ type: 'success', text1: 'Premium is active', text2: 'Every chat and like is unlocked.' });
+}
 
 // Badge listeners attached to the shared /chat socket, kept for detaching
 let chatsSocketHandlers: {
@@ -135,6 +151,16 @@ interface AuthState {
   // messages the user is actively viewing.
   openChatMatchId: string | null;
   setOpenChatMatchId: (matchId: string | null) => void;
+
+  // Premium, as last known. null until the subscription screen, a purchase
+  // or the server's push (subscription:changed) has told us.
+  isPremium: boolean | null;
+  /**
+   * Record the answer. Screens reload (appEvents.onPremiumChanged) only when
+   * it changes. `isChange` marks an answer that is itself a change (a
+   * purchase or a push), which also counts when nothing was known before.
+   */
+  setPremium: (isPremium: boolean, options?: { isChange?: boolean }) => void;
 
   // Socket for real-time like/match updates
   likesSocket: Socket | null;
@@ -308,6 +334,7 @@ export const useAuthStore = create<AuthState>((set, get) => ({
   unreadLikeCount: 0,
   unreadChatCount: 0,
   openChatMatchId: null,
+  isPremium: null,
   likesSocket: null,
   chatSocket: null,
 
@@ -541,6 +568,21 @@ export const useAuthStore = create<AuthState>((set, get) => ({
       set({ unreadLikeCount: current + 1 });
     });
 
+    // Premium gained or lost on the server (a UPI mandate confirmed later,
+    // a renewal, an expiry or refund). Screens catch up through setPremium.
+    // Toasts only for a change from a known state, so a renewal is silent;
+    // announcePremiumActive keeps a purchase to one toast.
+    socket.on('subscription:changed', (data: any) => {
+      if (typeof data?.premium !== 'boolean') return;
+      const previous = get().isPremium;
+      get().setPremium(data.premium, { isChange: true });
+      if (data.premium && previous === false) {
+        announcePremiumActive();
+      } else if (!data.premium && previous === true) {
+        Toast.show({ type: 'info', text1: 'Premium has ended', text2: 'Renew any time from Subscription.' });
+      }
+    });
+
     set({ likesSocket: socket });
   },
 
@@ -658,6 +700,20 @@ export const useAuthStore = create<AuthState>((set, get) => ({
     set({ openChatMatchId: matchId });
   },
 
+  setPremium: (isPremium, options) => {
+    const previous = get().isPremium;
+    if (previous === isPremium) return;
+    set({ isPremium });
+    // Screens loaded with the old answer reload once. A plain status read
+    // that only fills in an unknown value is not a change.
+    if (previous !== null || options?.isChange) {
+      // The chat badge's socket joined its rooms at connect, when the server
+      // refused the locked ones; join again so their messages count live
+      if (isPremium) chatsSocketHandlers?.joinAllRooms();
+      emitPremiumChanged(isPremium);
+    }
+  },
+
   logout: () => {
     get().disconnectLikesSocket();
     get().disconnectChatsSocket();
@@ -668,7 +724,7 @@ export const useAuthStore = create<AuthState>((set, get) => ({
     set({
       user: null, token: null, isAuthenticated: false,
       onboardingStep: 'splash', pendingSignup: null,
-      unreadLikeCount: 0, unreadChatCount: 0,
+      unreadLikeCount: 0, unreadChatCount: 0, isPremium: null,
     });
   },
 
@@ -687,7 +743,7 @@ export const useAuthStore = create<AuthState>((set, get) => ({
         set({
           user: null, token: null, isAuthenticated: false,
           onboardingStep: 'splash', pendingSignup: null,
-          unreadLikeCount: 0, unreadChatCount: 0,
+          unreadLikeCount: 0, unreadChatCount: 0, isPremium: null,
         });
         return { success: true };
       }

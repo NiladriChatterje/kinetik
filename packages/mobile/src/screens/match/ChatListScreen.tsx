@@ -10,6 +10,7 @@ import { useFocusEffect } from '@react-navigation/native';
 import { preventScreenCaptureAsync, allowScreenCaptureAsync } from 'expo-screen-capture';
 import { api } from '../../services/api';
 import { getChatSocket } from '../../services/chatSocket';
+import { onPremiumChanged } from '../../services/appEvents';
 import { useAuthStore } from '../../store/authStore';
 import { resolveUrl } from '../../config';
 import { colors, typography, spacing } from '../../theme';
@@ -157,11 +158,18 @@ export const ChatListScreen: React.FC<{ navigation: any }> = ({ navigation }) =>
 
     socketRef.current = socket;
 
+    // Premium gained or lost: every chat's lock changes. The reload also joins
+    // the rooms the server refused while they were locked.
+    const offPremiumChanged = onPremiumChanged(() => {
+      fetchConversations();
+    });
+
     return () => {
       // Shared socket — detach this screen's listeners only, never disconnect
       socket.off('connect', onConnect);
       socket.off('chat:message', onChatMessage);
       socket.off('match:new', onMatchNew);
+      offPremiumChanged();
       socketRef.current = null;
     };
   }, []);

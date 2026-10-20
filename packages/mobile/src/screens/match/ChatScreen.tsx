@@ -17,6 +17,7 @@ import { Socket } from 'socket.io-client';
 import { api } from '../../services/api';
 import { compressPhoto } from '../../services/photoService';
 import { getChatSocket } from '../../services/chatSocket';
+import { onPremiumChanged } from '../../services/appEvents';
 import { useAuthStore } from '../../store/authStore';
 import { useToast } from '../../hooks/useToast';
 import { LockedChatView } from '../../components/chat/LockedChatView';
@@ -940,6 +941,14 @@ export const ChatScreen: React.FC<{ navigation: any; route: any }> = ({ navigati
       if (await syncMessages()) getChatSocket().emit('chat:join', { matchId });
     });
   }, [navigation, locked, syncMessages, matchId]);
+
+  // Premium gained or lost while this chat is on screen (a UPI mandate
+  // confirmed, an expiry): ask again the same way. A locked answer shows the
+  // lock; an open one loads the history, and the join (refused while locked,
+  // harmless when repeated) brings live messages.
+  useEffect(() => onPremiumChanged(async () => {
+    if (await syncMessages()) getChatSocket().emit('chat:join', { matchId });
+  }), [syncMessages, matchId]);
 
   /** The page of messages before the oldest one on screen, prepended. */
   const loadOlderMessages = useCallback(async () => {
