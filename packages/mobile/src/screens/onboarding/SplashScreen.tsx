@@ -301,6 +301,16 @@ export const SplashScreen: React.FC<{ navigation: any; route?: any }> = ({ navig
             required
           />
 
+          {mode === 'login' && (
+            <TouchableOpacity
+              onPress={() => navigation.navigate('ForgotPassword', { email: email.trim() })}
+              style={styles.forgotLink}
+              accessibilityRole="button"
+            >
+              <Text style={styles.forgotText}>Forgot password?</Text>
+            </TouchableOpacity>
+          )}
+
           {mode === 'register' && (
             <>
               <Input
@@ -366,6 +376,8 @@ export const SplashScreen: React.FC<{ navigation: any; route?: any }> = ({ navig
 };
 
 const styles = StyleSheet.create({
+  forgotLink: { alignSelf: 'flex-end', paddingVertical: spacing.xs, marginBottom: spacing.md },
+  forgotText: { ...typography.body2, color: colors.textSecondary, textDecorationLine: 'none' },
   container: {
     flex: 1,
     backgroundColor: colors.background,

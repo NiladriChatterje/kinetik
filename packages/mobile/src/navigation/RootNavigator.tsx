@@ -58,6 +58,7 @@ function ChatTabIcon({ color }: { color: string }) {
 // Onboarding
 import { SplashScreen } from '../screens/onboarding/SplashScreen';
 import { OTPVerifyScreen } from '../screens/onboarding/OTPVerifyScreen';
+import { ForgotPasswordScreen } from '../screens/onboarding/ForgotPasswordScreen';
 import { IdentityScreen } from '../screens/onboarding/IdentityScreen';
 import { AboutYouScreen } from '../screens/onboarding/AboutYouScreen';
 import { LocationPermissionScreen } from '../screens/onboarding/LocationPermissionScreen';
@@ -129,6 +130,7 @@ export type RootStackParamList = {
 export type OnboardingStackParamList = {
   Splash: undefined;
   OTPVerify: undefined;
+  ForgotPassword: { email?: string } | undefined;
   Identity: undefined;
   About: undefined;
   Location: undefined;
@@ -170,6 +172,7 @@ const AuthNavigator = React.memo(function AuthNavigator() {
     <OnboardingStack.Navigator screenOptions={screenOptions}>
       <OnboardingStack.Screen name="Splash" component={SplashScreen} />
       <OnboardingStack.Screen name="OTPVerify" component={OTPVerifyScreen} />
+      <OnboardingStack.Screen name="ForgotPassword" component={ForgotPasswordScreen} />
       <OnboardingStack.Screen name="Identity" component={IdentityScreen} />
       <OnboardingStack.Screen name="About" component={AboutYouScreen} />
       <OnboardingStack.Screen name="Location" component={LocationPermissionScreen} />

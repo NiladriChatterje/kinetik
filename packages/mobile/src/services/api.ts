@@ -553,6 +553,22 @@ class ApiClient {
     });
   }
 
+  /** Emails a code for setting a new password (forgot password). */
+  async requestPasswordReset(email: string) {
+    return this.request<SignupCodeInfo>('/api/v1/auth/password/forgot', {
+      method: 'POST',
+      body: JSON.stringify({ email }),
+    });
+  }
+
+  /** Sets a new password with the emailed code; the server signs other devices out. */
+  async resetPassword(email: string, otp: string, password: string) {
+    return this.request<{ reset: boolean }>('/api/v1/auth/password/reset', {
+      method: 'POST',
+      body: JSON.stringify({ email, otp, password }),
+    });
+  }
+
   async login(data: { email: string; password: string }) {
     return this.request<{ user: any; token: string; refreshToken: string }>('/api/v1/auth/login', {
       method: 'POST',
