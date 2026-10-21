@@ -48,6 +48,20 @@ export const SplashScreen: React.FC<{ navigation: any; route?: any }> = ({ navig
   const signupLocks = useAuthStore((s) => s.signupLocks);
   const toast = useToast();
 
+  // Opened while signed in with onboarding unfinished (the app was closed
+  // mid-onboarding): carry on from the saved step instead of asking to sign
+  // in again. Read once, when the screen opens: during a sign-in or sign-up
+  // it opened signed out, and those flows hand off to onboarding themselves.
+  const [resumeStep] = useState(() => {
+    const { isAuthenticated, onboardingStep } = useAuthStore.getState();
+    return isAuthenticated && onboardingStep !== 'complete' ? onboardingStep : null;
+  });
+  useEffect(() => {
+    if (resumeStep) enterOnboarding(navigation, resumeStep);
+    // Once, when the screen opens
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
   // All sign-up codes for this email are used up for today: Create Account
   // stays disabled until the server's 24-hour window ends.
   const lockedUntil = signupLocks[signupEmailKey(email)] ?? 0;
@@ -209,6 +223,9 @@ export const SplashScreen: React.FC<{ navigation: any; route?: any }> = ({ navig
     inputRange: [0, 1],
     outputRange: [0, SEGMENT_TAB_WIDTH + 4],
   });
+
+  // Moving on to the saved step: no sign-in form flashing up first
+  if (resumeStep) return <View style={styles.container} />;
 
   return (
     <SafeAreaView style={styles.container} edges={['top']}>

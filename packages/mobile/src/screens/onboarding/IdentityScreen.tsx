@@ -92,7 +92,7 @@ export const IdentityScreen: React.FC<{ navigation: any }> = ({ navigation }) =>
   const [datingCategoryTouched, setDatingCategoryTouched] = useState(false);
   const [pronouns, setPronouns] = useState('');
   const [loading, setLoading] = useState(false);
-  const { user } = useAuthStore();
+  const { user, logout } = useAuthStore();
   const toast = useToast();
 
   // Prefill what this step already saved, so returning here to change one
@@ -248,6 +248,11 @@ export const IdentityScreen: React.FC<{ navigation: any }> = ({ navigation }) =>
         covers the top edge, so the footer pads past the bottom inset itself. */}
       <View style={[styles.footer, { paddingBottom: Math.max(spacing.lg, insets.bottom + spacing.sm) }]}>
         <Button title="Continue" onPress={handleSubmit} loading={loading} fullWidth />
+        {/* The app reopens on the saved step, so this is the way back to the
+            sign-in screen, e.g. to use another account */}
+        <TouchableOpacity onPress={logout} disabled={loading} style={styles.signOut} accessibilityRole="button">
+          <Text style={styles.signOutText}>Not you? Sign out</Text>
+        </TouchableOpacity>
       </View>
       </KeyboardAvoidingView>
     </SafeAreaView>
@@ -291,4 +296,6 @@ const styles = StyleSheet.create({
     borderTopColor: colors.surfaceHighlight,
     backgroundColor: colors.background,
   },
+  signOut: { alignSelf: 'center', paddingVertical: spacing.sm, marginTop: spacing.xs },
+  signOutText: { ...typography.body2, color: colors.textSecondary },
 });
