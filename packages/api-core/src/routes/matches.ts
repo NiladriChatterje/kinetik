@@ -59,6 +59,97 @@ const FREE_VISIBLE_LIKES = 5;
  */
 const REJECT_COOLDOWN_DAYS = 7;
 
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+/**
+ * Profile cards for these user rows, as the deck and the Explore grid show
+ * them, and as a liker opened from the Likes list is shown.
+ */
+async function buildProfileCards(rows: any[], canSeeLikes: boolean) {
+  const now = new Date();
+
+  // Fetch photos and interests for all profiles in two batched queries
+  // (was one pair of queries per profile — 41 queries per feed request)
+  const profileIds = rows.map((row: any) => row.id);
+  const photosByUser = new Map<string, any[]>();
+  const interestsByUser = new Map<string, any[]>();
+
+  if (profileIds.length > 0) {
+    const photosResult = await query(
+      `SELECT user_id, id, url, thumbnail_url, is_primary FROM ${TABLES.PROFILE_PHOTOS}
+       WHERE user_id = ANY($1) ORDER BY is_primary DESC, order_index ASC`,
+      [profileIds],
+    );
+    for (const p of photosResult.rows) {
+      if (!photosByUser.has(p.user_id)) photosByUser.set(p.user_id, []);
+      photosByUser.get(p.user_id)!.push(p);
+    }
+
+    const interestsResult = await query(
+      `SELECT ui.user_id, i.id, i.name, i.emoji, i.category
+       FROM ${TABLES.USER_INTERESTS} ui
+       JOIN ${TABLES.INTERESTS} i ON i.id = ui.interest_id
+       WHERE ui.user_id = ANY($1)`,
+      [profileIds],
+    );
+    for (const i of interestsResult.rows) {
+      if (!interestsByUser.has(i.user_id)) interestsByUser.set(i.user_id, []);
+      interestsByUser.get(i.user_id)!.push(i);
+    }
+  }
+
+  return rows.map((row: any) => {
+    const age = row.date_of_birth
+      ? Math.floor((now.getTime() - new Date(row.date_of_birth).getTime()) / 31557600000)
+      : 0;
+
+    // Coarse location = center of the user's res-7 H3 cell (~5 km² hexagon).
+    // The client sorts the deck nearest-first from this; exact coordinates
+    // never leave the server.
+    let approxLocation: { latitude: number; longitude: number } | undefined;
+    if (row.h3_index) {
+      try {
+        approxLocation = h3ToGeo(row.h3_index);
+      } catch {
+        // Malformed cell — profile simply has no distance
+      }
+    }
+
+    return {
+      approxLocation,
+      // Km from the feed origin (own or preferred location); undefined when
+      // the viewer has no origin. The app keeps this order when present.
+      distanceKm: row.distance_km != null ? Math.max(1, Math.round(Number(row.distance_km))) : undefined,
+      userId: row.id,
+      displayName: row.display_name,
+      age,
+      bio: row.bio || '',
+      occupation: row.occupation || undefined,
+      education: row.education || undefined,
+      pronouns: row.pronouns || undefined,
+      // What they said they are here for; shown as a badge on their card.
+      datingCategory: row.dating_category || undefined,
+      photos: (photosByUser.get(row.id) || []).map((p: any) => ({
+        id: p.id,
+        url: p.url,
+        thumbnailUrl: p.thumbnail_url || undefined,
+        isPrimary: p.is_primary,
+      })),
+      interests: (interestsByUser.get(row.id) || []).map((i: any) => ({
+        id: i.id,
+        name: i.name,
+        emoji: i.emoji,
+        category: i.category,
+      })),
+      aboutAnswers: row.about_answers || undefined,
+      isVerified: row.is_verified,
+      // Set by the explore query and for a liker; undefined (→ false) for
+      // the deck. Never sent to free users, who may only see how many liked them.
+      likedYou: canSeeLikes && Boolean(row.liked_you),
+    };
+  });
+}
+
 export async function matchRoutes(app: FastifyInstance) {
   app.addHook('preHandler', async (request: FastifyRequest, reply: FastifyReply) => {
     // Skip JWT auth ONLY for the GET media proxy endpoint — native audio/video
@@ -282,86 +373,7 @@ export async function matchRoutes(app: FastifyInstance) {
       }
     }
 
-    // Fetch photos and interests for all profiles in two batched queries
-    // (was one pair of queries per profile — 41 queries per feed request)
-    const profileIds = profilesResult.rows.map((row: any) => row.id);
-    const photosByUser = new Map<string, any[]>();
-    const interestsByUser = new Map<string, any[]>();
-
-    if (profileIds.length > 0) {
-      const photosResult = await query(
-        `SELECT user_id, id, url, thumbnail_url, is_primary FROM ${TABLES.PROFILE_PHOTOS}
-         WHERE user_id = ANY($1) ORDER BY is_primary DESC, order_index ASC`,
-        [profileIds],
-      );
-      for (const p of photosResult.rows) {
-        if (!photosByUser.has(p.user_id)) photosByUser.set(p.user_id, []);
-        photosByUser.get(p.user_id)!.push(p);
-      }
-
-      const interestsResult = await query(
-        `SELECT ui.user_id, i.id, i.name, i.emoji, i.category
-         FROM ${TABLES.USER_INTERESTS} ui
-         JOIN ${TABLES.INTERESTS} i ON i.id = ui.interest_id
-         WHERE ui.user_id = ANY($1)`,
-        [profileIds],
-      );
-      for (const i of interestsResult.rows) {
-        if (!interestsByUser.has(i.user_id)) interestsByUser.set(i.user_id, []);
-        interestsByUser.get(i.user_id)!.push(i);
-      }
-    }
-
-    const profiles = profilesResult.rows.map((row: any) => {
-      const age = row.date_of_birth
-        ? Math.floor((now.getTime() - new Date(row.date_of_birth).getTime()) / 31557600000)
-        : 0;
-
-      // Coarse location = center of the user's res-7 H3 cell (~5 km² hexagon).
-      // The client sorts the deck nearest-first from this; exact coordinates
-      // never leave the server.
-      let approxLocation: { latitude: number; longitude: number } | undefined;
-      if (row.h3_index) {
-        try {
-          approxLocation = h3ToGeo(row.h3_index);
-        } catch {
-          // Malformed cell — profile simply has no distance
-        }
-      }
-
-      return {
-        approxLocation,
-        // Km from the feed origin (own or preferred location); undefined when
-        // the viewer has no origin. The app keeps this order when present.
-        distanceKm: row.distance_km != null ? Math.max(1, Math.round(Number(row.distance_km))) : undefined,
-        userId: row.id,
-        displayName: row.display_name,
-        age,
-        bio: row.bio || '',
-        occupation: row.occupation || undefined,
-        education: row.education || undefined,
-        pronouns: row.pronouns || undefined,
-        // What they said they are here for; shown as a badge on their card.
-        datingCategory: row.dating_category || undefined,
-        photos: (photosByUser.get(row.id) || []).map((p: any) => ({
-          id: p.id,
-          url: p.url,
-          thumbnailUrl: p.thumbnail_url || undefined,
-          isPrimary: p.is_primary,
-        })),
-        interests: (interestsByUser.get(row.id) || []).map((i: any) => ({
-          id: i.id,
-          name: i.name,
-          emoji: i.emoji,
-          category: i.category,
-        })),
-        aboutAnswers: row.about_answers || undefined,
-        isVerified: row.is_verified,
-        // Only set by the explore query; undefined (→ false) for the deck.
-        // Never sent to free users, who may only see how many liked them.
-        likedYou: canSeeLikes && Boolean(row.liked_you),
-      };
-    });
+    const profiles = await buildProfileCards(profilesResult.rows, canSeeLikes);
 
     return reply.send({
       success: true,
@@ -750,6 +762,56 @@ export async function matchRoutes(app: FastifyInstance) {
       success: true,
       data: { likes, totalCount: result.rows.length, locked: !premium },
     });
+  });
+
+  // ─── One liker's full profile ────────────────────────
+  // Opened from the Likes list, to see everything before answering. Only for
+  // someone whose like on the viewer is still waiting and visible to them:
+  // any like for Premium, a revealed one for a free account (as in GET
+  // /likes), and never across a block.
+  app.get('/likes/:userId/profile', async (request: FastifyRequest<{ Params: { userId: string } }>, reply: FastifyReply) => {
+    const { sub: userId } = request.user as any;
+    const { userId: likerId } = request.params;
+    const notFound = () => reply.status(404).send({
+      success: false,
+      error: { code: ERROR_CODES.NOT_FOUND, message: 'This profile is no longer available' },
+    });
+    if (!UUID_RE.test(likerId)) return notFound();
+
+    const [premium, likeResult, blocked] = await Promise.all([
+      hasActivePremium(userId),
+      query(
+        `SELECT revealed_at FROM ${TABLES.USER_INTERACTIONS}
+         WHERE actor_id = $1 AND target_id = $2 AND action IN ('like', 'super_like')
+           AND is_mutual = FALSE AND responded_at IS NULL`,
+        [likerId, userId],
+      ),
+      isBlockedPair(userId, likerId),
+    ]);
+    const like = likeResult.rows[0];
+    if (!like || blocked || (!premium && like.revealed_at === null)) return notFound();
+
+    // Distance from the viewer's feed origin (preferred city, else their own
+    // location), as the deck card shows it
+    const userResult = await query(
+      `SELECT u.id, u.display_name, u.date_of_birth, u.bio, u.occupation, u.education,
+              u.pronouns, u.is_verified, u.dating_category, u.about_answers, u.h3_index,
+              TRUE AS liked_you,
+              CASE WHEN o.lat IS NULL OR o.lng IS NULL OR u.latitude IS NULL OR u.longitude IS NULL THEN NULL
+                   ELSE 6371 * acos(LEAST(1, GREATEST(-1,
+                     cos(radians(o.lat)) * cos(radians(u.latitude)) * cos(radians(u.longitude) - radians(o.lng))
+                     + sin(radians(o.lat)) * sin(radians(u.latitude)))))
+              END AS distance_km
+       FROM ${TABLES.USERS} u,
+            (SELECT COALESCE(preferred_latitude, latitude) AS lat, COALESCE(preferred_longitude, longitude) AS lng
+             FROM ${TABLES.USERS} WHERE id = $2) o
+       WHERE u.id = $1 AND u.is_active = TRUE`,
+      [likerId, userId],
+    );
+    if (!userResult.rows[0]) return notFound();
+
+    const [profile] = await buildProfileCards(userResult.rows, true);
+    return reply.send({ success: true, data: { profile } });
   });
 
   // ─── Respond to Incoming Like ────────────────────────
