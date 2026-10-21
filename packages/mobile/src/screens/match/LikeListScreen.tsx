@@ -36,6 +36,18 @@ const BLURRED_CARDS_SHOWN = 6;
 /** Cross on the Face unverified tag, as on the Discover card */
 const UNVERIFIED_RED = '#E53935';
 
+/** How long ago they liked: "now", "5m", "3h", "2d", "4w". */
+function likedAgo(iso: string): string {
+  const minutes = Math.floor((Date.now() - new Date(iso).getTime()) / 60000);
+  if (!Number.isFinite(minutes)) return '';
+  if (minutes < 1) return 'now';
+  if (minutes < 60) return `${minutes}m`;
+  const hours = Math.floor(minutes / 60);
+  if (hours < 24) return `${hours}h`;
+  const days = Math.floor(hours / 24);
+  return days < 7 ? `${days}d` : `${Math.floor(days / 7)}w`;
+}
+
 export const LikeListScreen: React.FC<{ navigation: any }> = ({ navigation }) => {
   const [likes, setLikes] = useState<IncomingLike[]>([]);
   const [loading, setLoading] = useState(true);
@@ -172,30 +184,41 @@ export const LikeListScreen: React.FC<{ navigation: any }> = ({ navigation }) =>
               {item.displayName}
               <Text style={styles.age}>  {item.age}</Text>
             </Text>
-            {/* Face tag: tick when their selfie matched, cross when unverified or skipped */}
-            <Ionicons
-              name={item.isVerified ? 'checkmark-circle' : 'close-circle'}
-              size={16}
-              color={item.isVerified ? colors.textPrimary : UNVERIFIED_RED}
-              style={{ marginLeft: 5 }}
-              accessibilityLabel={item.isVerified ? 'Face verified' : 'Face unverified'}
-            />
+            {/* Their selfie matched their photos; unverified shows as a tag below */}
+            {item.isVerified && (
+              <Ionicons
+                name="checkmark-circle"
+                size={15}
+                color={colors.textPrimary}
+                style={styles.verifiedTick}
+                accessibilityLabel="Face verified"
+              />
+            )}
+            <Text style={styles.ago}>{likedAgo(item.likedAt)}</Text>
           </View>
-          {!item.isVerified && <Text style={styles.unverified}>Face unverified</Text>}
-          <DatingCategoryBadge category={item.datingCategory} compact style={styles.categoryBadge} />
           {item.bio ? <Text style={styles.bio} numberOfLines={2}>{item.bio}</Text> : null}
-          {item.isSuperLike && (
-            <View style={styles.superLikeBadge}>
-              <Ionicons name="star" size={11} color={colors.textInverse} />
-              <Text style={styles.superLikeBadgeText}>Super Like</Text>
-            </View>
-          )}
-          {item.isMutual && (
-            <View style={styles.mutualPill}>
-              <Ionicons name="heart" size={11} color={colors.textPrimary} />
-              <Text style={styles.mutualPillText}>You liked each other</Text>
-            </View>
-          )}
+          {/* Tags in one row, so every card stays about the same height */}
+          <View style={styles.tags}>
+            <DatingCategoryBadge category={item.datingCategory} compact />
+            {item.isSuperLike && (
+              <View style={[styles.tag, styles.superLikeTag]}>
+                <Ionicons name="star" size={10} color={colors.textInverse} />
+                <Text style={[styles.tagText, styles.superLikeTagText]}>Super like</Text>
+              </View>
+            )}
+            {item.isMutual && (
+              <View style={styles.tag}>
+                <Ionicons name="heart" size={10} color={colors.textSecondary} />
+                <Text style={styles.tagText}>Liked each other</Text>
+              </View>
+            )}
+            {!item.isVerified && (
+              <View style={styles.tag}>
+                <Ionicons name="close-circle" size={10} color={UNVERIFIED_RED} />
+                <Text style={styles.tagText}>Face unverified</Text>
+              </View>
+            )}
+          </View>
         </View>
       </View>
     </BounceSwipe>
@@ -375,30 +398,30 @@ const styles = StyleSheet.create({
     backgroundColor: colors.textPrimary,
   },
   upgradeText: { ...typography.button, color: colors.textInverse },
+  // White with a hairline, no fill or shadow
   likeCard: {
-    backgroundColor: colors.surface,
+    backgroundColor: colors.background,
     borderRadius: radius.xl,
-    padding: spacing.lg,
+    paddingVertical: 14,
+    paddingHorizontal: spacing.lg,
     borderWidth: 1,
     borderColor: colors.cardBorder,
   },
-  likeHeader: { flexDirection: 'row', gap: spacing.md, alignItems: 'center' },
+  likeHeader: { flexDirection: 'row', gap: 14, alignItems: 'flex-start' },
   avatarWrap: { position: 'relative' },
   avatar: {
-    width: 64,
-    height: 64,
-    borderRadius: 32,
-    borderWidth: 2,
-    borderColor: colors.background,
+    width: 60,
+    height: 60,
+    borderRadius: 30,
   },
   noAvatar: { backgroundColor: colors.surfaceHighlight, justifyContent: 'center', alignItems: 'center' },
   superLikeStar: {
     position: 'absolute',
-    right: -2,
-    bottom: -2,
-    width: 22,
-    height: 22,
-    borderRadius: 11,
+    right: -1,
+    bottom: -1,
+    width: 20,
+    height: 20,
+    borderRadius: 10,
     backgroundColor: colors.textPrimary,
     borderWidth: 2,
     borderColor: colors.background,
@@ -407,41 +430,29 @@ const styles = StyleSheet.create({
   },
   likeInfo: { flex: 1 },
   nameRow: { flexDirection: 'row', alignItems: 'center' },
-  name: { ...typography.h3, color: colors.textPrimary },
+  name: { ...typography.h3, color: colors.textPrimary, flexShrink: 1 },
   age: { ...typography.body1, color: colors.textMuted, fontWeight: '400' },
-  bio: { ...typography.body2, color: colors.textSecondary, marginTop: spacing.xs },
-  unverified: { ...typography.caption, color: colors.textSecondary, fontWeight: '600', marginTop: 2 },
-  categoryBadge: { marginTop: spacing.xs },
+  verifiedTick: { marginLeft: 5 },
+  ago: { ...typography.caption, color: colors.textMuted, marginLeft: 'auto', paddingLeft: spacing.sm },
+  bio: { ...typography.body2, color: colors.textSecondary, marginTop: 3 },
+  tags: { flexDirection: 'row', flexWrap: 'wrap', gap: 6, marginTop: spacing.sm },
+  // Same pill as the compact category tag beside it
+  tag: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    paddingHorizontal: 6,
+    paddingVertical: 2,
+    borderRadius: radius.full,
+    backgroundColor: colors.surfaceHighlight,
+  },
+  tagText: { ...typography.caption, fontSize: 9, fontWeight: '600', color: colors.textSecondary },
+  superLikeTag: { backgroundColor: colors.textPrimary },
+  superLikeTagText: { color: colors.textInverse },
   swipeHint: {
     ...typography.caption,
     color: colors.textMuted,
     letterSpacing: 0.2,
     textAlign: 'center',
   },
-  superLikeBadge: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 4,
-    alignSelf: 'flex-start',
-    marginTop: spacing.sm,
-    backgroundColor: colors.textPrimary,
-    paddingHorizontal: spacing.sm,
-    paddingVertical: 3,
-    borderRadius: radius.full,
-  },
-  superLikeBadgeText: { ...typography.caption, fontSize: 9, color: colors.textInverse, fontWeight: '700' },
-  mutualPill: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 4,
-    alignSelf: 'flex-start',
-    marginTop: spacing.sm,
-    borderWidth: 1,
-    borderColor: colors.cardBorder,
-    backgroundColor: colors.surfaceHighlight,
-    paddingHorizontal: spacing.sm,
-    paddingVertical: 3,
-    borderRadius: radius.full,
-  },
-  mutualPillText: { ...typography.caption, fontSize: 9, color: colors.textSecondary, fontWeight: '600' },
 });
