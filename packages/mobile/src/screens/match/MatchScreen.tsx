@@ -8,7 +8,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { useAuthStore } from '../../store/authStore';
 import { api } from '../../services/api';
 import { useToast } from '../../hooks/useToast';
-import { colors, typography, spacing, radius, shadows } from '../../theme';
+import { colors, typography, spacing, radius } from '../../theme';
 import { getPresenceSocket } from '../../services/presenceSocket';
 import {
   emitProfileLiked, emitProfilePassed, emitProfileBlocked, emitLikeAnswered, onPremiumChanged,
@@ -125,10 +125,14 @@ function SwipeCard({ profile }: { profile: SwipeProfile }) {
             {photoCount > 1 && (
               <>
                 <View style={styles.photoTapLeft}>
-                  <Ionicons name="chevron-back" size={20} color="rgba(255,255,255,0.5)" />
+                  <View style={styles.photoArrow}>
+                    <Ionicons name="chevron-back" size={18} color={colors.textInverse} />
+                  </View>
                 </View>
                 <View style={styles.photoTapRight}>
-                  <Ionicons name="chevron-forward" size={20} color="rgba(255,255,255,0.5)" />
+                  <View style={styles.photoArrow}>
+                    <Ionicons name="chevron-forward" size={18} color={colors.textInverse} />
+                  </View>
                 </View>
               </>
             )}
@@ -854,12 +858,14 @@ const styles = StyleSheet.create({
     flex: 1,
     paddingHorizontal: spacing.md,
   },
+  // Rounded at the top only and flat on the page: the bottom runs into the
+  // hint bar, so no lower corners and no shadow
   card: {
     ...StyleSheet.absoluteFill,
-    borderRadius: radius.xl,
+    borderTopLeftRadius: radius.xl,
+    borderTopRightRadius: radius.xl,
     backgroundColor: colors.background,
     overflow: 'hidden',
-    ...shadows.sm,
   },
   nextCard: {
     transform: [{ scale: 0.96 }],
@@ -876,7 +882,8 @@ const styles = StyleSheet.create({
     height: SCREEN_HEIGHT * 0.52,
     overflow: 'hidden',
     position: 'relative',
-    backgroundColor: colors.surface,
+    // Black around photos that don't fill the frame, like a photo viewer
+    backgroundColor: colors.primary,
   },
   photoWrapper: {
     width: '100%',
@@ -889,7 +896,6 @@ const styles = StyleSheet.create({
   noPhoto: {
     justifyContent: 'center',
     alignItems: 'center',
-    backgroundColor: colors.surface,
   },
   photoTapLeft: {
     position: 'absolute',
@@ -910,6 +916,18 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     alignItems: 'flex-end',
     paddingRight: 8,
+  },
+  // Readable on any photo: a dark see-through disc shows on light photos,
+  // the white chevron and rim on dark ones
+  photoArrow: {
+    width: 30,
+    height: 30,
+    borderRadius: 15,
+    backgroundColor: 'rgba(0,0,0,0.35)',
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: 'rgba(255,255,255,0.35)',
+    justifyContent: 'center',
+    alignItems: 'center',
   },
   photoDots: {
     position: 'absolute',
