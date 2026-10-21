@@ -613,18 +613,21 @@ export async function matchRoutes(app: FastifyInstance) {
       // who, and the like stays hidden until they subscribe.
       let targetCanSeeLikes = await hasActivePremium(targetUserId);
       if (!targetCanSeeLikes) {
+        // The recipient's row is locked first and the like is re-checked as
+        // it is stamped, and only a like stamped here is counted: a likes
+        // load revealing the same like at the same moment cannot have it
+        // counted twice.
         await query(
-          `WITH need AS (
-             SELECT id FROM ${TABLES.USER_INTERACTIONS}
-             WHERE actor_id = $2 AND target_id = $1 AND revealed_at IS NULL
+          `WITH room AS (
+             SELECT free_likes_revealed < $3 AS ok FROM ${TABLES.USERS} WHERE id = $1 FOR UPDATE
            ),
-           slot AS (
-             UPDATE ${TABLES.USERS} SET free_likes_revealed = free_likes_revealed + 1
-             WHERE id = $1 AND free_likes_revealed < $3 AND EXISTS (SELECT 1 FROM need)
+           revealed AS (
+             UPDATE ${TABLES.USER_INTERACTIONS} SET revealed_at = NOW()
+             WHERE actor_id = $2 AND target_id = $1 AND revealed_at IS NULL AND (SELECT ok FROM room)
              RETURNING id
            )
-           UPDATE ${TABLES.USER_INTERACTIONS} SET revealed_at = NOW()
-           WHERE id IN (SELECT id FROM need) AND EXISTS (SELECT 1 FROM slot)`,
+           UPDATE ${TABLES.USERS} SET free_likes_revealed = free_likes_revealed + 1
+           WHERE id = $1 AND EXISTS (SELECT 1 FROM revealed)`,
           [targetUserId, userId, FREE_VISIBLE_LIKES],
         );
         const revealed = await query(
@@ -682,6 +685,8 @@ export async function matchRoutes(app: FastifyInstance) {
     const premium = await hasActivePremium(userId);
     if (!premium) {
       // One statement, so two loads at once cannot reveal more than allowed.
+      // The stamp re-checks revealed_at: a like another request revealed
+      // meanwhile (this one picked from an older snapshot) is not counted again.
       await query(
         `WITH slots AS (
            SELECT GREATEST(0, $2 - free_likes_revealed) AS n
@@ -697,7 +702,7 @@ export async function matchRoutes(app: FastifyInstance) {
          ),
          revealed AS (
            UPDATE ${TABLES.USER_INTERACTIONS} SET revealed_at = NOW()
-           WHERE id IN (SELECT id FROM pick) RETURNING id
+           WHERE id IN (SELECT id FROM pick) AND revealed_at IS NULL RETURNING id
          )
          UPDATE ${TABLES.USERS}
             SET free_likes_revealed = free_likes_revealed + (SELECT COUNT(*) FROM revealed)
