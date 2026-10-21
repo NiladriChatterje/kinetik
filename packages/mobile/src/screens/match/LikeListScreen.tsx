@@ -14,6 +14,7 @@ import { resolveUrl } from '../../config';
 import { colors, typography, spacing, radius } from '../../theme';
 import { PaywallModal, PaywallReason } from '../../components/common/PaywallModal';
 import { DatingCategoryBadge, DatingCategory } from '../../components/common/DatingCategoryBadge';
+import { BounceSwipe } from '../../components/common/BounceSwipe';
 
 interface IncomingLike {
   likedAt: string;
@@ -134,8 +135,16 @@ export const LikeListScreen: React.FC<{ navigation: any }> = ({ navigation }) =>
   // newest few). Zero for Premium.
   const hiddenCount = locked ? Math.max(0, lockedCount - likes.length) : 0;
 
+  // Swipe right to like back, left to reject; the card bounces back and
+  // leaves the list once the answer is recorded
   const renderLike = ({ item }: { item: IncomingLike }) => (
-    <View style={styles.likeCard}>
+    <BounceSwipe
+      cardStyle={styles.likeCard}
+      onSwipe={(direction) => handleRespond(item.userId, direction === 'right' ? 'like' : 'discard')}
+      enabled={responding !== item.userId}
+      busy={responding === item.userId}
+      labels={{ right: 'Like back', left: 'Reject' }}
+    >
       <View style={styles.likeHeader}>
         {/* Photo with ring — super likes get a star badge on the corner */}
         <View style={styles.avatarWrap}>
@@ -189,34 +198,7 @@ export const LikeListScreen: React.FC<{ navigation: any }> = ({ navigation }) =>
           )}
         </View>
       </View>
-
-      <View style={styles.actions}>
-        <TouchableOpacity
-          style={[styles.actionBtn, styles.discardBtn]}
-          onPress={() => handleRespond(item.userId, 'discard')}
-          disabled={responding === item.userId}
-          activeOpacity={0.7}
-        >
-          {responding === item.userId ? (
-            <ActivityIndicator size="small" color={colors.textSecondary} />
-          ) : (
-            <Ionicons name="close" size={24} color={colors.textPrimary} />
-          )}
-        </TouchableOpacity>
-        <TouchableOpacity
-          style={[styles.actionBtn, styles.likeBackBtn]}
-          onPress={() => handleRespond(item.userId, 'like')}
-          disabled={responding === item.userId}
-          activeOpacity={0.7}
-        >
-          {responding === item.userId ? (
-            <ActivityIndicator size="small" color={colors.textInverse} />
-          ) : (
-            <Ionicons name="heart" size={24} color={colors.textInverse} />
-          )}
-        </TouchableOpacity>
-      </View>
-    </View>
+    </BounceSwipe>
   );
 
   if (loading) {
@@ -275,6 +257,11 @@ export const LikeListScreen: React.FC<{ navigation: any }> = ({ navigation }) =>
           maxToRenderPerBatch={10}
           windowSize={7}
           initialNumToRender={8}
+          ListHeaderComponent={
+            likes.length > 0 ? (
+              <Text style={styles.swipeHint}>Swipe right to like back, left to reject</Text>
+            ) : null
+          }
           // Free account: the likes beyond the newest few are counted but not
           // sent. No names, photos or ids reach the app for them; tapping a
           // placeholder opens checkout, like the button below.
@@ -425,26 +412,11 @@ const styles = StyleSheet.create({
   bio: { ...typography.body2, color: colors.textSecondary, marginTop: spacing.xs },
   unverified: { ...typography.caption, color: colors.textSecondary, fontWeight: '600', marginTop: 2 },
   categoryBadge: { marginTop: spacing.xs },
-  actions: {
-    flexDirection: 'row',
-    justifyContent: 'center',
-    gap: spacing.xl,
-    marginTop: spacing.lg,
-  },
-  actionBtn: {
-    width: 54,
-    height: 54,
-    borderRadius: 27,
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  discardBtn: {
-    backgroundColor: colors.surfaceHighlight,
-    borderWidth: 1.5,
-    borderColor: colors.cardBorder,
-  },
-  likeBackBtn: {
-    backgroundColor: colors.textPrimary,
+  swipeHint: {
+    ...typography.caption,
+    color: colors.textMuted,
+    letterSpacing: 0.2,
+    textAlign: 'center',
   },
   superLikeBadge: {
     flexDirection: 'row',

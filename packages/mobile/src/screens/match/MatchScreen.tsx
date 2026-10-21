@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react'; import {
   View, Text, StyleSheet, Dimensions, TouchableOpacity,
-  Animated, PanResponder, ActivityIndicator, Alert,
+  ActivityIndicator, Alert,
   ScrollView,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
@@ -17,12 +17,12 @@ import { MatchPopup } from '../../components/common/MatchPopup';
 import { PaywallModal, PaywallReason } from '../../components/common/PaywallModal';
 import { ProgressiveImage } from '../../components/common/ProgressiveImage';
 import { DatingCategoryBadge, DatingCategory } from '../../components/common/DatingCategoryBadge';
+import { BounceSwipe } from '../../components/common/BounceSwipe';
 import { hapticSuccess, hapticImpact } from '../../utils/haptics';
 
 const SCREEN_WIDTH = Dimensions.get('window').width;
 const SCREEN_HEIGHT = Dimensions.get('window').height;
 const CARD_WIDTH = SCREEN_WIDTH - spacing.md * 2; // cardsContainer horizontal padding
-const SWIPE_THRESHOLD = 120;
 
 interface SwipeProfile {
   userId: string;
@@ -66,64 +66,9 @@ const ABOUT_SECTIONS: {
     { key: 'dateStyle', icon: 'cafe-outline', label: 'Dates' },
   ];
 
-function SwipeCard({
-  profile,
-  isTop,
-  onSwipe,
-}: {
-  profile: SwipeProfile;
-  isTop: boolean;
-  onSwipe: (direction: 'left' | 'right') => void;
-}) {
+/** The top card's content; the swipe itself is BounceSwipe around it. */
+function SwipeCard({ profile }: { profile: SwipeProfile }) {
   const [photoIndex, setPhotoIndex] = useState(0);
-  const position = useRef(new Animated.ValueXY()).current;
-  const likeOpacity = useRef(new Animated.Value(0)).current;
-  const passOpacity = useRef(new Animated.Value(0)).current;
-
-  const panResponder = useRef(
-    PanResponder.create({
-      // Claim only horizontal swipes so the card's inner ScrollView keeps
-      // vertical scrolling (bio/interests) to itself.
-      onMoveShouldSetPanResponder: (_, gesture) =>
-        isTop && Math.abs(gesture.dx) > Math.abs(gesture.dy),
-      onPanResponderMove: (_, gesture) => {
-        position.setValue({ x: gesture.dx, y: gesture.dy });
-        if (gesture.dx > 0) {
-          likeOpacity.setValue(Math.min(gesture.dx / 150, 1));
-          passOpacity.setValue(0);
-        } else {
-          passOpacity.setValue(Math.min(Math.abs(gesture.dx) / 150, 1));
-          likeOpacity.setValue(0);
-        }
-      },
-      onPanResponderRelease: (_, gesture) => {
-        if (gesture.dx > SWIPE_THRESHOLD) {
-          Animated.spring(position, {
-            toValue: { x: SCREEN_WIDTH + 100, y: gesture.dy },
-            useNativeDriver: true,
-          }).start(() => onSwipe('right'));
-        } else if (gesture.dx < -SWIPE_THRESHOLD) {
-          Animated.spring(position, {
-            toValue: { x: -SCREEN_WIDTH - 100, y: gesture.dy },
-            useNativeDriver: true,
-          }).start(() => onSwipe('left'));
-        } else {
-          Animated.spring(position, {
-            toValue: { x: 0, y: 0 },
-            friction: 5,
-            useNativeDriver: true,
-          }).start();
-          Animated.timing(likeOpacity, { toValue: 0, duration: 200, useNativeDriver: true }).start();
-          Animated.timing(passOpacity, { toValue: 0, duration: 200, useNativeDriver: true }).start();
-        }
-      },
-    }),
-  ).current;
-
-  const rotate = position.x.interpolate({
-    inputRange: [-SCREEN_WIDTH / 2, 0, SCREEN_WIDTH / 2],
-    outputRange: ['-15deg', '0deg', '15deg'],
-  });
 
   const photoCount = profile.photos.length;
   const currentPhoto = profile.photos[photoIndex] || profile.photos[0];
@@ -138,18 +83,9 @@ function SwipeCard({
     setPhotoIndex((prev) => (prev - 1 + photoCount) % photoCount);
   };
 
+  // Scrollable card content — the card fills the page and scrolls to the end
+  // of the view (no fixed height).
   return (
-    <Animated.View
-      style={[
-        styles.card,
-        {
-          transform: [...position.getTranslateTransform(), { rotate }],
-        },
-      ]}
-      {...panResponder.panHandlers}
-    >
-      {/* Scrollable card content — the card fills the page and scrolls
-          to the end of the view (no fixed height). */}
       <ScrollView
         style={styles.cardScroll}
         contentContainerStyle={styles.cardScrollContent}
@@ -160,7 +96,8 @@ function SwipeCard({
         <View style={styles.cardImageContainer}>
           {currentPhoto ? (<TouchableOpacity
             activeOpacity={1}
-            onPressIn={(e) => {
+            // On release, so a swipe that starts on the photo doesn't flip it
+            onPress={(e) => {
               // Tap left half = prev, right half = next
               const { locationX } = e.nativeEvent;
               if (locationX < CARD_WIDTH / 2) {
@@ -227,14 +164,6 @@ function SwipeCard({
               <Text style={styles.photoCountText}>Primary</Text>
             </View>
           )}
-
-          {/* Like / Pass stickers */}
-          <Animated.View style={[styles.sticker, styles.likeSticker, { opacity: likeOpacity }]}>
-            <Text style={styles.stickerText}>LIKE</Text>
-          </Animated.View>
-          <Animated.View style={[styles.sticker, styles.passSticker, { opacity: passOpacity }]}>
-            <Text style={styles.stickerText}>PASS</Text>
-          </Animated.View>
 
           {/* Already liked the viewer — same pill as the Explore grid */}
           {profile.likedYou && (
@@ -338,7 +267,6 @@ function SwipeCard({
           })()}
         </View>
       </ScrollView>
-    </Animated.View>
   );
 }
 
@@ -773,20 +701,26 @@ export const MatchScreen: React.FC<{ navigation: any; route?: any }> = ({ naviga
           </View>
         )}
 
-        {/* Current swipeable card */}
-        <SwipeCard
+        {/* Current card: slides sideways and bounces back; the deck
+            moves on once the swipe is recorded. It grows from the back
+            card's 0.96 as it takes the top. */}
+        <BounceSwipe
           key={currentProfile.userId}
-          profile={currentProfile}
-          isTop={true}
+          style={StyleSheet.absoluteFill}
+          cardStyle={styles.card}
           onSwipe={handleSwipe}
-        />
+          enabled={!swiping}
+          busy={swiping}
+          enterFrom={0.96}
+          labels={{ right: 'Like', left: 'Pass' }}
+        >
+          <SwipeCard profile={currentProfile} />
+        </BounceSwipe>
       </View>
 
-      {/* Action bar — fixed above the tab bar. Solid background (no
-          transparency), no border, no shadow. */}
+      {/* How to answer, with report / block beside it */}
       {currentProfile && (
         <View style={styles.actionBar}>
-          {/* Report or block — small, beside the main actions */}
           <TouchableOpacity
             style={styles.safetyBtn}
             onPress={() => setSafetyProfile(currentProfile)}
@@ -795,21 +729,8 @@ export const MatchScreen: React.FC<{ navigation: any; route?: any }> = ({ naviga
           >
             <Ionicons name="flag-outline" size={20} color={colors.textSecondary} />
           </TouchableOpacity>
-          <TouchableOpacity
-            style={[styles.actionBtn, styles.passBtn]}
-            onPress={() => handleSwipe('left')}
-            activeOpacity={0.7}
-          >
-            <Ionicons name="close" size={30} color={colors.textPrimary} />
-          </TouchableOpacity>
-          <TouchableOpacity
-            style={[styles.actionBtn, styles.likeBtn]}
-            onPress={() => handleSwipe('right')}
-            activeOpacity={0.7}
-          >
-            <Ionicons name="heart" size={30} color={colors.textPrimary} />
-          </TouchableOpacity>
-          {/* Balances the report button so pass and like stay centred */}
+          <Text style={styles.swipeHint}>Swipe right to like, left to pass</Text>
+          {/* Balances the report button so the hint stays centred */}
           <View style={styles.safetySpacer} />
         </View>
       )}
@@ -1030,34 +951,6 @@ const styles = StyleSheet.create({
     zIndex: 2,
   },
   likedYouText: { ...typography.caption, color: '#fff', fontWeight: '700' },
-  sticker: {
-    position: 'absolute',
-    top: 30,
-    paddingHorizontal: 16,
-    paddingVertical: 8,
-    borderRadius: radius.md,
-    borderWidth: 3,
-    transform: [{ rotate: '-20deg' }],
-  },
-  likeSticker: {
-    right: 20,
-    borderColor: colors.textPrimary,
-    backgroundColor: 'rgba(0, 0, 0, 0.2)',
-  },
-  passSticker: {
-    left: 20,
-    borderColor: colors.textPrimary,
-    backgroundColor: 'rgba(0, 0, 0, 0.2)',
-  },
-  stickerText: {
-    fontSize: 32,
-    fontWeight: '800',
-    letterSpacing: 2,
-    color: '#fff',
-    textShadowColor: 'rgba(0,0,0,0.3)',
-    textShadowOffset: { width: 0, height: 2 },
-    textShadowRadius: 4,
-  },
   cardInfo: {
     padding: spacing.lg,
     paddingBottom: spacing.xl,
@@ -1128,22 +1021,13 @@ const styles = StyleSheet.create({
   aboutChipText: { ...typography.caption, color: colors.textSecondary, fontSize: 11 },
   actionBar: {
     flexDirection: 'row',
-    justifyContent: 'center',
+    justifyContent: 'space-between',
     alignItems: 'center',
-    gap: spacing.xxl,
-    paddingVertical: spacing.lg,
+    paddingHorizontal: spacing.lg,
+    paddingVertical: spacing.md,
     backgroundColor: colors.background,
   },
-  actionBtn: {
-    width: 56,
-    height: 56,
-    borderRadius: 28,
-    backgroundColor: colors.surface,
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  passBtn: {},
-  likeBtn: {},
+  swipeHint: { ...typography.caption, color: colors.textMuted, letterSpacing: 0.2 },
   safetyBtn: {
     width: 40,
     height: 40,
