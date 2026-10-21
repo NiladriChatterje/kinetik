@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
 import {
   View, Text, StyleSheet, FlatList, Image, TouchableOpacity,
   ActivityIndicator,
@@ -7,7 +7,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { api } from '../../services/api';
 import { getPresenceSocket } from '../../services/presenceSocket';
-import { onPremiumChanged } from '../../services/appEvents';
+import { onLikeAnswered, onPremiumChanged } from '../../services/appEvents';
 import { useToast } from '../../hooks/useToast';
 import { useAuthStore } from '../../store/authStore';
 import { resolveUrl } from '../../config';
@@ -52,11 +52,22 @@ export const LikeListScreen: React.FC<{ navigation: any }> = ({ navigation }) =>
   const [likes, setLikes] = useState<IncomingLike[]>([]);
   const [loading, setLoading] = useState(true);
   const [responding, setResponding] = useState<string | null>(null);
+  // The card whose full profile is being fetched for Discover
+  const [opening, setOpening] = useState<string | null>(null);
   // Free account: the server sends the newest few likes in full and only a
   // count of the rest; the app shows that many blurred cards below them
   const [locked, setLocked] = useState(false);
   const [lockedCount, setLockedCount] = useState(0);
   const toast = useToast();
+  const likesRef = useRef(likes);
+  likesRef.current = likes;
+
+  // One fewer person waiting: drop the card, and the total with it
+  // (otherwise a blurred "one more" card would appear)
+  const dropLike = (userId: string) => {
+    setLikes((prev) => prev.filter((l) => l.userId !== userId));
+    setLockedCount((count) => Math.max(0, count - 1));
+  };
 
   // Paywall modal state
   const [paywall, setPaywall] = useState<{
@@ -103,9 +114,16 @@ export const LikeListScreen: React.FC<{ navigation: any }> = ({ navigation }) =>
       fetchLikes();
     });
 
+    // Answered in Discover after opening the card there. Discover refreshes
+    // the badge itself: this screen can be open twice (tab and pushed).
+    const offLikeAnswered = onLikeAnswered((userId) => {
+      if (likesRef.current.some((l) => l.userId === userId)) dropLike(userId);
+    });
+
     return () => {
       socket.off('likes:new', onLikesNew);
       offPremiumChanged();
+      offLikeAnswered();
     };
   }, []);
 
@@ -116,16 +134,13 @@ export const LikeListScreen: React.FC<{ navigation: any }> = ({ navigation }) =>
       if (res.success && res.data) {
         // On a match, the match:new socket event drives the animated
         // MatchPopup — no extra dialog here.
-        // Remove from list; one fewer person waiting, so the total and the
-        // badge drop too (otherwise a blurred "one more" card would appear)
-        setLikes((prev) => prev.filter((l) => l.userId !== targetUserId));
-        setLockedCount((count) => Math.max(0, count - 1));
+        // Remove from list; one fewer person waiting, so the badge drops too
+        dropLike(targetUserId);
         useAuthStore.setState((s) => ({ unreadLikeCount: Math.max(0, s.unreadLikeCount - 1) }));
       } else if (res.error?.code === 'NOT_FOUND') {
         // The like no longer exists for this viewer (withdrawn by a block,
         // or already answered elsewhere): drop the card quietly
-        setLikes((prev) => prev.filter((l) => l.userId !== targetUserId));
-        setLockedCount((count) => Math.max(0, count - 1));
+        dropLike(targetUserId);
         useAuthStore.setState((s) => ({ unreadLikeCount: Math.max(0, s.unreadLikeCount - 1) }));
       } else if (res.error?.code === 'CHAT_LIMIT_REACHED') {
         const details = (res.error as any)?.details;
@@ -143,6 +158,27 @@ export const LikeListScreen: React.FC<{ navigation: any }> = ({ navigation }) =>
     }
   };
 
+  // Tap a card: their whole profile in Discover (photos, interests, answers),
+  // where swiping answers the like as it does here
+  const openProfile = async (like: IncomingLike) => {
+    if (opening || responding) return;
+    setOpening(like.userId);
+    try {
+      const res = await api.getLikerProfile(like.userId);
+      if (res.success && res.data?.profile) {
+        navigation.navigate('Discover', { focusProfile: { ...res.data.profile, answersLike: true } });
+      } else if (res.error?.code === 'NOT_FOUND') {
+        // Answered elsewhere, withdrawn or blocked meanwhile
+        dropLike(like.userId);
+        toast.showError('Not available', 'This profile is no longer available.');
+      } else {
+        toast.showError('Could not open profile', res.error?.message || 'Try again.');
+      }
+    } finally {
+      setOpening(null);
+    }
+  };
+
   // Likes the server counted but did not send (free account, beyond the
   // newest few). Zero for Premium.
   const hiddenCount = locked ? Math.max(0, lockedCount - likes.length) : 0;
@@ -154,10 +190,17 @@ export const LikeListScreen: React.FC<{ navigation: any }> = ({ navigation }) =>
       cardStyle={styles.likeCard}
       onSwipe={(direction) => handleRespond(item.userId, direction === 'right' ? 'like' : 'discard')}
       enabled={responding !== item.userId}
-      busy={responding === item.userId}
+      busy={responding === item.userId || opening === item.userId}
       labels={{ right: 'Like back', left: 'Reject' }}
     >
-      <View style={styles.likeHeader}>
+      {/* Tap for their full profile in Discover */}
+      <TouchableOpacity
+        style={styles.likeHeader}
+        activeOpacity={0.7}
+        onPress={() => openProfile(item)}
+        accessibilityRole="button"
+        accessibilityLabel={`Open ${item.displayName}'s profile`}
+      >
         {/* Photo with ring — super likes get a star badge on the corner */}
         <View style={styles.avatarWrap}>
           {item.thumbnailUrl || item.photoUrl ? (
@@ -220,7 +263,7 @@ export const LikeListScreen: React.FC<{ navigation: any }> = ({ navigation }) =>
             )}
           </View>
         </View>
-      </View>
+      </TouchableOpacity>
     </BounceSwipe>
   );
 

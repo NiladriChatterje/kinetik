@@ -10,7 +10,9 @@ import { api } from '../../services/api';
 import { useToast } from '../../hooks/useToast';
 import { colors, typography, spacing, radius, shadows } from '../../theme';
 import { getPresenceSocket } from '../../services/presenceSocket';
-import { emitProfileLiked, emitProfilePassed, emitProfileBlocked, onPremiumChanged } from '../../services/appEvents';
+import {
+  emitProfileLiked, emitProfilePassed, emitProfileBlocked, emitLikeAnswered, onPremiumChanged,
+} from '../../services/appEvents';
 import { ReportBlockSheet } from '../../components/safety/ReportBlockSheet';
 import { resolveUrl } from '../../config';
 import { MatchPopup } from '../../components/common/MatchPopup';
@@ -42,6 +44,9 @@ interface SwipeProfile {
   /** This person already liked the viewer. The server sets it only for
    *  Premium viewers (free accounts see a likes count, never who). */
   likedYou?: boolean;
+  /** Opened from the Likes list: a swipe answers their like (like back or
+   *  reject) instead of being a new like or pass. */
+  answersLike?: boolean;
   aboutAnswers?: {
     nature?: string[];
     hobbies?: string[];
@@ -469,10 +474,14 @@ export const MatchScreen: React.FC<{ navigation: any; route?: any }> = ({ naviga
 
     let shouldAdvance = false;
     try {
-      const res = await api.swipe(profile.userId, action);
+      // A liker opened from the Likes list is answered as the list would:
+      // like back (a match, using no free like) or reject (off the list)
+      const res = profile.answersLike
+        ? await api.respondToLike(profile.userId, direction === 'right' ? 'like' : 'discard')
+        : await api.swipe(profile.userId, action);
       if (res.success && res.data) {
         shouldAdvance = true;
-        const data = res.data;
+        const data: { matched: boolean; swipesRemaining?: number } = res.data;
         if (typeof data.swipesRemaining === 'number') {
           setSwipesRemaining(data.swipesRemaining);
         }
@@ -511,6 +520,12 @@ export const MatchScreen: React.FC<{ navigation: any; route?: any }> = ({ naviga
     if (!shouldAdvance) {
       setSwiping(false);
       return;
+    }
+
+    // Answered here: off the Likes list, and the badge re-read from the server
+    if (profile.answersLike) {
+      emitLikeAnswered(profile.userId);
+      fetchUnreadLikeCount();
     }
 
     removedIdsRef.current.add(profile.userId);
@@ -712,7 +727,7 @@ export const MatchScreen: React.FC<{ navigation: any; route?: any }> = ({ naviga
           enabled={!swiping}
           busy={swiping}
           enterFrom={0.96}
-          labels={{ right: 'Like', left: 'Pass' }}
+          labels={currentProfile.answersLike ? { right: 'Like back', left: 'Reject' } : { right: 'Like', left: 'Pass' }}
         >
           <SwipeCard profile={currentProfile} />
         </BounceSwipe>
@@ -729,7 +744,11 @@ export const MatchScreen: React.FC<{ navigation: any; route?: any }> = ({ naviga
           >
             <Ionicons name="flag-outline" size={20} color={colors.textSecondary} />
           </TouchableOpacity>
-          <Text style={styles.swipeHint}>Swipe right to like, left to pass</Text>
+          <Text style={styles.swipeHint}>
+            {currentProfile.answersLike
+              ? 'Swipe right to like back, left to reject'
+              : 'Swipe right to like, left to pass'}
+          </Text>
           {/* Balances the report button so the hint stays centred */}
           <View style={styles.safetySpacer} />
         </View>

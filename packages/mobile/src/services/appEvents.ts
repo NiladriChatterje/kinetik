@@ -37,6 +37,24 @@ export function onProfileLiked(handler: (userId: string) => void): () => void {
   return () => subscription.remove();
 }
 
+const LIKE_ANSWERED = 'kinetik:like:answered';
+
+/**
+ * A like was answered (liked back or rejected) from Discover, where a liker
+ * opened from the Likes list is shown in full. The Likes list drops them.
+ */
+export function emitLikeAnswered(userId: string): void {
+  DeviceEventEmitter.emit(LIKE_ANSWERED, { userId });
+}
+
+/** Subscribe; the returned function unsubscribes. */
+export function onLikeAnswered(handler: (userId: string) => void): () => void {
+  const subscription = DeviceEventEmitter.addListener(LIKE_ANSWERED, (event: { userId?: string }) => {
+    if (event?.userId) handler(event.userId);
+  });
+  return () => subscription.remove();
+}
+
 const PREMIUM_CHANGED = 'kinetik:premium:changed';
 
 /**

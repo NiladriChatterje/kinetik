@@ -1026,6 +1026,11 @@ class ApiClient {
     return this.request<{ likes: any[]; totalCount: number; locked?: boolean }>('/api/v1/matches/likes');
   }
 
+  /** A liker's full profile, shaped like a deck card, to open from the Likes list. */
+  async getLikerProfile(userId: string) {
+    return this.request<{ profile: any }>(`/api/v1/matches/likes/${userId}/profile`);
+  }
+
   async respondToLike(targetUserId: string, action: 'like' | 'discard') {
     return this.request<{ matched: boolean; matchId?: string; partnerName?: string; partnerId?: string }>('/api/v1/matches/respond', {
       method: 'POST',
