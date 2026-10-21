@@ -26,4 +26,12 @@
 -dontwarn org.tensorflow.**
 # react-native-fast-tflite plus its Nitro Modules runtime, bound over JNI
 -keep class com.margelo.nitro.** { *; }
+# --- Play Billing (expo-iap -> OpenIAP -> Billing client) ---
+-keep class expo.modules.iap.** { *; }
+-keep class dev.hyo.openiap.** { *; }
+-keep class com.android.billingclient.** { *; }
+# Gson reads OpenIAP's JSON through TypeTokens: keep their generic signatures
+-keepattributes Signature, InnerClasses, EnclosingMethod, *Annotation*
+-keep class com.google.gson.reflect.TypeToken { *; }
+-keep class * extends com.google.gson.reflect.TypeToken
 # @generated end expo-build-properties

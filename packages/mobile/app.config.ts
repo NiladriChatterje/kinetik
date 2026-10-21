@@ -159,6 +159,24 @@ const FACE_VERIFICATION_PROGUARD_RULES = `
 -keep class com.margelo.nitro.** { *; }
 `.trim();
 
+/**
+ * Keep the whole Play Billing path intact under R8. This is the code that
+ * handles money, so it is kept whole rather than trusting each library's own
+ * rules: expo-iap's module, the OpenIAP library under it, and Google's
+ * Billing client. OpenIAP parses Play's JSON with Gson TypeTokens, which need
+ * their generic signatures; Gson 2.11+ ships rules for that, older copies do not.
+ */
+const BILLING_PROGUARD_RULES = `
+# --- Play Billing (expo-iap -> OpenIAP -> Billing client) ---
+-keep class expo.modules.iap.** { *; }
+-keep class dev.hyo.openiap.** { *; }
+-keep class com.android.billingclient.** { *; }
+# Gson reads OpenIAP's JSON through TypeTokens: keep their generic signatures
+-keepattributes Signature, InnerClasses, EnclosingMethod, *Annotation*
+-keep class com.google.gson.reflect.TypeToken { *; }
+-keep class * extends com.google.gson.reflect.TypeToken
+`.trim();
+
 export default ({ config }: ConfigContext): ExpoConfig => {
   const appEnv = resolveAppEnv();
   const { apiUrl, wsUrl } = resolveUrls(appEnv);
@@ -205,7 +223,7 @@ export default ({ config }: ConfigContext): ExpoConfig => {
         {
           android: {
             usesCleartextTraffic,
-            extraProguardRules: FACE_VERIFICATION_PROGUARD_RULES,
+            extraProguardRules: `${FACE_VERIFICATION_PROGUARD_RULES}\n${BILLING_PROGUARD_RULES}`,
           },
         },
       ],
