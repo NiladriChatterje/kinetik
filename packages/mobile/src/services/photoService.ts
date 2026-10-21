@@ -110,7 +110,7 @@ export async function uploadPhoto(compressed: CompressedPhoto): Promise<{
   url: string;
   thumbnailUrl: string;
 }> {
-  const token = api.getToken();
+  const token = await api.getFreshToken();
   const url = `${API_URL}/api/v1/users/photos`;
 
   // Race the native upload against a timeout (the legacy API doesn't support AbortSignal)

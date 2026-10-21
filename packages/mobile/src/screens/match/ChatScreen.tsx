@@ -484,11 +484,11 @@ const MessageRow = React.memo(function MessageRow({
     if (media.mediaType === 'video') {
       return (
         <TouchableOpacity
-          onPress={() => {
+          onPress={async () => {
             // For view-once video on receiver side, this shouldn't be reached
             // as we show the viewOnceCta above instead
             const baseUrl = resolveUrl(media.url);
-            const token = api.getToken();
+            const token = await api.getFreshToken();
             const separator = baseUrl.includes('?') ? '&' : '?';
             const videoUrl = token
               ? `${baseUrl}${separator}token=${encodeURIComponent(token)}`
@@ -1661,7 +1661,7 @@ export const ChatScreen: React.FC<{ navigation: any; route: any }> = ({ navigati
       // ExoPlayer) cannot send custom HTTP headers, so we pass the JWT
       // token directly in the URL. The server extracts and verifies it.
       const baseUrl = resolveUrl(url);
-      const token = api.getToken();
+      const token = await api.getFreshToken();
       const separator = baseUrl.includes('?') ? '&' : '?';
       const audioUrl = token
         ? `${baseUrl}${separator}token=${encodeURIComponent(token)}`
@@ -2231,12 +2231,13 @@ export const ChatScreen: React.FC<{ navigation: any; route: any }> = ({ navigati
                 </Text>
                 <TouchableOpacity
                   style={styles.onceViewVideoBtn}
-                  onPress={() => {
-                    const token = api.getToken();
-                    const separator = viewingOnceMedia.url.includes('?') ? '&' : '?';
+                  onPress={async () => {
+                    const mediaUrl = viewingOnceMedia.url;
+                    const token = await api.getFreshToken();
+                    const separator = mediaUrl.includes('?') ? '&' : '?';
                     const videoUrl = token
-                      ? `${viewingOnceMedia.url}${separator}token=${encodeURIComponent(token)}`
-                      : viewingOnceMedia.url;
+                      ? `${mediaUrl}${separator}token=${encodeURIComponent(token)}`
+                      : mediaUrl;
                     Linking.openURL(videoUrl).catch(() => {
                       Alert.alert('Error', 'Could not open video player.');
                     });

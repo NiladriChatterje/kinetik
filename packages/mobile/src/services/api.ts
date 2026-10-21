@@ -55,8 +55,43 @@ const REQUEST_TIMEOUT_MS = 55000;
  */
 const SLOW_AFTER_MS = 8000;
 
+/**
+ * Calls that cannot use request()'s refresh-on-401 (native uploads, media
+ * URLs, the realtime handshake) renew the access token first when it has
+ * less than this left (see getFreshToken).
+ */
+const REFRESH_AHEAD_MS = 2 * 60 * 1000;
+
+const BASE64URL = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_';
+
+/** The `iat` and `exp` claims (seconds) of a JWT; null if it cannot be read. */
+function readTokenTimes(token: string): { iat: number; exp: number } | null {
+  try {
+    const payload = token.split('.')[1] ?? '';
+    let text = '';
+    let bits = 0;
+    let value = 0;
+    for (const ch of payload) {
+      const digit = BASE64URL.indexOf(ch);
+      if (digit < 0) continue; // padding
+      value = ((value << 6) | digit) & 0xffffff;
+      bits += 6;
+      if (bits >= 8) {
+        bits -= 8;
+        text += String.fromCharCode((value >> bits) & 0xff);
+      }
+    }
+    const { iat, exp } = JSON.parse(text);
+    return typeof iat === 'number' && typeof exp === 'number' && exp > iat ? { iat, exp } : null;
+  } catch {
+    return null;
+  }
+}
+
 class ApiClient {
   private token: string | null = null;
+  /** When the access token runs out, on this device's clock; null if unknown. */
+  private tokenExpiresAt: number | null = null;
   private refreshTokenValue: string | null = null;
   private isRefreshing = false;
   private refreshPromise: Promise<RefreshOutcome> | null = null;
@@ -69,14 +104,56 @@ class ApiClient {
   async init() {
     this.token = await SecureStore.getItemAsync('auth_token');
     this.refreshTokenValue = await SecureStore.getItemAsync('refresh_token');
+    // A stored token's age is unknown, so its expiry is read on this
+    // device's clock. A clock that is off costs at most one early refresh,
+    // or a request that renews on its 401 as before.
+    const times = this.token ? readTokenTimes(this.token) : null;
+    this.tokenExpiresAt = times ? times.exp * 1000 : null;
   }
 
-  /** Returns the current auth token (used by photoService for native file uploads). */
+  /** Returns the current auth token, as it is (see getFreshToken). */
   getToken(): string | null {
     return this.token;
   }
 
+  /**
+   * The access token, renewed first when it has under REFRESH_AHEAD_MS left.
+   * For calls that cannot renew on a 401 the way request() does: native
+   * uploads, media URLs and the realtime handshake. Never throws; when the
+   * server cannot renew it, the current token is returned and the call
+   * fails as it would have.
+   */
+  async getFreshToken(): Promise<string | null> {
+    if (
+      this.token &&
+      this.refreshTokenValue &&
+      this.tokenExpiresAt !== null &&
+      this.tokenExpiresAt - Date.now() < REFRESH_AHEAD_MS
+    ) {
+      await this.tryRefresh();
+    }
+    return this.token;
+  }
+
+  /**
+   * Renews the access token now, whatever its expiry says. For a token the
+   * realtime server refused: a phone clock running behind makes an expired
+   * token look fresh. Returns the token to use, or null once signed out.
+   */
+  async renewToken(): Promise<string | null> {
+    if (this.token && this.refreshTokenValue) await this.tryRefresh();
+    return this.token;
+  }
+
   setToken(token: string | null) {
+    // Every new token here comes straight from the server (login, sign-up,
+    // refresh), so it is timed by its lifetime from now, which holds even on
+    // a phone whose clock is wrong. Re-setting the same token (app start)
+    // keeps the estimate init() made.
+    if (token !== this.token) {
+      const times = token ? readTokenTimes(token) : null;
+      this.tokenExpiresAt = times ? Date.now() + (times.exp - times.iat) * 1000 : null;
+    }
     this.token = token;
     if (token) {
       SecureStore.setItemAsync('auth_token', token);
@@ -780,7 +857,7 @@ class ApiClient {
     fileName: string;
     url: string;
   }> {
-    const token = this.getToken();
+    const token = await this.getFreshToken();
     const url = `${API_URL}/api/v1/kyc/documents`;
 
     const result = await Promise.race([
@@ -827,7 +904,7 @@ class ApiClient {
     reason?: string;
     kycStatus?: string;
   }> {
-    const token = this.getToken();
+    const token = await this.getFreshToken();
     const url = `${API_URL}/api/v1/kyc/aadhaar-offline`;
 
     const result = await Promise.race([
@@ -1003,7 +1080,7 @@ class ApiClient {
   }
 
   async sendMediaMessage(matchId: string, uri: string, mediaType: string, caption?: string, viewOnce?: boolean, durationSecs?: number) {
-    const token = this.getToken();
+    const token = await this.getFreshToken();
     let url = `${API_URL}/api/v1/matches/conversations/${matchId}/media?media_type=${mediaType}`;
     if (caption) url += `&caption=${encodeURIComponent(caption)}`;
     if (viewOnce) url += `&view_once=true`;
