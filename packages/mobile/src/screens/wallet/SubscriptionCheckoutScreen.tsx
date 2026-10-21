@@ -140,6 +140,8 @@ export const SubscriptionCheckoutScreen: React.FC = () => {
   const [history, setHistory] = useState<{ payments: SubscriptionPayment[]; monthsPaid: number } | null>(null);
   const [product, setProduct] = useState<any | null>(null);
   const [loading, setLoading] = useState(true);
+  // The server did not answer the status request (offline, outage)
+  const [statusFailed, setStatusFailed] = useState(false);
   const [subscribing, setSubscribing] = useState(false);
   const [cancelling, setCancelling] = useState(false);
 
@@ -164,6 +166,7 @@ export const SubscriptionCheckoutScreen: React.FC = () => {
         api.getSubscriptionHistory(),
         api.getPricing(),
       ]);
+      setStatusFailed(!(res.success && res.data));
       if (res.success && res.data) {
         setStatus(res.data as SubscriptionStatus);
         // Same tiers the server's chat and likes gates treat as Premium
@@ -181,7 +184,7 @@ export const SubscriptionCheckoutScreen: React.FC = () => {
       }
       return priceRes.success ? (priceRes.data as PricingInfo) : null;
     } catch {
-      // Leave status null — the screen falls back to the "not subscribed" state
+      setStatusFailed(true);
       return null;
     } finally {
       setLoading(false);
@@ -386,6 +389,14 @@ export const SubscriptionCheckoutScreen: React.FC = () => {
   }, []);
 
   const isPremium = status?.tier === 'premium';
+  // Never loaded on this visit: unknown, not "not subscribed". A paying user
+  // must not be offered Subscribe (or lose Cancel) because of an outage. A
+  // status loaded earlier stays shown if a later refresh fails.
+  const statusUnknown = statusFailed && !status;
+  const retryStatus = async () => {
+    setLoading(true);
+    await fetchStatus();
+  };
   // From the status read and the server's push (authStore)
   const paymentIssue = useAuthStore((s) => s.paymentIssue);
   const isAutoRenew = Boolean(status?.autoRenew);
@@ -503,6 +514,23 @@ export const SubscriptionCheckoutScreen: React.FC = () => {
           </View>
         ) : (
           <>
+            {statusUnknown && (
+              <View style={styles.statusErrorBox}>
+                <Ionicons name="cloud-offline-outline" size={22} color={colors.textSecondary} />
+                <View style={styles.issueBody}>
+                  <Text style={styles.issueTitle}>Couldn't load your subscription</Text>
+                  <Text style={styles.issueText}>Check your connection and try again.</Text>
+                  <Button
+                    title="Try again"
+                    onPress={retryStatus}
+                    variant="outline"
+                    size="sm"
+                    style={styles.issueButton}
+                  />
+                </View>
+              </View>
+            )}
+
             {/* Google could not charge the renewal: in a grace period the user
                 is still Premium for a few days, on hold they have lost it.
                 The fix is always the payment method in Google Play. */}
@@ -577,14 +605,16 @@ export const SubscriptionCheckoutScreen: React.FC = () => {
               Manage or cancel it any time in Google Play → Payments &amp; subscriptions.
             </Text>
 
-            <Button
-              title={isPremium && !isAutoRenew ? 'Resubscribe' : `Subscribe — ${displayPrice}`}
-              onPress={handleSubscribe}
-              loading={subscribing}
-              disabled={isPremium && isAutoRenew}
-              fullWidth
-              style={styles.subscribeBtn}
-            />
+            {!statusUnknown && (
+              <Button
+                title={isPremium && !isAutoRenew ? 'Resubscribe' : `Subscribe — ${displayPrice}`}
+                onPress={handleSubscribe}
+                loading={subscribing}
+                disabled={isPremium && isAutoRenew}
+                fullWidth
+                style={styles.subscribeBtn}
+              />
+            )}
 
             {isPremium && isAutoRenew && (
               <Button
@@ -667,6 +697,18 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: PAYMENT_ISSUE_ORANGE,
     backgroundColor: 'rgba(255, 165, 0, 0.08)',
+  },
+  // The same box as the payment problem, in neutral grey
+  statusErrorBox: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    gap: spacing.md,
+    marginBottom: spacing.xl,
+    padding: spacing.md,
+    borderRadius: radius.md,
+    borderWidth: 1,
+    borderColor: colors.cardBorder,
+    backgroundColor: colors.surface,
   },
   issueBody: { flex: 1 },
   issueTitle: { ...typography.body1, color: colors.textPrimary, fontWeight: '600', marginBottom: spacing.xs },
