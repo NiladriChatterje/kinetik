@@ -245,6 +245,12 @@ const SignupVerifySchema = z.object({
   otp: z.string().regex(/^\d{6}$/),
 });
 
+const PasswordResetSchema = z.object({
+  email: EmailSchema,
+  otp: z.string().regex(/^\d{6}$/),
+  password: z.string().min(8).max(128),
+});
+
 const LoginSchema = z.object({
   phone: PhoneSchema.optional(),
   email: EmailSchema.optional(),
@@ -556,6 +562,123 @@ export async function authRoutes(app: FastifyInstance) {
       error: { code: ERROR_CODES.VALIDATION_ERROR, message: 'Provide an email and password' },
     });
   });
+
+  // ─── Forgot password: email a code ───────────────────
+  // Same code rules as sign-up (5 minutes, 3 tries, 3 codes a day, 30 s
+  // between sends) under the store's 'reset' scope, so a sign-up in progress
+  // for the same address is never touched. An unknown address is answered as
+  // login answers it.
+  app.post(
+    '/password/forgot',
+    { config: { rateLimit: { max: 10, timeWindow: '1 hour' } } },
+    async (request: FastifyRequest, reply: FastifyReply) => {
+      const validation = SignupResendSchema.safeParse(request.body);
+      if (!validation.success) return invalidInput(reply, validation.error);
+      const email = normalizeEmail(validation.data.email);
+
+      try {
+        if (!(await findUserByEmail(email))) {
+          return reply.status(401).send({
+            success: false,
+            error: { code: ERROR_CODES.USER_NOT_FOUND, message: 'No account found with this email address' },
+          });
+        }
+
+        const earlier = await getPending(email, 'reset');
+        if (earlier && (Date.now() - earlier.sentAt) / 1000 < SIGNUP_RESEND_COOLDOWN_SECONDS) {
+          return reply.status(429).send({
+            success: false,
+            error: {
+              code: ERROR_CODES.RATE_LIMITED,
+              message: `Please wait ${SIGNUP_RESEND_COOLDOWN_SECONDS} seconds before requesting a new code.`,
+            },
+          });
+        }
+
+        const claim = await claimSend(email, 'reset');
+        if (claim.locked) return reply.status(429).send(signupLocked(claim.retryAfterSeconds));
+        const code = generateCode();
+        await savePending(email, hashCode(email, code), '', 'reset');
+        if (!(await sendOtpEmail(email, code))) {
+          await deletePending(email, 'reset');
+          await refundSend(email, 'reset');
+          return reply.status(503).send(OTP_SEND_FAILED);
+        }
+
+        return reply.send({
+          success: true,
+          data: { expiresInSeconds: SIGNUP_CODE_TTL_SECONDS, maxAttempts: SIGNUP_MAX_ATTEMPTS, sendsLeft: claim.sendsLeft },
+        });
+      } catch (err) {
+        request.log.error({ err }, 'Password reset code could not be issued');
+        return reply.status(503).send(OTP_SEND_FAILED);
+      }
+    },
+  );
+
+  // ─── Forgot password: set a new one ──────────────────
+  // The emailed code proves the address. A third wrong code ends it. The new
+  // password signs out every other device; the app then signs in with it.
+  app.post(
+    '/password/reset',
+    { config: { rateLimit: { max: 30, timeWindow: '15 minutes' } } },
+    async (request: FastifyRequest, reply: FastifyReply) => {
+      const validation = PasswordResetSchema.safeParse(request.body);
+      if (!validation.success) return invalidInput(reply, validation.error);
+      const email = normalizeEmail(validation.data.email);
+      const codeExpired = {
+        success: false,
+        error: { code: ERROR_CODES.SIGNUP_EXPIRED, message: 'The code expired. Please request a new one.' },
+      };
+
+      try {
+        const pending = await getPending(email, 'reset');
+        if (!pending) return reply.status(410).send(codeExpired);
+        const attempts = await recordAttempt(email, 'reset');
+        if (attempts < 0) return reply.status(410).send(codeExpired);
+
+        if (attempts > SIGNUP_MAX_ATTEMPTS || !codeMatches(email, validation.data.otp, pending.codeHash)) {
+          const attemptsLeft = Math.max(0, SIGNUP_MAX_ATTEMPTS - attempts);
+          if (attemptsLeft > 0) {
+            return reply.status(400).send({
+              success: false,
+              error: {
+                code: ERROR_CODES.INVALID_OTP,
+                message: `Wrong code. ${attemptsLeft} ${attemptsLeft === 1 ? 'attempt' : 'attempts'} left.`,
+                attemptsLeft,
+              },
+            });
+          }
+          await deletePending(email, 'reset');
+          return reply.status(400).send({
+            success: false,
+            error: { code: ERROR_CODES.SIGNUP_FAILED, message: 'Too many wrong codes. Please request a new one.' },
+          });
+        }
+
+        // Exactly one request gets to consume a correct code
+        if (!(await deletePending(email, 'reset'))) return reply.status(410).send(codeExpired);
+
+        const user = await findUserByEmail(email);
+        if (!user) {
+          return reply.status(401).send({
+            success: false,
+            error: { code: ERROR_CODES.USER_NOT_FOUND, message: 'No account found with this email address' },
+          });
+        }
+        const passwordHash = await bcrypt.hash(validation.data.password, 10);
+        await query(`UPDATE ${TABLES.USERS} SET password_hash = $1, updated_at = NOW() WHERE id = $2`, [passwordHash, user.id]);
+        await revokeAllRefreshTokens(user.id);
+        return reply.send({ success: true, data: { reset: true } });
+      } catch (err) {
+        request.log.error({ err }, 'Password could not be reset');
+        return reply.status(503).send({
+          success: false,
+          error: { code: ERROR_CODES.INTERNAL_ERROR, message: 'Could not change the password right now. Please try again.' },
+        });
+      }
+    },
+  );
 
   // ─── Refresh Token ───────────────────────────────────
   // Rotates the refresh token: revokes the old one, issues a new access + refresh pair.

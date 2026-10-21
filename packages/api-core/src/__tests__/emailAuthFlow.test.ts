@@ -66,51 +66,51 @@ vi.mock('../services/signupStore', () => {
   const TTL = 300;
   const MAX_SENDS = 3;
   const WINDOW = 24 * 3600;
-  const pending = (e: string) => `pending:${e}`;
-  const sends = (e: string) => `sends:${e}`;
+  const pending = (e: string, scope = 'signup') => `${scope}:pending:${e}`;
+  const sends = (e: string, scope = 'signup') => `${scope}:sends:${e}`;
   return {
     SIGNUP_CODE_TTL_SECONDS: TTL,
     SIGNUP_MAX_ATTEMPTS: 3,
     SIGNUP_MAX_SENDS_PER_DAY: MAX_SENDS,
     SIGNUP_RESEND_COOLDOWN_SECONDS: 30,
-    claimSend: async (email: string) => {
+    claimSend: async (email: string, scope?: string) => {
       guard();
-      const e = live(sends(email));
+      const e = live(sends(email, scope));
       if (e && e.value >= MAX_SENDS) {
         return { locked: true, retryAfterSeconds: Math.ceil((e.expiresAt - Date.now()) / 1000) };
       }
       if (e) e.value += 1;
-      else kv.set(sends(email), { value: 1, expiresAt: Date.now() + WINDOW * 1000 });
-      return { locked: false, sendsLeft: MAX_SENDS - live(sends(email))!.value };
+      else kv.set(sends(email, scope), { value: 1, expiresAt: Date.now() + WINDOW * 1000 });
+      return { locked: false, sendsLeft: MAX_SENDS - live(sends(email, scope))!.value };
     },
-    refundSend: async (email: string) => {
-      const e = live(sends(email));
+    refundSend: async (email: string, scope?: string) => {
+      const e = live(sends(email, scope));
       if (e && e.value > 0) e.value -= 1;
     },
-    lockSeconds: async (email: string) => {
+    lockSeconds: async (email: string, scope?: string) => {
       guard();
-      const e = live(sends(email));
+      const e = live(sends(email, scope));
       if (!e || e.value < MAX_SENDS) return 0;
       return Math.ceil((e.expiresAt - Date.now()) / 1000);
     },
-    savePending: async (email: string, codeHash: string, data: string) => {
-      kv.set(pending(email), {
+    savePending: async (email: string, codeHash: string, data: string, scope?: string) => {
+      kv.set(pending(email, scope), {
         value: { codeHash, data, attempts: 0, sentAt: Date.now() },
         expiresAt: Date.now() + TTL * 1000,
       });
     },
-    getPending: async (email: string) => {
+    getPending: async (email: string, scope?: string) => {
       guard();
-      const e = live(pending(email));
+      const e = live(pending(email, scope));
       return e ? { ...e.value } : null;
     },
-    recordAttempt: async (email: string) => {
-      const e = live(pending(email));
+    recordAttempt: async (email: string, scope?: string) => {
+      const e = live(pending(email, scope));
       if (!e) return -1;
       e.value.attempts += 1;
       return e.value.attempts;
     },
-    deletePending: async (email: string) => kv.delete(pending(email)),
+    deletePending: async (email: string, scope?: string) => kv.delete(pending(email, scope)),
   };
 });
 
@@ -449,5 +449,123 @@ describe('removed routes', () => {
     const res = await post(url, { ...FORM, authProvider: 'email', otp: '123456' });
     expect(res.statusCode).toBe(404);
     expect(mockCreateUser).not.toHaveBeenCalled();
+  });
+});
+
+describe('forgot password: emailed code, then a new password', () => {
+  const NEW_PASSWORD = 'a-brand-new-secret';
+
+  beforeEach(async () => {
+    // The new password lands in the in-memory users table
+    mockQuery.mockImplementation(async (sql: string, params: any[] = []) => {
+      if (sql.includes('SET password_hash')) users.get(params[1]).password_hash = params[0];
+      return { rows: [] };
+    });
+    await post('/signup', FORM);
+    await post('/signup/verify', { email: EMAIL, otp: lastEmailedCode() });
+    mockSendOtpEmail.mockClear();
+    mockQuery.mockClear();
+  });
+
+  afterEach(() => {
+    mockQuery.mockReset().mockResolvedValue({ rows: [] });
+  });
+
+  it('emails a code, sets the new password, signs other devices out, and the new password logs in', async () => {
+    const sent = await post('/password/forgot', { email: EMAIL });
+    expect(sent.statusCode).toBe(200);
+    expect(sent.json().data).toEqual({ expiresInSeconds: 300, maxAttempts: 3, sendsLeft: 2 });
+    expect(mockSendOtpEmail).toHaveBeenCalledWith(STORED_EMAIL, expect.stringMatching(/^\d{6}$/));
+
+    const reset = await post('/password/reset', { email: EMAIL, otp: lastEmailedCode(), password: NEW_PASSWORD });
+    expect(reset.statusCode).toBe(200);
+    expect(reset.json().data).toEqual({ reset: true });
+
+    // Every refresh token of the account is ended
+    const userId = [...users.values()][0].id;
+    expect(
+      mockQuery.mock.calls.some(([sql, params]) => String(sql).includes('UPDATE refresh_tokens') && params?.[0] === userId),
+    ).toBe(true);
+
+    expect((await post('/login', { email: EMAIL, password: NEW_PASSWORD })).statusCode).toBe(200);
+    expect((await post('/login', { email: EMAIL, password: PASSWORD })).statusCode).toBe(401);
+  });
+
+  it('a code works only once', async () => {
+    await post('/password/forgot', { email: EMAIL });
+    const code = lastEmailedCode();
+    expect((await post('/password/reset', { email: EMAIL, otp: code, password: NEW_PASSWORD })).statusCode).toBe(200);
+    expect((await post('/password/reset', { email: EMAIL, otp: code, password: 'another-password' })).statusCode).toBe(410);
+  });
+
+  it('answers an unknown email as login does, and sends nothing', async () => {
+    const res = await post('/password/forgot', { email: 'nobody@example.com' });
+    expect(res.statusCode).toBe(401);
+    expect(res.json().error.code).toBe('USER_NOT_FOUND');
+    expect(mockSendOtpEmail).not.toHaveBeenCalled();
+  });
+
+  it('counts down wrong codes and ends the code on the third', async () => {
+    await post('/password/forgot', { email: EMAIL });
+    const code = lastEmailedCode();
+    const first = await post('/password/reset', { email: EMAIL, otp: wrongCode(code), password: NEW_PASSWORD });
+    expect(first.statusCode).toBe(400);
+    expect(first.json().error).toMatchObject({ code: 'INVALID_OTP', attemptsLeft: 2 });
+    await post('/password/reset', { email: EMAIL, otp: wrongCode(code), password: NEW_PASSWORD });
+    const third = await post('/password/reset', { email: EMAIL, otp: wrongCode(code), password: NEW_PASSWORD });
+    expect(third.json().error.code).toBe('SIGNUP_FAILED');
+    // Even the right code is gone now, and the old password still works
+    expect((await post('/password/reset', { email: EMAIL, otp: code, password: NEW_PASSWORD })).statusCode).toBe(410);
+    expect((await post('/login', { email: EMAIL, password: PASSWORD })).statusCode).toBe(200);
+  });
+
+  it('the code expires after 5 minutes', async () => {
+    await post('/password/forgot', { email: EMAIL });
+    advance(301);
+    const res = await post('/password/reset', { email: EMAIL, otp: lastEmailedCode(), password: NEW_PASSWORD });
+    expect(res.statusCode).toBe(410);
+  });
+
+  it('refuses a short new password or a malformed code', async () => {
+    await post('/password/forgot', { email: EMAIL });
+    expect((await post('/password/reset', { email: EMAIL, otp: lastEmailedCode(), password: 'short' })).statusCode).toBe(400);
+    expect((await post('/password/reset', { email: EMAIL, otp: '12ab', password: NEW_PASSWORD })).statusCode).toBe(400);
+  });
+
+  it('waits 30 seconds between codes, allows three a day, apart from sign-up codes', async () => {
+    await post('/password/forgot', { email: EMAIL });
+    const soon = await post('/password/forgot', { email: EMAIL });
+    expect(soon.statusCode).toBe(429);
+    expect(soon.json().error.code).toBe('RATE_LIMITED');
+    advance(31);
+    expect((await post('/password/forgot', { email: EMAIL })).statusCode).toBe(200);
+    advance(31);
+    expect((await post('/password/forgot', { email: EMAIL })).statusCode).toBe(200);
+    advance(31);
+    const fourth = await post('/password/forgot', { email: EMAIL });
+    expect(fourth.statusCode).toBe(429);
+    expect(fourth.json().error.code).toBe('SIGNUP_LOCKED');
+    // The sign-up allowance for the address was not touched by resets
+    expect((await post('/signup', FORM)).statusCode).toBe(200);
+  });
+
+  it('never touches a sign-up in progress for the same address', async () => {
+    // A sign-up started for the registered address (answered only after its code)
+    await post('/signup', FORM);
+    const signupCode = lastEmailedCode();
+    await post('/password/forgot', { email: EMAIL });
+    const resetCode = lastEmailedCode();
+
+    // already registered: the sign-up's own code still worked
+    expect((await post('/signup/verify', { email: EMAIL, otp: signupCode })).statusCode).toBe(409);
+    expect((await post('/password/reset', { email: EMAIL, otp: resetCode, password: NEW_PASSWORD })).statusCode).toBe(200);
+  });
+
+  it('answers 503 and counts nothing when Brevo refuses the send', async () => {
+    mockSendOtpEmail.mockResolvedValueOnce(false);
+    expect((await post('/password/forgot', { email: EMAIL })).statusCode).toBe(503);
+    const again = await post('/password/forgot', { email: EMAIL });
+    expect(again.statusCode).toBe(200);
+    expect(again.json().data.sendsLeft).toBe(2);
   });
 });
