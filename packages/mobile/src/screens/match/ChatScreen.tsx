@@ -50,7 +50,12 @@ interface Message {
   createdAt: string;
   readAt: string | null;
   media?: ChatMedia;
+  /** A text the server did not take (timeout, no network, error): tap to retry */
+  failed?: boolean;
 }
+
+/** The not-sent icon, the same red as the Face unverified tag */
+const NOT_SENT_RED = '#E53935';
 
 const SCREEN_WIDTH = Dimensions.get('window').width;
 const SCREEN_HEIGHT = Dimensions.get('window').height;
@@ -405,6 +410,7 @@ interface MessageRowProps {
   onOpenOneTimeView: (media: ChatMedia) => void;
   onPreviewPhoto: (url: string) => void;
   onToggleAudio: (messageId: string, url: string) => void;
+  onRetry: (message: Message) => void;
 }
 
 const MessageRow = React.memo(function MessageRow({
@@ -415,6 +421,7 @@ const MessageRow = React.memo(function MessageRow({
   onOpenOneTimeView,
   onPreviewPhoto,
   onToggleAudio,
+  onRetry,
 }: MessageRowProps) {
   const renderMediaContent = (item: Message, isMine: boolean) => {
     if (!item.media) return null;
@@ -563,6 +570,17 @@ const MessageRow = React.memo(function MessageRow({
   const readIconColor = isMine ? colors.textInverse : colors.success;
 
   const displayContent = item.content;
+  // A failed text is tapped to send it again; the same style either way, so
+  // the bubble keeps its size
+  const Bubble: React.ElementType = item.failed ? TouchableOpacity : View;
+  const retryProps = item.failed
+    ? {
+        onPress: () => onRetry(item),
+        activeOpacity: 0.7,
+        accessibilityRole: 'button',
+        accessibilityLabel: 'Message not sent. Tap to retry',
+      }
+    : {};
 
   return (
     <View style={[styles.messageRow, isMine && styles.messageRowMine]}>
@@ -574,7 +592,7 @@ const MessageRow = React.memo(function MessageRow({
         </View>
       ) : null}
 
-      <View style={[styles.messageBubble, isMine ? styles.myBubble : styles.theirBubble]}>
+      <Bubble style={[styles.messageBubble, isMine ? styles.myBubble : styles.theirBubble]} {...retryProps}>
         {/* Media attachment */}
         {hasMedia && renderMediaContent(item, isMine)}
 
@@ -588,7 +606,12 @@ const MessageRow = React.memo(function MessageRow({
         {/* Read receipt */}
         {isMine && (
           <View style={styles.messageMeta}>
-            {isTemp ? (
+            {item.failed ? (
+              <>
+                <Ionicons name="alert-circle" size={13} color={NOT_SENT_RED} />
+                <Text style={styles.notSentText}>Not sent · Tap to retry</Text>
+              </>
+            ) : isTemp ? (
               <Ionicons name="time-outline" size={12} color={metaIconColor} />
             ) : isRead ? (
               <Ionicons name="checkmark-done" size={14} color={readIconColor} />
@@ -597,7 +620,7 @@ const MessageRow = React.memo(function MessageRow({
             )}
           </View>
         )}
-      </View>
+      </Bubble>
     </View>
   );
 });
@@ -1003,9 +1026,14 @@ export const ChatScreen: React.FC<{ navigation: any; route: any }> = ({ navigati
       setMessages((prev) => {
         if (prev.some((m) => m.id === data.id)) return prev;
 
-        // Our own message — replace temp message
+        // Our own message — replace the bubble it belongs to: a media one for
+        // media, else one with the same text, preferring one still sending
+        // (a failed one with that text means the server saved it late)
         if (data.senderId === authUser?.id) {
-          const idx = prev.findIndex((m) => m.id.startsWith('temp-'));
+          const ownTemp = (m: Message) =>
+            m.id.startsWith('temp-') && (data.media ? !!m.media : !m.media && m.content === data.content);
+          let idx = prev.findIndex((m) => ownTemp(m) && !m.failed);
+          if (idx === -1) idx = prev.findIndex((m) => ownTemp(m) && !!m.failed);
           if (idx !== -1) {
             const updated = [...prev];
             updated[idx] = {
@@ -1014,6 +1042,7 @@ export const ChatScreen: React.FC<{ navigation: any; route: any }> = ({ navigati
               content: data.content,
               createdAt: data.createdAt || updated[idx].createdAt,
               media: data.media || updated[idx].media,
+              failed: false,
             };
             return updated;
           }
@@ -1249,6 +1278,21 @@ export const ChatScreen: React.FC<{ navigation: any; route: any }> = ({ navigati
     }
 
     try {
+      await deliverText(tempId, text);
+    } finally {
+      setSending(false);
+    }
+  };
+
+  /**
+   * Sends a text bubble and settles it: the real id once the server has it,
+   * the lock for a locked chat, otherwise marked failed so the user can tap
+   * to retry (it used to sit on its clock and vanish on the next send).
+   */
+  const deliverText = async (tempId: string, text: string) => {
+    const markFailed = () =>
+      setMessages((prev) => prev.map((m) => (m.id === tempId ? { ...m, failed: true } : m)));
+    try {
       const res = await api.sendMessage(matchId, text);
       if (res.success && res.data) {
         // If the real id already arrived (socket echo / reconnect sync), drop the temp
@@ -1257,13 +1301,25 @@ export const ChatScreen: React.FC<{ navigation: any; route: any }> = ({ navigati
           : prev.map((m) => (m.id === tempId ? { ...m, id: res.data!.id } : m)));
       } else if (res.error?.code === 'CHAT_LOCKED') {
         handleSendLocked(tempId, text);
+      } else {
+        markFailed();
       }
     } catch {
-      // Keep the message
-    } finally {
-      setSending(false);
+      markFailed();
     }
   };
+
+  // Tap a failed text: send it again in place. One retry at a time per
+  // bubble, so a double tap cannot send it twice.
+  const retryingRef = useRef(new Set<string>());
+  const retrySendRef = useRef<(message: Message) => void>(() => {});
+  retrySendRef.current = (message: Message) => {
+    if (!message.failed || retryingRef.current.has(message.id)) return;
+    retryingRef.current.add(message.id);
+    setMessages((prev) => prev.map((m) => (m.id === message.id ? { ...m, failed: false } : m)));
+    void deliverText(message.id, message.content).finally(() => retryingRef.current.delete(message.id));
+  };
+  const handleRetry = useCallback((message: Message) => retrySendRef.current(message), []);
 
   // ─── Send a media message ──────────────────────────
   const sendMedia = async (uri: string, mediaType: string, durationSecs?: number) => {
@@ -1819,8 +1875,9 @@ export const ChatScreen: React.FC<{ navigation: any; route: any }> = ({ navigati
       onOpenOneTimeView={openOneTimeView}
       onPreviewPhoto={setPreviewPhotoUrl}
       onToggleAudio={handleToggleAudio}
+      onRetry={handleRetry}
     />
-  ), [myUserId, pAvatar, playingAudioId, openOneTimeView, handleToggleAudio]);
+  ), [myUserId, pAvatar, playingAudioId, openOneTimeView, handleToggleAudio, handleRetry]);
 
   // ─── Input bar bottom spacing ──────────────────────
   // The SafeAreaView deliberately excludes the bottom edge, so this is the
@@ -2705,6 +2762,7 @@ const styles = StyleSheet.create({
   },
   messageText: { ...typography.body2, color: colors.textPrimary, flexShrink: 1 },
   myMessageText: { color: colors.textInverse },
+  notSentText: { ...typography.caption, color: 'rgba(255,255,255,0.85)' },
   messageMeta: {
     flexDirection: 'row',
     justifyContent: 'flex-end',
