@@ -40,6 +40,7 @@ export function BounceSwipe({
   onSwipe,
   enabled = true,
   busy = false,
+  shrink = true,
   enterFrom,
   labels,
   style,
@@ -51,6 +52,8 @@ export function BounceSwipe({
   enabled?: boolean;
   /** Dims the card while its swipe is being answered. */
   busy?: boolean;
+  /** Shrinks a little as it is dragged; false keeps it flat (the Discover card). */
+  shrink?: boolean;
   /** Scale the card grows from when it appears (the deck's next card sits at 0.96). */
   enterFrom?: number;
   /** For screen readers, which get these as actions in place of the gesture. */
@@ -109,7 +112,9 @@ export function BounceSwipe({
   }
 
   const translateX = drag.interpolate(sampled((t) => t));
-  const shrink = drag.interpolate(sampled((t) => 1 - 0.06 * Math.abs(t / MAX_TRAVEL)));
+  const scale = shrink
+    ? Animated.multiply(drag.interpolate(sampled((t) => 1 - 0.06 * Math.abs(t / MAX_TRAVEL))), enter)
+    : enter;
 
   return (
     <View style={style} pointerEvents="box-none">
@@ -117,7 +122,7 @@ export function BounceSwipe({
         style={[
           cardStyle,
           busy && styles.busy,
-          { transform: [{ translateX }, { scale: Animated.multiply(shrink, enter) }] },
+          { transform: [{ translateX }, { scale }] },
         ]}
         accessibilityActions={[
           { name: 'swipeRight', label: labels.right },

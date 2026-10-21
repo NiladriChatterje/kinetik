@@ -704,7 +704,7 @@ export const MatchScreen: React.FC<{ navigation: any; route?: any }> = ({ naviga
         {/* Next card (shows behind) */}
         {profiles[currentIndex + 1] && (
           <View style={[styles.card, styles.nextCard]}>
-            <View style={[styles.cardImageContainer, { opacity: 0.6 }]}>
+            <View style={styles.cardImageContainer}>
               {(profiles[currentIndex + 1].photos.find(p => p.isPrimary) || profiles[currentIndex + 1].photos[0]) ? (
                 <ProgressiveImage
                   thumbnailUri={(() => {
@@ -720,9 +720,8 @@ export const MatchScreen: React.FC<{ navigation: any; route?: any }> = ({ naviga
           </View>
         )}
 
-        {/* Current card: slides sideways and bounces back; the deck
-            moves on once the swipe is recorded. It grows from the back
-            card's 0.96 as it takes the top. */}
+        {/* Current card: slides flat and sideways, then bounces back; the
+            deck moves on once the swipe is recorded. */}
         <BounceSwipe
           key={currentProfile.userId}
           style={StyleSheet.absoluteFill}
@@ -730,7 +729,7 @@ export const MatchScreen: React.FC<{ navigation: any; route?: any }> = ({ naviga
           onSwipe={handleSwipe}
           enabled={!swiping}
           busy={swiping}
-          enterFrom={0.96}
+          shrink={false}
           labels={currentProfile.answersLike ? { right: 'Like back', left: 'Reject' } : { right: 'Like', left: 'Pass' }}
         >
           <SwipeCard profile={currentProfile} />
@@ -892,6 +891,8 @@ const styles = StyleSheet.create({
   cardImage: {
     width: '100%',
     height: '100%',
+    // Over ProgressiveImage's grey: photos are contained, so the frame shows
+    backgroundColor: colors.primary,
   },
   noPhoto: {
     justifyContent: 'center',
