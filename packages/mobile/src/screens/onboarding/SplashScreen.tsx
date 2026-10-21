@@ -361,21 +361,19 @@ const styles = StyleSheet.create({
     paddingBottom: spacing.xl,
     paddingHorizontal: spacing.xxl,
   },
+  // The logo as it is: the black couple straight on the page, no tile
   logoIcon: {
     width: 72,
     height: 72,
-    borderRadius: 20,
-    backgroundColor: colors.textPrimary,
     alignItems: 'center',
     justifyContent: 'center',
     marginBottom: spacing.xl,
   },
   // logo.png has wide transparent margins (the drawing is 57% of its
-  // height), so the box overhangs the tile to draw the couple ~46 tall
+  // height), so the box overhangs this slot to draw the couple ~72 tall
   logoImage: {
-    width: 81,
-    height: 81,
-    tintColor: colors.textInverse,
+    width: 127,
+    height: 127,
   },
   title: {
     fontFamily: 'Cantarell-Bold',
