@@ -460,8 +460,16 @@ export const SubscriptionCheckoutScreen: React.FC = () => {
       }
 
       // Resolution arrives on purchaseUpdatedListener, which clears `subscribing`.
+      // The account id is kept by Play on the purchase, so purchase recovery
+      // (services/purchaseRecovery.ts) only ever sends it for this account.
       await requestPurchase({
-        request: { google: { skus: [productId], subscriptionOffers: offers } },
+        request: {
+          google: {
+            skus: [productId],
+            subscriptionOffers: offers,
+            obfuscatedAccountId: useAuthStore.getState().user?.id ?? null,
+          },
+        },
         type: 'subs',
       });
     } catch (error: any) {

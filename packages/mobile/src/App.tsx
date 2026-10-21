@@ -1,5 +1,5 @@
 import React, { useEffect } from 'react';
-import { LogBox, Platform } from 'react-native';
+import { AppState, LogBox, Platform } from 'react-native';
 import { StatusBar } from 'expo-status-bar';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
@@ -12,6 +12,7 @@ import { IslandStatus } from './components/common/IslandStatus';
 import { RootNavigator } from './navigation/RootNavigator';
 import { useAuthStore } from './store/authStore';
 import { useNotifications } from './hooks/useNotifications';
+import { recoverPlayPurchases } from './services/purchaseRecovery';
 import { colors } from './theme';
 
 // Suppress InteractionManager deprecation warnings from third-party libraries
@@ -41,7 +42,20 @@ export default function App() {
   const checkConnection = useAuthStore((s) => s.checkConnection);
   const connectionStatus = useAuthStore((s) => s.connectionStatus);
   const connectionError = useAuthStore((s) => s.connectionError);
+  const isAuthenticated = useAuthStore((s) => s.isAuthenticated);
   const [isRetrying, setIsRetrying] = React.useState(false);
+
+  // A Play purchase the server never confirmed (app closed mid-purchase, or
+  // the check failed) is sent again when a session starts and when the app
+  // returns to the foreground, before Google refunds it (purchaseRecovery.ts)
+  useEffect(() => {
+    if (!isAuthenticated) return;
+    recoverPlayPurchases();
+    const sub = AppState.addEventListener('change', (state) => {
+      if (state === 'active') recoverPlayPurchases();
+    });
+    return () => sub.remove();
+  }, [isAuthenticated]);
 
   const [fontsLoaded] = useFonts({
     'Cantarell-Regular': Cantarell_400Regular,
