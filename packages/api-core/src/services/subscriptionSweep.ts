@@ -1,3 +1,4 @@
+import { getDatabasePool } from '@kinetik/shared';
 import { query, TABLES } from './database';
 import { acknowledgeSubscription, getSubscriptionPurchase, isPlayBillingConfigured } from './playBilling';
 import { applyPlayEntitlement } from './subscriptionEntitlement';
@@ -20,13 +21,20 @@ import { applyPlayEntitlement } from './subscriptionEntitlement';
 // still unacknowledged. Google refunds and revokes those after three days,
 // and the verify endpoint's own acknowledgement can fail.
 //
-// Hourly, not more often: the free-tier database sleeps when idle and each
-// run wakes it, and six hours of grace leave plenty of room.
+// Hourly while the database is in use, otherwise every five hours at most:
+// the free-tier database sleeps when idle and a run that finds it asleep
+// wakes it. Five hours stays inside the six hours of grace in
+// premiumAccess.ts, and far inside Play's three days to acknowledge.
 //
 // One api-core instance runs it. A second instance would only repeat the same
 // idempotent reads and writes.
 
 export const SWEEP_INTERVAL_MS = 60 * 60 * 1000;
+/** Longest the sweep waits for the database to be in use before waking it. */
+export const SWEEP_MAX_GAP_MS = 5 * 60 * 60 * 1000;
+/** A connection taken this recently means the database is awake. */
+const AWAKE_WITHIN_MS = 2 * 60 * 1000;
+const CHECK_EVERY_MS = 60 * 1000;
 const FIRST_RUN_DELAY_MS = 2 * 60 * 1000;
 const BATCH_LIMIT = 200;
 
@@ -90,7 +98,7 @@ export async function sweepSubscriptions(): Promise<SweepResult> {
 let timer: ReturnType<typeof setInterval> | null = null;
 let running = false;
 
-/** Start the hourly sweep. Does nothing when Play billing is not configured. */
+/** Start the sweep (schedule above). Does nothing when Play billing is not configured. */
 export function startSubscriptionSweep(): void {
   if (timer) return;
   if (!isPlayBillingConfigured()) {
@@ -98,9 +106,17 @@ export function startSubscriptionSweep(): void {
     return;
   }
 
+  // The first run is the delayed one below; this only spaces the later ones
+  let lastRunAt = Date.now();
+  let lastQueryAt = 0;
+  getDatabasePool().on('acquire', () => {
+    lastQueryAt = Date.now();
+  });
+
   const run = async () => {
     if (running) return;
     running = true;
+    lastRunAt = Date.now();
     try {
       const r = await sweepSubscriptions();
       if (r.checked) {
@@ -110,14 +126,19 @@ export function startSubscriptionSweep(): void {
         );
       }
     } catch (error: any) {
-      // The database may be waking up; the next run tries again
+      // The database may be waking up; try again within the hour
       console.error('[subscription-sweep] Run failed:', error?.message || error);
+      lastRunAt = Date.now() - SWEEP_MAX_GAP_MS + SWEEP_INTERVAL_MS;
     } finally {
       running = false;
     }
   };
 
   setTimeout(run, FIRST_RUN_DELAY_MS).unref();
-  timer = setInterval(run, SWEEP_INTERVAL_MS);
+  timer = setInterval(() => {
+    const sinceRun = Date.now() - lastRunAt;
+    const awake = Date.now() - lastQueryAt < AWAKE_WITHIN_MS;
+    if (sinceRun >= SWEEP_MAX_GAP_MS || (awake && sinceRun >= SWEEP_INTERVAL_MS)) run();
+  }, CHECK_EVERY_MS);
   timer.unref();
 }

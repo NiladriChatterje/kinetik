@@ -31,7 +31,10 @@ vi.mock('../services/subscriptionEntitlement', () => ({
   applyPlayEntitlement: mocks.applyPlayEntitlement,
 }));
 
-import { sweepSubscriptions, SWEEP_SQL } from '../services/subscriptionSweep';
+import { getDatabasePool } from '@kinetik/shared';
+import {
+  sweepSubscriptions, SWEEP_SQL, startSubscriptionSweep, SWEEP_INTERVAL_MS, SWEEP_MAX_GAP_MS,
+} from '../services/subscriptionSweep';
 
 const NEXT_WEEK = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000);
 
@@ -156,5 +159,56 @@ describe('subscription sweep', () => {
     expect(mocks.applyPlayEntitlement).toHaveBeenCalledWith('u2', 't2', expect.anything());
     expect(result).toMatchObject({ checked: 2, renewed: 1, failed: 1 });
     errorLog.mockRestore();
+  });
+});
+
+// The schedule: hourly only while the database is in use (a connection was
+// taken in the last two minutes), otherwise every five hours, so an idle
+// free-tier database is not woken every hour. Runs are counted by the
+// sweep's ledger query; database use by emitting the pool's 'acquire'.
+describe('sweep schedule', () => {
+  it('runs hourly while the database is in use, every five hours when idle, and retries a failure within the hour', async () => {
+    vi.useFakeTimers();
+    const MIN = 60 * 1000;
+    const runs = () => mocks.query.mock.calls.length;
+    const inUse = () => getDatabasePool().emit('acquire');
+    mocks.query.mockResolvedValue({ rows: [], rowCount: 0 });
+    const errorLog = vi.spyOn(console, 'error').mockImplementation(() => {});
+
+    startSubscriptionSweep();
+    await vi.advanceTimersByTimeAsync(2 * MIN);
+    expect(runs()).toBe(1); // first run, two minutes after start
+
+    // Idle: nothing until five hours have passed, then it wakes the database
+    await vi.advanceTimersByTimeAsync(SWEEP_MAX_GAP_MS - MIN);
+    expect(runs()).toBe(1);
+    await vi.advanceTimersByTimeAsync(MIN);
+    expect(runs()).toBe(2);
+
+    // In use, but less than an hour since the last run: no run
+    await vi.advanceTimersByTimeAsync(30 * MIN);
+    inUse();
+    await vi.advanceTimersByTimeAsync(MIN);
+    expect(runs()).toBe(2);
+
+    // Over an hour, but the last use was half an hour ago: still no run
+    await vi.advanceTimersByTimeAsync(29 * MIN);
+    expect(runs()).toBe(2);
+
+    // Over an hour and in use: runs, without waking anything
+    inUse();
+    await vi.advanceTimersByTimeAsync(MIN);
+    expect(runs()).toBe(3);
+    expect(SWEEP_INTERVAL_MS).toBe(60 * MIN);
+
+    // A failed run (the database waking) is retried within the hour, idle or not
+    mocks.query.mockRejectedValueOnce(new Error('database asleep'));
+    await vi.advanceTimersByTimeAsync(SWEEP_MAX_GAP_MS);
+    expect(runs()).toBe(4);
+    await vi.advanceTimersByTimeAsync(SWEEP_INTERVAL_MS);
+    expect(runs()).toBe(5);
+
+    errorLog.mockRestore();
+    vi.useRealTimers();
   });
 });
