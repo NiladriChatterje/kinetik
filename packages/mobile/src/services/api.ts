@@ -88,6 +88,15 @@ function readTokenTimes(token: string): { iat: number; exp: number } | null {
   }
 }
 
+/** Query string for one page of a cursor-paged list, or nothing for the first page. */
+function pageQuery(page: { limit?: number; cursor?: string }): string {
+  const params = [
+    page.limit ? `limit=${page.limit}` : '',
+    page.cursor ? `cursor=${encodeURIComponent(page.cursor)}` : '',
+  ].filter(Boolean);
+  return params.length ? `?${params.join('&')}` : '';
+}
+
 /** One billing history row; `id` is the paging cursor. */
 export interface BillingPayment {
   id: string;
@@ -779,15 +788,11 @@ class ApiClient {
    * of completed payments (`monthsPaid`) comes with the first page only.
    */
   async getSubscriptionHistory(page: { limit?: number; cursor?: string } = {}) {
-    const params = [
-      page.limit ? `limit=${page.limit}` : '',
-      page.cursor ? `cursor=${encodeURIComponent(page.cursor)}` : '',
-    ].filter(Boolean);
     return this.request<{
       payments: BillingPayment[];
       nextCursor: string | null;
       monthsPaid?: number;
-    }>(`/api/v1/payments/subscription/history${params.length ? `?${params.join('&')}` : ''}`);
+    }>(`/api/v1/payments/subscription/history${pageQuery(page)}`);
   }
 
   /**
@@ -1051,9 +1056,18 @@ class ApiClient {
     });
   }
 
-  async getIncomingLikes() {
-    // locked: free account; likes holds only their newest few, totalCount counts them all
-    return this.request<{ likes: any[]; totalCount: number; locked?: boolean }>('/api/v1/matches/likes');
+  /**
+   * Who liked you, newest first, one page at a time; `nextCursor` is null on
+   * the last page. The first page carries `totalCount`, everyone waiting. A
+   * free account (`locked`) gets its few revealed likes and no further page.
+   */
+  async getIncomingLikes(page: { limit?: number; cursor?: string } = {}) {
+    return this.request<{
+      likes: any[];
+      totalCount?: number;
+      locked?: boolean;
+      nextCursor: string | null;
+    }>(`/api/v1/matches/likes${pageQuery(page)}`);
   }
 
   /** A liker's full profile, shaped like a deck card, to open from the Likes list. */
@@ -1068,8 +1082,18 @@ class ApiClient {
     });
   }
 
-  async getConversations() {
-    return this.request<{ conversations: any[] }>('/api/v1/matches/conversations');
+  /**
+   * Active chats, latest activity first, one page at a time; `nextCursor` is
+   * null on the last page. The first page also carries every active match id
+   * (the socket rooms to join) and the ids with unread messages (the badge).
+   */
+  async getConversations(page: { limit?: number; cursor?: string } = {}) {
+    return this.request<{
+      conversations: any[];
+      nextCursor: string | null;
+      matchIds?: string[];
+      unreadMatchIds?: string[];
+    }>(`/api/v1/matches/conversations${pageQuery(page)}`);
   }
 
   /** Unmatch a user: deletes all messages, media, and deactivates the match. */

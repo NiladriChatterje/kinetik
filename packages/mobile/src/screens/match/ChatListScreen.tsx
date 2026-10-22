@@ -40,6 +40,13 @@ export const ChatListScreen: React.FC<{ navigation: any }> = ({ navigation }) =>
   const authUser = useAuthStore((s) => s.user);
   const socketRef = useRef<Socket | null>(null);
   const conversationsRef = useRef<Conversation[]>([]);
+  // The list is paged: where the next page starts, null once every chat is
+  // listed. Every active match id, for the socket rooms, comes separately.
+  const nextCursorRef = useRef<string | null>(null);
+  const roomIdsRef = useRef<string[]>([]);
+  const loadingMoreRef = useRef(false);
+  const [loadingMore, setLoadingMore] = useState(false);
+  const [moreFailed, setMoreFailed] = useState(false);
 
   // A list that could not be loaded at all (the database may still be waking
   // up) is retried on its own while the spinner shows, then offered as "Try
@@ -67,15 +74,18 @@ export const ChatListScreen: React.FC<{ navigation: any }> = ({ navigation }) =>
         const list = res.data.conversations || [];
         conversationsRef.current = list;
         setConversations(list);
-        // The tab badge counts the conversations here with unread messages.
-        // Keep it in step with the list on every load — the refresh button, a
-        // new conversation's first message and a new match all reload the
-        // list while this tab stays focused.
-        useAuthStore.getState().syncChatBadge(list);
-        // Join all match rooms on the socket for real-time updates
-        if (socketRef.current?.connected && list.length > 0) {
-          list.forEach((conv: any) => {
-            socketRef.current!.emit('chat:join', { matchId: conv.matchId });
+        nextCursorRef.current = res.data.nextCursor ?? null;
+        setMoreFailed(false);
+        roomIdsRef.current = res.data.matchIds ?? list.map((conv: Conversation) => conv.matchId);
+        // The tab badge counts the chats with unread messages, on any page.
+        // Keep it in step on every load — the refresh button, a new
+        // conversation's first message and a new match all reload the list
+        // while this tab stays focused.
+        useAuthStore.getState().syncChatBadge(res.data);
+        // Join every match room on the socket for real-time updates
+        if (socketRef.current?.connected) {
+          roomIdsRef.current.forEach((matchId) => {
+            socketRef.current!.emit('chat:join', { matchId });
           });
         }
       }
@@ -103,6 +113,34 @@ export const ChatListScreen: React.FC<{ navigation: any }> = ({ navigation }) =>
     setLoadFailed(true);
   }, []);
 
+  // The next page, appended. One request at a time: onEndReached fires
+  // repeatedly while the list settles. After a failure the footer offers a
+  // retry instead of asking again on every scroll.
+  const loadMore = useCallback(async () => {
+    const cursor = nextCursorRef.current;
+    if (!cursor || loadingMoreRef.current) return;
+    loadingMoreRef.current = true;
+    setLoadingMore(true);
+    try {
+      const res = await api.getConversations({ cursor });
+      if (!res.success || !res.data) throw new Error(res.error?.message);
+      // A chat that moved up meanwhile is already listed
+      const page = (res.data.conversations || []).filter(
+        (conv: Conversation) => !conversationsRef.current.some((c) => c.matchId === conv.matchId),
+      );
+      nextCursorRef.current = res.data.nextCursor ?? null;
+      conversationsRef.current = [...conversationsRef.current, ...page];
+      if (!mountedRef.current) return;
+      setConversations((prev) => [...prev, ...page]);
+      setMoreFailed(false);
+    } catch {
+      if (mountedRef.current) setMoreFailed(true);
+    } finally {
+      loadingMoreRef.current = false;
+      if (mountedRef.current) setLoadingMore(false);
+    }
+  }, []);
+
   useEffect(() => {
     fetchConversations();
 
@@ -112,8 +150,8 @@ export const ChatListScreen: React.FC<{ navigation: any }> = ({ navigation }) =>
     // Join rooms on every (re)connect — rooms are per-socket on the server,
     // and the fetch above may resolve before the socket finishes connecting.
     const onConnect = () => {
-      conversationsRef.current.forEach((conv) => {
-        socket.emit('chat:join', { matchId: conv.matchId });
+      roomIdsRef.current.forEach((matchId) => {
+        socket.emit('chat:join', { matchId });
       });
     };
 
@@ -349,6 +387,17 @@ export const ChatListScreen: React.FC<{ navigation: any }> = ({ navigation }) =>
           maxToRenderPerBatch={10}
           windowSize={7}
           initialNumToRender={8}
+          onEndReached={loadMore}
+          onEndReachedThreshold={0.5}
+          ListFooterComponent={
+            loadingMore ? (
+              <ActivityIndicator color={colors.primary} style={styles.footer} />
+            ) : moreFailed ? (
+              <TouchableOpacity style={styles.footer} onPress={loadMore} accessibilityRole="button">
+                <Text style={styles.footerText}>Couldn't load more · Tap to retry</Text>
+              </TouchableOpacity>
+            ) : null
+          }
         />
       )}
     </SafeAreaView>
@@ -377,6 +426,8 @@ const styles = StyleSheet.create({
   },
   retryText: { ...typography.button, color: colors.textInverse },
   list: { padding: spacing.xxl },
+  footer: { alignItems: 'center', paddingVertical: spacing.lg },
+  footerText: { ...typography.body2, color: colors.textSecondary },
   conversationCard: {
     flexDirection: 'row',
     alignItems: 'center',

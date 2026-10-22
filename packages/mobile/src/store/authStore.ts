@@ -80,10 +80,18 @@ function writeSessionSnapshot(snapshot: SessionSnapshot | null): void {
 // not open, and lowered when that chat is opened (opening it reads it).
 let countedUnreadMatchIds = new Set<string>();
 
-/** Match ids with something unread, leaving out the chat on screen. */
-function unreadMatchIds(conversations: any[], openMatchId: string | null): Set<string> {
+/**
+ * Match ids with something unread, leaving out the chat on screen. The
+ * server sends them with the first page of conversations, for every chat,
+ * not only the ones on that page.
+ */
+function unreadMatchIds(
+  page: { conversations: any[]; unreadMatchIds?: string[] },
+  openMatchId: string | null,
+): Set<string> {
   const ids = new Set<string>(
-    conversations.filter((c) => (c?.unreadCount ?? 0) > 0).map((c) => c.matchId),
+    page.unreadMatchIds ??
+      page.conversations.filter((c) => (c?.unreadCount ?? 0) > 0).map((c) => c.matchId),
   );
   if (openMatchId) ids.delete(openMatchId);
   return ids;
@@ -149,8 +157,8 @@ interface AuthState {
   // Chat badge
   unreadChatCount: number;
   fetchUnreadChatCount: () => Promise<void>;
-  /** Badge from a conversation list already in hand (ChatListScreen sets it). */
-  syncChatBadge: (conversations: any[]) => void;
+  /** Badge from a conversations page already in hand (ChatListScreen and the socket sync set it). */
+  syncChatBadge: (page: { conversations: any[]; unreadMatchIds?: string[] }) => void;
   resetUnreadChatCount: () => void;
 
   // Which DM conversation is currently open (ChatScreen sets this).
@@ -622,11 +630,14 @@ export const useAuthStore = create<AuthState>((set, get) => ({
     const joinAllRooms = async () => {
       try {
         const res = await api.getConversations();
-        const convs = res.data?.conversations || [];
-        convs.forEach((conv: any) => socket.emit('chat:join', { matchId: conv.matchId }));
+        if (!res.success || !res.data?.conversations) return;
+        // Every active match, not only the first page of the list
+        const matchIds: string[] =
+          res.data.matchIds ?? res.data.conversations.map((conv: any) => conv.matchId);
+        matchIds.forEach((matchId) => socket.emit('chat:join', { matchId }));
         // A reconnect is the first chance to catch up on messages that came
-        // while the socket was down (app in the background) — the list is in hand
-        if (res.success && res.data?.conversations) get().syncChatBadge(convs);
+        // while the socket was down (app in the background) — the page is in hand
+        get().syncChatBadge(res.data);
       } catch {
         // Silent — the socket retries joining on the next connect event
       }
@@ -684,7 +695,7 @@ export const useAuthStore = create<AuthState>((set, get) => ({
       try {
         const res = await api.getConversations();
         if (res.success && res.data?.conversations) {
-          get().syncChatBadge(res.data.conversations);
+          get().syncChatBadge(res.data);
           return;
         }
       } catch {
@@ -693,8 +704,8 @@ export const useAuthStore = create<AuthState>((set, get) => ({
     }
   },
 
-  syncChatBadge: (conversations: any[]) => {
-    countedUnreadMatchIds = unreadMatchIds(conversations, get().openChatMatchId);
+  syncChatBadge: (page) => {
+    countedUnreadMatchIds = unreadMatchIds(page, get().openChatMatchId);
     set({ unreadChatCount: countedUnreadMatchIds.size });
   },
 

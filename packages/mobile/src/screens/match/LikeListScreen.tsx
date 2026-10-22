@@ -61,6 +61,12 @@ export const LikeListScreen: React.FC<{ navigation: any }> = ({ navigation }) =>
   const toast = useToast();
   const likesRef = useRef(likes);
   likesRef.current = likes;
+  // Premium lists everyone, a page at a time: where the next page starts,
+  // null once everyone is listed. A free account never has a second page.
+  const nextCursorRef = useRef<string | null>(null);
+  const loadingMoreRef = useRef(false);
+  const [loadingMore, setLoadingMore] = useState(false);
+  const [moreFailed, setMoreFailed] = useState(false);
 
   // One fewer person waiting: drop the card, and the total with it
   // (otherwise a blurred "one more" card would appear)
@@ -85,6 +91,8 @@ export const LikeListScreen: React.FC<{ navigation: any }> = ({ navigation }) =>
         setLocked(Boolean(res.data.locked));
         setLockedCount(res.data.totalCount || 0);
         setLikes(res.data.likes || []);
+        nextCursorRef.current = res.data.nextCursor ?? null;
+        setMoreFailed(false);
         // The tab badge shows how many people are waiting here, so it
         // follows the server's count rather than clearing on a visit
         useAuthStore.setState({ unreadLikeCount: res.data.totalCount || 0 });
@@ -93,6 +101,32 @@ export const LikeListScreen: React.FC<{ navigation: any }> = ({ navigation }) =>
       toast.showError('Load failed', 'Could not load likes.');
     } finally {
       setLoading(false);
+    }
+  }, []);
+
+  // The next page, appended. One request at a time: onEndReached fires
+  // repeatedly while the list settles. After a failure the footer offers a
+  // retry instead of asking again on every scroll.
+  const loadMore = useCallback(async () => {
+    const cursor = nextCursorRef.current;
+    if (!cursor || loadingMoreRef.current) return;
+    loadingMoreRef.current = true;
+    setLoadingMore(true);
+    try {
+      const res = await api.getIncomingLikes({ cursor });
+      if (!res.success || !res.data) throw new Error(res.error?.message);
+      // Already listed if the list was reloaded while this page was on its way
+      const page = (res.data.likes || []).filter(
+        (like: IncomingLike) => !likesRef.current.some((k) => k.userId === like.userId),
+      );
+      nextCursorRef.current = res.data.nextCursor ?? null;
+      setLikes((prev) => [...prev, ...page]);
+      setMoreFailed(false);
+    } catch {
+      setMoreFailed(true);
+    } finally {
+      loadingMoreRef.current = false;
+      setLoadingMore(false);
     }
   }, []);
 
@@ -331,8 +365,16 @@ export const LikeListScreen: React.FC<{ navigation: any }> = ({ navigation }) =>
           // Free account: the likes beyond the newest few are counted but not
           // sent. No names, photos or ids reach the app for them; tapping a
           // placeholder opens checkout, like the button below.
+          onEndReached={loadMore}
+          onEndReachedThreshold={0.5}
           ListFooterComponent={
-            hiddenCount > 0 ? (
+            loadingMore ? (
+              <ActivityIndicator color={colors.primary} style={styles.footer} />
+            ) : moreFailed ? (
+              <TouchableOpacity style={styles.footer} onPress={loadMore} accessibilityRole="button">
+                <Text style={styles.footerText}>Couldn't load more · Tap to retry</Text>
+              </TouchableOpacity>
+            ) : hiddenCount > 0 ? (
               <View style={styles.lockedWrap}>
                 <Text style={styles.lockedTitle}>
                   {hiddenCount === 1 ? '1 more person likes you' : `${hiddenCount} more people like you`}
@@ -405,6 +447,8 @@ const styles = StyleSheet.create({
   emptyTitle: { ...typography.h2, color: colors.textPrimary, marginTop: spacing.lg },
   emptySubtitle: { ...typography.body1, color: colors.textMuted, marginTop: spacing.sm, textAlign: 'center' },
   list: { padding: spacing.lg, gap: spacing.md },
+  footer: { alignItems: 'center', paddingVertical: spacing.lg },
+  footerText: { ...typography.body2, color: colors.textSecondary },
 
   // Locked (free account)
   lockedWrap: { flex: 1, paddingHorizontal: spacing.xxl, paddingTop: spacing.lg },
