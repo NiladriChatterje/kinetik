@@ -77,10 +77,32 @@ const mockQuery = vi.fn(async (sql: string, params: any[] = []) => {
     freeLikesRevealed.set(target, used + pick.length);
     return { rows: [], rowCount: 1 };
   }
+  if (text.includes('AS pending_count FROM user_interactions')) {
+    const cnt = likers.filter((l) => l.target_id === params[0] && !l.responded).length;
+    return { rows: [{ pending_count: cnt }], rowCount: 1 };
+  }
   if (text.includes('FROM user_interactions ui JOIN users u ON u.id = ui.actor_id')) {
+    // Newest first (later fixture entries are newer); a free account ($2
+    // false) is sent only the likes it has revealed
     const rows = likers
-      .filter((l) => l.target_id === params[0] && !l.responded)
-      .map((l) => ({ user_id: l.actor_id, display_name: `Name of ${l.actor_id}`, action: 'like', revealed_at: l.revealed ? new Date() : null }));
+      .filter((l) => l.target_id === params[0] && !l.responded && (params[1] || l.revealed))
+      .slice()
+      .reverse()
+      .slice(0, params[2])
+      .map((l) => ({
+        user_id: l.actor_id,
+        display_name: `Name of ${l.actor_id}`,
+        action: 'like',
+        revealed_at: l.revealed ? new Date() : null,
+        like_id: `like-${l.actor_id}`,
+        liked_at_text: '2026-01-01 00:00:00.000000+00',
+      }));
+    return { rows, rowCount: rows.length };
+  }
+  if (text.includes(') AS unread FROM matches m')) {
+    const rows = matches
+      .filter((m) => m.is_active && (m.user_a_id === params[0] || m.user_b_id === params[0]))
+      .map((m) => ({ id: m.id, unread: true }));
     return { rows, rowCount: rows.length };
   }
   if (text.includes('m.id as match_id')) {

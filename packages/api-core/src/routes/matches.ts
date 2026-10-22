@@ -14,6 +14,7 @@ import { eventBus } from '../services/eventBus';
 import { isBlockedPair, isReportedPair } from '../services/blocks';
 import { getRedis, publishChatMessage } from '../services/redis';
 import { savePhoto, saveEncryptedChatFile, getEncryptedChatFileBuffer, deleteChatFile } from '../services/photoStorage';
+import { cursorTimestampSql, decodeCursor, encodeCursor, pageLimit } from '../services/listCursor';
 
 const MESSAGE_ENCRYPTION_KEY = process.env.MESSAGE_ENCRYPTION_KEY || '';
 const redis = getRedis();
@@ -676,6 +677,15 @@ export async function matchRoutes(app: FastifyInstance) {
   // ─── Get Incoming Likes ──────────────────────────────
   app.get('/likes', async (request: FastifyRequest, reply: FastifyReply) => {
     const { sub: userId } = request.user as any;
+    const q = request.query as { limit?: string; cursor?: string };
+    const limit = pageLimit(q.limit, 25, 50);
+    const after = q.cursor ? decodeCursor(q.cursor, ['timestamp', 'uuid']) : null;
+    if (q.cursor && !after) {
+      return reply.status(400).send({
+        success: false,
+        error: { code: ERROR_CODES.VALIDATION_ERROR, message: 'Invalid page cursor' },
+      });
+    }
 
     // A free account sees only the likers it has revealed, at most
     // FREE_VISIBLE_LIKES in its lifetime: hidden pending likes are revealed
@@ -711,42 +721,65 @@ export async function matchRoutes(app: FastifyInstance) {
       );
     }
 
-    const result = await query(
-      `SELECT ui.created_at as liked_at,
-              ui.is_mutual,
-              ui.responded_at,
-              ui.revealed_at,
-              ui.action,
-              u.id as user_id,
-              u.display_name,
-              u.bio,
-              u.date_of_birth,
-              u.is_verified,
-              u.dating_category,
-              pp.url as photo_url,
-              pp.thumbnail_url as thumbnail_url
-       FROM ${TABLES.USER_INTERACTIONS} ui
-       JOIN ${TABLES.USERS} u ON u.id = ui.actor_id
-       LEFT JOIN LATERAL (
-         SELECT url, thumbnail_url
-         FROM ${TABLES.PROFILE_PHOTOS}
-         WHERE user_id = u.id AND is_primary = TRUE
-         LIMIT 1
-       ) pp ON TRUE
-       WHERE ui.target_id = $1
-        AND ui.action IN ('like', 'super_like')
-        AND ui.is_mutual = FALSE
-        -- Discarded likes are gone for good: /respond stamps responded_at,
-        -- and the UNIQUE (actor_id, target_id) constraint means the liker
-        -- can never create a fresh row to reappear here.
-        AND ui.responded_at IS NULL
-       ORDER BY ui.created_at DESC
-       LIMIT 50`,
-      [userId],
-    );
+    // Newest first, one page at a time: `cursor` is where the previous page
+    // ended, as (liked at, like id), both descending, so a page boundary
+    // inside one timestamp is exact. One row more than the page tells
+    // whether another exists. A free account only ever has its revealed
+    // likes here, so it never has a second page. The count of everyone
+    // waiting comes with the first page: the tab badge and, for a free
+    // account, the "N more people like you" footer need it whatever is shown.
+    const [result, count] = await Promise.all([
+      query(
+        `SELECT ui.created_at as liked_at,
+                ui.is_mutual,
+                ui.responded_at,
+                ui.revealed_at,
+                ui.action,
+                u.id as user_id,
+                u.display_name,
+                u.bio,
+                u.date_of_birth,
+                u.is_verified,
+                u.dating_category,
+                pp.url as photo_url,
+                pp.thumbnail_url as thumbnail_url,
+                ui.id as like_id,
+                ${cursorTimestampSql('ui.created_at')} as liked_at_text
+         FROM ${TABLES.USER_INTERACTIONS} ui
+         JOIN ${TABLES.USERS} u ON u.id = ui.actor_id
+         LEFT JOIN LATERAL (
+           SELECT url, thumbnail_url
+           FROM ${TABLES.PROFILE_PHOTOS}
+           WHERE user_id = u.id AND is_primary = TRUE
+           LIMIT 1
+         ) pp ON TRUE
+         WHERE ui.target_id = $1
+          AND ui.action IN ('like', 'super_like')
+          AND ui.is_mutual = FALSE
+          -- Discarded likes are gone for good: /respond stamps responded_at,
+          -- and the UNIQUE (actor_id, target_id) constraint means the liker
+          -- can never create a fresh row to reappear here.
+          AND ui.responded_at IS NULL
+          -- A free account sees only the likes it has revealed
+          AND ($2::boolean OR ui.revealed_at IS NOT NULL)
+          ${after ? 'AND (ui.created_at, ui.id) < ($4::timestamptz, $5::uuid)' : ''}
+         ORDER BY ui.created_at DESC, ui.id DESC
+         LIMIT $3`,
+        after ? [userId, premium, limit + 1, after[0], after[1]] : [userId, premium, limit + 1],
+      ),
+      after
+        ? null
+        : query(
+            `SELECT COUNT(*)::int AS pending_count FROM ${TABLES.USER_INTERACTIONS}
+             WHERE target_id = $1 AND action IN ('like', 'super_like')
+               AND is_mutual = FALSE AND responded_at IS NULL`,
+            [userId],
+          ),
+    ]);
 
+    const hasMore = result.rows.length > limit;
+    const rows = hasMore ? result.rows.slice(0, limit) : result.rows;
     const now = new Date();
-    const rows = premium ? result.rows : result.rows.filter((row: any) => row.revealed_at !== null);
     const likes = rows.map((row: any) => ({
       likedAt: row.liked_at,
       userId: row.user_id,
@@ -762,10 +795,16 @@ export async function matchRoutes(app: FastifyInstance) {
       respondedAt: row.responded_at || undefined,
       isSuperLike: row.action === 'super_like',
     }));
+    const last = rows[rows.length - 1];
 
     return reply.send({
       success: true,
-      data: { likes, totalCount: result.rows.length, locked: !premium },
+      data: {
+        likes,
+        locked: !premium,
+        nextCursor: hasMore ? encodeCursor([last.liked_at_text, last.like_id]) : null,
+        ...(count ? { totalCount: count.rows[0]?.pending_count ?? 0 } : {}),
+      },
     });
   });
 
@@ -951,44 +990,82 @@ export async function matchRoutes(app: FastifyInstance) {
   });
 
   // ─── List Conversations ──────────────────────────────
+  // Active matches with the latest activity first, one page at a time:
+  // `cursor` is where the previous page ended and `nextCursor` is null on
+  // the last page. The first page also carries every active match id (the
+  // app joins their socket rooms) and the ids with unread messages (the tab
+  // badge): both are cheap, and neither may depend on how far the list has
+  // been paged.
   app.get('/conversations', async (request: FastifyRequest, reply: FastifyReply) => {
     const { sub: userId } = request.user as any;
+    const q = request.query as { limit?: string; cursor?: string };
+    const limit = pageLimit(q.limit, 25, 50);
+    const after = q.cursor ? decodeCursor(q.cursor, ['flag', 'timestamp', 'uuid']) : null;
+    if (q.cursor && !after) {
+      return reply.status(400).send({
+        success: false,
+        error: { code: ERROR_CODES.VALIDATION_ERROR, message: 'Invalid page cursor' },
+      });
+    }
 
-    const result = await query(
-      `SELECT
-         m.id as match_id,
-         CASE WHEN m.user_a_id = $1 THEN m.user_b_id ELSE m.user_a_id END as partner_id,
-         u.display_name as partner_name,
-         pp.url as partner_photo_url,
-         pp.thumbnail_url as partner_thumbnail_url,
-         m.is_active,
-         msg.content as last_message_content,
-         msg.created_at as last_message_at,
-         msg.sender_id as last_message_sender_id,
-         (SELECT COUNT(*)::int FROM ${TABLES.MESSAGES} msg2
-          WHERE msg2.match_id = m.id AND msg2.sender_id != $1 AND msg2.read_at IS NULL
-         ) as unread_count
-       FROM ${TABLES.MATCHES} m
-       JOIN ${TABLES.USERS} u ON u.id = CASE WHEN m.user_a_id = $1 THEN m.user_b_id ELSE m.user_a_id END
-       LEFT JOIN ${TABLES.PROFILE_PHOTOS} pp ON pp.user_id = u.id AND pp.is_primary = TRUE
-       LEFT JOIN LATERAL (
-         SELECT content, created_at, sender_id
-         FROM ${TABLES.MESSAGES}
-         WHERE match_id = m.id
-         ORDER BY created_at DESC
-         LIMIT 1
-       ) msg ON TRUE
-       WHERE (m.user_a_id = $1 OR m.user_b_id = $1) AND m.is_active = TRUE
-       ORDER BY msg.created_at DESC NULLS LAST, m.matched_at DESC
-       LIMIT 50`,
-      [userId],
-    );
+    // Chats with a message come first, newest message first, then matches
+    // without one, newest match first. That order is the cursor: (has a
+    // message, time of that message or of the match, match id), each
+    // descending, so a page boundary inside one timestamp is exact and a
+    // chat that moves up after its page was shown is not shown again. One
+    // row more than the page tells whether another page exists.
+    const [result, ids, access] = await Promise.all([
+      query(
+        `SELECT
+           m.id as match_id,
+           CASE WHEN m.user_a_id = $1 THEN m.user_b_id ELSE m.user_a_id END as partner_id,
+           u.display_name as partner_name,
+           pp.url as partner_photo_url,
+           pp.thumbnail_url as partner_thumbnail_url,
+           m.is_active,
+           msg.content as last_message_content,
+           msg.created_at as last_message_at,
+           msg.sender_id as last_message_sender_id,
+           (SELECT COUNT(*)::int FROM ${TABLES.MESSAGES} msg2
+            WHERE msg2.match_id = m.id AND msg2.sender_id != $1 AND msg2.read_at IS NULL
+           ) as unread_count,
+           CASE WHEN msg.created_at IS NULL THEN 0 ELSE 1 END as has_message,
+           ${cursorTimestampSql('COALESCE(msg.created_at, m.matched_at)')} as activity_text
+         FROM ${TABLES.MATCHES} m
+         JOIN ${TABLES.USERS} u ON u.id = CASE WHEN m.user_a_id = $1 THEN m.user_b_id ELSE m.user_a_id END
+         LEFT JOIN ${TABLES.PROFILE_PHOTOS} pp ON pp.user_id = u.id AND pp.is_primary = TRUE
+         LEFT JOIN LATERAL (
+           SELECT content, created_at, sender_id
+           FROM ${TABLES.MESSAGES}
+           WHERE match_id = m.id
+           ORDER BY created_at DESC
+           LIMIT 1
+         ) msg ON TRUE
+         WHERE (m.user_a_id = $1 OR m.user_b_id = $1) AND m.is_active = TRUE
+           ${after ? `AND (CASE WHEN msg.created_at IS NULL THEN 0 ELSE 1 END, COALESCE(msg.created_at, m.matched_at), m.id) < ($3::int, $4::timestamptz, $5::uuid)` : ''}
+         ORDER BY has_message DESC, COALESCE(msg.created_at, m.matched_at) DESC, m.id DESC
+         LIMIT $2`,
+        after ? [userId, limit + 1, after[0], after[1], after[2]] : [userId, limit + 1],
+      ),
+      after
+        ? null
+        : query(
+            `SELECT m.id,
+                    EXISTS (SELECT 1 FROM ${TABLES.MESSAGES} msg
+                            WHERE msg.match_id = m.id AND msg.sender_id != $1 AND msg.read_at IS NULL) AS unread
+             FROM ${TABLES.MATCHES} m
+             WHERE (m.user_a_id = $1 OR m.user_b_id = $1) AND m.is_active = TRUE`,
+            [userId],
+          ),
+      // Locked chats stay listed (the user knows the match) but carry no
+      // message text; unreadCount still shows that something is waiting
+      getChatAccess(userId),
+    ]);
 
-    // Locked chats stay listed (the user knows the match) but carry no message
-    // text; unreadCount still shows that something is waiting
-    const access = await getChatAccess(userId);
+    const hasMore = result.rows.length > limit;
+    const rows = hasMore ? result.rows.slice(0, limit) : result.rows;
 
-    const conversations = result.rows.map((row: any) => {
+    const conversations = rows.map((row: any) => {
       const locked = access.isLocked(row.match_id);
       return {
         matchId: row.match_id,
@@ -1006,8 +1083,23 @@ export async function matchRoutes(app: FastifyInstance) {
         locked,
       };
     });
+    const last = rows[rows.length - 1];
 
-    return reply.send({ success: true, data: { conversations } });
+    return reply.send({
+      success: true,
+      data: {
+        conversations,
+        nextCursor: hasMore
+          ? encodeCursor([String(last.has_message), last.activity_text, last.match_id])
+          : null,
+        ...(ids
+          ? {
+              matchIds: ids.rows.map((row: any) => row.id),
+              unreadMatchIds: ids.rows.filter((row: any) => row.unread).map((row: any) => row.id),
+            }
+          : {}),
+      },
+    });
   });
 
   // ─── Unmatch (Delete Conversation) ──────────────────
