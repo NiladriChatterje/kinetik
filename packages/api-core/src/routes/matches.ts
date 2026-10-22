@@ -401,8 +401,40 @@ export async function matchRoutes(app: FastifyInstance) {
       });
     }
 
+    const likes = action === 'like' || action === 'super_like';
+
+    // Every read the checks below need, in one round trip to the database:
+    // they do not depend on each other, and each alone is a network round
+    // trip (the swipe took two seconds when they ran one after another).
+    const [blocked, existing, subResult, usedResult, swiperNameResult, mutualCheck] = await Promise.all([
+      isBlockedPair(userId, targetUserId),
+      query(
+        `SELECT id, action, is_mutual, responded_at FROM ${TABLES.USER_INTERACTIONS}
+         WHERE actor_id = $1 AND target_id = $2`,
+        [userId, targetUserId],
+      ),
+      query(`SELECT tier, swipe_allowance FROM ${TABLES.SUBSCRIPTION_LEDGER} WHERE user_id = $1`, [userId]),
+      likes
+        ? query(
+            `SELECT COUNT(*)::int AS cnt FROM ${TABLES.USER_INTERACTIONS}
+             WHERE actor_id = $1 AND action IN ('like', 'super_like')`,
+            [userId],
+          )
+        : null,
+      // The swiper's name, for notifications
+      likes ? query(`SELECT display_name FROM ${TABLES.USERS} WHERE id = $1`, [userId]) : null,
+      // Whether the target has already liked this user (regular or super like)
+      likes
+        ? query(
+            `SELECT id, action FROM ${TABLES.USER_INTERACTIONS}
+             WHERE actor_id = $1 AND target_id = $2 AND action IN ('like', 'super_like')`,
+            [targetUserId, userId],
+          )
+        : null,
+    ]);
+
     // A blocked pair can never like each other (only a stale card reaches here)
-    if (await isBlockedPair(userId, targetUserId)) {
+    if (blocked) {
       return reply.status(404).send({
         success: false,
         error: { code: ERROR_CODES.NOT_FOUND, message: 'This profile is no longer available' },
@@ -413,11 +445,6 @@ export async function matchRoutes(app: FastifyInstance) {
     // rejected, may be replaced: that person is browsable again in Explore
     // (a pass after REJECT_COOLDOWN_DAYS), so swiping on them has to work. A like still pending, or a mutual one
     // (they are matched), is refused as before.
-    const existing = await query(
-      `SELECT id, action, is_mutual, responded_at FROM ${TABLES.USER_INTERACTIONS}
-       WHERE actor_id = $1 AND target_id = $2`,
-      [userId, targetUserId],
-    );
     const prior = existing.rows[0];
     const priorCanBeReplaced =
       prior && !prior.is_mutual && (prior.action === 'pass' || prior.responded_at !== null);
@@ -428,13 +455,9 @@ export async function matchRoutes(app: FastifyInstance) {
       });
     }
 
-    // Load the user's entitlement. swipe_allowance is FREE_SWIPE_LIMIT (30)
-    // for free accounts and PREMIUM_SWIPE_LIMIT (effectively unlimited) once a
+    // The user's entitlement. swipe_allowance is FREE_SWIPE_LIMIT (30) for
+    // free accounts and PREMIUM_SWIPE_LIMIT (effectively unlimited) once a
     // paid subscription is active — the payments/webhook flows set it on activation.
-    const subResult = await query(
-      `SELECT tier, swipe_allowance FROM ${TABLES.SUBSCRIPTION_LEDGER} WHERE user_id = $1`,
-      [userId],
-    );
     const sub = subResult.rows[0];
     const tier = sub?.tier || 'free';
     const swipeAllowance = sub?.swipe_allowance ?? FREE_SWIPE_LIMIT;
@@ -443,12 +466,7 @@ export async function matchRoutes(app: FastifyInstance) {
     // (like / super_like) count; passing left is always free. Counted from the
     // durable user_interactions table so a Redis restart can't reset it.
     let swipesRemaining: number | undefined;
-    if (action === 'like' || action === 'super_like') {
-      const usedResult = await query(
-        `SELECT COUNT(*)::int AS cnt FROM ${TABLES.USER_INTERACTIONS}
-         WHERE actor_id = $1 AND action IN ('like', 'super_like')`,
-        [userId],
-      );
+    if (usedResult) {
       const usedCount = usedResult.rows[0]?.cnt ?? 0;
       if (usedCount >= swipeAllowance) {
         return reply.status(429).send({
@@ -501,20 +519,8 @@ export async function matchRoutes(app: FastifyInstance) {
 
     // If it's a like or super_like, check for mutual like
     const isSuperLike = action === 'super_like';
-    if (action === 'like' || action === 'super_like') {
-      // Get swiper's name for notifications
-      const swiperNameResult = await query(
-        `SELECT display_name FROM ${TABLES.USERS} WHERE id = $1`,
-        [userId],
-      );
+    if (swiperNameResult && mutualCheck) {
       const swiperName = swiperNameResult.rows[0]?.display_name || 'Someone';
-
-      // Check if the target has also liked this user (regular or super like)
-      const mutualCheck = await query(
-        `SELECT id, action FROM ${TABLES.USER_INTERACTIONS}
-         WHERE actor_id = $1 AND target_id = $2 AND action IN ('like', 'super_like')`,
-        [targetUserId, userId],
-      );
 
       if (mutualCheck.rows.length > 0) {
         // Mutual like! Matching is free for everyone; the chat that follows
@@ -525,35 +531,38 @@ export async function matchRoutes(app: FastifyInstance) {
         const { match, created } = await getOrCreateActiveMatch(userId, targetUserId);
 
         if (match) {
-          // Mark both interactions as mutual
-          await query(
-            `UPDATE ${TABLES.USER_INTERACTIONS} SET is_mutual = TRUE, responded_at = NOW()
-             WHERE (actor_id = $1 AND target_id = $2) OR (actor_id = $2 AND target_id = $1)`,
-            [userId, targetUserId],
-          );
-
-          // Get partner details for the response / notification
-          const partnerResult = await query(
-            `SELECT u.display_name, pp.url as photo_url
-             FROM ${TABLES.USERS} u
-             LEFT JOIN ${TABLES.PROFILE_PHOTOS} pp ON pp.user_id = u.id AND pp.is_primary = TRUE
-             WHERE u.id = $1`,
-            [targetUserId],
-          );
+          // Mark both interactions as mutual, and read what the response,
+          // the event and the notification need, in one round trip
+          const [, partnerResult, swiperPhotoResult] = await Promise.all([
+            query(
+              `UPDATE ${TABLES.USER_INTERACTIONS} SET is_mutual = TRUE, responded_at = NOW()
+               WHERE (actor_id = $1 AND target_id = $2) OR (actor_id = $2 AND target_id = $1)`,
+              [userId, targetUserId],
+            ),
+            query(
+              `SELECT u.display_name, pp.url as photo_url
+               FROM ${TABLES.USERS} u
+               LEFT JOIN ${TABLES.PROFILE_PHOTOS} pp ON pp.user_id = u.id AND pp.is_primary = TRUE
+               WHERE u.id = $1`,
+              [targetUserId],
+            ),
+            // The swiper's photo, for the match event of a fresh match
+            created
+              ? query(
+                  `SELECT pp.url as photo_url
+                   FROM ${TABLES.PROFILE_PHOTOS} pp
+                   WHERE pp.user_id = $1 AND pp.is_primary = TRUE`,
+                  [userId],
+                )
+              : null,
+          ]);
           const partnerName = partnerResult.rows[0]?.display_name || 'Someone';
           const partnerPhotoUrl = partnerResult.rows[0]?.photo_url || '';
 
           // Side effects only for a freshly created match — a reused match
           // already had its event, opening line, and notification sent
           if (created) {
-            // Also get swiper's photo URL for the match event
-            const swiperPhotoResult = await query(
-              `SELECT pp.url as photo_url
-               FROM ${TABLES.PROFILE_PHOTOS} pp
-               WHERE pp.user_id = $1 AND pp.is_primary = TRUE`,
-              [userId],
-            );
-            const swiperPhotoUrl = swiperPhotoResult.rows[0]?.photo_url || '';
+            const swiperPhotoUrl = swiperPhotoResult?.rows[0]?.photo_url || '';
 
             // Auto-send an opening line as the first message. Insert it
             // BEFORE publishing match.created so that the moment either
