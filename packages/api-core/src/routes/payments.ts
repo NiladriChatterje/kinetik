@@ -27,6 +27,14 @@ const VerifyPurchaseSchema = z.object({
   priceCurrency: z.string().length(3).optional(),
 });
 
+const HistoryQuerySchema = z.object({
+  // Payments per page: the checkout screen shows the newest 10, the billing
+  // history screen pages by 20.
+  limit: z.coerce.number().int().min(1).max(50).default(10),
+  // id of the last payment already shown
+  cursor: z.string().uuid().optional(),
+});
+
 export async function paymentRoutes(app: FastifyInstance) {
   app.addHook('preHandler', async (request: FastifyRequest, reply: FastifyReply) => {
     try {
@@ -271,20 +279,41 @@ export async function paymentRoutes(app: FastifyInstance) {
 
   // ─── Subscription Billing History ─────────────────────
   // Recurring charges recorded for this user (first payment + webhook
-  // renewals), newest first — powers the history list on the checkout screen.
+  // renewals), newest first, one page at a time: `cursor` is the id of the
+  // last payment already shown and `nextCursor` is null on the last page.
+  // The checkout screen shows the first page; the billing history screen
+  // walks the rest.
   app.get('/subscription/history', async (request: FastifyRequest, reply: FastifyReply) => {
     const { sub: userId } = request.user as any;
+    const parsed = HistoryQuerySchema.safeParse(request.query);
+    if (!parsed.success) {
+      return reply.status(400).send({
+        success: false,
+        error: { code: ERROR_CODES.VALIDATION_ERROR, message: 'Invalid page request' },
+      });
+    }
+    const { limit, cursor } = parsed.data;
 
+    // One more row than the page is fetched so nextCursor is known without a
+    // second query, and the count of completed payments rides on the same
+    // query (the window runs before LIMIT) for the first page's summary.
+    // (created_at, id) is the cursor order, so a page boundary inside one
+    // timestamp is exact. A cursor that is not this user's own payment
+    // matches nothing, so it cannot read into another account.
     const result = await query(
-      `SELECT gateway_payment_id, amount, currency, status, description, created_at
+      `SELECT id, gateway_payment_id, amount, currency, status, description, created_at,
+              COUNT(*) FILTER (WHERE status = 'completed') OVER ()::int AS completed_total
        FROM ${TABLES.TRANSACTIONS}
        WHERE user_id = $1 AND gateway_subscription_id IS NOT NULL
-       ORDER BY created_at DESC
-       LIMIT 36`,
-      [userId],
+         ${cursor ? `AND (created_at, id) < (SELECT created_at, id FROM ${TABLES.TRANSACTIONS} WHERE id = $3 AND user_id = $1)` : ''}
+       ORDER BY created_at DESC, id DESC
+       LIMIT $2`,
+      cursor ? [userId, limit + 1, cursor] : [userId, limit + 1],
     );
 
-    const payments = result.rows.map((row: any) => ({
+    const hasMore = result.rows.length > limit;
+    const payments = (hasMore ? result.rows.slice(0, limit) : result.rows).map((row: any) => ({
+      id: row.id,
       paymentId: row.gateway_payment_id,
       amount: row.amount !== null ? Number(row.amount) : null,
       currency: row.currency || 'INR',
@@ -297,7 +326,10 @@ export async function paymentRoutes(app: FastifyInstance) {
       success: true,
       data: {
         payments,
-        monthsPaid: payments.filter((p) => p.status === 'completed').length,
+        nextCursor: hasMore ? payments[payments.length - 1].id : null,
+        // monthsPaid predates weekly billing; it is the count of completed
+        // payments, sent with the first page only.
+        ...(cursor ? {} : { monthsPaid: result.rows[0]?.completed_total ?? 0 }),
       },
     });
   });
