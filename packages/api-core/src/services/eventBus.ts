@@ -77,10 +77,15 @@ export const eventBus = {
       timestamp: new Date().toISOString(),
     });
 
+    // Not awaited: the change is already saved and these events only make the
+    // app update live, so a bus outage must neither fail nor slow the request
+    // that sent one. On 2026-10-21 a throw here returned 500 to a Play
+    // purchase that had been granted, and skipped its acknowledgement.
     // While the connection is still being established, ioredis queues the
-    // command and sends it once ready — waiting beats forcing connect(),
-    // which throws if the client is already mid-connection.
-    await client.publish(channel, message);
+    // command and sends it once ready.
+    client.publish(channel, message).catch((err) => {
+      console.error(`[EventBus] Could not publish ${event.type}:`, err?.message || err);
+    });
   },
 
   /**
