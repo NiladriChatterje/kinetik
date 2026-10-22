@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
-import { View, Text, StyleSheet, ScrollView, ActivityIndicator, Alert, Linking } from 'react-native';
+import { View, Text, StyleSheet, ScrollView, ActivityIndicator, Linking } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useNavigation, useRoute } from '@react-navigation/native';
 import { Ionicons } from '@expo/vector-icons';
@@ -16,6 +16,7 @@ import {
 import { Card } from '../../components/common/Card';
 import { Button } from '../../components/common/Button';
 import { BillingPaymentRow, formatDate } from '../../components/common/BillingPaymentRow';
+import { ConfirmModal } from '../../components/common/ConfirmModal';
 import { useToast } from '../../hooks/useToast';
 import { api, BillingPayment } from '../../services/api';
 import { useAuthStore, announcePremiumActive } from '../../store/authStore';
@@ -134,6 +135,8 @@ export const SubscriptionCheckoutScreen: React.FC = () => {
   const [statusFailed, setStatusFailed] = useState(false);
   const [subscribing, setSubscribing] = useState(false);
   const [cancelling, setCancelling] = useState(false);
+  // "Cancel subscription?" is asked in the app's own modal, not a system alert
+  const [confirmCancel, setConfirmCancel] = useState(false);
 
   // The purchase listener fires outside React's lifecycle (including for
   // purchases completed while the app was closed), so it reads these through a
@@ -390,37 +393,28 @@ export const SubscriptionCheckoutScreen: React.FC = () => {
   // From the status read and the server's push (authStore)
   const paymentIssue = useAuthStore((s) => s.paymentIssue);
   const isAutoRenew = Boolean(status?.autoRenew);
+  const until = formatDate(status?.expiresAt ?? null);
 
   const handleCancel = useCallback(() => {
-    if (cancelling) return;
-    const until = formatDate(status?.expiresAt ?? null);
-    Alert.alert(
-      'Cancel subscription?',
-      `You will keep Premium${until ? ` until ${until}` : ''}, but it will not renew afterwards.`,
-      [
-        { text: 'Keep subscription', style: 'cancel' },
-        {
-          text: 'Cancel subscription',
-          style: 'destructive',
-          onPress: async () => {
-            setCancelling(true);
-            try {
-              const res = await api.cancelSubscription();
-              if (!res.success) {
-                throw new Error(res.error?.message || 'Could not cancel subscription');
-              }
-              toast.showSuccess('Cancelled', 'Premium active until cycle ends.');
-              await fetchStatus();
-            } catch (error: any) {
-              toast.showError('Failed', error?.message || 'Try again.');
-            } finally {
-              setCancelling(false);
-            }
-          },
-        },
-      ],
-    );
-  }, [cancelling, status, toast, fetchStatus]);
+    if (!cancelling) setConfirmCancel(true);
+  }, [cancelling]);
+
+  const cancelSubscription = useCallback(async () => {
+    setConfirmCancel(false);
+    setCancelling(true);
+    try {
+      const res = await api.cancelSubscription();
+      if (!res.success) {
+        throw new Error(res.error?.message || 'Could not cancel subscription');
+      }
+      toast.showSuccess('Cancelled', 'Premium active until cycle ends.');
+      await fetchStatus();
+    } catch (error: any) {
+      toast.showError('Failed', error?.message || 'Try again.');
+    } finally {
+      setCancelling(false);
+    }
+  }, [toast, fetchStatus]);
 
   /** Play's subscription centre, for restoring renewal or changing payment method. */
   const handleOpenPlay = useCallback(() => {
@@ -664,6 +658,16 @@ export const SubscriptionCheckoutScreen: React.FC = () => {
           </>
         )}
       </ScrollView>
+
+      <ConfirmModal
+        visible={confirmCancel}
+        title="Cancel subscription?"
+        message={`You will keep Premium${until ? ` until ${until}` : ''}, but it will not renew afterwards.`}
+        keepLabel="Keep subscription"
+        confirmLabel="Cancel subscription"
+        onDismiss={() => setConfirmCancel(false)}
+        onConfirm={cancelSubscription}
+      />
     </SafeAreaView>
   );
 };
