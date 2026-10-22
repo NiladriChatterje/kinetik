@@ -1,6 +1,6 @@
-import React, { useState, useEffect, useRef, useCallback } from 'react'; import {
+import React, { useState, useEffect, useLayoutEffect, useRef, useCallback } from 'react'; import {
   View, Text, StyleSheet, Dimensions, TouchableOpacity,
-  ActivityIndicator, Alert,
+  ActivityIndicator, Alert, Animated,
   ScrollView,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
@@ -291,7 +291,18 @@ export const MatchScreen: React.FC<{ navigation: any; route?: any }> = ({ naviga
   // in-flight fetch (issued before the match/swipe was recorded) returns them
   const removedIdsRef = useRef<Set<string>>(new Set());
   const [loading, setLoading] = useState(true);
-  const [swiping, setSwiping] = useState(false);
+  const profilesRef = useRef<SwipeProfile[]>([]);
+  profilesRef.current = profiles;
+  // The card on its way out after a swipe. It stays the top card while it
+  // flies off, so the deck can already move on underneath it.
+  const [leaving, setLeaving] = useState<SwipeProfile | null>(null);
+  const leavingRef = useRef<SwipeProfile | null>(null);
+  // The card behind grows from the stack into place as the top one leaves,
+  // and is back in the stack once the next one is on top
+  const nextScale = useRef(new Animated.Value(0.96)).current;
+  useLayoutEffect(() => {
+    if (!leaving) nextScale.setValue(0.96);
+  }, [leaving, nextScale]);
   // Lifetime swipe budget (free accounts) — shown quietly once it runs low,
   // so the paywall never lands as a surprise. null until the first swipe reports it.
   const [swipesRemaining, setSwipesRemaining] = useState<number | null>(null);
@@ -468,15 +479,60 @@ export const MatchScreen: React.FC<{ navigation: any; route?: any }> = ({ naviga
     emitProfileBlocked(userId);
   };
 
-  const handleSwipe = async (direction: 'left' | 'right') => {
-    if (swiping) return;
+  /**
+   * A committed swipe. The deck moves on at once and the answer is sent in
+   * the background: the card keeps flying (BounceSwipe) while the next one
+   * grows into place, and handleExited clears it once it is off the screen.
+   * A swipe the server refuses puts the card back.
+   */
+  const handleSwipe = (direction: 'left' | 'right') => {
     const profile = profiles[currentIndex];
-    if (!profile) return;
+    if (!profile || leavingRef.current) return;
 
-    setSwiping(true);
+    leavingRef.current = profile;
+    setLeaving(profile);
+    removedIdsRef.current.add(profile.userId);
+    if (pendingFocusRef.current?.userId === profile.userId) {
+      pendingFocusRef.current = null;
+    }
+    const nextIndex = currentIndex + 1;
+    setCurrentIndex(nextIndex);
+    Animated.spring(nextScale, { toValue: 1, friction: 8, tension: 90, useNativeDriver: true }).start();
+
+    commitSwipe(profile, direction);
+
+    // Fetch more when running low (using nextIndex to avoid stale closure)
+    if (nextIndex >= profiles.length - 3) {
+      api
+        .getSwipeProfiles()
+        .then((res) => {
+          if (res?.success && res.data?.profiles) {
+            // Dedupe against the deck and drop already-swiped/matched users —
+            // the fetch may have been issued before those were recorded
+            setProfiles((prev) => {
+              const seen = new Set(prev.map((p) => p.userId));
+              return [
+                ...prev,
+                ...res.data!.profiles.filter(
+                  (p: SwipeProfile) => !seen.has(p.userId) && !removedIdsRef.current.has(p.userId),
+                ),
+              ];
+            });
+          }
+        })
+        .catch(() => {});
+    }
+  };
+
+  /** The swiped card has left the screen: the card behind is the top card now. */
+  const handleExited = () => {
+    leavingRef.current = null;
+    setLeaving(null);
+  };
+
+  /** Sends the answer for a card the deck has already moved past. */
+  const commitSwipe = async (profile: SwipeProfile, direction: 'left' | 'right') => {
     const action = direction === 'right' ? 'like' : 'pass';
-
-    let shouldAdvance = false;
     try {
       // A liker opened from the Likes list is answered as the list would:
       // like back (a match, using no free like) or reject (off the list)
@@ -484,7 +540,6 @@ export const MatchScreen: React.FC<{ navigation: any; route?: any }> = ({ naviga
         ? await api.respondToLike(profile.userId, direction === 'right' ? 'like' : 'discard')
         : await api.swipe(profile.userId, action);
       if (res.success && res.data) {
-        shouldAdvance = true;
         const data: { matched: boolean; swipesRemaining?: number } = res.data;
         if (typeof data.swipesRemaining === 'number') {
           setSwipesRemaining(data.swipesRemaining);
@@ -497,66 +552,47 @@ export const MatchScreen: React.FC<{ navigation: any; route?: any }> = ({ naviga
         // leaves pending likes, and passes for a while, out of Explore anyway)
         if (direction === 'right') emitProfileLiked(profile.userId);
         else emitProfilePassed(profile.userId);
-      } else if (res.error?.code === 'ALREADY_MATCHED' || res.error?.code === 'NOT_FOUND') {
+        // Answered here: off the Likes list, and the badge re-read from the server
+        if (profile.answersLike) {
+          emitLikeAnswered(profile.userId);
+          fetchUnreadLikeCount();
+        }
+        return;
+      }
+      if (res.error?.code === 'ALREADY_MATCHED' || res.error?.code === 'NOT_FOUND') {
         // Stale card — the interaction/match already exists on the server
         // (e.g. matched via the Likes screen), or the profile is no longer
-        // available to this viewer (a block either way). Skip past it
-        // silently: a pass would be refused too, so the card would stick.
-        shouldAdvance = true;
+        // available to this viewer (a block either way). It is gone from the
+        // deck, which is right either way.
+        return;
+      }
+      if (res.error?.code === 'SWIPE_LIMIT_REACHED') {
+        const details = (res.error as any)?.details;
+        setPaywall({
+          visible: true,
+          reason: 'swipe_limit',
+          used: details?.used ?? 30,
+          limit: details?.limit ?? 30,
+        });
       } else {
-        // API returned an error — don't advance, show feedback
-        if (res.error?.code === 'SWIPE_LIMIT_REACHED') {
-          const details = (res.error as any)?.details;
-          setPaywall({
-            visible: true,
-            reason: 'swipe_limit',
-            used: details?.used ?? 30,
-            limit: details?.limit ?? 30,
-          });
-        } else {
-          toast.showError('Swipe failed', res.error?.message || 'Try again.');
-        }
+        toast.showError('Swipe failed', res.error?.message || 'Try again.');
       }
     } catch (err: any) {
       toast.showError('Swipe failed', err.message || 'Try again.');
     }
+    restoreProfile(profile);
+  };
 
-    if (!shouldAdvance) {
-      setSwiping(false);
-      return;
-    }
-
-    // Answered here: off the Likes list, and the badge re-read from the server
-    if (profile.answersLike) {
-      emitLikeAnswered(profile.userId);
-      fetchUnreadLikeCount();
-    }
-
-    removedIdsRef.current.add(profile.userId);
-    if (pendingFocusRef.current?.userId === profile.userId) {
-      pendingFocusRef.current = null;
-    }
-    const nextIndex = currentIndex + 1;
-    setCurrentIndex(nextIndex);
-    setSwiping(false);
-
-    // Fetch more when running low (using nextIndex to avoid stale closure)
-    if (nextIndex >= profiles.length - 3) {
-      const res = await api.getSwipeProfiles().catch(() => null);
-      if (res?.success && res.data?.profiles) {
-        // Dedupe against the deck and drop already-swiped/matched users —
-        // the fetch may have been issued before those were recorded
-        setProfiles((prev) => {
-          const seen = new Set(prev.map((p) => p.userId));
-          return [
-            ...prev,
-            ...res.data!.profiles.filter(
-              (p: SwipeProfile) => !seen.has(p.userId) && !removedIdsRef.current.has(p.userId),
-            ),
-          ];
-        });
-      }
-    }
+  /** A refused swipe: the card returns to the top of the deck. */
+  const restoreProfile = (profile: SwipeProfile) => {
+    removedIdsRef.current.delete(profile.userId);
+    const current = profilesRef.current;
+    // Still in the list behind the current index; move it to the top
+    const removed = current.some((p) => p.userId === profile.userId) ? 1 : 0;
+    const rest = current.filter((p) => p.userId !== profile.userId);
+    const at = Math.min(rest.length, Math.max(0, currentIndexRef.current - removed));
+    setProfiles([...rest.slice(0, at), profile, ...rest.slice(at)]);
+    setCurrentIndex(at);
   };
 
   if (loading) {
@@ -603,8 +639,12 @@ export const MatchScreen: React.FC<{ navigation: any; route?: any }> = ({ naviga
   }
 
   const currentProfile = profiles[currentIndex];
+  // While a swiped card flies off it stays on top and the deck has moved
+  // on underneath, so the card behind is the one about to be on top
+  const topProfile = leaving ?? currentProfile;
+  const nextProfile = leaving ? currentProfile : profiles[currentIndex + 1];
 
-  if (!currentProfile) {
+  if (!topProfile) {
     return (
       <SafeAreaView style={styles.container}>
         <View style={styles.header}>
@@ -701,38 +741,40 @@ export const MatchScreen: React.FC<{ navigation: any; route?: any }> = ({ naviga
 
       {/* Render cards stack */}
       <View style={styles.cardsContainer}>
-        {/* Next card (shows behind) */}
-        {profiles[currentIndex + 1] && (
-          <View style={[styles.card, styles.nextCard]}>
-            <View style={styles.cardImageContainer}>
-              {(profiles[currentIndex + 1].photos.find(p => p.isPrimary) || profiles[currentIndex + 1].photos[0]) ? (
-                <ProgressiveImage
-                  thumbnailUri={(() => {
-                    const p = profiles[currentIndex + 1].photos.find(ph => ph.isPrimary) || profiles[currentIndex + 1].photos[0];
-                    return p?.thumbnailUrl ? resolveUrl(p.thumbnailUrl) : undefined;
-                  })()}
-                  uri={resolveUrl((profiles[currentIndex + 1].photos.find(p => p.isPrimary) || profiles[currentIndex + 1].photos[0])!.url)}
-                  style={styles.cardImage}
-                  resizeMode="contain"
-                />
-              ) : null}
-            </View>
-          </View>
+        {/* The card behind: the next one, or, while a swiped card is still
+            flying off, the one about to be on top. It grows from the stack
+            into place as the swiped card leaves. */}
+        {nextProfile && (
+          <Animated.View
+            key={nextProfile.userId}
+            pointerEvents="none"
+            style={[
+              styles.card,
+              {
+                transform: [
+                  { translateY: nextScale.interpolate({ inputRange: [0.96, 1], outputRange: [8, 0] }) },
+                  { scale: nextScale },
+                ],
+              },
+            ]}
+          >
+            <SwipeCard profile={nextProfile} />
+          </Animated.View>
         )}
 
-        {/* Current card: slides flat and sideways, then bounces back; the
-            deck moves on once the swipe is recorded. */}
+        {/* Top card: slides sideways with the finger and, once committed,
+            flies off while the deck moves on underneath */}
         <BounceSwipe
-          key={currentProfile.userId}
+          key={topProfile.userId}
           style={StyleSheet.absoluteFill}
           cardStyle={styles.card}
           onSwipe={handleSwipe}
-          enabled={!swiping}
-          busy={swiping}
+          onExited={handleExited}
+          flyOff
           shrink={false}
-          labels={currentProfile.answersLike ? { right: 'Like back', left: 'Reject' } : { right: 'Like', left: 'Pass' }}
+          labels={topProfile.answersLike ? { right: 'Like back', left: 'Reject' } : { right: 'Like', left: 'Pass' }}
         >
-          <SwipeCard profile={currentProfile} />
+          <SwipeCard profile={topProfile} />
         </BounceSwipe>
       </View>
 
@@ -865,10 +907,6 @@ const styles = StyleSheet.create({
     borderTopRightRadius: radius.xl,
     backgroundColor: colors.background,
     overflow: 'hidden',
-  },
-  nextCard: {
-    transform: [{ scale: 0.96 }],
-    top: 8,
   },
   cardScroll: {
     flex: 1,

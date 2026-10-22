@@ -1,5 +1,5 @@
 import React, { useEffect, useRef } from 'react';
-import { Animated, Dimensions, PanResponder, StyleProp, StyleSheet, View, ViewStyle } from 'react-native';
+import { Animated, Dimensions, Easing, PanResponder, StyleProp, StyleSheet, View, ViewStyle } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { colors } from '../../theme';
 import { hapticLight } from '../../utils/haptics';
@@ -31,29 +31,39 @@ function sampled(fn: (travel: number) => number) {
 
 /**
  * A card that slides straight sideways, right (like) or left (pass /
- * reject), then bounces back into place instead of flying off: the screen
- * moves on once the action is done. A small outlined icon appears at the
- * edge the card leaves and fills in when releasing would commit.
+ * reject). On release past the commit point it either bounces back into
+ * place (the Likes list: the row leaves once the answer is recorded) or,
+ * with `flyOff`, keeps going off the screen (the Discover deck: the next
+ * card takes its place at once and the answer is sent in the background).
+ * A small outlined icon appears at the edge the card leaves and fills in
+ * when releasing would commit.
  */
 export function BounceSwipe({
   children,
   onSwipe,
+  onExited,
   enabled = true,
   busy = false,
   shrink = true,
+  flyOff = false,
   enterFrom,
   labels,
   style,
   cardStyle,
 }: {
   children: React.ReactNode;
+  /** The swipe is committed; with `flyOff` the card is still on its way out. */
   onSwipe: (direction: SwipeDirection) => void;
+  /** With `flyOff`: the card has left the screen. */
+  onExited?: (direction: SwipeDirection) => void;
   /** False while the last swipe is still being answered. */
   enabled?: boolean;
   /** Dims the card while its swipe is being answered. */
   busy?: boolean;
   /** Shrinks a little as it is dragged; false keeps it flat (the Discover card). */
   shrink?: boolean;
+  /** Leave the screen on commit instead of bouncing back. */
+  flyOff?: boolean;
   /** Scale the card grows from when it appears (the deck's next card sits at 0.96). */
   enterFrom?: number;
   /** For screen readers, which get these as actions in place of the gesture. */
@@ -62,12 +72,20 @@ export function BounceSwipe({
   cardStyle?: StyleProp<ViewStyle>;
 }) {
   const drag = useRef(new Animated.Value(0)).current;
+  // How far the card has gone off the screen after a committed fly-off swipe
+  const exit = useRef(new Animated.Value(0)).current;
   const enter = useRef(new Animated.Value(enterFrom ?? 1)).current;
   // Latest props for the responder, which is created once
   const onSwipeRef = useRef(onSwipe);
   onSwipeRef.current = onSwipe;
+  const onExitedRef = useRef(onExited);
+  onExitedRef.current = onExited;
   const enabledRef = useRef(enabled);
   enabledRef.current = enabled;
+  const flyOffRef = useRef(flyOff);
+  flyOffRef.current = flyOff;
+  // Set once a fly-off swipe is committed: the card takes no further gestures
+  const goneRef = useRef(false);
   const zone = useRef(0);
 
   useEffect(() => {
@@ -78,11 +96,36 @@ export function BounceSwipe({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
+  function bounceBack(velocity: number) {
+    zone.current = 0;
+    Animated.spring(drag, { toValue: 0, velocity, friction: 7, tension: 120, useNativeDriver: true }).start();
+  }
+
+  /** A committed swipe: the card leaves or bounces back, and the parent is told. */
+  function commit(direction: SwipeDirection, velocity: number) {
+    if (flyOffRef.current) {
+      goneRef.current = true;
+      zone.current = 0;
+      onSwipeRef.current(direction);
+      Animated.timing(exit, {
+        toValue: (direction === 'right' ? 1 : -1) * SCREEN_WIDTH * 1.2,
+        duration: 240,
+        easing: Easing.out(Easing.quad),
+        useNativeDriver: true,
+      }).start(({ finished }) => {
+        if (finished) onExitedRef.current?.(direction);
+      });
+      return;
+    }
+    bounceBack(velocity);
+    onSwipeRef.current(direction);
+  }
+
   const panResponder = useRef(
     PanResponder.create({
       // Clearly sideways only, so vertical scrolling keeps working
       onMoveShouldSetPanResponder: (_, g) =>
-        enabledRef.current && Math.abs(g.dx) > 8 && Math.abs(g.dx) > Math.abs(g.dy) * 1.5,
+        enabledRef.current && !goneRef.current && Math.abs(g.dx) > 8 && Math.abs(g.dx) > Math.abs(g.dy) * 1.5,
       onPanResponderTerminationRequest: () => false,
       onPanResponderMove: (_, g) => {
         drag.setValue(g.dx);
@@ -99,19 +142,19 @@ export function BounceSwipe({
           g.dx > COMMIT_AT || (flick && g.dx > 0) ? 'right'
             : g.dx < -COMMIT_AT || (flick && g.dx < 0) ? 'left'
               : null;
-        bounceBack(g.vx);
-        if (direction && enabledRef.current) onSwipeRef.current(direction);
+        if (direction && enabledRef.current && !goneRef.current) commit(direction, g.vx);
+        else bounceBack(g.vx);
       },
       onPanResponderTerminate: () => bounceBack(0),
     }),
   ).current;
 
-  function bounceBack(velocity: number) {
-    zone.current = 0;
-    Animated.spring(drag, { toValue: 0, velocity, friction: 7, tension: 120, useNativeDriver: true }).start();
-  }
-
-  const translateX = drag.interpolate(sampled((t) => t));
+  const translateX = Animated.add(drag.interpolate(sampled((t) => t)), exit);
+  // A slight tilt as the card flies out
+  const rotate = exit.interpolate({
+    inputRange: [-SCREEN_WIDTH, 0, SCREEN_WIDTH],
+    outputRange: ['-8deg', '0deg', '8deg'],
+  });
   const scale = shrink
     ? Animated.multiply(drag.interpolate(sampled((t) => 1 - 0.06 * Math.abs(t / MAX_TRAVEL))), enter)
     : enter;
@@ -122,14 +165,16 @@ export function BounceSwipe({
         style={[
           cardStyle,
           busy && styles.busy,
-          { transform: [{ translateX }, { scale }] },
+          { transform: [{ translateX }, { rotate }, { scale }] },
         ]}
         accessibilityActions={[
           { name: 'swipeRight', label: labels.right },
           { name: 'swipeLeft', label: labels.left },
         ]}
         onAccessibilityAction={(e) => {
-          if (enabledRef.current) onSwipeRef.current(e.nativeEvent.actionName === 'swipeRight' ? 'right' : 'left');
+          if (enabledRef.current && !goneRef.current) {
+            commit(e.nativeEvent.actionName === 'swipeRight' ? 'right' : 'left', 0);
+          }
         }}
         {...panResponder.panHandlers}
       >
