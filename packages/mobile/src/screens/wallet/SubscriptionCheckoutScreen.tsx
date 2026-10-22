@@ -334,7 +334,7 @@ export const SubscriptionCheckoutScreen: React.FC = () => {
       try {
         await redeemRef.current(purchase);
       } catch (error: any) {
-        toast.showError('Verification failed', error?.message || 'Please reopen this screen.');
+        toast.showError('Purchase not confirmed', error?.message || 'Please reopen this screen.');
       } finally {
         if (mountedRef.current) setSubscribing(false);
       }
