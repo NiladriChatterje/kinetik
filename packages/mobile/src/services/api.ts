@@ -88,6 +88,17 @@ function readTokenTimes(token: string): { iat: number; exp: number } | null {
   }
 }
 
+/** One billing history row; `id` is the paging cursor. */
+export interface BillingPayment {
+  id: string;
+  paymentId: string | null;
+  amount: number | null;
+  currency: string;
+  status: string;
+  description: string;
+  paidAt: string;
+}
+
 class ApiClient {
   private token: string | null = null;
   /** When the access token runs out, on this device's clock; null if unknown. */
@@ -762,18 +773,21 @@ class ApiClient {
     }>('/api/v1/payments/subscription/status');
   }
 
-  async getSubscriptionHistory() {
+  /**
+   * One page of billing history, newest first. `cursor` is the id of the last
+   * payment already shown; `nextCursor` is null on the last page. The count
+   * of completed payments (`monthsPaid`) comes with the first page only.
+   */
+  async getSubscriptionHistory(page: { limit?: number; cursor?: string } = {}) {
+    const params = [
+      page.limit ? `limit=${page.limit}` : '',
+      page.cursor ? `cursor=${encodeURIComponent(page.cursor)}` : '',
+    ].filter(Boolean);
     return this.request<{
-      payments: {
-        paymentId: string | null;
-        amount: number | null;
-        currency: string;
-        status: string;
-        description: string;
-        paidAt: string;
-      }[];
-      monthsPaid: number;
-    }>('/api/v1/payments/subscription/history');
+      payments: BillingPayment[];
+      nextCursor: string | null;
+      monthsPaid?: number;
+    }>(`/api/v1/payments/subscription/history${params.length ? `?${params.join('&')}` : ''}`);
   }
 
   /**

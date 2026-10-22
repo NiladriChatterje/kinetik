@@ -15,8 +15,9 @@ import {
 } from 'expo-iap';
 import { Card } from '../../components/common/Card';
 import { Button } from '../../components/common/Button';
+import { BillingPaymentRow, formatDate } from '../../components/common/BillingPaymentRow';
 import { useToast } from '../../hooks/useToast';
-import { api } from '../../services/api';
+import { api, BillingPayment } from '../../services/api';
 import { useAuthStore, announcePremiumActive } from '../../store/authStore';
 import { onPremiumChanged } from '../../services/appEvents';
 import { colors, typography, spacing, radius } from '../../theme';
@@ -43,15 +44,6 @@ interface SubscriptionStatus {
 
 /** The payment problem notice, the same orange as Profile's pending badge */
 const PAYMENT_ISSUE_ORANGE = '#FFA500';
-
-interface SubscriptionPayment {
-  paymentId: string | null;
-  amount: number | null;
-  currency: string;
-  status: string;
-  description: string;
-  paidAt: string;
-}
 
 const FEATURES = [
   { icon: 'chatbubbles-outline' as const, label: 'Chat with your matches' },
@@ -122,13 +114,6 @@ function describePurchaseError(error: any): PurchaseErrorOutcome {
   };
 }
 
-function formatDate(iso: string | null): string {
-  if (!iso) return '';
-  const d = new Date(iso);
-  if (isNaN(d.getTime())) return '';
-  return d.toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' });
-}
-
 export const SubscriptionCheckoutScreen: React.FC = () => {
   const toast = useToast();
   const navigation = useNavigation<any>();
@@ -137,7 +122,12 @@ export const SubscriptionCheckoutScreen: React.FC = () => {
 
   const [status, setStatus] = useState<SubscriptionStatus | null>(null);
   const [pricing, setPricing] = useState<PricingInfo | null>(null);
-  const [history, setHistory] = useState<{ payments: SubscriptionPayment[]; monthsPaid: number } | null>(null);
+  // The newest page only; BillingHistoryScreen pages through the rest
+  const [history, setHistory] = useState<{
+    payments: BillingPayment[];
+    nextCursor: string | null;
+    monthsPaid?: number;
+  } | null>(null);
   const [product, setProduct] = useState<any | null>(null);
   const [loading, setLoading] = useState(true);
   // The server did not answer the status request (offline, outage)
@@ -654,24 +644,21 @@ export const SubscriptionCheckoutScreen: React.FC = () => {
                 {/* The server counts completed payments (monthsPaid predates
                     weekly billing), so the label counts payments, not months */}
                 <Text style={styles.historySummary}>
-                  {history.monthsPaid} payment{history.monthsPaid === 1 ? '' : 's'} made
+                  {history.monthsPaid ?? history.payments.length} payment
+                  {(history.monthsPaid ?? history.payments.length) === 1 ? '' : 's'} made
                 </Text>
-                {history.payments.map((p, i) => (
-                  <View key={p.paymentId || `${p.paidAt}-${i}`} style={styles.historyRow}>
-                    <Ionicons
-                      name={p.status === 'completed' ? 'checkmark-circle-outline' : 'time-outline'}
-                      size={18}
-                      color={p.status === 'completed' ? colors.success : colors.warning}
-                    />
-                    <View style={styles.historyInfo}>
-                      <Text style={styles.historyDesc} numberOfLines={1}>{p.description}</Text>
-                      <Text style={styles.historyDate}>{formatDate(p.paidAt)}</Text>
-                    </View>
-                    <Text style={styles.historyAmount}>
-                      {p.amount !== null ? `₹${p.amount}` : '—'}
-                    </Text>
-                  </View>
+                {history.payments.map((p) => (
+                  <BillingPaymentRow key={p.id} payment={p} />
                 ))}
+                {history.nextCursor && (
+                  <Button
+                    title="Show more"
+                    onPress={() => navigation.navigate('BillingHistory')}
+                    variant="outline"
+                    size="sm"
+                    style={styles.showMoreBtn}
+                  />
+                )}
               </>
             )}
           </>
@@ -759,16 +746,5 @@ const styles = StyleSheet.create({
   },
   assuranceText: { ...typography.caption, color: colors.textSecondary, flex: 1, lineHeight: 18 },
   historySummary: { ...typography.body2, color: colors.textSecondary, marginBottom: spacing.md },
-  historyRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: spacing.md,
-    paddingVertical: spacing.sm,
-    borderBottomWidth: StyleSheet.hairlineWidth,
-    borderBottomColor: colors.cardBorder,
-  },
-  historyInfo: { flex: 1 },
-  historyDesc: { ...typography.body2, color: colors.textPrimary },
-  historyDate: { ...typography.caption, color: colors.textMuted },
-  historyAmount: { ...typography.body2, color: colors.textPrimary, fontWeight: '600' },
+  showMoreBtn: { alignSelf: 'flex-start', marginTop: spacing.md },
 });

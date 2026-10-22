@@ -93,6 +93,7 @@ import { ProfileLedgerScreen } from '../screens/wallet/ProfileLedgerScreen';
 import { WelcomeScreen } from '../screens/onboarding/WelcomeScreen';
 import { PrimaryPhotoSelfieScreen } from '../screens/wallet/PrimaryPhotoSelfieScreen';
 import { SubscriptionCheckoutScreen } from '../screens/wallet/SubscriptionCheckoutScreen';
+import { BillingHistoryScreen } from '../screens/wallet/BillingHistoryScreen';
 
 // Notifications
 import { NotificationHandler } from '../hooks/useNotifications';
@@ -125,6 +126,8 @@ export type RootStackParamList = {
   // fromPaywall: opened from a chat, likes or swipe paywall; a completed
   // purchase goes straight back there
   SubscriptionCheckout: { fromPaywall?: boolean } | undefined;
+  // Every payment, paged; opened from the checkout screen's "Show more"
+  BillingHistory: undefined;
 };
 
 export type OnboardingStackParamList = {
@@ -342,6 +345,7 @@ export function RootNavigator() {
         <RootStack.Screen name="KYCVerify" component={KYCScreen} />
         <RootStack.Screen name="PrimaryPhotoSelfie" component={PrimaryPhotoSelfieScreen} />
         <RootStack.Screen name="SubscriptionCheckout" component={SubscriptionCheckoutScreen} />
+        <RootStack.Screen name="BillingHistory" component={BillingHistoryScreen} />
       </RootStack.Navigator>
     </NavigationContainer>
   );
