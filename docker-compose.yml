@@ -110,27 +110,39 @@ services:
   #     retries: 5
   #   logging: *default-logging
 
-  # # ─── Event Bus Redis (dedicated pub/sub — replaces Kafka) ─
-  # redis-events:
-  #   image: redis:7-alpine
-  #   container_name: kinetik-redis-events
-  #   restart: unless-stopped
-  #   command: redis-server --requirepass ${REDIS_EVENTS_PASSWORD:-kinetik_events_2024} --maxmemory 256mb --maxmemory-policy allkeys-lru --appendonly no
-  #   ports:
-  #     - "${REDIS_EVENTS_PORT:-6380}:6379"
-  #   deploy:
-  #     resources:
-  #       limits:
-  #         cpus: "0.25"
-  #         memory: 256M
-  #       reservations:
-  #         memory: 128M
-  #   healthcheck:
-  #     test: ["CMD", "redis-cli", "--raw", "incr", "ping"]
-  #     interval: 10s
-  #     timeout: 5s
-  #     retries: 5
-  #   logging: *default-logging
+  # ─── Event Bus Redis (pub/sub between api-core and realtime) ─
+  # Carries live events only (likes, matches, subscription changes) and
+  # stores nothing. Local, because the free cloud Redis it ran on until
+  # 2026-10-21 refuses every command while its provider holds it asleep,
+  # which failed a Play purchase and stopped all live updates. Internal
+  # network only.
+  redis-events:
+    image: redis:7-alpine
+    container_name: kinetik-redis-events
+    restart: unless-stopped
+    command:
+      - redis-server
+      - --save
+      - ""
+      - --appendonly
+      - "no"
+      - --requirepass
+      - ${REDIS_EVENTS_PASSWORD:-kinetik_events_2024}
+    environment:
+      REDISCLI_AUTH: ${REDIS_EVENTS_PASSWORD:-kinetik_events_2024}
+    healthcheck:
+      test: [ "CMD", "redis-cli", "ping" ]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+    deploy:
+      resources:
+        limits:
+          cpus: "0.25"
+          memory: 64M
+        reservations:
+          memory: 8M
+    logging: *default-logging
 
   # ─── Sign-up code store (Redis, memory only) ────────────
   # Holds sign-ups until their emailed code is verified: the form, the code
@@ -195,8 +207,6 @@ services:
       REDIS_HOST: redis
       REDIS_PORT: 6379
       REDIS_PASSWORD: ${REDIS_PASSWORD:-kinetik_redis_2024}
-      REDIS_LAYERBASE_URL: ${REDIS_LAYERBASE_URL:-}
-      REDIS_LAYERBASE_HOST: ${REDIS_LAYERBASE_HOST:-}
       REDIS_AIVEN_URL: ${REDIS_AIVEN_URL:-}
       REDIS_AIVEN_HOST: ${REDIS_AIVEN_HOST:-}
       REDIS_EVENTS_HOST: redis-events
@@ -272,6 +282,8 @@ services:
         condition: service_completed_successfully
       otp-store:
         condition: service_healthy
+      redis-events:
+        condition: service_healthy
     <<: *service-limits
     deploy:
       resources:
@@ -302,8 +314,6 @@ services:
       REDIS_HOST: redis
       REDIS_PORT: 6379
       REDIS_PASSWORD: ${REDIS_PASSWORD:-kinetik_redis_2024}
-      REDIS_LAYERBASE_URL: ${REDIS_LAYERBASE_URL:-}
-      REDIS_LAYERBASE_HOST: ${REDIS_LAYERBASE_HOST:-}
       REDIS_AIVEN_URL: ${REDIS_AIVEN_URL:-}
       REDIS_AIVEN_HOST: ${REDIS_AIVEN_HOST:-}
       REDIS_EVENTS_HOST: redis-events
@@ -321,8 +331,8 @@ services:
     depends_on:
       # redis:
       #   condition: service_healthy
-      # redis-events:
-      #   condition: service_healthy
+      redis-events:
+        condition: service_healthy
       migration-runner:
         condition: service_completed_successfully
     <<: *service-limits

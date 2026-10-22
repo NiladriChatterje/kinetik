@@ -34,18 +34,13 @@ const pubClient = new Redis(
 const subClient = pubClient.duplicate();
 
 // ─── Event Bus Redis (separate instance — replaces Kafka consumer) ─
-const eventBusClient = new Redis(
-  process.env.REDIS_LAYERBASE_URL!,
-  {
-    tls: { servername: process.env.REDIS_LAYERBASE_HOST! }
-    //   host: process.env.REDIS_EVENTS_HOST || 'localhost',
-    //   port: parseInt(process.env.REDIS_EVENTS_PORT || '6380', 10),
-    //   password: process.env.REDIS_EVENTS_PASSWORD,
-    //   retryStrategy: (times) => Math.min(times * 50, 2000),
-    //   maxRetriesPerRequest: null,    // Critical event bus — keep retrying
-    //   enableOfflineQueue: false,
-  }
-);
+// The local redis-events container (docker-compose.yml), same as api-core's
+// publisher in services/eventBus.ts.
+const eventBusClient = new Redis({
+  host: process.env.REDIS_EVENTS_HOST || 'localhost',
+  port: parseInt(process.env.REDIS_EVENTS_PORT || '6379', 10),
+  password: process.env.REDIS_EVENTS_PASSWORD,
+});
 
 // ioredis emits 'error' on connection failures — without a listener an
 // unhandled 'error' event crashes the process (and Docker restarts it in a

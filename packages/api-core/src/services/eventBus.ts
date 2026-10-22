@@ -18,19 +18,11 @@ let publisher: Redis | null = null;
 
 function getPublisher(): Redis {
   if (!publisher) {
-    publisher = new Redis(
-      process.env.REDIS_LAYERBASE_URL!,
-      {
-        tls: { servername: process.env.REDIS_LAYERBASE_HOST! }
-        //   host: process.env.REDIS_EVENTS_HOST || 'localhost',
-        //   port: parseInt(process.env.REDIS_EVENTS_PORT || '6380', 10),
-        //   password: process.env.REDIS_EVENTS_PASSWORD,
-        //   retryStrategy: (times) => Math.min(times * 50, 2000),
-        //   maxRetriesPerRequest: null,    // Infinite retries — critical event bus
-        //   enableOfflineQueue: false,
-        //   lazyConnect: true,
-      }
-    );
+    publisher = new Redis({
+      host: process.env.REDIS_EVENTS_HOST || 'localhost',
+      port: parseInt(process.env.REDIS_EVENTS_PORT || '6379', 10),
+      password: process.env.REDIS_EVENTS_PASSWORD,
+    });
 
     publisher.on('connect', () => {
       console.log('📡 Event Bus Redis connected');
