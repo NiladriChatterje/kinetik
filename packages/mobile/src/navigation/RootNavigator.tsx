@@ -94,6 +94,7 @@ import { WelcomeScreen } from '../screens/onboarding/WelcomeScreen';
 import { PrimaryPhotoSelfieScreen } from '../screens/wallet/PrimaryPhotoSelfieScreen';
 import { SubscriptionCheckoutScreen } from '../screens/wallet/SubscriptionCheckoutScreen';
 import { BillingHistoryScreen } from '../screens/wallet/BillingHistoryScreen';
+import { PartnerProfileScreen } from '../screens/match/PartnerProfileScreen';
 
 // Notifications
 import { NotificationHandler } from '../hooks/useNotifications';
@@ -120,6 +121,8 @@ export type RootStackParamList = {
   Discover: { focusProfile?: any } | undefined;
   ChatList: undefined;
   Chat: { matchId: string; partnerName: string; partnerId?: string; partnerPhotoUrl?: string; locked?: boolean };
+  // A match partner's full profile, opened from the chat header
+  PartnerProfile: { matchId: string; partnerId: string; partnerName: string };
   KYCVerify: undefined;
   // Selfie check before a photo becomes the primary profile photo
   PrimaryPhotoSelfie: { photoId: string; photoUrl: string };
@@ -335,6 +338,7 @@ export function RootNavigator() {
         <RootStack.Screen name="Discover" component={MatchScreen} />
         <RootStack.Screen name="ChatList" component={ChatListScreen} />
         <RootStack.Screen name="Chat" component={ChatScreen} />
+        <RootStack.Screen name="PartnerProfile" component={PartnerProfileScreen} />
         {/* Existing root overlay screens */}
         <RootStack.Screen name="LockStatus" component={LockStatusScreen} />
         <RootStack.Screen name="CalendarSync" component={CalendarSyncScreen} />

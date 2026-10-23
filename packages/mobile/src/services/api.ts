@@ -1075,6 +1075,11 @@ class ApiClient {
     return this.request<{ profile: any }>(`/api/v1/matches/likes/${userId}/profile`);
   }
 
+  /** A match partner's full profile, shaped like a deck card, to open from the chat. */
+  async getMatchPartnerProfile(matchId: string) {
+    return this.request<{ profile: any }>(`/api/v1/matches/${matchId}/partner`);
+  }
+
   async respondToLike(targetUserId: string, action: 'like' | 'discard') {
     return this.request<{ matched: boolean; matchId?: string; partnerName?: string; partnerId?: string }>('/api/v1/matches/respond', {
       method: 'POST',

@@ -26,7 +26,7 @@ const SCREEN_WIDTH = Dimensions.get('window').width;
 const SCREEN_HEIGHT = Dimensions.get('window').height;
 const CARD_WIDTH = SCREEN_WIDTH - spacing.md * 2; // cardsContainer horizontal padding
 
-interface SwipeProfile {
+export interface SwipeProfile {
   userId: string;
   displayName: string;
   age: number;
@@ -71,8 +71,11 @@ const ABOUT_SECTIONS: {
     { key: 'dateStyle', icon: 'cafe-outline', label: 'Dates' },
   ];
 
-/** The top card's content; the swipe itself is BounceSwipe around it. */
-function SwipeCard({ profile }: { profile: SwipeProfile }) {
+/**
+ * The top card's content; the swipe itself is BounceSwipe around it. Also
+ * the read-only profile a chat opens (PartnerProfileScreen).
+ */
+export function SwipeCard({ profile }: { profile: SwipeProfile }) {
   const [photoIndex, setPhotoIndex] = useState(0);
 
   const photoCount = profile.photos.length;

@@ -713,11 +713,13 @@ export const ChatScreen: React.FC<{ navigation: any; route: any }> = ({ navigati
   // Unmatch, block and the server's match:unmatched event (which also reaches
   // the person who unmatched or blocked) can each end this chat. Go back once,
   // whichever comes first; a second goBack would pop the screen underneath.
+  // With another screen on top (the partner's profile, where a block can
+  // also happen) goBack would pop that one instead: that screen removes both.
   const leavingRef = useRef(false);
   const leaveChat = () => {
     if (leavingRef.current) return;
     leavingRef.current = true;
-    navigation.goBack();
+    if (navigation.isFocused()) navigation.goBack();
   };
 
   // ─── Report / block sheet ────────────────────────────────
@@ -1960,17 +1962,26 @@ export const ChatScreen: React.FC<{ navigation: any; route: any }> = ({ navigati
             <Ionicons name="chevron-back" size={24} color={colors.textPrimary} />
           </TouchableOpacity>
 
-          {pAvatar ? (
-            <Image source={{ uri: resolveUrl(pAvatar) }} style={styles.headerAvatar} resizeMethod="resize" />
-          ) : (
-            <View style={[styles.headerAvatar, styles.noHeaderAvatar]}>
-              <Ionicons name="person-outline" size={20} color={colors.textMuted} />
+          {/* Their photo and name open their full profile */}
+          <TouchableOpacity
+            style={styles.headerPartner}
+            onPress={() => navigation.navigate('PartnerProfile', { matchId, partnerId, partnerName })}
+            disabled={!partnerId}
+            activeOpacity={0.7}
+            accessibilityRole="button"
+            accessibilityLabel={`Open ${partnerName}'s profile`}
+          >
+            {pAvatar ? (
+              <Image source={{ uri: resolveUrl(pAvatar) }} style={styles.headerAvatar} resizeMethod="resize" />
+            ) : (
+              <View style={[styles.headerAvatar, styles.noHeaderAvatar]}>
+                <Ionicons name="person-outline" size={20} color={colors.textMuted} />
+              </View>
+            )}
+            <View style={styles.headerInfo}>
+              <Text style={styles.headerName}>{partnerName}</Text>
             </View>
-          )}
-
-          <View style={styles.headerInfo}>
-            <Text style={styles.headerName}>{partnerName}</Text>
-          </View>
+          </TouchableOpacity>
 
           {/* Date Planner — opens the planner modal */}
           <TouchableOpacity
@@ -2711,6 +2722,7 @@ const styles = StyleSheet.create({
     borderBottomColor: colors.surfaceHighlight,
   },
   backBtn: { marginRight: spacing.sm },
+  headerPartner: { flex: 1, flexDirection: 'row', alignItems: 'center' },
   headerAvatar: { width: 40, height: 40, borderRadius: 20, marginRight: spacing.sm },
   noHeaderAvatar: { backgroundColor: colors.surface, justifyContent: 'center', alignItems: 'center' },
   headerInfo: { flex: 1 },
