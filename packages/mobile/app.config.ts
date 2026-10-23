@@ -166,6 +166,18 @@ const FACE_VERIFICATION_PROGUARD_RULES = `
  * Billing client. OpenIAP parses Play's JSON with Gson TypeTokens, which need
  * their generic signatures; Gson 2.11+ ships rules for that, older copies do not.
  */
+/**
+ * Hermes Intl and fbjni are entered from C++ over JNI, which R8 cannot see;
+ * without these, release-only failures in date formatting and native bridges.
+ */
+const HERMES_PROGUARD_RULES = `
+# --- Hermes and fbjni: called from C++ over JNI, invisible to R8 ---
+# Intl (toLocaleDateString, NumberFormat) lives in Java and is reached only
+# from Hermes native code; fbjni hybrid classes likewise. Keep them whole.
+-keep class com.facebook.hermes.** { *; }
+-keep class com.facebook.jni.** { *; }
+`.trim();
+
 const BILLING_PROGUARD_RULES = `
 # --- Play Billing (expo-iap -> OpenIAP -> Billing client) ---
 -keep class expo.modules.iap.** { *; }
@@ -223,6 +235,8 @@ export default ({ config }: ConfigContext): ExpoConfig => {
         {
           android: {
             usesCleartextTraffic,
+            // R8 on for release (Play's DEX optimisation rule); see android/gradle.properties
+            enableMinifyInReleaseBuilds: true,
             extraProguardRules: `${FACE_VERIFICATION_PROGUARD_RULES}\n${BILLING_PROGUARD_RULES}`,
           },
         },

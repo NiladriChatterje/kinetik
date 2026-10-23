@@ -35,3 +35,9 @@
 -keep class com.google.gson.reflect.TypeToken { *; }
 -keep class * extends com.google.gson.reflect.TypeToken
 # @generated end expo-build-properties
+
+# --- Hermes and fbjni: called from C++ over JNI, invisible to R8 ---
+# Intl (toLocaleDateString, NumberFormat) lives in Java and is reached only
+# from Hermes native code; fbjni hybrid classes likewise. Keep them whole.
+-keep class com.facebook.hermes.** { *; }
+-keep class com.facebook.jni.** { *; }
