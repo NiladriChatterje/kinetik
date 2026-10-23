@@ -14,10 +14,17 @@ let likeRow: { revealed_at: string | null } | null = null;
 let userRow: Record<string, any> | null = null;
 let premium = false;
 let blocked = false;
+// GET /matches/:id/partner: the viewer's active match with LIKER, when set
+let matchRow: { partner_id: string } | null = null;
 
 const mockQuery = vi.fn(async (sql: string, _params?: any[]) => {
   if (sql.includes('SELECT revealed_at FROM')) return { rows: likeRow ? [likeRow] : [], rowCount: likeRow ? 1 : 0 };
-  if (sql.includes('TRUE AS liked_you')) return { rows: userRow ? [userRow] : [], rowCount: userRow ? 1 : 0 };
+  if (sql.includes('TRUE AS liked_you') || sql.includes('FALSE AS liked_you')) {
+    return { rows: userRow ? [userRow] : [], rowCount: userRow ? 1 : 0 };
+  }
+  if (sql.includes('WHERE id = $1 AND (user_a_id = $2 OR user_b_id = $2) AND is_active = TRUE')) {
+    return { rows: matchRow ? [matchRow] : [], rowCount: matchRow ? 1 : 0 };
+  }
   if (sql.includes('FROM profile_photos')) {
     return { rows: [{ user_id: LIKER, id: 'ph1', url: '/uploads/a.webp', thumbnail_url: '/uploads/a_thumb.webp', is_primary: true }], rowCount: 1 };
   }
@@ -80,6 +87,51 @@ beforeEach(() => {
   };
   premium = false;
   blocked = false;
+  matchRow = { partner_id: LIKER };
+});
+
+const MATCH = '33333333-3333-4333-8333-333333333333';
+
+function getPartner(id = MATCH) {
+  return app.inject({
+    method: 'GET',
+    url: `/api/v1/matches/${id}/partner`,
+    headers: { authorization: `Bearer ${token}` },
+  });
+}
+
+describe('GET /matches/:id/partner', () => {
+  it('returns the full card of the other person in an active match', async () => {
+    const res = await getPartner();
+    expect(res.statusCode).toBe(200);
+    const { profile } = res.json().data;
+    expect(profile).toMatchObject({ userId: LIKER, displayName: 'Priya', bio: 'Trekker', isVerified: true });
+    expect(profile.photos).toHaveLength(1);
+    // Being matched says nothing about a waiting like
+    expect(profile.likedYou).toBe(false);
+    const [, params] = mockQuery.mock.calls.find(([s]) => String(s).includes('AND is_active = TRUE'))!;
+    expect(params).toEqual([MATCH, VIEWER]);
+  });
+
+  it('404 when the match is not the viewer\'s, or is over', async () => {
+    matchRow = null;
+    expect((await getPartner()).statusCode).toBe(404);
+  });
+
+  it('404 across a block', async () => {
+    blocked = true;
+    expect((await getPartner()).statusCode).toBe(404);
+  });
+
+  it('404 for a deactivated partner account', async () => {
+    userRow = null;
+    expect((await getPartner()).statusCode).toBe(404);
+  });
+
+  it('404 for a malformed id, without touching the database', async () => {
+    expect((await getPartner('not-a-match')).statusCode).toBe(404);
+    expect(mockQuery).not.toHaveBeenCalled();
+  });
 });
 
 function getProfile(id = LIKER) {

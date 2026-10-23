@@ -151,6 +151,30 @@ async function buildProfileCards(rows: any[], canSeeLikes: boolean) {
   });
 }
 
+/**
+ * One user's row for buildProfileCards, with their distance from the
+ * viewer's feed origin (preferred city, else their own location) as the deck
+ * card shows it. `likedYou` is what the card may say about them liking the
+ * viewer.
+ */
+async function loadProfileRow(targetId: string, viewerId: string, likedYou: boolean) {
+  return query(
+    `SELECT u.id, u.display_name, u.date_of_birth, u.bio, u.occupation, u.education,
+            u.pronouns, u.is_verified, u.dating_category, u.about_answers, u.h3_index,
+            ${likedYou ? 'TRUE' : 'FALSE'} AS liked_you,
+            CASE WHEN o.lat IS NULL OR o.lng IS NULL OR u.latitude IS NULL OR u.longitude IS NULL THEN NULL
+                 ELSE 6371 * acos(LEAST(1, GREATEST(-1,
+                   cos(radians(o.lat)) * cos(radians(u.latitude)) * cos(radians(u.longitude) - radians(o.lng))
+                   + sin(radians(o.lat)) * sin(radians(u.latitude)))))
+            END AS distance_km
+     FROM ${TABLES.USERS} u,
+          (SELECT COALESCE(preferred_latitude, latitude) AS lat, COALESCE(preferred_longitude, longitude) AS lng
+           FROM ${TABLES.USERS} WHERE id = $2) o
+     WHERE u.id = $1 AND u.is_active = TRUE`,
+    [targetId, viewerId],
+  );
+}
+
 export async function matchRoutes(app: FastifyInstance) {
   app.addHook('preHandler', async (request: FastifyRequest, reply: FastifyReply) => {
     // Skip JWT auth ONLY for the GET media proxy endpoint — native audio/video
@@ -844,26 +868,42 @@ export async function matchRoutes(app: FastifyInstance) {
     const like = likeResult.rows[0];
     if (!like || blocked || (!premium && like.revealed_at === null)) return notFound();
 
-    // Distance from the viewer's feed origin (preferred city, else their own
-    // location), as the deck card shows it
-    const userResult = await query(
-      `SELECT u.id, u.display_name, u.date_of_birth, u.bio, u.occupation, u.education,
-              u.pronouns, u.is_verified, u.dating_category, u.about_answers, u.h3_index,
-              TRUE AS liked_you,
-              CASE WHEN o.lat IS NULL OR o.lng IS NULL OR u.latitude IS NULL OR u.longitude IS NULL THEN NULL
-                   ELSE 6371 * acos(LEAST(1, GREATEST(-1,
-                     cos(radians(o.lat)) * cos(radians(u.latitude)) * cos(radians(u.longitude) - radians(o.lng))
-                     + sin(radians(o.lat)) * sin(radians(u.latitude)))))
-              END AS distance_km
-       FROM ${TABLES.USERS} u,
-            (SELECT COALESCE(preferred_latitude, latitude) AS lat, COALESCE(preferred_longitude, longitude) AS lng
-             FROM ${TABLES.USERS} WHERE id = $2) o
-       WHERE u.id = $1 AND u.is_active = TRUE`,
-      [likerId, userId],
-    );
+    const userResult = await loadProfileRow(likerId, userId, true);
     if (!userResult.rows[0]) return notFound();
 
     const [profile] = await buildProfileCards(userResult.rows, true);
+    return reply.send({ success: true, data: { profile } });
+  });
+
+  // ─── A match partner's full profile ──────────────────
+  // Opened from a chat by tapping the partner's photo: the same card the
+  // deck shows. Only for the other person in one of the viewer's active
+  // matches, and never across a block.
+  app.get('/:id/partner', async (request: FastifyRequest<{ Params: { id: string } }>, reply: FastifyReply) => {
+    const { sub: userId } = request.user as any;
+    const { id: matchId } = request.params;
+    const notFound = () => reply.status(404).send({
+      success: false,
+      error: { code: ERROR_CODES.NOT_FOUND, message: 'This profile is no longer available' },
+    });
+    if (!UUID_RE.test(matchId)) return notFound();
+
+    const matchResult = await query(
+      `SELECT CASE WHEN user_a_id = $2 THEN user_b_id ELSE user_a_id END AS partner_id
+       FROM ${TABLES.MATCHES}
+       WHERE id = $1 AND (user_a_id = $2 OR user_b_id = $2) AND is_active = TRUE`,
+      [matchId, userId],
+    );
+    const partnerId: string | undefined = matchResult.rows[0]?.partner_id;
+    if (!partnerId) return notFound();
+
+    const [blocked, userResult] = await Promise.all([
+      isBlockedPair(userId, partnerId),
+      loadProfileRow(partnerId, userId, false),
+    ]);
+    if (blocked || !userResult.rows[0]) return notFound();
+
+    const [profile] = await buildProfileCards(userResult.rows, false);
     return reply.send({ success: true, data: { profile } });
   });
 
