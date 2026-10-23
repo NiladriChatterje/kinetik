@@ -1233,7 +1233,12 @@ export const ChatScreen: React.FC<{ navigation: any; route: any }> = ({ navigati
   useEffect(() => {
     const show = Keyboard.addListener(
       Platform.OS === 'ios' ? 'keyboardWillShow' : 'keyboardDidShow',
-      () => setKeyboardVisible(true),
+      () => {
+        setKeyboardVisible(true);
+        // The list just lost the keyboard's height; keep the newest message
+        // in view (a height change alone does not trigger onContentSizeChange)
+        setTimeout(() => flatListRef.current?.scrollToEnd({ animated: true }), 50);
+      },
     );
     const hide = Keyboard.addListener(
       Platform.OS === 'ios' ? 'keyboardWillHide' : 'keyboardDidHide',
@@ -2033,11 +2038,17 @@ export const ChatScreen: React.FC<{ navigation: any; route: any }> = ({ navigati
           </TouchableOpacity>
         )}
 
-        {/* Messages */}
+        {/* Messages. Both platforms pad for the keyboard: Android used to
+            rely on the window resizing (adjustResize), which edge-to-edge
+            turned off, so the keyboard covered the input bar. The offset is
+            this view's distance from the top of the window: it measures
+            its frame relative to its parent, which the SafeAreaView starts
+            below the status bar, while the keyboard reports a window
+            position. */}
         <KeyboardAvoidingView
           style={styles.chatArea}
-          behavior={Platform.OS === 'ios' ? 'padding' : undefined}
-          keyboardVerticalOffset={0}
+          behavior="padding"
+          keyboardVerticalOffset={insets.top}
         >
           {loading ? (
             <View style={styles.centered}>
