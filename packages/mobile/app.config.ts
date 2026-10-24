@@ -237,7 +237,8 @@ export default ({ config }: ConfigContext): ExpoConfig => {
             usesCleartextTraffic,
             // R8 on for release (Play's DEX optimisation rule); see android/gradle.properties
             enableMinifyInReleaseBuilds: true,
-            extraProguardRules: `${FACE_VERIFICATION_PROGUARD_RULES}\n${BILLING_PROGUARD_RULES}`,
+            extraProguardRules: `${FACE_VERIFICATION_PROGUARD_RULES}\n${BILLING_PROGUARD_RULES}
+${HERMES_PROGUARD_RULES}`,
           },
         },
       ],

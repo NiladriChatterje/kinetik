@@ -54,3 +54,4 @@ packages/mobile/credentials/
 # key for FCM V1 are per-project secrets, downloaded from the Firebase console.
 packages/mobile/google-services.json
 packages/mobile/firebase-service-account*.json
+packages/mobile/android/app/google-services.json
