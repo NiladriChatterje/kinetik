@@ -140,7 +140,7 @@ vi.mock('../services/eventBus', () => ({
 }));
 
 vi.mock('../services/notificationService', () => ({
-  notificationEvents: { newMessage: vi.fn(), newLike: vi.fn(), matchFound: vi.fn() },
+  notificationEvents: { newMessage: vi.fn(), newMatch: vi.fn(), newLike: vi.fn() },
 }));
 
 vi.mock('../services/photoStorage', () => ({

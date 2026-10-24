@@ -153,6 +153,7 @@ const mockNewMessage = vi.fn().mockResolvedValue(undefined);
 vi.mock('../services/notificationService', () => ({
   notificationEvents: {
     newMessage: mockNewMessage,
+    newMatch: vi.fn().mockResolvedValue(undefined),
     newLike: vi.fn().mockResolvedValue(undefined),
   },
 }));
@@ -333,7 +334,6 @@ describe('chat lock', () => {
     ledger.set(PARTNER_2, { tier: 'premium', expires_at: new Date(Date.now() + 30 * DAY) });
     const send = await call('POST', PARTNER_2, `/api/v1/matches/conversations/match-${FREE}-new/messages`, { content: 'private words' });
     expect(send.statusCode).toBe(201);
-    const [, , preview] = mockNewMessage.mock.calls[0];
-    expect(preview).not.toContain('private words');
+    expect(JSON.stringify(mockNewMessage.mock.calls[0])).not.toContain('private words');
   });
 });

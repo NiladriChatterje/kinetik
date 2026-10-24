@@ -44,9 +44,6 @@ function sendChatLocked(reply: FastifyReply) {
   });
 }
 
-/** Push text for a message in a chat the recipient cannot open. */
-const LOCKED_MESSAGE_PREVIEW = 'New message. Upgrade to Premium to read it.';
-
 /**
  * How many likers a free account may reveal in its lifetime. Answering a
  * revealed like never frees the slot (migration 025).
@@ -611,9 +608,8 @@ export async function matchRoutes(app: FastifyInstance) {
               console.error('[EventBus] Failed to publish match.created:', err);
             });
 
-            // Send new message notification instead of match notification
             notificationEvents
-              .newMessage(targetUserId, swiperName, 'You have a new match! Say hi', { matchId: match.id, partnerId: userId })
+              .newMatch(targetUserId, { matchId: match.id, partnerId: userId, partnerName: swiperName })
               .catch(() => {});
           }
 
@@ -681,8 +677,8 @@ export async function matchRoutes(app: FastifyInstance) {
         console.error('[EventBus] Failed to publish like.created:', err);
       });
 
-      // Send push notification
-      notificationEvents.newLike(targetUserId, targetCanSeeLikes ? swiperName : null).catch(() => {});
+      // Send push notification: it counts the likes waiting, never names them
+      notificationEvents.newLike(targetUserId).catch(() => {});
 
       return reply.send({
         success: true,
@@ -1017,9 +1013,9 @@ export async function matchRoutes(app: FastifyInstance) {
         console.error('[EventBus] Failed to publish match.created:', err);
       });
 
-      // Notify both users via new message notification
-      await notificationEvents.newMessage(userId, partnerName, 'You have a new match! Say hi', { matchId: match.id, partnerId: targetUserId });
-      await notificationEvents.newMessage(targetUserId, responderName, 'You have a new match! Say hi', { matchId: match.id, partnerId: userId });
+      // Notify both users
+      await notificationEvents.newMatch(userId, { matchId: match.id, partnerId: targetUserId, partnerName });
+      await notificationEvents.newMatch(targetUserId, { matchId: match.id, partnerId: userId, partnerName: responderName });
     }
 
     return reply.status(201).send({
@@ -1433,18 +1429,13 @@ export async function matchRoutes(app: FastifyInstance) {
     const plainContent = content.trim();
     const encryptedContent = encryptMessage(plainContent, MESSAGE_ENCRYPTION_KEY);
 
-    // The partner's lock state only feeds the push preview and needs nothing
-    // from the insert, so it is fetched while the insert runs.
     const matchRow = matchCheck.rows[0];
     const partnerId = matchRow.user_a_id === userId ? matchRow.user_b_id : matchRow.user_a_id;
-    const [result, partnerLocked] = await Promise.all([
-      query(
-        `INSERT INTO ${TABLES.MESSAGES} (match_id, sender_id, content)
-         VALUES ($1, $2, $3) RETURNING *`,
-        [matchId, userId, encryptedContent],
-      ),
-      isChatLocked(partnerId, matchId),
-    ]);
+    const result = await query(
+      `INSERT INTO ${TABLES.MESSAGES} (match_id, sender_id, content)
+       VALUES ($1, $2, $3) RETURNING *`,
+      [matchId, userId, encryptedContent],
+    );
     const message = result.rows[0];
 
     // Publish to Redis pub/sub with PLAINTEXT (clients render plaintext)
@@ -1459,14 +1450,10 @@ export async function matchRoutes(app: FastifyInstance) {
     // reconnect blip, which would otherwise silently drop the live broadcast
     publishChatMessage(REDIS_KEYS.CHAT_MESSAGES_CHANNEL, messagePayload);
 
-    // Notify the partner via push
+    // Notify the partner via push. The push names nobody and shows no text;
+    // the sender's name only heads the chat a tap opens.
     const senderName = senderResult.rows[0]?.display_name || 'Someone';
-    // A partner whose side of this chat is locked gets no message text
-    const preview = partnerLocked
-      ? LOCKED_MESSAGE_PREVIEW
-      : plainContent.length > 80 ? plainContent.slice(0, 80) + '…' : plainContent;
-
-    notificationEvents.newMessage(partnerId, senderName, preview, { matchId, partnerId: userId }).catch(() => {});
+    notificationEvents.newMessage(partnerId, { matchId, partnerId: userId, partnerName: senderName }).catch(() => {});
 
     return reply.status(201).send({
       success: true,
@@ -1634,16 +1621,13 @@ export async function matchRoutes(app: FastifyInstance) {
     // reconnect blip, which would otherwise silently drop the live broadcast
     publishChatMessage(REDIS_KEYS.CHAT_MESSAGES_CHANNEL, messagePayload);
 
-    // Notify the partner
+    // Notify the partner. The push names nobody and says nothing about the
+    // media; the sender's name only heads the chat a tap opens.
     const matchRow = matchCheck.rows[0];
     const partnerId = matchRow.user_a_id === userId ? matchRow.user_b_id : matchRow.user_a_id;
     const senderResult = await query(`SELECT display_name FROM ${TABLES.USERS} WHERE id = $1`, [userId]);
     const senderName = senderResult.rows[0]?.display_name || 'Someone';
-    const preview = (await isChatLocked(partnerId, matchId))
-      ? LOCKED_MESSAGE_PREVIEW
-      : mediaType === 'image' ? 'Sent a photo' : `Sent ${mediaType}`;
-
-    notificationEvents.newMessage(partnerId, senderName, preview, { matchId, partnerId: userId }).catch(() => {});
+    notificationEvents.newMessage(partnerId, { matchId, partnerId: userId, partnerName: senderName }).catch(() => {});
 
     return reply.status(201).send({
       success: true,

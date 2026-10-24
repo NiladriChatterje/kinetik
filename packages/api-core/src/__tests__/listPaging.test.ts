@@ -158,7 +158,7 @@ vi.mock('../services/premiumAccess', () => ({
 
 vi.mock('../services/eventBus', () => ({ eventBus: { publish: vi.fn().mockResolvedValue(undefined) } }));
 vi.mock('../services/notificationService', () => ({
-  notificationEvents: { newMessage: vi.fn(), newLike: vi.fn() },
+  notificationEvents: { newMessage: vi.fn(), newMatch: vi.fn(), newLike: vi.fn() },
 }));
 vi.mock('../services/redis', () => ({
   getRedis: () => ({ get: vi.fn(), del: vi.fn(), publish: vi.fn() }),

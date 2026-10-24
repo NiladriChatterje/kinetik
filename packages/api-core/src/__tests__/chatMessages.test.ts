@@ -45,8 +45,8 @@ vi.mock('../services/eventBus', () => ({
 vi.mock('../services/notificationService', () => ({
   notificationEvents: {
     newMessage: vi.fn().mockResolvedValue(undefined),
+    newMatch: vi.fn().mockResolvedValue(undefined),
     newLike: vi.fn().mockResolvedValue(undefined),
-    matchFound: vi.fn().mockResolvedValue(undefined),
   },
 }));
 
@@ -263,13 +263,13 @@ describe('Chat Message API - Send Message', () => {
           ? matchRow.user_b_id
           : matchRow.user_a_id;
 
-      // Simulate the notification call
-      await notificationEvents.newMessage(partnerId, 'Alice', 'Hello!');
+      // Simulate the notification call: the push is addressed to the
+      // partner, and the sender's name only heads the chat a tap opens
+      await notificationEvents.newMessage(partnerId, { matchId: 'match-1', partnerId: senderId, partnerName: 'Alice' });
 
       expect(notificationEvents.newMessage).toHaveBeenCalledWith(
         'user-789',
-        'Alice',
-        'Hello!',
+        { matchId: 'match-1', partnerId: 'user-123', partnerName: 'Alice' },
       );
     });
   });

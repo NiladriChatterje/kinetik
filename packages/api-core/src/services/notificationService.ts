@@ -182,25 +182,29 @@ async function sendToTokens(
 // ─── Event Handlers ──────────────────────────────────────
 
 /**
- * Send notifications for various platform events.
- * Meant to be called from Kafka consumers or directly from route handlers.
+ * Where a tapped push leads. The name only heads the chat screen it opens;
+ * no push ever shows it.
+ */
+export interface PushChatTarget {
+  matchId: string;
+  partnerId: string;
+  partnerName: string;
+}
+
+/**
+ * Send notifications for various platform events. A push is read on a lock
+ * screen, so none of them names a person or quotes a message: they say how
+ * many are waiting, and a tap opens the right screen.
  */
 export const notificationEvents = {
   /**
-   * A message the recipient has not seen. While only one chat has unread
-   * messages the push names the sender and shows the text, and a tap opens
-   * that chat. Once a second chat has unread messages too, the push says
-   * how many are waiting and a tap opens the chat list: the phone would
-   * otherwise pile up one banner per message from several people.
+   * A message the recipient has not seen. The push says how many messages
+   * are waiting across their chats. While only one chat has unread messages
+   * a tap opens that chat, otherwise the chat list.
    */
-  async newMessage(
-    userId: string,
-    senderName: string,
-    messagePreview: string,
-    chat?: { matchId: string; partnerId: string },
-  ): Promise<void> {
-    let unread = 0;
-    let chats = 0;
+  async newMessage(userId: string, chat?: PushChatTarget): Promise<void> {
+    let unread = 1;
+    let chats = 1;
     try {
       const result = await query<{ unread: number; chats: number }>(
         `SELECT COUNT(*)::int AS unread, COUNT(DISTINCT msg.match_id)::int AS chats
@@ -212,33 +216,58 @@ export const notificationEvents = {
            AND msg.read_at IS NULL`,
         [userId],
       );
-      unread = result.rows[0]?.unread ?? 0;
-      chats = result.rows[0]?.chats ?? 0;
+      unread = Math.max(1, result.rows[0]?.unread ?? 1);
+      chats = Math.max(1, result.rows[0]?.chats ?? 1);
     } catch (error) {
       // The count only shapes the text; the push itself still goes out
       console.warn('[notifications] Could not count unread messages:', (error as Error)?.message);
     }
 
-    const grouped = chats > 1;
     await sendPushNotification(userId, 'new.message', {
-      title: grouped ? 'Kinetik' : senderName,
-      body: grouped ? `${unread} unread messages` : messagePreview,
-      data: grouped || !chat
+      title: unread > 1 ? 'New messages' : 'New message',
+      body: unread > 1 ? `You have ${unread} new messages!` : 'You have a message!',
+      data: chats > 1 || !chat
         ? { type: 'new.message', screen: 'ChatList' }
-        : { type: 'new.message', screen: 'Chat', matchId: chat.matchId, partnerId: chat.partnerId, partnerName: senderName },
+        : { type: 'new.message', screen: 'Chat', matchId: chat.matchId, partnerId: chat.partnerId, partnerName: chat.partnerName },
       sound: 'default',
-      badge: unread > 0 ? unread : undefined,
+      badge: unread,
       channelId: 'messages',
     });
   },
 
-  /** likerName is null for a free user: who liked them is a Premium feature. */
-  async newLike(userId: string, likerName: string | null): Promise<void> {
+  /** A new match. A tap opens the new chat, where the opening line waits. */
+  async newMatch(userId: string, chat: PushChatTarget): Promise<void> {
+    await sendPushNotification(userId, 'new.match', {
+      title: 'New match',
+      body: 'You have a new match! Say hi',
+      data: { type: 'new.match', screen: 'Chat', matchId: chat.matchId, partnerId: chat.partnerId, partnerName: chat.partnerName },
+      sound: 'default',
+      channelId: 'messages',
+    });
+  },
+
+  /**
+   * A like waiting on the recipient. The push says how many people are
+   * waiting in their Likes list, the number the tab badge shows; who they
+   * are is for the list itself (Premium, or a free account's revealed few).
+   */
+  async newLike(userId: string): Promise<void> {
+    let pending = 1;
+    try {
+      const result = await query<{ pending: number }>(
+        `SELECT COUNT(*)::int AS pending FROM ${TABLES.USER_INTERACTIONS}
+         WHERE target_id = $1 AND action IN ('like', 'super_like')
+           AND is_mutual = FALSE AND responded_at IS NULL`,
+        [userId],
+      );
+      pending = Math.max(1, result.rows[0]?.pending ?? 1);
+    } catch (error) {
+      console.warn('[notifications] Could not count pending likes:', (error as Error)?.message);
+    }
+
     await sendPushNotification(userId, 'new.like', {
-      title: 'New Like',
-      body: likerName
-        ? `${likerName} liked your profile! See who likes you.`
-        : 'Someone liked your profile! Upgrade to Premium to see who.',
+      title: 'New like',
+      body: pending > 1 ? `${pending} people liked your profile!` : '1 person liked your profile!',
       data: { type: 'new.like', screen: 'Likes' },
       channelId: 'default',
     });
