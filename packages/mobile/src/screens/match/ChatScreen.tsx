@@ -21,6 +21,7 @@ import { onPremiumChanged } from '../../services/appEvents';
 import { useAuthStore } from '../../store/authStore';
 import { useToast } from '../../hooks/useToast';
 import { LockedChatView } from '../../components/chat/LockedChatView';
+import { LinkText } from '../../components/chat/LinkText';
 import { ReportBlockSheet } from '../../components/safety/ReportBlockSheet';
 import { resolveUrl } from '../../config';
 import { colors, typography, spacing, radius } from '../../theme';
@@ -602,11 +603,15 @@ const MessageRow = React.memo(function MessageRow({
         {/* Media attachment */}
         {hasMedia && renderMediaContent(item, isMine)}
 
-        {/* Text content (caption or description) — hidden for view-once media */}
-        {hasMedia && item.media?.isViewOnce && item.media?.viewedAt ? null : hasMedia ? null : (
+        {/* Text content (caption or description) — hidden for view-once media.
+            Links in it open on tap; a failed message keeps its whole bubble
+            for the retry tap instead */}
+        {hasMedia && item.media?.isViewOnce && item.media?.viewedAt ? null : hasMedia ? null : item.failed ? (
           <Text style={[styles.messageText, isMine && styles.myMessageText]}>
             {displayContent}
           </Text>
+        ) : (
+          <LinkText text={displayContent} style={[styles.messageText, isMine && styles.myMessageText]} />
         )}
 
         {/* Read receipt */}
