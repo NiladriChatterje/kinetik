@@ -3,7 +3,7 @@ import {
   View, Text, StyleSheet, FlatList, TextInput, TouchableOpacity,
   Image, KeyboardAvoidingView, Platform, Keyboard, ActivityIndicator,
   Modal, Alert, Dimensions, Linking,
-  StatusBar, Animated, ScrollView, Easing,
+  StatusBar, Animated, ScrollView, Easing, PanResponder,
 } from 'react-native';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import Svg, { Path } from 'react-native-svg';
@@ -243,6 +243,12 @@ const VIBE_OPTIONS = [
  * second gap on phones that do.
  */
 const MIN_INPUT_BOTTOM_GAP = spacing.md;
+
+/**
+ * How far left the finger holding the mic must travel to throw the take
+ * away. Far enough that a wobble while holding cannot reach it.
+ */
+const RECORD_CANCEL_DISTANCE = 100;
 
 // ─── Recording Indicators ───────────────────────────────
 // Both are purely decorative and hold no recording state, so they cannot
@@ -837,6 +843,54 @@ export const ChatScreen: React.FC<{ navigation: any; route: any }> = ({ navigati
   const micPressActiveRef = useRef(false);          // mic button currently held
   const startTaskRef = useRef<Promise<void> | null>(null); // in-flight startRecording
   const isRecordingActiveRef = useRef(false);       // native session actually capturing
+
+  // The mic is held, not tapped: the finger going down starts capture,
+  // lifting it sends, and sliding it left past RECORD_CANCEL_DISTANCE throws
+  // the take away. A pan responder replaces press handling because a press
+  // ended (and sent the clip) as soon as the finger drifted off the button,
+  // which also left the cancel button unreachable while holding.
+  // The responder is created once; it reaches the current handlers (which
+  // close over the current state) through this ref.
+  const recordHandlersRef = useRef<{
+    start: () => Promise<void>;
+    stop: () => Promise<void>;
+    cancel: () => Promise<void>;
+    disabled: boolean;
+  }>({ start: async () => {}, stop: async () => {}, cancel: async () => {}, disabled: false });
+  const recordCancelledRef = useRef(false);         // this hold slid left past the threshold
+  // Finger travel while holding, for the "slide to cancel" hint
+  const recordSlideX = useRef(new Animated.Value(0)).current;
+  const micPanResponder = useRef(
+    PanResponder.create({
+      onStartShouldSetPanResponder: () => !recordHandlersRef.current.disabled,
+      // Nothing takes the touch away while the mic is held
+      onPanResponderTerminationRequest: () => false,
+      onPanResponderGrant: () => {
+        recordCancelledRef.current = false;
+        recordSlideX.setValue(0);
+        recordHandlersRef.current.start().catch(() => {});
+      },
+      onPanResponderMove: (_, g) => {
+        if (recordCancelledRef.current) return;
+        recordSlideX.setValue(Math.min(0, g.dx));
+        if (g.dx <= -RECORD_CANCEL_DISTANCE) {
+          recordCancelledRef.current = true;
+          recordSlideX.setValue(0);
+          recordHandlersRef.current.cancel().catch(() => {});
+        }
+      },
+      onPanResponderRelease: () => {
+        recordSlideX.setValue(0);
+        if (!recordCancelledRef.current) recordHandlersRef.current.stop().catch(() => {});
+      },
+      // The system took the touch (a call, the app sent to the background):
+      // treated as a release, as the press handling did
+      onPanResponderTerminate: () => {
+        recordSlideX.setValue(0);
+        if (!recordCancelledRef.current) recordHandlersRef.current.stop().catch(() => {});
+      },
+    }),
+  ).current;
 
   const partnerName = pName || 'Stranger';
 
@@ -1681,6 +1735,14 @@ export const ChatScreen: React.FC<{ navigation: any; route: any }> = ({ navigati
     setRecordingDuration(0);
   };
 
+  // The mic's pan responder calls whichever handlers this render produced
+  recordHandlersRef.current = {
+    start: startRecording,
+    stop: stopRecording,
+    cancel: cancelRecording,
+    disabled: sending,
+  };
+
   // ─── Audio Playback ────────────────────────────────
   // Players from createAudioPlayer must be remove()d to free the native
   // instance (per expo-audio docs) — pause() alone leaks it
@@ -2090,7 +2152,22 @@ export const ChatScreen: React.FC<{ navigation: any; route: any }> = ({ navigati
 
               <View style={styles.recordingCenter}>
                 <RecordingWaveform />
-                <Text style={styles.recordingHint}>Release to send</Text>
+                <Animated.View
+                  style={[
+                    styles.recordingSlideHint,
+                    {
+                      transform: [{ translateX: recordSlideX }],
+                      opacity: recordSlideX.interpolate({
+                        inputRange: [-RECORD_CANCEL_DISTANCE, 0],
+                        outputRange: [0.15, 1],
+                        extrapolate: 'clamp',
+                      }),
+                    },
+                  ]}
+                >
+                  <Ionicons name="chevron-back" size={12} color={colors.textMuted} />
+                  <Text style={styles.recordingHint}>Slide to cancel</Text>
+                </Animated.View>
               </View>
 
               <View style={styles.recordingIndicator}>
@@ -2177,18 +2254,19 @@ export const ChatScreen: React.FC<{ navigation: any; route: any }> = ({ navigati
                 <Ionicons name="send" size={20} color={colors.textInverse} />
               </TouchableOpacity>
             ) : (
-              <TouchableOpacity
+              <View
+                {...micPanResponder.panHandlers}
                 style={[styles.micBtn, isRecording && styles.micBtnActive]}
-                onPressIn={startRecording}
-                onPressOut={stopRecording}
-                disabled={sending}
+                accessible
+                accessibilityRole="button"
+                accessibilityLabel="Hold to record a voice message, slide left to cancel"
               >
                 <Ionicons
                   name="mic"
                   size={22}
                   color={isRecording ? colors.textInverse : colors.textSecondary}
                 />
-              </TouchableOpacity>
+              </View>
             )}
           </View>
         </KeyboardAvoidingView>
@@ -2857,6 +2935,8 @@ const styles = StyleSheet.create({
     textAlign: 'right',
   },
   recordingHint: { ...typography.caption, color: colors.textMuted },
+  // Follows the finger left while the mic is held
+  recordingSlideHint: { flexDirection: 'row', alignItems: 'center', gap: 2 },
   recordingCancelBtn: {
     width: 34,
     height: 34,
