@@ -16,8 +16,9 @@
  * - Gradle is started with java -jar gradle-wrapper.jar rather than
  *   gradlew.bat, so the passwords are passed as exact arguments and never
  *   parsed by cmd.
- * - Two workers, no parallel projects: more makes clang run out of memory on
- *   a 16 GB machine.
+ * - Two workers, no parallel projects, and ninja capped at 4 compiles per
+ *   native build (scripts/limit-native-jobs.init.gradle): more makes clang
+ *   run out of memory on a 16 GB machine during a cold native compile.
  *
  * Usage (from packages/mobile):
  *   node scripts/build-play-aab.js            offline, all four ABIs
@@ -93,6 +94,8 @@ const result = spawnSync(
     '-jar',
     path.join(androidDir, 'gradle', 'wrapper', 'gradle-wrapper.jar'),
     ':app:bundleRelease',
+    '--init-script',
+    path.join(__dirname, 'limit-native-jobs.init.gradle'),
     ...(online ? [] : ['--offline']),
     '--no-daemon',
     '-Dorg.gradle.workers.max=2',

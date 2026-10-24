@@ -1,0 +1,23 @@
+// Gradle init script used by scripts/build-play-aab.js.
+//
+// ninja compiles native code with one clang per core (22 on this machine),
+// and a cold compile of the Fabric codegen exhausts 16 GB of memory:
+// "clang++: Not enough memory resources are available". Gradle's worker
+// limit does not reach ninja, so cap it where CMake generates the build:
+// at most 4 compiles and 1 link at a time per native build.
+def pools = [
+    '-DCMAKE_JOB_POOLS=compile=4;link=1',
+    '-DCMAKE_JOB_POOL_COMPILE=compile',
+    '-DCMAKE_JOB_POOL_LINK=link',
+]
+
+allprojects {
+    ['com.android.application', 'com.android.library'].each { id ->
+        plugins.withId(id) {
+            def android = project.extensions.findByName('android')
+            if (android != null) {
+                android.defaultConfig.externalNativeBuild.cmake.arguments.addAll(pools)
+            }
+        }
+    }
+}
