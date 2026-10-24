@@ -1,4 +1,5 @@
 import React, { useEffect, useRef } from 'react';
+import { AppState } from 'react-native';
 import { useNavigation } from '@react-navigation/native';
 import { getNotificationsModule } from '../services/notifications';
 import { useNotificationStore } from '../store/notificationStore';
@@ -60,15 +61,14 @@ export function useNotifications() {
       if (!Notifications || cancelled) return;
 
       try {
-        // Configure how the app handles incoming notifications. A message
-        // for the chat that is open right now is already on screen: no banner.
+        // A push is for an app that is not on screen. In the foreground the
+        // sockets already update the badges and whatever screen is open, so
+        // nothing is shown and no sound plays; closed or in the background,
+        // the phone shows it as usual. (Expo runs this handler only for a
+        // foregrounded app; the state is checked rather than assumed.)
         Notifications.setNotificationHandler({
-          handleNotification: async (notification) => {
-            const data = notification.request.content.data as Record<string, unknown> | undefined;
-            const onScreen =
-              data?.type === 'new.message' &&
-              typeof data.matchId === 'string' &&
-              data.matchId === useAuthStore.getState().openChatMatchId;
+          handleNotification: async () => {
+            const onScreen = AppState.currentState === 'active';
             return {
               shouldShowAlert: !onScreen,
               shouldPlaySound: !onScreen,
