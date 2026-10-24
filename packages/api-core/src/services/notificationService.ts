@@ -28,6 +28,15 @@ export async function registerPushToken(
     return;
   }
 
+  // The token is the device. If another account registered it earlier (a
+  // shared or re-sold phone), that account must not keep receiving this
+  // device's pushes.
+  await query(
+    `UPDATE ${TABLES.PUSH_TOKENS} SET is_active = FALSE, updated_at = NOW()
+     WHERE token = $1 AND user_id <> $2 AND is_active = TRUE`,
+    [token, userId],
+  );
+
   // Upsert: insert if not exists, or reactivate if soft-deleted
   await query(
     `INSERT INTO ${TABLES.PUSH_TOKENS} (user_id, token, platform, is_active)
@@ -68,6 +77,8 @@ export interface NotificationPayload {
   priority?: 'default' | 'normal' | 'high';
   sound?: 'default' | null;
   badge?: number;
+  /** Android notification channel the app created ('default' or 'messages') */
+  channelId?: string;
 }
 
 /**
@@ -137,6 +148,7 @@ async function sendToTokens(
       data: payload.data ?? {},
       priority: payload.priority ?? 'high',
       badge: payload.badge,
+      channelId: payload.channelId,
     }));
 
   if (messages.length === 0) return;
@@ -174,12 +186,49 @@ async function sendToTokens(
  * Meant to be called from Kafka consumers or directly from route handlers.
  */
 export const notificationEvents = {
-  async newMessage(userId: string, senderName: string, messagePreview: string): Promise<void> {
+  /**
+   * A message the recipient has not seen. While only one chat has unread
+   * messages the push names the sender and shows the text, and a tap opens
+   * that chat. Once a second chat has unread messages too, the push says
+   * how many are waiting and a tap opens the chat list: the phone would
+   * otherwise pile up one banner per message from several people.
+   */
+  async newMessage(
+    userId: string,
+    senderName: string,
+    messagePreview: string,
+    chat?: { matchId: string; partnerId: string },
+  ): Promise<void> {
+    let unread = 0;
+    let chats = 0;
+    try {
+      const result = await query<{ unread: number; chats: number }>(
+        `SELECT COUNT(*)::int AS unread, COUNT(DISTINCT msg.match_id)::int AS chats
+         FROM ${TABLES.MESSAGES} msg
+         JOIN ${TABLES.MATCHES} m ON m.id = msg.match_id
+         WHERE m.is_active = TRUE
+           AND (m.user_a_id = $1 OR m.user_b_id = $1)
+           AND msg.sender_id <> $1
+           AND msg.read_at IS NULL`,
+        [userId],
+      );
+      unread = result.rows[0]?.unread ?? 0;
+      chats = result.rows[0]?.chats ?? 0;
+    } catch (error) {
+      // The count only shapes the text; the push itself still goes out
+      console.warn('[notifications] Could not count unread messages:', (error as Error)?.message);
+    }
+
+    const grouped = chats > 1;
     await sendPushNotification(userId, 'new.message', {
-      title: senderName,
-      body: messagePreview,
-      data: { type: 'new.message', screen: 'Chat' },
+      title: grouped ? 'Kinetik' : senderName,
+      body: grouped ? `${unread} unread messages` : messagePreview,
+      data: grouped || !chat
+        ? { type: 'new.message', screen: 'ChatList' }
+        : { type: 'new.message', screen: 'Chat', matchId: chat.matchId, partnerId: chat.partnerId, partnerName: senderName },
       sound: 'default',
+      badge: unread > 0 ? unread : undefined,
+      channelId: 'messages',
     });
   },
 
@@ -191,6 +240,7 @@ export const notificationEvents = {
         ? `${likerName} liked your profile! See who likes you.`
         : 'Someone liked your profile! Upgrade to Premium to see who.',
       data: { type: 'new.like', screen: 'Likes' },
+      channelId: 'default',
     });
   },
 };

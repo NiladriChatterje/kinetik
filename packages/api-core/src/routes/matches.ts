@@ -619,7 +619,9 @@ export async function matchRoutes(app: FastifyInstance) {
             });
 
             // Send new message notification instead of match notification
-            notificationEvents.newMessage(targetUserId, swiperName, 'You have a new match! Say hi').catch(() => {});
+            notificationEvents
+              .newMessage(targetUserId, swiperName, 'You have a new match! Say hi', { matchId: match.id, partnerId: userId })
+              .catch(() => {});
           }
 
           return reply.status(201).send({
@@ -1023,8 +1025,8 @@ export async function matchRoutes(app: FastifyInstance) {
       });
 
       // Notify both users via new message notification
-      await notificationEvents.newMessage(userId, partnerName, 'You have a new match! Say hi');
-      await notificationEvents.newMessage(targetUserId, responderName, 'You have a new match! Say hi');
+      await notificationEvents.newMessage(userId, partnerName, 'You have a new match! Say hi', { matchId: match.id, partnerId: targetUserId });
+      await notificationEvents.newMessage(targetUserId, responderName, 'You have a new match! Say hi', { matchId: match.id, partnerId: userId });
     }
 
     return reply.status(201).send({
@@ -1471,7 +1473,7 @@ export async function matchRoutes(app: FastifyInstance) {
       ? LOCKED_MESSAGE_PREVIEW
       : plainContent.length > 80 ? plainContent.slice(0, 80) + '…' : plainContent;
 
-    notificationEvents.newMessage(partnerId, senderName, preview).catch(() => {});
+    notificationEvents.newMessage(partnerId, senderName, preview, { matchId, partnerId: userId }).catch(() => {});
 
     return reply.status(201).send({
       success: true,
@@ -1648,7 +1650,7 @@ export async function matchRoutes(app: FastifyInstance) {
       ? LOCKED_MESSAGE_PREVIEW
       : mediaType === 'image' ? 'Sent a photo' : `Sent ${mediaType}`;
 
-    notificationEvents.newMessage(partnerId, senderName, preview).catch(() => {});
+    notificationEvents.newMessage(partnerId, senderName, preview, { matchId, partnerId: userId }).catch(() => {});
 
     return reply.status(201).send({
       success: true,
