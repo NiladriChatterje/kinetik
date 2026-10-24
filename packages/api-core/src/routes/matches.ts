@@ -60,6 +60,43 @@ const FREE_VISIBLE_LIKES = 5;
  */
 const REJECT_COOLDOWN_DAYS = 7;
 
+/**
+ * Who the viewer ($1) cannot swipe on, for the deck and Explore alike:
+ * people they are chatting with (an active match), people with a like
+ * waiting on them (those are answered from the Likes list, where a like-back
+ * makes the match; one the viewer discarded stays out for the cooldown),
+ * people the viewer has a pending like on (they come back only if that like
+ * is rejected), people the viewer passed on for the cooldown, and blocks
+ * either way. Someone who passed on the viewer stays visible: they can still
+ * be liked, and a like-back from their Likes list makes the match.
+ */
+const NOT_SWIPEABLE_SQL = `
+  SELECT user_b_id FROM ${TABLES.MATCHES} WHERE user_a_id = $1 AND is_active = TRUE
+  UNION
+  SELECT user_a_id FROM ${TABLES.MATCHES} WHERE user_b_id = $1 AND is_active = TRUE
+  UNION
+  -- Incoming like: a pending one is answered from the Likes list,
+  -- not here; one the viewer discarded stays out for the cooldown
+  SELECT actor_id FROM ${TABLES.USER_INTERACTIONS}
+  WHERE target_id = $1 AND action IN ('like', 'super_like') AND is_mutual = FALSE
+    AND (responded_at IS NULL
+         OR responded_at > NOW() - INTERVAL '${REJECT_COOLDOWN_DAYS} days')
+  UNION
+  -- Pending outgoing like: the viewer already liked them; they come
+  -- back only if that like is rejected (responded_at set, no match).
+  -- A pass keeps them out for the cooldown.
+  SELECT target_id FROM ${TABLES.USER_INTERACTIONS}
+  WHERE actor_id = $1 AND is_mutual = FALSE
+    AND ((action IN ('like', 'super_like') AND responded_at IS NULL)
+         OR (action = 'pass'
+             AND created_at > NOW() - INTERVAL '${REJECT_COOLDOWN_DAYS} days'))
+  UNION
+  -- Blocked either way (routes/safety.ts)
+  SELECT blocked_id FROM ${TABLES.USER_BLOCKS} WHERE blocker_id = $1
+  UNION
+  SELECT blocker_id FROM ${TABLES.USER_BLOCKS} WHERE blocked_id = $1
+`;
+
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 /**
@@ -196,11 +233,12 @@ export async function matchRoutes(app: FastifyInstance) {
   });
 
   // ─── Get Swipe Profiles ──────────────────────────────
-  // Two modes, same response shape:
-  //  - default (swipe deck): 20 random profiles the user hasn't interacted with
-  //  - ?scope=explore&offset=N&limit=M: paginated browse over EVERYONE eligible
-  //    (only active matches are excluded), deterministic newest-first ordering —
-  //    a cheap indexed OFFSET/LIMIT query, no ORDER BY RANDOM(). Adds hasMore.
+  // Two modes, same response shape, the same people (NOT_SWIPEABLE_SQL):
+  //  - default (swipe deck): 20 profiles within the distance preference,
+  //    nearest first (a random draw when the viewer has no location)
+  //  - ?scope=explore&offset=N&limit=M: paginated browse with no distance
+  //    cut-off, deterministic ordering — a cheap indexed OFFSET/LIMIT query,
+  //    no ORDER BY RANDOM(). Adds hasMore.
   app.get('/profiles', async (request: FastifyRequest, reply: FastifyReply) => {
     const { sub: userId } = request.user as any;
     const q = request.query as { scope?: string; offset?: string; limit?: string };
@@ -275,7 +313,7 @@ export async function matchRoutes(app: FastifyInstance) {
       : '';
     const swipeOrderBy = hasOrigin ? 'ORDER BY distance_km ASC, RANDOM()' : 'ORDER BY RANDOM()';
 
-    // Get profiles excluding already-interacted users and self
+    // The swipe deck: everyone swipeable, minus the distance cut-off
     const selectAndWhere = `
       SELECT
         u.id,
@@ -300,32 +338,12 @@ export async function matchRoutes(app: FastifyInstance) {
         AND u.date_of_birth <= $3
         ${genderFilter}
         ${swipeDistanceWhere}
-        AND u.id NOT IN (
-          SELECT target_id FROM ${TABLES.USER_INTERACTIONS} WHERE actor_id = $1
-          UNION
-          SELECT actor_id FROM ${TABLES.USER_INTERACTIONS} WHERE target_id = $1
-          UNION
-          -- Active matches are the source of truth for "already matched" —
-          -- covers matches however they were created
-          SELECT user_b_id FROM ${TABLES.MATCHES} WHERE user_a_id = $1 AND is_active = TRUE
-          UNION
-          SELECT user_a_id FROM ${TABLES.MATCHES} WHERE user_b_id = $1 AND is_active = TRUE
-          UNION
-          -- Blocked either way (routes/safety.ts)
-          SELECT blocked_id FROM ${TABLES.USER_BLOCKS} WHERE blocker_id = $1
-          UNION
-          SELECT blocker_id FROM ${TABLES.USER_BLOCKS} WHERE blocked_id = $1
-        )
+        AND u.id NOT IN (${NOT_SWIPEABLE_SQL})
       ${swipeOrderBy}
       LIMIT 20
     `;
 
-    // Explore mode: paginated browse over everyone eligible. Active matches
-    // (people you're already chatting with) and people with a pending like
-    // on you are excluded — the latter belong to the Likes list, where a
-    // like-back makes the match — and so are people you have a pending like
-    // on, until they reject it. People you rejected (passed on, or whose like
-    // you discarded) stay out for REJECT_COOLDOWN_DAYS, then come back.
+    // Explore mode: paginated browse over everyone swipeable
     let profilesResult;
     let hasMore = false;
     if (isExplore) {
@@ -342,32 +360,7 @@ export async function matchRoutes(app: FastifyInstance) {
           AND u.date_of_birth >= $2
           AND u.date_of_birth <= $3
           ${genderFilter}
-          AND u.id NOT IN (
-            SELECT user_b_id FROM ${TABLES.MATCHES} WHERE user_a_id = $1 AND is_active = TRUE
-            UNION
-            SELECT user_a_id FROM ${TABLES.MATCHES} WHERE user_b_id = $1 AND is_active = TRUE
-            UNION
-            -- Incoming like: a pending one is answered from the Likes list,
-            -- not here; one the viewer discarded stays out for the cooldown
-            SELECT actor_id FROM ${TABLES.USER_INTERACTIONS}
-            WHERE target_id = $1 AND action IN ('like', 'super_like') AND is_mutual = FALSE
-              AND (responded_at IS NULL
-                   OR responded_at > NOW() - INTERVAL '${REJECT_COOLDOWN_DAYS} days')
-            UNION
-            -- Pending outgoing like: the viewer already liked them; they come
-            -- back only if that like is rejected (responded_at set, no match).
-            -- A pass keeps them out for the cooldown.
-            SELECT target_id FROM ${TABLES.USER_INTERACTIONS}
-            WHERE actor_id = $1 AND is_mutual = FALSE
-              AND ((action IN ('like', 'super_like') AND responded_at IS NULL)
-                   OR (action = 'pass'
-                       AND created_at > NOW() - INTERVAL '${REJECT_COOLDOWN_DAYS} days'))
-            UNION
-            -- Blocked either way (routes/safety.ts)
-            SELECT blocked_id FROM ${TABLES.USER_BLOCKS} WHERE blocker_id = $1
-            UNION
-            SELECT blocker_id FROM ${TABLES.USER_BLOCKS} WHERE blocked_id = $1
-          )
+          AND u.id NOT IN (${NOT_SWIPEABLE_SQL})
         -- Explore browses everyone (no distance cut-off) but nearest first
         -- when the viewer has an origin; profiles without a location go last.
         ORDER BY ${hasOrigin ? 'distance_km ASC NULLS LAST, ' : ''}u.created_at DESC, u.id
