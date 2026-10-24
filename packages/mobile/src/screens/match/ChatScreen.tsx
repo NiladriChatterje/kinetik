@@ -653,13 +653,11 @@ export const ChatScreen: React.FC<{ navigation: any; route: any }> = ({ navigati
   const loadingOlderRef = useRef(false);
   const messagesRef = useRef<Message[]>([]);
   messagesRef.current = messages;
-  // The list scrolls to the end whenever its content changes (new message,
-  // first load). While an older page is being prepended that must not
-  // happen, or the view would jump away from what the user is reading.
-  const suppressAutoScrollRef = useRef(false);
-  // Until the first load has scrolled to the end, the list sits at offset 0
-  // and must not be mistaken for the user scrolling up.
-  const initialScrollDoneRef = useRef(false);
+  // The list is inverted: it renders newest first, from the bottom up, so
+  // it opens on the latest message with nothing to scroll, a new message
+  // lands at offset 0, and older pages append at the far end without
+  // moving what is on screen.
+  const newestFirst = useMemo(() => [...messages].reverse(), [messages]);
   const [inputText, setInputText] = useState('');
   const [loading, setLoading] = useState(true);
   // Whether this chat is locked (free account: chat is Premium only).
@@ -981,7 +979,6 @@ export const ChatScreen: React.FC<{ navigation: any; route: any }> = ({ navigati
     const oldest = messagesRef.current.find((m) => !m.id.startsWith('temp-') && m.matchId === matchId);
     if (!oldest) return;
     loadingOlderRef.current = true;
-    suppressAutoScrollRef.current = true;
     setLoadingOlder(true);
     try {
       const res = await api.getMessages(matchId, oldest.id);
@@ -1219,13 +1216,6 @@ export const ChatScreen: React.FC<{ navigation: any; route: any }> = ({ navigati
     syncPlanner();
   }, [syncPlanner]);
 
-  // ─── Scroll to bottom on new messages ──────────────
-  useEffect(() => {
-    if (messages.length > 0) {
-      setTimeout(() => flatListRef.current?.scrollToEnd({ animated: true }), 100);
-    }
-  }, [messages.length]);
-
   // ─── Track keyboard state for dynamic padding ──────
   // Both edges matter: with only a show listener this latched on the first
   // focus and never released, so the input bar kept the tight keyboard-open
@@ -1233,12 +1223,7 @@ export const ChatScreen: React.FC<{ navigation: any; route: any }> = ({ navigati
   useEffect(() => {
     const show = Keyboard.addListener(
       Platform.OS === 'ios' ? 'keyboardWillShow' : 'keyboardDidShow',
-      () => {
-        setKeyboardVisible(true);
-        // The list just lost the keyboard's height; keep the newest message
-        // in view (a height change alone does not trigger onContentSizeChange)
-        setTimeout(() => flatListRef.current?.scrollToEnd({ animated: true }), 50);
-      },
+      () => setKeyboardVisible(true),
     );
     const hide = Keyboard.addListener(
       Platform.OS === 'ios' ? 'keyboardWillHide' : 'keyboardDidHide',
@@ -1269,6 +1254,8 @@ export const ChatScreen: React.FC<{ navigation: any; route: any }> = ({ navigati
 
     setInputText('');
     setSending(true);
+    // Your own message always comes into view, even while reading history
+    flatListRef.current?.scrollToOffset({ offset: 0, animated: true });
 
     const tempId = `temp-${Date.now()}`;
     setMessages((prev) => [...prev, {
@@ -1345,7 +1332,8 @@ export const ChatScreen: React.FC<{ navigation: any; route: any }> = ({ navigati
         ? 'Sent a photo'
         : `Sent ${mediaType}`;
 
-    // Optimistically add a temp message
+    // Optimistically add a temp message, and bring it into view
+    flatListRef.current?.scrollToOffset({ offset: 0, animated: true });
     setMessages((prev) => [...prev, {
       id: tempId,
       matchId,
@@ -2059,34 +2047,23 @@ export const ChatScreen: React.FC<{ navigation: any; route: any }> = ({ navigati
           ) : (
             <FlatList
               ref={flatListRef}
-              data={messages}
+              data={newestFirst}
+              // Not while empty, or the empty state renders upside down
+              inverted={messages.length > 0}
               keyExtractor={(item) => item.id}
               renderItem={renderMessage}
               contentContainerStyle={styles.messagesList}
               showsVerticalScrollIndicator={false}
-              removeClippedSubviews
               maxToRenderPerBatch={12}
               windowSize={9}
               initialNumToRender={15}
-              onContentSizeChange={() => {
-                if (suppressAutoScrollRef.current) {
-                  // Older page prepended (or its spinner shown/hidden): hold
-                  // the view. Release once the fetch is over and rendered.
-                  if (!loadingOlderRef.current) suppressAutoScrollRef.current = false;
-                  return;
-                }
-                if (messages.length > 0) initialScrollDoneRef.current = true;
-                flatListRef.current?.scrollToEnd({ animated: false });
-              }}
-              // Keep what the user is reading in place while older rows are
-              // inserted above it.
-              maintainVisibleContentPosition={{ minIndexForVisible: 0 }}
-              onScroll={(e) => {
-                if (!initialScrollDoneRef.current || !hasMoreHistory) return;
-                if (e.nativeEvent.contentOffset.y < 120) loadOlderMessages();
-              }}
-              scrollEventThrottle={100}
-              ListHeaderComponent={
+              // At the bottom, a new message scrolls into view; a reader
+              // further up keeps their place
+              maintainVisibleContentPosition={{ minIndexForVisible: 0, autoscrollToTopThreshold: 80 }}
+              // The far end of an inverted list is the oldest message
+              onEndReached={hasMoreHistory ? loadOlderMessages : undefined}
+              onEndReachedThreshold={0.5}
+              ListFooterComponent={
                 loadingOlder ? (
                   <ActivityIndicator size="small" color={colors.textMuted} style={styles.olderSpinner} />
                 ) : null
@@ -2753,7 +2730,8 @@ const styles = StyleSheet.create({
   },
   chatArea: { flex: 1 },
   centered: { flex: 1, justifyContent: 'center', alignItems: 'center' },
-  messagesList: { padding: spacing.lg, paddingBottom: spacing.md },
+  // Inverted list: paddingTop is the gap above the input bar, paddingBottom the top of the chat
+  messagesList: { paddingHorizontal: spacing.lg, paddingTop: spacing.md, paddingBottom: spacing.lg },
   olderSpinner: { paddingVertical: spacing.md },
   messageRow: {
     width: '100%',
