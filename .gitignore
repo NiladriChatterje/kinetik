@@ -49,3 +49,8 @@ packages/mobile/android/app/src/main/assets/ggml-hexagon/
 packages/mobile/credentials.json
 packages/mobile/credentials/
 *.jks
+
+# Firebase (push notifications): the Android app config and the service-account
+# key for FCM V1 are per-project secrets, downloaded from the Firebase console.
+packages/mobile/google-services.json
+packages/mobile/firebase-service-account*.json

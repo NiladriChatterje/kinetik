@@ -69,10 +69,10 @@ export const useNotificationStore = create<NotificationState>((set, get) => ({
           '[notifications] Running in Expo Go — push notifications require a development build. ' +
             'Local notifications will still work.'
         );
-      } else if (Notifications) {
-        // Register for push notifications (only in dev builds / production)
-        await get().registerForPushNotifications();
       }
+      // The push token is registered by useNotifications once the user is
+      // signed in (and again on every sign-in): the server stores it per
+      // account, and this runs before any account exists.
 
       // Load preferences from backend
       await get().refreshPreferences();

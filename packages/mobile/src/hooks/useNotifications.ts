@@ -1,6 +1,28 @@
 import React, { useEffect, useRef } from 'react';
+import { useNavigation } from '@react-navigation/native';
 import { getNotificationsModule } from '../services/notifications';
 import { useNotificationStore } from '../store/notificationStore';
+import { useAuthStore } from '../store/authStore';
+
+/**
+ * Where a push leads. The server sends `screen` and, for one chat, the
+ * match: a single unread chat opens that chat, several unread chats open
+ * the list, a like opens Likes.
+ */
+function openFromNotification(navigation: any, data: Record<string, unknown> | undefined): void {
+  if (!data || !useAuthStore.getState().isAuthenticated) return;
+  if (data.screen === 'Chat' && typeof data.matchId === 'string') {
+    navigation.navigate('Chat', {
+      matchId: data.matchId,
+      partnerName: typeof data.partnerName === 'string' ? data.partnerName : 'Chat',
+      partnerId: typeof data.partnerId === 'string' ? data.partnerId : undefined,
+    });
+  } else if (data.screen === 'ChatList') {
+    navigation.navigate('ChatList');
+  } else if (data.screen === 'Likes') {
+    navigation.navigate('Likes');
+  }
+}
 
 type SubscriptionRef = { remove: () => void } | null;
 
@@ -20,6 +42,15 @@ export function useNotifications() {
 
   const initialize = useNotificationStore((s) => s.initialize);
   const setLastNotification = useNotificationStore((s) => s.setLastNotification);
+  const registerForPush = useNotificationStore((s) => s.registerForPushNotifications);
+  const isAuthenticated = useAuthStore((s) => s.isAuthenticated);
+  const userId = useAuthStore((s) => s.user?.id);
+
+  // The token is stored per account on the server, so register it for each
+  // signed-in account, not once at launch before anyone has signed in
+  useEffect(() => {
+    if (isAuthenticated && userId) registerForPush();
+  }, [isAuthenticated, userId, registerForPush]);
 
   useEffect(() => {
     let cancelled = false;
@@ -29,15 +60,23 @@ export function useNotifications() {
       if (!Notifications || cancelled) return;
 
       try {
-        // Configure how the app handles incoming notifications
+        // Configure how the app handles incoming notifications. A message
+        // for the chat that is open right now is already on screen: no banner.
         Notifications.setNotificationHandler({
-          handleNotification: async () => ({
-            shouldShowAlert: true,
-            shouldPlaySound: true,
-            shouldSetBadge: true,
-            shouldShowBanner: true,
-            shouldShowList: true,
-          }),
+          handleNotification: async (notification) => {
+            const data = notification.request.content.data as Record<string, unknown> | undefined;
+            const onScreen =
+              data?.type === 'new.message' &&
+              typeof data.matchId === 'string' &&
+              data.matchId === useAuthStore.getState().openChatMatchId;
+            return {
+              shouldShowAlert: !onScreen,
+              shouldPlaySound: !onScreen,
+              shouldSetBadge: true,
+              shouldShowBanner: !onScreen,
+              shouldShowList: !onScreen,
+            };
+          },
         });
 
         // Initialize the notification system
@@ -69,6 +108,7 @@ export function useNotifications() {
 export function NotificationHandler(): React.ReactElement | null {
   const responseListenerRef = useRef<SubscriptionRef>(null);
   const setLastNotificationResponse = useNotificationStore((s) => s.setLastNotificationResponse);
+  const navigation = useNavigation<any>();
 
   useEffect(() => {
     let cancelled = false;
@@ -84,11 +124,16 @@ export function NotificationHandler(): React.ReactElement | null {
             const { notification } = response;
             console.log('[notifications] Tapped:', notification.request.identifier);
             setLastNotificationResponse(response);
-
-            // Navigation is handled by deep linking / navigation ref
-            // We store the response data for the navigation layer to consume
+            openFromNotification(navigation, notification.request.content.data as Record<string, unknown>);
           },
         );
+
+        // A tap that launched the app from cold: the listener above was not
+        // yet attached when it happened
+        const launched = await Notifications.getLastNotificationResponseAsync();
+        if (launched && !cancelled) {
+          openFromNotification(navigation, launched.notification.request.content.data as Record<string, unknown>);
+        }
       } catch (error) {
         console.warn('[notifications] Response listener setup failed:', error);
       }
