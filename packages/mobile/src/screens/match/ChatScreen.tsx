@@ -2,7 +2,7 @@ import React, { useState, useEffect, useLayoutEffect, useRef, useCallback, useMe
 import {
   View, Text, StyleSheet, FlatList, TextInput, TouchableOpacity,
   Image, KeyboardAvoidingView, Platform, Keyboard, ActivityIndicator,
-  Modal, Alert, Dimensions, Linking,
+  Modal, Alert, Dimensions, Linking, Pressable, Clipboard,
   StatusBar, Animated, ScrollView, Easing, PanResponder,
 } from 'react-native';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -22,7 +22,10 @@ import { useAuthStore } from '../../store/authStore';
 import { useToast } from '../../hooks/useToast';
 import { LockedChatView } from '../../components/chat/LockedChatView';
 import { LinkText } from '../../components/chat/LinkText';
+import { LinkChooser } from '../../components/chat/LinkChooser';
 import { ReportBlockSheet } from '../../components/safety/ReportBlockSheet';
+import { findLinks, openLink } from '../../utils/links';
+import { hapticImpact } from '../../utils/haptics';
 import { resolveUrl } from '../../config';
 import { colors, typography, spacing, radius } from '../../theme';
 
@@ -418,6 +421,10 @@ interface MessageRowProps {
   onPreviewPhoto: (url: string) => void;
   onToggleAudio: (messageId: string, url: string) => void;
   onRetry: (message: Message) => void;
+  /** A tap on a text with links: one opens, several ask which */
+  onOpenLinks: (urls: string[]) => void;
+  /** A long press on a text: copy it */
+  onCopyText: (text: string) => void;
 }
 
 const MessageRow = React.memo(function MessageRow({
@@ -429,6 +436,8 @@ const MessageRow = React.memo(function MessageRow({
   onPreviewPhoto,
   onToggleAudio,
   onRetry,
+  onOpenLinks,
+  onCopyText,
 }: MessageRowProps) {
   const renderMediaContent = (item: Message, isMine: boolean) => {
     if (!item.media) return null;
@@ -577,17 +586,30 @@ const MessageRow = React.memo(function MessageRow({
   const readIconColor = isMine ? colors.textInverse : colors.success;
 
   const displayContent = item.content;
-  // A failed text is tapped to send it again; the same style either way, so
-  // the bubble keeps its size
-  const Bubble: React.ElementType = item.failed ? TouchableOpacity : View;
-  const retryProps = item.failed
-    ? {
-        onPress: () => onRetry(item),
-        activeOpacity: 0.7,
-        accessibilityRole: 'button',
-        accessibilityLabel: 'Message not sent. Tap to retry',
-      }
-    : {};
+  // The links in a text message, found once per message
+  const links = useMemo(
+    () => (hasMedia || item.failed ? [] : findLinks(displayContent)),
+    [hasMedia, item.failed, displayContent],
+  );
+  // The whole bubble answers touches, the same size either way: a failed
+  // text is tapped to send it again, a text with a link is tapped to open
+  // it, and any text is held to copy it. A press on the underlined run
+  // itself is not relied on (nested text presses are unreliable on
+  // Android's new architecture). Media bubbles keep their own controls.
+  const canCopy = !hasMedia && displayContent.trim().length > 0;
+  const onPress = item.failed
+    ? () => onRetry(item)
+    : links.length > 0
+      ? () => onOpenLinks(links)
+      : undefined;
+  const onLongPress = canCopy ? () => onCopyText(displayContent) : undefined;
+  const bubbleLabel = item.failed
+    ? 'Message not sent. Tap to retry'
+    : links.length > 0
+      ? 'Message with a link. Tap to open it, hold to copy the text'
+      : canCopy
+        ? 'Hold to copy the text'
+        : undefined;
 
   return (
     <View style={[styles.messageRow, isMine && styles.messageRowMine]}>
@@ -599,7 +621,18 @@ const MessageRow = React.memo(function MessageRow({
         </View>
       ) : null}
 
-      <Bubble style={[styles.messageBubble, isMine ? styles.myBubble : styles.theirBubble]} {...retryProps}>
+      <Pressable
+        style={({ pressed }) => [
+          styles.messageBubble,
+          isMine ? styles.myBubble : styles.theirBubble,
+          pressed && onPress !== undefined && styles.bubblePressed,
+        ]}
+        onPress={onPress}
+        onLongPress={onLongPress}
+        delayLongPress={400}
+        accessibilityRole={onPress || onLongPress ? 'button' : undefined}
+        accessibilityLabel={bubbleLabel}
+      >
         {/* Media attachment */}
         {hasMedia && renderMediaContent(item, isMine)}
 
@@ -631,7 +664,7 @@ const MessageRow = React.memo(function MessageRow({
             )}
           </View>
         )}
-      </Bubble>
+      </Pressable>
     </View>
   );
 });
@@ -1374,6 +1407,26 @@ export const ChatScreen: React.FC<{ navigation: any; route: any }> = ({ navigati
   };
   const handleRetry = useCallback((message: Message) => retrySendRef.current(message), []);
 
+  // ─── Links and copy in message bubbles ─────────────
+  // A message with several links asks which to open (LinkChooser)
+  const [linkChoices, setLinkChoices] = useState<string[] | null>(null);
+  const openLinkOrSay = useCallback(async (url: string) => {
+    const ok = await openLink(url);
+    if (!ok) toast.showError("Couldn't open link", 'No app on this phone can open it.');
+  }, [toast]);
+  const handleOpenLinks = useCallback((urls: string[]) => {
+    if (urls.length === 1) {
+      openLinkOrSay(urls[0]);
+    } else if (urls.length > 1) {
+      setLinkChoices(urls);
+    }
+  }, [openLinkOrSay]);
+  const handleCopyText = useCallback((text: string) => {
+    Clipboard.setString(text);
+    hapticImpact();
+    toast.showGlass('Copied', 'The message text is on your clipboard.');
+  }, [toast]);
+
   // ─── Send a media message ──────────────────────────
   const sendMedia = async (uri: string, mediaType: string, durationSecs?: number) => {
     if (sending) return;
@@ -1938,8 +1991,10 @@ export const ChatScreen: React.FC<{ navigation: any; route: any }> = ({ navigati
       onPreviewPhoto={setPreviewPhotoUrl}
       onToggleAudio={handleToggleAudio}
       onRetry={handleRetry}
+      onOpenLinks={handleOpenLinks}
+      onCopyText={handleCopyText}
     />
-  ), [myUserId, pAvatar, playingAudioId, openOneTimeView, handleToggleAudio, handleRetry]);
+  ), [myUserId, pAvatar, playingAudioId, openOneTimeView, handleToggleAudio, handleRetry, handleOpenLinks, handleCopyText]);
 
   // ─── Input bar bottom spacing ──────────────────────
   // The SafeAreaView deliberately excludes the bottom edge, so this is the
@@ -2119,6 +2174,10 @@ export const ChatScreen: React.FC<{ navigation: any; route: any }> = ({ navigati
               inverted={messages.length > 0}
               keyExtractor={(item) => item.id}
               renderItem={renderMessage}
+              // A tap on a bubble (open a link, retry) must land while the
+              // keyboard is up, not only close it; a tap on empty space
+              // still closes it
+              keyboardShouldPersistTaps="handled"
               contentContainerStyle={styles.messagesList}
               showsVerticalScrollIndicator={false}
               maxToRenderPerBatch={12}
@@ -2757,6 +2816,17 @@ export const ChatScreen: React.FC<{ navigation: any; route: any }> = ({ navigati
         </Animated.View>
       </Modal>
 
+      {/* Which of a message's links to open */}
+      <LinkChooser
+        visible={linkChoices !== null}
+        links={linkChoices ?? []}
+        onPick={(url) => {
+          setLinkChoices(null);
+          openLinkOrSay(url);
+        }}
+        onClose={() => setLinkChoices(null)}
+      />
+
       {/* Report / block — last, so it covers the whole screen */}
       {partnerId ? (
         <ReportBlockSheet
@@ -2844,6 +2914,8 @@ const styles = StyleSheet.create({
     backgroundColor: colors.surfaceHighlight,
     borderBottomLeftRadius: radius.sm,
   },
+  // While a bubble that answers a tap is held down
+  bubblePressed: { opacity: 0.7 },
   messageText: { ...typography.body2, color: colors.textPrimary, flexShrink: 1 },
   myMessageText: { color: colors.textInverse },
   notSentText: { ...typography.caption, color: 'rgba(255,255,255,0.85)' },
