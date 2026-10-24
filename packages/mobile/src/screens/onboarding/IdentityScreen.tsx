@@ -7,81 +7,19 @@ import { useToast } from '../../hooks/useToast';
 import { Input } from '../../components/common/Input';
 import { useAuthStore } from '../../store/authStore';
 import { api } from '../../services/api';
+import {
+  GENDER_OPTIONS,
+  GENDER_VALUES,
+  GenderOption,
+  DATING_CATEGORIES,
+  genderOptionFor,
+  isDatingCategoryValue,
+} from '../../components/profile/profileOptions';
+import { formatDob, validateDob, dobToIso, isoToDob } from '../../utils/dob';
 import { colors, typography, spacing, radius } from '../../theme';
 
-const GENDER_OPTIONS = ['Male', 'Female', 'Non-binary', 'Other', 'Prefer not to say'] as const;
-// What the server stores for each label (the gender_identity enum). Lowercasing
-// the label gave "non-binary" and "prefer not to say", which the server rejects.
-const GENDER_VALUES: Record<(typeof GENDER_OPTIONS)[number], string> = {
-  Male: 'male',
-  Female: 'female',
-  'Non-binary': 'non_binary',
-  Other: 'other',
-  'Prefer not to say': 'prefer_not_to_say',
-};
-const DATING_CATEGORIES = [
-  { value: 'casual', label: 'Casual', description: 'Fun dates, new connections' },
-  { value: 'serious', label: 'Serious', description: 'Looking for something real' },
-  { value: 'intimacy', label: 'Intimacy', description: 'Deep chemistry, no games' },
-] as const;
-
-/** Auto-format DOB input as DD/MM/YYYY
- *  Adds "/" the moment DD is complete (2 digits) and when MM is complete (2 more digits). */
-function formatDob(raw: string): string {
-  const digits = raw.replace(/\D/g, '').slice(0, 8);
-
-  const dd = digits.slice(0, 2);
-  const mm = digits.slice(2, 4);
-  const yyyy = digits.slice(4, 8);
-
-  let formatted = dd;
-  if (dd.length === 2) formatted += '/';
-  formatted += mm;
-  if (dd.length === 2 && mm.length === 2) formatted += '/';
-  formatted += yyyy;
-
-  return formatted;
-}
-
-/** Parse DD/MM/YYYY string and check age >= 18. */
-function validateDob(dob: string): { valid: boolean; error?: string } {
-  const parts = dob.split('/');
-  if (parts.length !== 3) {
-    return { valid: false, error: 'Please enter a complete date of birth (DD/MM/YYYY).' };
-  }
-
-  const day = parseInt(parts[0], 10);
-  const month = parseInt(parts[1], 10);
-  const year = parseInt(parts[2], 10);
-
-  if (isNaN(day) || isNaN(month) || isNaN(year) || year < 1900 || year > new Date().getFullYear()) {
-    return { valid: false, error: 'Please enter a valid date of birth.' };
-  }
-
-  if (month < 1 || month > 12) {
-    return { valid: false, error: 'Month must be between 01 and 12.' };
-  }
-
-  const daysInMonth = new Date(year, month, 0).getDate();
-  if (day < 1 || day > daysInMonth) {
-    return { valid: false, error: `Invalid day for month ${String(month).padStart(2, '0')}.` };
-  }
-
-  const birthDate = new Date(year, month - 1, day);
-  const today = new Date();
-
-  let age = today.getFullYear() - birthDate.getFullYear();
-  const monthDiff = today.getMonth() - birthDate.getMonth();
-  if (monthDiff < 0 || (monthDiff === 0 && today.getDate() < birthDate.getDate())) {
-    age--;
-  }
-
-  if (age < 18) {
-    return { valid: false, error: 'You must be at least 18 years old to use Kinetik.' };
-  }
-
-  return { valid: true };
-}
+// The gender and dating-category choices and the date-of-birth rules are
+// shared with Edit profile (components/profile/profileOptions, utils/dob).
 
 export const IdentityScreen: React.FC<{ navigation: any }> = ({ navigation }) => {
   const insets = useSafeAreaInsets();
@@ -102,11 +40,11 @@ export const IdentityScreen: React.FC<{ navigation: any }> = ({ navigation }) =>
     api.getProfile().then((res: any) => {
       const p = res?.success ? res.data : null;
       if (cancelled || !p) return;
-      const iso = typeof p.dateOfBirth === 'string' ? p.dateOfBirth.match(/^(\d{4})-(\d{2})-(\d{2})/) : null;
-      if (iso) setDob((prev) => prev || `${iso[3]}/${iso[2]}/${iso[1]}`);
-      const savedGender = GENDER_OPTIONS.find((g) => GENDER_VALUES[g] === p.gender);
+      const savedDob = isoToDob(p.dateOfBirth);
+      if (savedDob) setDob((prev) => prev || savedDob);
+      const savedGender = genderOptionFor(p.gender);
       if (savedGender) setGender((prev) => prev ?? savedGender);
-      if (DATING_CATEGORIES.some((c) => c.value === p.datingCategory)) {
+      if (isDatingCategoryValue(p.datingCategory)) {
         setDatingCategory((prev) => prev ?? p.datingCategory);
       }
       if (typeof p.pronouns === 'string') setPronouns((prev) => prev || p.pronouns);
@@ -150,15 +88,12 @@ export const IdentityScreen: React.FC<{ navigation: any }> = ({ navigation }) =>
       return;
     }
 
-    // Convert DD/MM/YYYY to YYYY-MM-DD for the API / PostgreSQL
-    const parts = dob.split('/');
-    const dobIso = `${parts[2]}-${parts[1]}-${parts[0]}`;
-
     setLoading(true);
     const res = await api.updateProfile({
       displayName: user?.displayName,
-      dateOfBirth: dobIso,
-      gender: GENDER_VALUES[gender as (typeof GENDER_OPTIONS)[number]],
+      // DD/MM/YYYY to the YYYY-MM-DD the API / PostgreSQL take
+      dateOfBirth: dobToIso(dob),
+      gender: GENDER_VALUES[gender as GenderOption],
       pronouns,
       datingCategory: datingCategory,
     });
