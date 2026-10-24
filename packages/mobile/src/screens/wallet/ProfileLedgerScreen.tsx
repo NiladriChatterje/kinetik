@@ -367,6 +367,17 @@ export const ProfileLedgerScreen: React.FC = () => {
               </Text>
             </View>
           )}
+          {/* Name, birth date, gender, pronouns, what they are here for, bio,
+              work, studies and the five about-you answers; photos and the
+              feed location are edited on this page */}
+          <Button
+            title="Edit profile"
+            variant="outline"
+            size="sm"
+            icon={<Ionicons name="create-outline" size={14} color={colors.textPrimary} />}
+            onPress={() => navigation.navigate('EditProfile' as never)}
+            style={styles.editButton}
+          />
         </View>
 
         {/* Photos Grid — always visible with empty slots up to MAX_PHOTOS */}
@@ -686,6 +697,7 @@ const styles = StyleSheet.create({
   locationText: { ...typography.caption, color: colors.textSecondary },
   verifiedBadge: { flexDirection: 'row', alignItems: 'center', backgroundColor: colors.surfaceHighlight, paddingHorizontal: spacing.lg, paddingVertical: spacing.xs, borderRadius: radius.full },
   verifiedText: { ...typography.caption, color: colors.textPrimary },
+  editButton: { marginTop: spacing.md },
   photosSection: { marginBottom: spacing.lg },
   sectionTitle: { ...typography.label, color: colors.textSecondary, marginBottom: spacing.sm },
   photosRow: { gap: spacing.sm },

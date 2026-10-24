@@ -90,6 +90,7 @@ import { ChatScreen } from '../screens/match/ChatScreen';
 
 // Wallet
 import { ProfileLedgerScreen } from '../screens/wallet/ProfileLedgerScreen';
+import { EditProfileScreen } from '../screens/wallet/EditProfileScreen';
 import { WelcomeScreen } from '../screens/onboarding/WelcomeScreen';
 import { PrimaryPhotoSelfieScreen } from '../screens/wallet/PrimaryPhotoSelfieScreen';
 import { SubscriptionCheckoutScreen } from '../screens/wallet/SubscriptionCheckoutScreen';
@@ -111,6 +112,8 @@ export type RootStackParamList = {
   Main: undefined;
   NotificationPreferences: undefined;
   Privacy: undefined;
+  // What the member told us at sign-up, editable from the profile page
+  EditProfile: undefined;
   LockStatus: { matchId: string; partnerName: string };
   CalendarSync: { matchId: string };
   VenueSelector: { matchId: string };
@@ -346,6 +349,7 @@ export function RootNavigator() {
         <RootStack.Screen name="ReservationLocker" component={ReservationLockerScreen} />
         <RootStack.Screen name="NotificationPreferences" component={NotificationPreferencesScreen} />
         <RootStack.Screen name="Privacy" component={PrivacyScreen} />
+        <RootStack.Screen name="EditProfile" component={EditProfileScreen} />
         <RootStack.Screen name="KYCVerify" component={KYCScreen} />
         <RootStack.Screen name="PrimaryPhotoSelfie" component={PrimaryPhotoSelfieScreen} />
         <RootStack.Screen name="SubscriptionCheckout" component={SubscriptionCheckoutScreen} />
