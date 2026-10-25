@@ -28,6 +28,10 @@ import { colors, typography, spacing, radius } from '../../theme';
  * as onboarding). A match sets the photo and keeps the Face Verified badge.
  * On a mismatch the user can retake, or proceed: the photo is still set but
  * the badge is dropped, and the profile shows Face Unverified to others.
+ *
+ * With `reverify` the photo is already primary and the profile shows Face
+ * Unverified: the same selfie check earns the badge back. A mismatch then
+ * changes nothing (retake or leave), since there is no badge to drop.
  */
 
 const { width: SCREEN_WIDTH } = Dimensions.get('window');
@@ -50,7 +54,11 @@ export const PrimaryPhotoSelfieScreen: React.FC<{ navigation: any; route: any }>
   navigation,
   route,
 }) => {
-  const { photoId, photoUrl } = route.params as { photoId: string; photoUrl: string };
+  const { photoId, photoUrl, reverify = false } = route.params as {
+    photoId: string;
+    photoUrl: string;
+    reverify?: boolean;
+  };
   const [permission, requestPermission] = useCameraPermissions();
   const [phase, setPhase] = useState<Phase>('camera');
   const [capturedUri, setCapturedUri] = useState<string | null>(null);
@@ -172,13 +180,17 @@ export const PrimaryPhotoSelfieScreen: React.FC<{ navigation: any; route: any }>
     try {
       await applyPrimary(true, confidence);
       hapticSuccess();
-      toast.showSuccess('Primary photo set', 'Your selfie matched. Face Verified.');
+      if (reverify) {
+        toast.showSuccess('Face Verified', 'Your selfie matched your main photo.');
+      } else {
+        toast.showSuccess('Primary photo set', 'Your selfie matched. Face Verified.');
+      }
       navigation.goBack();
     } catch (e: any) {
       toast.showError('Failed', e?.message || 'Try again.');
       setPhase('preview');
     }
-  }, [capturedUri, preparePhotoEmbeddings, applyPrimary, toast, navigation]);
+  }, [capturedUri, preparePhotoEmbeddings, applyPrimary, toast, navigation, reverify]);
 
   const handleProceedUnverified = useCallback(async () => {
     setProceeding(true);
@@ -198,7 +210,7 @@ export const PrimaryPhotoSelfieScreen: React.FC<{ navigation: any; route: any }>
 
   const heading = (subtitle: string) => (
     <>
-      <StepLabel label="Primary photo" onBack={goBack} backDisabled={busy} />
+      <StepLabel label={reverify ? 'Face check' : 'Primary photo'} onBack={goBack} backDisabled={busy} />
       <Text style={styles.title}>Confirm it's you</Text>
       <Text style={styles.subtitle}>{subtitle}</Text>
     </>
@@ -258,11 +270,17 @@ export const PrimaryPhotoSelfieScreen: React.FC<{ navigation: any; route: any }>
               </View>
             )}
             <Text style={styles.resultSubtitle}>
-              {checkFailed
-                ? 'Something went wrong while checking. Try again, or set this photo anyway. Your profile will then show Face Unverified.'
-                : retakeable
-                  ? 'Retake your selfie, or set this photo anyway. Your profile will then show Face Unverified.'
-                  : 'This photo has no clear face to match. You can set it anyway, and your profile will show Face Unverified.'}
+              {reverify
+                ? checkFailed
+                  ? 'Something went wrong while checking. Try again, or come back later.'
+                  : retakeable
+                    ? 'Retake your selfie to match your main photo. Your profile keeps showing Face Unverified until it matches.'
+                    : 'This photo has no clear face to match. Make a photo with a clear face your main photo first.'
+                : checkFailed
+                  ? 'Something went wrong while checking. Try again, or set this photo anyway. Your profile will then show Face Unverified.'
+                  : retakeable
+                    ? 'Retake your selfie, or set this photo anyway. Your profile will then show Face Unverified.'
+                    : 'This photo has no clear face to match. You can set it anyway, and your profile will show Face Unverified.'}
             </Text>
           </View>
 
@@ -289,14 +307,25 @@ export const PrimaryPhotoSelfieScreen: React.FC<{ navigation: any; route: any }>
               fullWidth
             />
           )}
-          <Button
-            title="Proceed Unverified"
-            variant={retakeable ? 'ghost' : 'primary'}
-            onPress={handleProceedUnverified}
-            loading={proceeding}
-            disabled={proceeding}
-            fullWidth
-          />
+          {reverify ? (
+            // Nothing to apply on a mismatch here: the photo stays primary
+            // and the profile stays Face Unverified
+            <Button
+              title="Not Now"
+              variant={retakeable ? 'ghost' : 'primary'}
+              onPress={goBack}
+              fullWidth
+            />
+          ) : (
+            <Button
+              title="Proceed Unverified"
+              variant={retakeable ? 'ghost' : 'primary'}
+              onPress={handleProceedUnverified}
+              loading={proceeding}
+              disabled={proceeding}
+              fullWidth
+            />
+          )}
         </View>
       </SafeAreaView>
     );

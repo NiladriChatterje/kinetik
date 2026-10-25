@@ -26,6 +26,14 @@ interface PhotoOptionsModalProps {
   isPrimary: boolean;
   /** Called when the user taps "Set as Primary" */
   onSetPrimary: () => void;
+  /**
+   * True while the profile shows Face Unverified: the primary photo then
+   * offers a selfie check to earn the badge back. A verified profile has
+   * nothing to redo, so the row stays hidden.
+   */
+  canVerifyFace?: boolean;
+  /** Called when the user taps "Verify Your Face" on the primary photo */
+  onVerifyFace?: () => void;
   /** Called once the user confirms the delete; the sheet waits for it, then closes */
   onDelete: () => Promise<void>;
   /**
@@ -44,6 +52,8 @@ export const PhotoOptionsModal: React.FC<PhotoOptionsModalProps> = ({
   photoUrl,
   isPrimary,
   onSetPrimary,
+  canVerifyFace = false,
+  onVerifyFace,
   onDelete,
   onClose,
   canDelete = true,
@@ -183,6 +193,38 @@ export const PhotoOptionsModal: React.FC<PhotoOptionsModalProps> = ({
 
                   {/* Options */}
                   <View style={styles.optionsSection}>
+                    {/* Verify Your Face: the primary photo, while the profile
+                        shows Face Unverified */}
+                    {isPrimary && canVerifyFace && onVerifyFace && (
+                      <TouchableOpacity
+                        style={styles.optionRow}
+                        onPress={() => {
+                          onClose();
+                          onVerifyFace();
+                        }}
+                        activeOpacity={0.6}
+                      >
+                        <View style={styles.optionIconWrap}>
+                          <Ionicons
+                            name="scan-outline"
+                            size={22}
+                            color={colors.textPrimary}
+                          />
+                        </View>
+                        <View style={styles.optionContent}>
+                          <Text style={styles.optionTitle}>Verify Your Face</Text>
+                          <Text style={styles.optionSubtitle}>
+                            Take a selfie that matches this photo to show Face Verified
+                          </Text>
+                        </View>
+                        <Ionicons
+                          name="chevron-forward"
+                          size={18}
+                          color={colors.textMuted}
+                        />
+                      </TouchableOpacity>
+                    )}
+
                     {/* Set as Primary (hidden if already primary) */}
                     {!isPrimary && (
                       <TouchableOpacity

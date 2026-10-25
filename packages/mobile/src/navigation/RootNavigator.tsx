@@ -127,8 +127,10 @@ export type RootStackParamList = {
   // A match partner's full profile, opened from the chat header
   PartnerProfile: { matchId: string; partnerId: string; partnerName: string };
   KYCVerify: undefined;
-  // Selfie check before a photo becomes the primary profile photo
-  PrimaryPhotoSelfie: { photoId: string; photoUrl: string };
+  // Selfie check before a photo becomes the primary profile photo; with
+  // reverify, the same check on the photo that already is, to earn the
+  // Face Verified badge back
+  PrimaryPhotoSelfie: { photoId: string; photoUrl: string; reverify?: boolean };
   // fromPaywall: opened from a chat, likes or swipe paywall; a completed
   // purchase goes straight back there
   SubscriptionCheckout: { fromPaywall?: boolean } | undefined;

@@ -285,6 +285,12 @@ export const ProfileLedgerScreen: React.FC = () => {
     (navigation as any).navigate('PrimaryPhotoSelfie', { photoId: photo.id, photoUrl: photo.url });
   };
 
+  // The same selfie check on the photo that is already primary, offered
+  // while the profile shows Face Unverified, to earn the badge back
+  const handleVerifyFace = (photo: ProfilePhoto) => {
+    (navigation as any).navigate('PrimaryPhotoSelfie', { photoId: photo.id, photoUrl: photo.url, reverify: true });
+  };
+
   // ─── Account Deletion ──────────────────────────────────
   // Destructive action with an explicit confirmation. The server requires
   // { confirm: true } as well, so this is double-guarded against accidents.
@@ -640,6 +646,10 @@ export const ProfileLedgerScreen: React.FC = () => {
         isPrimary={modalPhoto?.is_primary ?? false}
         onSetPrimary={() => {
           if (modalPhoto) handleSetPrimary(modalPhoto);
+        }}
+        canVerifyFace={profile !== null && !profile.isVerified}
+        onVerifyFace={() => {
+          if (modalPhoto) handleVerifyFace(modalPhoto);
         }}
         onDelete={async () => {
           if (modalPhoto) await handleDeletePhoto(modalPhoto.id);
