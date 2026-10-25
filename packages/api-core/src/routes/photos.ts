@@ -35,12 +35,18 @@ export async function photoRoutes(app: FastifyInstance) {
   app.post('/', async (request: FastifyRequest, reply: FastifyReply) => {
     const { sub: userId } = request.user as any;
 
-    // Check photo limit (max 6)
+    // Check photo limit (max 6). The next order index follows the highest in
+    // use, not the count: after a deletion the count would repeat an index.
     const countResult = await query(
-      `SELECT COUNT(*) as count FROM ${TABLES.PROFILE_PHOTOS} WHERE user_id = $1`,
+      `SELECT COUNT(*)::int AS count,
+              COALESCE(MAX(order_index), -1) + 1 AS next_index,
+              COUNT(*) FILTER (WHERE is_primary)::int AS primaries
+       FROM ${TABLES.PROFILE_PHOTOS} WHERE user_id = $1`,
       [userId],
     );
-    const currentCount = parseInt(countResult.rows[0]?.count ?? '0', 10);
+    const currentCount = Number(countResult.rows[0]?.count ?? 0);
+    const nextIndex = Number(countResult.rows[0]?.next_index ?? 0);
+    const hasPrimary = Number(countResult.rows[0]?.primaries ?? 0) > 0;
     if (currentCount >= 6) {
       return reply.status(400).send({
         success: false,
@@ -84,23 +90,15 @@ export async function photoRoutes(app: FastifyInstance) {
       });
     }
 
-    // Insert DB record
-    const orderIndex = currentCount; // 0-indexed
+    // Insert DB record. A profile with photos always has a primary one (the
+    // face everyone else sees first): the first photo becomes it, and so does
+    // a new photo whenever none is primary.
     const dbResult = await query(
-      `INSERT INTO ${TABLES.PROFILE_PHOTOS} (user_id, url, thumbnail_url, blur_hash, order_index)
-       VALUES ($1, $2, $3, $4, $5)
+      `INSERT INTO ${TABLES.PROFILE_PHOTOS} (user_id, url, thumbnail_url, blur_hash, order_index, is_primary)
+       VALUES ($1, $2, $3, $4, $5, $6)
        RETURNING id, url, thumbnail_url, blur_hash, is_primary, order_index, created_at`,
-      [userId, saved.url, saved.thumbnailUrl, saved.blurHash, orderIndex],
+      [userId, saved.url, saved.thumbnailUrl, saved.blurHash, nextIndex, !hasPrimary],
     );
-
-    // If this is the user's first photo, make it primary automatically
-    if (currentCount === 0) {
-      await query(
-        `UPDATE ${TABLES.PROFILE_PHOTOS} SET is_primary = TRUE WHERE id = $1`,
-        [dbResult.rows[0].id],
-      );
-      dbResult.rows[0].is_primary = true;
-    }
 
     return reply.status(201).send({ success: true, data: dbResult.rows[0] });
   });
@@ -112,7 +110,7 @@ export async function photoRoutes(app: FastifyInstance) {
 
     // Get photo record to know the filename
     const photoResult = await query(
-      `SELECT id, url FROM ${TABLES.PROFILE_PHOTOS} WHERE id = $1 AND user_id = $2`,
+      `SELECT id, url, is_primary FROM ${TABLES.PROFILE_PHOTOS} WHERE id = $1 AND user_id = $2`,
       [id, userId],
     );
     const photo = photoResult.rows[0];
@@ -141,8 +139,34 @@ export async function photoRoutes(app: FastifyInstance) {
       });
     }
 
+    // The primary photo is the face everyone else sees (chat list, chat
+    // header, likes, pushes), and on a finished profile it only changes
+    // after the app's selfie check (PUT /:id/primary). So it cannot be
+    // deleted while other photos remain: another photo is made primary
+    // first. During onboarding the selfie step is still ahead, so the next
+    // photo simply takes over. Either way a profile with photos is never
+    // left without a primary one, which once emptied every chat avatar.
+    const primaryOfSeveral = photo.is_primary && photoCount > 1;
+    if (primaryOfSeveral && onboardingComplete) {
+      return reply.status(400).send({
+        success: false,
+        error: {
+          code: 'PRIMARY_PHOTO',
+          message: 'This is your main photo. Make another photo your main photo first.',
+        },
+      });
+    }
+
     // Delete from DB
     await deletePhotoById(id, userId);
+    if (primaryOfSeveral) {
+      await query(
+        `UPDATE ${TABLES.PROFILE_PHOTOS} SET is_primary = TRUE
+         WHERE id = (SELECT id FROM ${TABLES.PROFILE_PHOTOS} WHERE user_id = $1
+                     ORDER BY order_index ASC, created_at ASC LIMIT 1)`,
+        [userId],
+      );
+    }
 
     // Delete from MinIO (fire-and-forget)
     // The route param `id` is already the photo's UUID — use it directly as the S3 key.

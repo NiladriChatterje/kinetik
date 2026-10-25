@@ -256,17 +256,17 @@ export async function deletePhotoById(photoId: string, userId: string) {
 }
 
 export async function setPrimaryPhoto(photoId: string, userId: string) {
-  // Remove current primary
-  await query(
-    `UPDATE ${TABLES.PROFILE_PHOTOS} SET is_primary = FALSE WHERE user_id = $1`,
-    [userId],
-  );
-  // Set new primary
+  // One statement: the chosen photo becomes primary and the others stop
+  // being, only if the photo is the user's. Clearing first and then setting
+  // left a profile with no primary at all when the id was not theirs.
   const result = await query(
-    `UPDATE ${TABLES.PROFILE_PHOTOS} SET is_primary = TRUE WHERE id = $1 AND user_id = $2 RETURNING *`,
+    `UPDATE ${TABLES.PROFILE_PHOTOS} SET is_primary = (id = $1)
+     WHERE user_id = $2
+       AND EXISTS (SELECT 1 FROM ${TABLES.PROFILE_PHOTOS} WHERE id = $1 AND user_id = $2)
+     RETURNING *`,
     [photoId, userId],
   );
-  return result.rows[0] || null;
+  return result.rows.find((row: { id: string }) => row.id === photoId) || null;
 }
 
 export async function getPhotoCount(userId: string): Promise<number> {
