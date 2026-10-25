@@ -248,7 +248,13 @@ export const ProfileLedgerScreen: React.FC = () => {
   // the same rule, so this is only the visible side of it.
   const MIN_PHOTOS = 2;
   const canDeletePhoto = photos.length > MIN_PHOTOS;
-  const deleteDisabledReason = `Keep at least ${MIN_PHOTOS} photos. Add another to delete this one.`;
+  // The primary photo is the face others see in chats and likes, and it
+  // only changes after the selfie check, so it is never deleted outright:
+  // another photo is made primary first. The server refuses it as well.
+  const PRIMARY_DELETE_REASON = 'This is your main photo. Make another photo your main photo first.';
+  const deleteDisabledReason = modalPhoto?.is_primary
+    ? PRIMARY_DELETE_REASON
+    : `Keep at least ${MIN_PHOTOS} photos. Add another to delete this one.`;
 
   // ─── Photo Handlers ──────────────────────────────────────
 
@@ -301,6 +307,10 @@ export const ProfileLedgerScreen: React.FC = () => {
 
   // Confirmed inside PhotoOptionsModal, which waits for this before closing
   const handleDeletePhoto = async (photoId: string) => {
+    if (photos.find((p) => p.id === photoId)?.is_primary) {
+      toast.showGlass('This is your main photo', 'Make another photo your main photo first.');
+      return;
+    }
     if (!canDeletePhoto) {
       toast.showGlass(`Keep at least ${MIN_PHOTOS} photos`, 'Add another photo before deleting this one.');
       return;
@@ -634,7 +644,7 @@ export const ProfileLedgerScreen: React.FC = () => {
         onDelete={async () => {
           if (modalPhoto) await handleDeletePhoto(modalPhoto.id);
         }}
-        canDelete={canDeletePhoto}
+        canDelete={canDeletePhoto && !(modalPhoto?.is_primary ?? false)}
         deleteDisabledReason={deleteDisabledReason}
         onClose={() => setModalPhoto(null)}
       />
