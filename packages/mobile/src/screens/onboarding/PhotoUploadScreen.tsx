@@ -5,6 +5,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Button } from '../../components/common/Button';
 import { StepLabel } from '../../components/common/StepLabel';
+import { useNavigationBarInset } from '../../components/common/SystemBars';
 import { useToast } from '../../hooks/useToast';
 import { compressAndUploadPhoto } from '../../services/photoService';
 import { api } from '../../services/api';
@@ -30,6 +31,8 @@ export const PhotoUploadScreen: React.FC<{ navigation: any }> = ({ navigation })
   const overlayOpacity = useRef(new Animated.Value(0)).current;
   const sheetY = useRef(new Animated.Value(1)).current;
   const contentScale = useRef(new Animated.Value(1)).current;
+  // The modal's own window runs under the Android navigation bar
+  const navBarInset = useNavigationBarInset();
 
   const { height: SCREEN_HEIGHT } = Dimensions.get('window');
 
@@ -236,7 +239,7 @@ export const PhotoUploadScreen: React.FC<{ navigation: any }> = ({ navigation })
         animationType="none"
         onRequestClose={() => closeModal()}
       >
-        <Animated.View style={[styles.modalOverlay, { opacity: overlayOpacity }]}>
+        <Animated.View style={[styles.modalOverlay, { opacity: overlayOpacity, paddingBottom: spacing.xxl + navBarInset }]}>
           <TouchableOpacity
             style={StyleSheet.absoluteFill}
             activeOpacity={1}

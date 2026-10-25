@@ -10,6 +10,7 @@ import { Button } from '../../components/common/Button';
 import { LocationPicker, LocationSelection } from '../../components/common/LocationPicker';
 import { DatingCategoryBadge, DatingCategory } from '../../components/common/DatingCategoryBadge';
 import { PhotoOptionsModal } from '../../components/profile/PhotoOptionsModal';
+import { useNavigationBarInset } from '../../components/common/SystemBars';
 import { useToast } from '../../hooks/useToast';
 import { useAuthStore } from '../../store/authStore';
 import { api } from '../../services/api';
@@ -125,6 +126,8 @@ export const ProfileLedgerScreen: React.FC = () => {
   const overlayOpacity = useRef(new Animated.Value(0)).current;
   const sheetY = useRef(new Animated.Value(1)).current;
   const contentScale = useRef(new Animated.Value(1)).current;
+  // The modal's own window runs under the Android navigation bar
+  const navBarInset = useNavigationBarInset();
   const { height: SCREEN_HEIGHT } = Dimensions.get('window');
 
   const openDeleteModal = () => {
@@ -666,7 +669,7 @@ export const ProfileLedgerScreen: React.FC = () => {
         animationType="none"
         onRequestClose={() => closeDeleteModal()}
       >
-        <Animated.View style={[styles.modalOverlay, { opacity: overlayOpacity }]}>
+        <Animated.View style={[styles.modalOverlay, { opacity: overlayOpacity, paddingBottom: spacing.xxl + navBarInset }]}>
           <TouchableOpacity
             style={StyleSheet.absoluteFill}
             activeOpacity={1}

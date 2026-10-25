@@ -9,6 +9,7 @@ import * as NavigationBar from 'expo-navigation-bar';
 import Toast from 'react-native-toast-message';
 import { IslandToast } from './components/common/IslandToast';
 import { IslandStatus } from './components/common/IslandStatus';
+import { SystemBarsFrame } from './components/common/SystemBars';
 import { RootNavigator } from './navigation/RootNavigator';
 import { useAuthStore } from './store/authStore';
 import { useNotifications } from './hooks/useNotifications';
@@ -75,11 +76,12 @@ export default function App() {
   useEffect(() => {
     initialize();
 
-    // Attempt to hide Android system navigation bar for immersive experience
+    // The Android navigation bar stays visible (SystemBarsFrame keeps the app
+    // above it); its buttons are dark on the app's light background.
     // Gracefully handled in case the native module isn't available (Expo Go)
     if (Platform.OS === 'android') {
       try {
-        NavigationBar.setVisibilityAsync('hidden');
+        NavigationBar.setStyle('dark');
       } catch {
         // Native module not available (Expo Go) — silent fallback
       }
@@ -92,7 +94,9 @@ export default function App() {
     <GestureHandlerRootView style={{ flex: 1, backgroundColor: colors.background }}>
       <SafeAreaProvider>
         <StatusBar style="dark" />
-        <RootNavigator />
+        <SystemBarsFrame>
+          <RootNavigator />
+        </SystemBarsFrame>
 
         {/* Connection status — persistent Dynamic Island pill while offline */}
         <IslandStatus

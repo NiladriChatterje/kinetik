@@ -12,6 +12,7 @@ import {
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { resolveUrl } from '../../config';
+import { useNavigationBarInset } from '../common/SystemBars';
 import { colors, typography, spacing, radius } from '../../theme';
 
 const SHEET_HEIGHT = 340;
@@ -61,6 +62,8 @@ export const PhotoOptionsModal: React.FC<PhotoOptionsModalProps> = ({
 }) => {
   const slideAnim = useRef(new Animated.Value(SHEET_HEIGHT)).current;
   const fadeAnim = useRef(new Animated.Value(0)).current;
+  // The modal's own window runs under the Android navigation bar
+  const navBarInset = useNavigationBarInset();
   // Delete asks for confirmation inside this sheet rather than a system alert
   const [confirmingDelete, setConfirmingDelete] = useState(false);
   const [deleting, setDeleting] = useState(false);
@@ -143,6 +146,7 @@ export const PhotoOptionsModal: React.FC<PhotoOptionsModalProps> = ({
             <Animated.View
               style={[
                 styles.sheet,
+                { paddingBottom: Math.max(spacing.huge, navBarInset + spacing.xxl) },
                 { transform: [{ translateY: slideAnim }] },
               ]}
             >
