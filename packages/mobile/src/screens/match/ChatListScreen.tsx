@@ -162,22 +162,30 @@ export const ChatListScreen: React.FC<{ navigation: any }> = ({ navigation }) =>
         fetchConversations();
         return;
       }
-      // Update the conversation that received a new message
-      setConversations((prev) =>
-        prev.map((conv) =>
-          conv.matchId === data.matchId
-            ? {
-                ...conv,
-                lastMessage: data.content,
-                lastMessageAt: data.createdAt,
-                lastMessageSenderId: data.senderId,
-                unreadCount: data.senderId !== authUser?.id && data.matchId !== useAuthStore.getState().openChatMatchId
-                  ? conv.unreadCount + 1
-                  : conv.unreadCount,
-              }
-            : conv,
-        ),
-      );
+      // Update the conversation that received a new message and move it to
+      // the top: the server lists chats newest message first, so this is the
+      // order a reload would show. The rest keep their relative order.
+      setConversations((prev) => {
+        const conv = prev.find((c) => c.matchId === data.matchId);
+        if (!conv) return prev;
+        // An event older than what the row already shows changes nothing
+        if (
+          conv.lastMessageAt && data.createdAt &&
+          new Date(data.createdAt).getTime() < new Date(conv.lastMessageAt).getTime()
+        ) {
+          return prev;
+        }
+        const updated: Conversation = {
+          ...conv,
+          lastMessage: data.content,
+          lastMessageAt: data.createdAt,
+          lastMessageSenderId: data.senderId,
+          unreadCount: data.senderId !== authUser?.id && data.matchId !== useAuthStore.getState().openChatMatchId
+            ? conv.unreadCount + 1
+            : conv.unreadCount,
+        };
+        return [updated, ...prev.filter((c) => c.matchId !== data.matchId)];
+      });
     };
 
     // A new match opens a new chat — join its room so its messages arrive
