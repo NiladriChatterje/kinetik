@@ -52,7 +52,7 @@
         "android.permission.FOREGROUND_SERVICE",
         "android.permission.FOREGROUND_SERVICE_MEDIA_PLAYBACK"
       ],
-      "versionCode": 28
+      "versionCode": 29
     },
     "plugins": [
       "expo-dev-client",
