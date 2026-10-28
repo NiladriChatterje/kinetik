@@ -25,7 +25,7 @@ import { LinkText } from '../../components/chat/LinkText';
 import { LinkChooser } from '../../components/chat/LinkChooser';
 import { ReportBlockSheet } from '../../components/safety/ReportBlockSheet';
 import { findLinks, openLink } from '../../utils/links';
-import { hapticImpact } from '../../utils/haptics';
+import { hapticImpact, hapticLight } from '../../utils/haptics';
 import { resolveUrl } from '../../config';
 import { colors, typography, spacing, radius } from '../../theme';
 
@@ -231,13 +231,15 @@ const ICEBREAKERS = [
 ];
 
 // ─── Vibe Check Options ─────────────────────────────────
+// Each tap sends the emoji itself as the message (it used to send a word
+// such as "Approved"). `filled` is the icon shown while the tap pops.
 const VIBE_OPTIONS = [
-  { icon: 'heart-outline' as const, sentAs: 'Loved' },
-  { icon: 'thumbs-up-outline' as const, sentAs: 'Approved' },
-  { icon: 'star-outline' as const, sentAs: 'Excited' },
-  { icon: 'flame-outline' as const, sentAs: 'On fire' },
-  { icon: 'musical-notes-outline' as const, sentAs: 'Vibing' },
-  { icon: 'sparkles-outline' as const, sentAs: 'Magical' },
+  { icon: 'heart-outline' as const, filled: 'heart' as const, sentAs: '❤️' },
+  { icon: 'thumbs-up-outline' as const, filled: 'thumbs-up' as const, sentAs: '👍' },
+  { icon: 'star-outline' as const, filled: 'star' as const, sentAs: '⭐' },
+  { icon: 'flame-outline' as const, filled: 'flame' as const, sentAs: '🔥' },
+  { icon: 'musical-notes-outline' as const, filled: 'musical-notes' as const, sentAs: '🎵' },
+  { icon: 'sparkles-outline' as const, filled: 'sparkles' as const, sentAs: '✨' },
 ];
 
 /**
@@ -713,6 +715,19 @@ export const ChatScreen: React.FC<{ navigation: any; route: any }> = ({ navigati
   const [locked, setLocked] = useState<boolean | null>(lockedParam === true ? true : null);
   const [loadFailed, setLoadFailed] = useState(false);
   const [sending, setSending] = useState(false);
+  // A tapped vibe fills in rose, pops and ticks, so the tap reads before the
+  // bubble lands (sending alone was too instant to notice)
+  const [pressedVibe, setPressedVibe] = useState<number | null>(null);
+  const vibeScale = useRef(new Animated.Value(1)).current;
+  const popVibe = (idx: number) => {
+    hapticLight();
+    setPressedVibe(idx);
+    vibeScale.setValue(1);
+    Animated.sequence([
+      Animated.timing(vibeScale, { toValue: 1.35, duration: 160, easing: Easing.out(Easing.back(2)), useNativeDriver: true }),
+      Animated.timing(vibeScale, { toValue: 1, duration: 220, delay: 140, easing: Easing.out(Easing.quad), useNativeDriver: true }),
+    ]).start(() => setPressedVibe((cur) => (cur === idx ? null : cur)));
+  };
   const [partnerTyping, setPartnerTyping] = useState(false);
   const [socketConnected, setSocketConnected] = useState(false);
   const [showMediaPicker, setShowMediaPicker] = useState(false);
@@ -1345,6 +1360,12 @@ export const ChatScreen: React.FC<{ navigation: any; route: any }> = ({ navigati
     if (!text || sending) return;
 
     setInputText('');
+    await sendText(text);
+  };
+
+  // Sends a text bubble straight away (the input bar and the vibe row share
+  // this; callers check `sending` first)
+  const sendText = async (text: string) => {
     setSending(true);
     // Your own message always comes into view, even while reading history
     flatListRef.current?.scrollToOffset({ offset: 0, animated: true });
@@ -2273,21 +2294,28 @@ export const ChatScreen: React.FC<{ navigation: any; route: any }> = ({ navigati
           {/* Vibe check row — shown when not recording and no text input */}
           {!isRecording && inputText.trim().length === 0 && (
             <View style={styles.vibeCheckRow}>
-              {VIBE_OPTIONS.map((vibe, idx) => (
-                <TouchableOpacity
-                  key={idx}
-                  style={styles.vibeCheckBtn}
-                  onPress={() => {
-                    // Send vibe as a message
-                    setInputText(vibe.sentAs);
-                    // Auto-send after a brief moment
-                    setTimeout(() => handleSend(), 100);
-                  }}
-                  activeOpacity={0.6}
-                >
-                  <Ionicons name={vibe.icon} size={18} color={colors.textSecondary} />
-                </TouchableOpacity>
-              ))}
+              {VIBE_OPTIONS.map((vibe, idx) => {
+                const pressed = pressedVibe === idx;
+                return (
+                  <Animated.View key={idx} style={pressed ? { transform: [{ scale: vibeScale }] } : undefined}>
+                    <TouchableOpacity
+                      style={[styles.vibeCheckBtn, pressed && styles.vibeCheckBtnPressed]}
+                      onPress={() => {
+                        if (sending) return;
+                        popVibe(idx);
+                        void sendText(vibe.sentAs);
+                      }}
+                      activeOpacity={0.6}
+                    >
+                      <Ionicons
+                        name={pressed ? vibe.filled : vibe.icon}
+                        size={18}
+                        color={pressed ? ROSE : colors.textSecondary}
+                      />
+                    </TouchableOpacity>
+                  </Animated.View>
+                );
+              })}
             </View>
           )}
 
@@ -3771,5 +3799,8 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     borderWidth: 1,
     borderColor: colors.cardBorder,
+  },
+  vibeCheckBtnPressed: {
+    borderColor: ROSE,
   },
 });
