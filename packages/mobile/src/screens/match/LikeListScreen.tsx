@@ -15,6 +15,7 @@ import { colors, typography, spacing, radius } from '../../theme';
 import { PaywallModal, PaywallReason } from '../../components/common/PaywallModal';
 import { DatingCategoryBadge, DatingCategory } from '../../components/common/DatingCategoryBadge';
 import { BounceSwipe } from '../../components/common/BounceSwipe';
+import { getLikeSwipeCount, countLikeSwipe, LIKE_SWIPE_TOUR_SWIPES } from '../../services/likeSwipeTour';
 
 interface IncomingLike {
   likedAt: string;
@@ -54,6 +55,18 @@ export const LikeListScreen: React.FC<{ navigation: any }> = ({ navigation }) =>
   const [responding, setResponding] = useState<string | null>(null);
   // The card whose full profile is being fetched for Discover
   const [opening, setOpening] = useState<string | null>(null);
+  // The top card shows the like swipe by itself until this account has
+  // answered three likes here (likeSwipeTour.ts); false until that is known
+  const [swipeTour, setSwipeTour] = useState(false);
+  const myUserId = useAuthStore((s) => s.user?.id);
+  useEffect(() => {
+    if (!myUserId) return;
+    let cancelled = false;
+    getLikeSwipeCount(myUserId).then((n) => {
+      if (!cancelled) setSwipeTour(n < LIKE_SWIPE_TOUR_SWIPES);
+    });
+    return () => { cancelled = true; };
+  }, [myUserId]);
   // Free account: the server sends the newest few likes in full and only a
   // count of the rest; the app shows that many blurred cards below them
   const [locked, setLocked] = useState(false);
@@ -163,6 +176,12 @@ export const LikeListScreen: React.FC<{ navigation: any }> = ({ navigation }) =>
 
   const handleRespond = async (targetUserId: string, action: 'like' | 'discard') => {
     setResponding(targetUserId);
+    // One more swipe towards the end of the tour, whatever the server answers
+    if (swipeTour && myUserId) {
+      countLikeSwipe(myUserId).then((n) => {
+        if (n >= LIKE_SWIPE_TOUR_SWIPES) setSwipeTour(false);
+      });
+    }
     try {
       const res = await api.respondToLike(targetUserId, action);
       if (res.success && res.data) {
@@ -219,12 +238,13 @@ export const LikeListScreen: React.FC<{ navigation: any }> = ({ navigation }) =>
 
   // Swipe right to like back, left to reject; the card bounces back and
   // leaves the list once the answer is recorded
-  const renderLike = ({ item }: { item: IncomingLike }) => (
+  const renderLike = ({ item, index }: { item: IncomingLike; index: number }) => (
     <BounceSwipe
       cardStyle={styles.likeCard}
       onSwipe={(direction) => handleRespond(item.userId, direction === 'right' ? 'like' : 'discard')}
       enabled={responding !== item.userId}
       busy={responding === item.userId || opening === item.userId}
+      demo={swipeTour && index === 0}
       labels={{ right: 'Like back', left: 'Reject' }}
     >
       {/* Tap for their full profile in Discover */}

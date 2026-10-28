@@ -47,6 +47,7 @@ export function BounceSwipe({
   shrink = true,
   flyOff = false,
   enterFrom,
+  demo = false,
   labels,
   style,
   cardStyle,
@@ -66,6 +67,13 @@ export function BounceSwipe({
   flyOff?: boolean;
   /** Scale the card grows from when it appears (the deck's next card sits at 0.96). */
   enterFrom?: number;
+  /**
+   * Shows the like swipe once: the card slides right by itself until the
+   * heart at the left edge fills green, holds, and settles back. The real
+   * drag value is driven, so what plays is exactly what a swipe does. A
+   * touch during the demo takes over at once.
+   */
+  demo?: boolean;
   /** For screen readers, which get these as actions in place of the gesture. */
   labels: { right: string; left: string };
   style?: StyleProp<ViewStyle>;
@@ -95,6 +103,27 @@ export function BounceSwipe({
     // Once, when the card appears
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+
+  // The demo drives `drag` like a finger would (a real touch calls
+  // drag.setValue, which stops this animation and takes over)
+  useEffect(() => {
+    if (!demo) return;
+    const timer = setTimeout(() => {
+      if (!enabledRef.current || goneRef.current) return;
+      Animated.sequence([
+        Animated.timing(drag, {
+          toValue: COMMIT_AT * 1.15,
+          duration: 700,
+          easing: Easing.inOut(Easing.quad),
+          useNativeDriver: true,
+        }),
+        Animated.delay(550),
+        Animated.spring(drag, { toValue: 0, friction: 7, tension: 120, useNativeDriver: true }),
+      ]).start();
+    }, 700);
+    return () => clearTimeout(timer);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [demo]);
 
   function bounceBack(velocity: number) {
     zone.current = 0;
