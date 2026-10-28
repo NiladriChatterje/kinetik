@@ -25,6 +25,7 @@ import { LinkText } from '../../components/chat/LinkText';
 import { LinkChooser } from '../../components/chat/LinkChooser';
 import { ReportBlockSheet } from '../../components/safety/ReportBlockSheet';
 import { findLinks, openLink } from '../../utils/links';
+import { suggestReplies } from '../../services/replySuggestions';
 import { hapticImpact, hapticLight } from '../../utils/haptics';
 import { resolveUrl } from '../../config';
 import { colors, typography, spacing, radius } from '../../theme';
@@ -213,22 +214,6 @@ function normalizeNotes(raw: unknown): string[] {
   if (typeof raw === 'string' && raw.trim()) return [raw.trim().slice(0, MAX_NOTE_LEN)];
   return [];
 }
-
-// ─── Icebreaker Prompts ─────────────────────────────────
-const ICEBREAKERS = [
-  'What is the last show you binge-watched?',
-  'If you could travel anywhere tomorrow, where would you go?',
-  'What is your go-to comfort food?',
-  'Morning person or night owl?',
-  'What is the best compliment you have ever received?',
-  'If you could have any superpower, what would it be?',
-  'What is your most played song right now?',
-  'Do you have a hidden talent?',
-  'What is the worst first date you have heard of?',
-  'Coffee or tea, and how do you take it?',
-  'What is a movie you can watch over and over?',
-  'What would your dream vacation look like?',
-];
 
 // ─── Vibe Check Options ─────────────────────────────────
 // Each tap sends the emoji itself as the message (it used to send a word
@@ -761,7 +746,6 @@ export const ChatScreen: React.FC<{ navigation: any; route: any }> = ({ navigati
   const [savingPlanner, setSavingPlanner] = useState(false);
 
   // ─── Icebreaker State ──────────────────────────────────
-  const [icebreakerIndex, setIcebreakerIndex] = useState(() => Math.floor(Math.random() * ICEBREAKERS.length));
 
   // ─── Vibe Check State ──────────────────────────────────
   const [showVibeCheck, setShowVibeCheck] = useState(false);
@@ -880,6 +864,16 @@ export const ChatScreen: React.FC<{ navigation: any; route: any }> = ({ navigati
   const flatListRef = useRef<FlatList>(null);
   const socketRef = useRef<Socket | null>(null);
   const authUser = useAuthStore((s) => s.user);
+  // Reply chips from the shape of their latest message (a greeting, a when /
+  // where question, thanks, a photo…), in their language; none when there is
+  // nothing to answer (replySuggestions.ts)
+  const suggestions = useMemo(
+    () => suggestReplies(
+      messages.map((m) => ({ senderId: m.senderId, content: m.content, mediaType: m.media?.mediaType })),
+      authUser?.id,
+    ),
+    [messages, authUser?.id],
+  );
   const typingTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const lastTypingSentRef = useRef(0);
   const audioRecorder = useAudioRecorder(RecordingPresets.HIGH_QUALITY);
@@ -2265,30 +2259,27 @@ export const ChatScreen: React.FC<{ navigation: any; route: any }> = ({ navigati
             </View>
           ) : null}
 
-          {/* Icebreaker bar — shown when chat is not recording */}
-          {!isRecording && (
-            <TouchableOpacity
-              style={styles.icebreakerBar}
-              onPress={() => {
-                // Send the icebreaker as a message
-                const prompt = ICEBREAKERS[icebreakerIndex];
-                setInputText(prompt);
-              }}
-              activeOpacity={0.7}
+          {/* Reply chips — only while their latest message gives something
+              to answer and nothing is typed yet; a tap fills the input */}
+          {!isRecording && inputText.trim().length === 0 && suggestions.length > 0 && (
+            <ScrollView
+              horizontal
+              showsHorizontalScrollIndicator={false}
+              keyboardShouldPersistTaps="handled"
+              contentContainerStyle={styles.suggestionRow}
             >
-              <Ionicons name="chatbubbles-outline" size={14} color={colors.textMuted} />
-              <Text style={styles.icebreakerText} numberOfLines={1}>
-                {ICEBREAKERS[icebreakerIndex]}
-              </Text>
-              <TouchableOpacity
-                onPress={() => {
-                  setIcebreakerIndex((prev) => (prev + 1) % ICEBREAKERS.length);
-                }}
-                hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
-              >
-                <Ionicons name="shuffle-outline" size={14} color={colors.textSecondary} />
-              </TouchableOpacity>
-            </TouchableOpacity>
+              {suggestions.map((chip) => (
+                <TouchableOpacity
+                  key={chip}
+                  style={styles.suggestionChip}
+                  onPress={() => setInputText(chip)}
+                  activeOpacity={0.7}
+                  accessibilityRole="button"
+                >
+                  <Text style={styles.suggestionText}>{chip}</Text>
+                </TouchableOpacity>
+              ))}
+            </ScrollView>
           )}
 
           {/* Vibe check row — shown when not recording and no text input */}
@@ -3761,24 +3752,23 @@ const styles = StyleSheet.create({
     marginTop: spacing.xs,
   },
   // ─── Icebreaker Bar ──────────────────────────────────
-  icebreakerBar: {
+  suggestionRow: {
     flexDirection: 'row',
-    alignItems: 'center',
     gap: spacing.sm,
     paddingHorizontal: spacing.md,
+    paddingVertical: spacing.xs,
+  },
+  suggestionChip: {
+    paddingHorizontal: spacing.md,
     paddingVertical: spacing.sm,
-    marginHorizontal: spacing.md,
-    marginBottom: spacing.xs,
     backgroundColor: colors.surface,
-    borderRadius: radius.md,
+    borderRadius: radius.full,
     borderWidth: 1,
     borderColor: colors.cardBorder,
   },
-  icebreakerText: {
+  suggestionText: {
     ...typography.body2,
-    color: colors.textSecondary,
-    flex: 1,
-    fontStyle: 'italic',
+    color: colors.textPrimary,
   },
 
   // ─── Vibe Check Row ──────────────────────────────────
