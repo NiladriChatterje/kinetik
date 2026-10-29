@@ -47,6 +47,14 @@ interface ChatMedia {
   viewedAt?: string;
 }
 
+/** What a reply shows of the message it answers (swipe-to-reply) */
+interface ReplyQuote {
+  id: string;
+  senderId: string;
+  content: string;
+  mediaType?: string | null;
+}
+
 interface Message {
   id: string;
   matchId: string;
@@ -57,7 +65,23 @@ interface Message {
   media?: ChatMedia;
   /** A text the server did not take (timeout, no network, error): tap to retry */
   failed?: boolean;
+  /** The message this one answers; the bubble shows it above its own text */
+  replyTo?: ReplyQuote | null;
 }
+
+/** The line a quote shows: the text, or what kind of media it was */
+function quoteLabel(q: ReplyQuote): string {
+  if (q.content) return q.content;
+  if (q.mediaType === 'image') return 'Photo';
+  if (q.mediaType === 'video') return 'Video';
+  if (q.mediaType === 'audio') return 'Voice message';
+  if (q.mediaType) return 'Attachment';
+  return '';
+}
+
+/** Finger travel to the right that sets a reply; the row follows at REPLY_FOLLOW of it */
+const REPLY_AT = 64;
+const REPLY_FOLLOW = 0.55;
 
 /** The not-sent icon, the same red as the Face unverified tag */
 const NOT_SENT_RED = '#E53935';
@@ -412,6 +436,10 @@ interface MessageRowProps {
   onOpenLinks: (urls: string[]) => void;
   /** A long press on a text: copy it */
   onCopyText: (text: string) => void;
+  /** A swipe to the right on the row: answer this message */
+  onReply: (message: Message) => void;
+  /** Names the quoted sender in a reply bubble */
+  partnerName: string;
 }
 
 const MessageRow = React.memo(function MessageRow({
@@ -425,6 +453,8 @@ const MessageRow = React.memo(function MessageRow({
   onRetry,
   onOpenLinks,
   onCopyText,
+  onReply,
+  partnerName,
 }: MessageRowProps) {
   const renderMediaContent = (item: Message, isMine: boolean) => {
     if (!item.media) return null;
@@ -564,6 +594,43 @@ const MessageRow = React.memo(function MessageRow({
     return null;
   };
 
+  // Swipe right to reply: the row follows the finger a little, a reply cue
+  // fades in at the left, and letting go past REPLY_AT answers this
+  // message. Only a clear sideways drag claims the touch, so the list still
+  // scrolls and taps and long presses on the bubble still land.
+  const dragX = useRef(new Animated.Value(0)).current;
+  const latest = useRef({ item, onReply });
+  latest.current = { item, onReply };
+  const armedRef = useRef(false);
+  const settle = () => {
+    armedRef.current = false;
+    Animated.spring(dragX, { toValue: 0, friction: 7, tension: 120, useNativeDriver: true }).start();
+  };
+  const replyPan = useRef(
+    PanResponder.create({
+      onMoveShouldSetPanResponder: (_, g) => g.dx > 10 && g.dx > Math.abs(g.dy) * 1.5,
+      onPanResponderTerminationRequest: () => false,
+      onPanResponderMove: (_, g) => {
+        dragX.setValue(Math.max(0, Math.min(g.dx, REPLY_AT * 1.6)) * REPLY_FOLLOW);
+        const armed = g.dx >= REPLY_AT;
+        if (armed !== armedRef.current) {
+          armedRef.current = armed;
+          if (armed) hapticLight();
+        }
+      },
+      onPanResponderRelease: (_, g) => {
+        if (g.dx >= REPLY_AT) latest.current.onReply(latest.current.item);
+        settle();
+      },
+      onPanResponderTerminate: settle,
+    }),
+  ).current;
+  const cueOpacity = dragX.interpolate({
+    inputRange: [0, REPLY_AT * REPLY_FOLLOW],
+    outputRange: [0, 1],
+    extrapolate: 'clamp',
+  });
+
   const showAvatar = !isMine;
   const isTemp = item.id.startsWith('temp-');
   const isRead = !!item.readAt;
@@ -599,7 +666,13 @@ const MessageRow = React.memo(function MessageRow({
         : undefined;
 
   return (
-    <View style={[styles.messageRow, isMine && styles.messageRowMine]}>
+    <View style={styles.messageRow} {...replyPan.panHandlers}>
+      <Animated.View style={[styles.replyCue, { opacity: cueOpacity }]} pointerEvents="none">
+        <View style={styles.replyCueDisc}>
+          <Ionicons name="arrow-undo-outline" size={15} color={colors.textSecondary} />
+        </View>
+      </Animated.View>
+      <Animated.View style={[styles.messageRowInner, isMine && styles.messageRowMine, { transform: [{ translateX: dragX }] }]}>
       {showAvatar && avatarUri ? (
         <Image source={{ uri: resolveUrl(avatarUri) }} style={styles.messageAvatar} resizeMethod="resize" />
       ) : showAvatar ? (
@@ -620,6 +693,18 @@ const MessageRow = React.memo(function MessageRow({
         accessibilityRole={onPress || onLongPress ? 'button' : undefined}
         accessibilityLabel={bubbleLabel}
       >
+        {/* The message this one answers */}
+        {item.replyTo ? (
+          <View style={[styles.quote, isMine ? styles.quoteMine : styles.quoteTheirs]}>
+            <Text style={[styles.quoteName, isMine && styles.quoteTextMine]} numberOfLines={1}>
+              {item.replyTo.senderId === item.senderId ? (isMine ? 'You' : partnerName) : (isMine ? partnerName : 'You')}
+            </Text>
+            <Text style={[styles.quoteText, isMine && styles.quoteTextMine]} numberOfLines={2}>
+              {quoteLabel(item.replyTo)}
+            </Text>
+          </View>
+        ) : null}
+
         {/* Media attachment */}
         {hasMedia && renderMediaContent(item, isMine)}
 
@@ -652,6 +737,7 @@ const MessageRow = React.memo(function MessageRow({
           </View>
         )}
       </Pressable>
+      </Animated.View>
     </View>
   );
 });
@@ -690,6 +776,8 @@ export const ChatScreen: React.FC<{ navigation: any; route: any }> = ({ navigati
   // moving what is on screen.
   const newestFirst = useMemo(() => [...messages].reverse(), [messages]);
   const [inputText, setInputText] = useState('');
+  // The message a swipe picked to answer; cleared on send or by its cross
+  const [replyTo, setReplyTo] = useState<Message | null>(null);
   const [loading, setLoading] = useState(true);
   // Whether this chat is locked (free account: chat is Premium only).
   // null = not known yet. The chat interface is never rendered while it is
@@ -1142,6 +1230,7 @@ export const ChatScreen: React.FC<{ navigation: any; route: any }> = ({ navigati
               content: data.content,
               createdAt: data.createdAt || updated[idx].createdAt,
               media: data.media || updated[idx].media,
+              replyTo: data.replyTo ?? updated[idx].replyTo,
               failed: false,
             };
             return updated;
@@ -1157,6 +1246,7 @@ export const ChatScreen: React.FC<{ navigation: any; route: any }> = ({ navigati
           createdAt: data.createdAt || new Date().toISOString(),
           readAt: null,
           media: data.media || undefined,
+          replyTo: data.replyTo || undefined,
         }];
       });
 
@@ -1364,6 +1454,13 @@ export const ChatScreen: React.FC<{ navigation: any; route: any }> = ({ navigati
     // Your own message always comes into view, even while reading history
     flatListRef.current?.scrollToOffset({ offset: 0, animated: true });
 
+    // A pending reply goes with this text and is then done with
+    const quoted = replyTo;
+    if (quoted) setReplyTo(null);
+    const quote: ReplyQuote | undefined = quoted
+      ? { id: quoted.id, senderId: quoted.senderId, content: quoted.content, mediaType: quoted.media?.mediaType ?? null }
+      : undefined;
+
     const tempId = `temp-${Date.now()}`;
     setMessages((prev) => [...prev, {
       id: tempId,
@@ -1372,6 +1469,7 @@ export const ChatScreen: React.FC<{ navigation: any; route: any }> = ({ navigati
       content: text,
       createdAt: new Date().toISOString(),
       readAt: null,
+      replyTo: quote,
     }]);
 
     if (socketRef.current?.connected) {
@@ -1379,7 +1477,7 @@ export const ChatScreen: React.FC<{ navigation: any; route: any }> = ({ navigati
     }
 
     try {
-      await deliverText(tempId, text);
+      await deliverText(tempId, text, quote?.id);
     } finally {
       setSending(false);
     }
@@ -1390,11 +1488,11 @@ export const ChatScreen: React.FC<{ navigation: any; route: any }> = ({ navigati
    * the lock for a locked chat, otherwise marked failed so the user can tap
    * to retry (it used to sit on its clock and vanish on the next send).
    */
-  const deliverText = async (tempId: string, text: string) => {
+  const deliverText = async (tempId: string, text: string, replyToId?: string) => {
     const markFailed = () =>
       setMessages((prev) => prev.map((m) => (m.id === tempId ? { ...m, failed: true } : m)));
     try {
-      const res = await api.sendMessage(matchId, text);
+      const res = await api.sendMessage(matchId, text, replyToId);
       if (res.success && res.data) {
         // If the real id already arrived (socket echo / reconnect sync), drop the temp
         setMessages((prev) => prev.some((m) => m.id === res.data!.id)
@@ -1418,7 +1516,7 @@ export const ChatScreen: React.FC<{ navigation: any; route: any }> = ({ navigati
     if (!message.failed || retryingRef.current.has(message.id)) return;
     retryingRef.current.add(message.id);
     setMessages((prev) => prev.map((m) => (m.id === message.id ? { ...m, failed: false } : m)));
-    void deliverText(message.id, message.content).finally(() => retryingRef.current.delete(message.id));
+    void deliverText(message.id, message.content, message.replyTo?.id).finally(() => retryingRef.current.delete(message.id));
   };
   const handleRetry = useCallback((message: Message) => retrySendRef.current(message), []);
 
@@ -1995,6 +2093,12 @@ export const ChatScreen: React.FC<{ navigation: any; route: any }> = ({ navigati
     void togglePlayAudioRef.current(messageId, url);
   }, []);
 
+  // A swipe on a bubble: answer it. Not one the server has no id for yet.
+  const handleReply = useCallback((message: Message) => {
+    if (message.failed || message.id.startsWith('temp-')) return;
+    setReplyTo(message);
+  }, []);
+
   const myUserId = authUser?.id;
   const renderMessage = useCallback(({ item }: { item: Message }) => (
     <MessageRow
@@ -2008,8 +2112,10 @@ export const ChatScreen: React.FC<{ navigation: any; route: any }> = ({ navigati
       onRetry={handleRetry}
       onOpenLinks={handleOpenLinks}
       onCopyText={handleCopyText}
+      onReply={handleReply}
+      partnerName={partnerName}
     />
-  ), [myUserId, pAvatar, playingAudioId, openOneTimeView, handleToggleAudio, handleRetry, handleOpenLinks, handleCopyText]);
+  ), [myUserId, pAvatar, playingAudioId, openOneTimeView, handleToggleAudio, handleRetry, handleOpenLinks, handleCopyText, handleReply, partnerName]);
 
   // ─── Input bar bottom spacing ──────────────────────
   // The SafeAreaView deliberately excludes the bottom edge, so this is the
@@ -2309,6 +2415,29 @@ export const ChatScreen: React.FC<{ navigation: any; route: any }> = ({ navigati
               })}
             </View>
           )}
+
+          {/* Replying to: the quoted message above the input, with a cross to drop it */}
+          {replyTo && !isRecording ? (
+            <View style={styles.replyBar}>
+              <View style={styles.replyBarBody}>
+                <Text style={styles.replyBarName} numberOfLines={1}>
+                  Replying to {replyTo.senderId === authUser?.id ? 'yourself' : partnerName}
+                </Text>
+                <Text style={styles.replyBarText} numberOfLines={1}>
+                  {quoteLabel({ id: replyTo.id, senderId: replyTo.senderId, content: replyTo.content, mediaType: replyTo.media?.mediaType ?? null })}
+                </Text>
+              </View>
+              <TouchableOpacity
+                style={styles.replyBarClose}
+                onPress={() => setReplyTo(null)}
+                hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+                accessibilityRole="button"
+                accessibilityLabel="Cancel reply"
+              >
+                <Ionicons name="close" size={18} color={colors.textSecondary} />
+              </TouchableOpacity>
+            </View>
+          ) : null}
 
           {/* Input bar */}
           <View style={[styles.inputBar, { paddingBottom: inputBarPaddingBottom }]}>
@@ -2907,13 +3036,64 @@ const styles = StyleSheet.create({
   olderSpinner: { paddingVertical: spacing.md },
   messageRow: {
     width: '100%',
+    marginBottom: spacing.sm,
+    justifyContent: 'center',
+  },
+  messageRowInner: {
     flexDirection: 'row',
     gap: spacing.sm,
-    marginBottom: spacing.sm,
     alignItems: 'flex-end',
     justifyContent: 'flex-start',
   },
   messageRowMine: { justifyContent: 'flex-end' },
+  // The reply arrow a swipe to the right uncovers at the left of the row
+  replyCue: {
+    position: 'absolute',
+    left: 0,
+    top: 0,
+    bottom: 0,
+    justifyContent: 'center',
+  },
+  replyCueDisc: {
+    width: 28,
+    height: 28,
+    borderRadius: 14,
+    backgroundColor: colors.surfaceHighlight,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  // The quoted message at the top of a reply bubble
+  quote: {
+    borderLeftWidth: 3,
+    borderRadius: radius.sm,
+    paddingHorizontal: spacing.sm,
+    paddingVertical: 4,
+    marginBottom: 6,
+  },
+  quoteTheirs: { borderLeftColor: colors.textPrimary, backgroundColor: 'rgba(0,0,0,0.06)' },
+  quoteMine: { borderLeftColor: colors.textInverse, backgroundColor: 'rgba(255,255,255,0.16)' },
+  quoteName: { ...typography.caption, fontWeight: '700', color: colors.textPrimary },
+  quoteText: { ...typography.caption, color: colors.textSecondary, marginTop: 1 },
+  quoteTextMine: { color: 'rgba(255,255,255,0.85)' },
+  // "Replying to" above the input bar
+  replyBar: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.sm,
+    marginHorizontal: spacing.md,
+    marginBottom: spacing.xs,
+    paddingVertical: spacing.sm,
+    paddingLeft: spacing.md,
+    paddingRight: spacing.sm,
+    backgroundColor: colors.surface,
+    borderRadius: radius.md,
+    borderLeftWidth: 3,
+    borderLeftColor: colors.textPrimary,
+  },
+  replyBarBody: { flex: 1 },
+  replyBarName: { ...typography.caption, fontWeight: '700', color: colors.textPrimary },
+  replyBarText: { ...typography.body2, color: colors.textSecondary, marginTop: 1 },
+  replyBarClose: { width: 28, height: 28, borderRadius: 14, alignItems: 'center', justifyContent: 'center' },
   messageAvatar: { width: 28, height: 28, borderRadius: 14, marginBottom: 4, flexShrink: 0 },
   noMsgAvatar: { backgroundColor: colors.surface, justifyContent: 'center', alignItems: 'center' },
   messageBubble: {

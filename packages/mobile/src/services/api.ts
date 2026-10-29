@@ -1136,10 +1136,11 @@ class ApiClient {
     return this.request<{ messages: any[]; hasMore?: boolean }>(`/api/v1/matches/conversations/${matchId}/messages${cursor}`);
   }
 
-  async sendMessage(matchId: string, content: string) {
-    return this.request<{ id: string; matchId: string; senderId: string; content: string; createdAt: string; readAt: string | null }>(`/api/v1/matches/conversations/${matchId}/messages`, {
+  /** A text message; with `replyToId`, an answer to that message of the same chat (swipe-to-reply). */
+  async sendMessage(matchId: string, content: string, replyToId?: string) {
+    return this.request<{ id: string; matchId: string; senderId: string; content: string; createdAt: string; readAt: string | null; replyTo?: { id: string; senderId: string; content: string; mediaType: string | null } | null }>(`/api/v1/matches/conversations/${matchId}/messages`, {
       method: 'POST',
-      body: JSON.stringify({ content }),
+      body: JSON.stringify(replyToId ? { content, replyToId } : { content }),
     });
   }
 
