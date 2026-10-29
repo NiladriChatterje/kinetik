@@ -15,6 +15,7 @@ import { isBlockedPair, isReportedPair } from '../services/blocks';
 import { getRedis, publishChatMessage } from '../services/redis';
 import { savePhoto, saveEncryptedChatFile, getEncryptedChatFileBuffer, deleteChatFile } from '../services/photoStorage';
 import { cursorTimestampSql, decodeCursor, encodeCursor, pageLimit } from '../services/listCursor';
+import { isMessageId, quoteFromRow, ReplyQuote } from '../services/messageReply';
 
 const MESSAGE_ENCRYPTION_KEY = process.env.MESSAGE_ENCRYPTION_KEY || '';
 const redis = getRedis();
@@ -1299,14 +1300,18 @@ export async function matchRoutes(app: FastifyInstance) {
          cm.width as media_width,
          cm.height as media_height,
          cm.is_view_once as media_is_view_once,
-         cm.viewed_at as media_viewed_at
+         cm.viewed_at as media_viewed_at,
+         r.id as reply_id,
+         r.sender_id as reply_sender_id,
+         r.content as reply_content,
+         (SELECT rcm.media_type FROM ${TABLES.CHAT_MEDIA} rcm WHERE rcm.message_id = r.id LIMIT 1) as reply_media_type
        FROM (
          -- The newest page, not the oldest: with the limit applied in
          -- ascending order a long chat never showed anything after its
          -- 200th message. The outer ORDER BY keeps the response oldest-first,
          -- which is the order the screen renders. (created_at, id) is the
          -- cursor order, so a page boundary inside one timestamp is exact.
-         SELECT id, match_id, sender_id, content, created_at, read_at
+         SELECT id, match_id, sender_id, content, created_at, read_at, reply_to_id
          FROM ${TABLES.MESSAGES}
          WHERE match_id = $1
            ${beforeId ? `AND (created_at, id) < (SELECT created_at, id FROM ${TABLES.MESSAGES} WHERE id = $3 AND match_id = $1)` : ''}
@@ -1314,6 +1319,10 @@ export async function matchRoutes(app: FastifyInstance) {
          LIMIT $2
        ) m
        LEFT JOIN ${TABLES.CHAT_MEDIA} cm ON cm.message_id = m.id
+       -- The message a reply answers (swipe-to-reply), by primary key; its
+       -- media kind comes from a subselect so a quoted message with several
+       -- media rows never multiplies this one
+       LEFT JOIN ${TABLES.MESSAGES} r ON r.id = m.reply_to_id
        ORDER BY m.created_at ASC, m.id ASC`,
       beforeId ? [matchId, PAGE + 1, beforeId] : [matchId, PAGE + 1],
     );
@@ -1379,6 +1388,14 @@ export async function matchRoutes(app: FastifyInstance) {
             createdAt: m.created_at,
             readAt: m.read_at,
             media,
+            replyTo: m.reply_id
+              ? quoteFromRow({
+                  id: m.reply_id,
+                  sender_id: m.reply_sender_id,
+                  content: decryptMessage(m.reply_content, MESSAGE_ENCRYPTION_KEY),
+                  media_type: m.reply_media_type,
+                })
+              : undefined,
           };
         }),
       },
@@ -1389,7 +1406,7 @@ export async function matchRoutes(app: FastifyInstance) {
   app.post('/conversations/:id/messages', async (request: FastifyRequest<{ Params: { id: string } }>, reply: FastifyReply) => {
     const { id: matchId } = request.params;
     const { sub: userId } = request.user as any;
-    const { content } = request.body as { content: string };
+    const { content, replyToId } = request.body as { content: string; replyToId?: unknown };
 
     if (!content || content.trim().length === 0) {
       return reply.status(400).send({
@@ -1402,6 +1419,14 @@ export async function matchRoutes(app: FastifyInstance) {
       return reply.status(400).send({
         success: false,
         error: { code: ERROR_CODES.VALIDATION_ERROR, message: 'Message too long (max 2000 characters)' },
+      });
+    }
+
+    // Swipe-to-reply: the answered message, when given, is named by id
+    if (replyToId !== undefined && replyToId !== null && !isMessageId(replyToId)) {
+      return reply.status(400).send({
+        success: false,
+        error: { code: ERROR_CODES.VALIDATION_ERROR, message: 'replyToId must be a message id' },
       });
     }
 
@@ -1426,15 +1451,36 @@ export async function matchRoutes(app: FastifyInstance) {
     }
     if (senderLocked) return sendChatLocked(reply);
 
+    // The quoted message must belong to this chat; its snippet is stored
+    // nowhere, it is read here for the live payload and again with history
+    let replyTo: ReplyQuote | null = null;
+    if (isMessageId(replyToId)) {
+      const quoted = await query(
+        `SELECT m.id, m.sender_id, m.content,
+                (SELECT cm.media_type FROM ${TABLES.CHAT_MEDIA} cm WHERE cm.message_id = m.id LIMIT 1) AS media_type
+         FROM ${TABLES.MESSAGES} m
+         WHERE m.id = $1 AND m.match_id = $2`,
+        [replyToId, matchId],
+      );
+      const row = quoted.rows[0];
+      if (!row) {
+        return reply.status(400).send({
+          success: false,
+          error: { code: ERROR_CODES.VALIDATION_ERROR, message: 'The message you are replying to is not in this chat' },
+        });
+      }
+      replyTo = quoteFromRow({ ...row, content: decryptMessage(row.content, MESSAGE_ENCRYPTION_KEY) });
+    }
+
     const plainContent = content.trim();
     const encryptedContent = encryptMessage(plainContent, MESSAGE_ENCRYPTION_KEY);
 
     const matchRow = matchCheck.rows[0];
     const partnerId = matchRow.user_a_id === userId ? matchRow.user_b_id : matchRow.user_a_id;
     const result = await query(
-      `INSERT INTO ${TABLES.MESSAGES} (match_id, sender_id, content)
-       VALUES ($1, $2, $3) RETURNING *`,
-      [matchId, userId, encryptedContent],
+      `INSERT INTO ${TABLES.MESSAGES} (match_id, sender_id, content, reply_to_id)
+       VALUES ($1, $2, $3, $4) RETURNING *`,
+      [matchId, userId, encryptedContent, replyTo?.id ?? null],
     );
     const message = result.rows[0];
 
@@ -1445,6 +1491,8 @@ export async function matchRoutes(app: FastifyInstance) {
       senderId: message.sender_id,
       content: plainContent,
       createdAt: message.created_at,
+      // Absent (not null) for an ordinary message, so the payload is as before
+      replyTo: replyTo ?? undefined,
     };
     // Publish with retry/backoff — this client fails fast on a Redis
     // reconnect blip, which would otherwise silently drop the live broadcast
@@ -1464,6 +1512,7 @@ export async function matchRoutes(app: FastifyInstance) {
         content: plainContent,
         createdAt: message.created_at,
         readAt: message.read_at,
+        replyTo: replyTo ?? undefined,
       },
     });
   });
