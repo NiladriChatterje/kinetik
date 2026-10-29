@@ -44,14 +44,25 @@ export function useNotifications() {
   const initialize = useNotificationStore((s) => s.initialize);
   const setLastNotification = useNotificationStore((s) => s.setLastNotification);
   const registerForPush = useNotificationStore((s) => s.registerForPushNotifications);
+  const refreshPreferences = useNotificationStore((s) => s.refreshPreferences);
+  const resetPreferences = useNotificationStore((s) => s.resetPreferences);
   const isAuthenticated = useAuthStore((s) => s.isAuthenticated);
   const userId = useAuthStore((s) => s.user?.id);
 
-  // The token is stored per account on the server, so register it for each
-  // signed-in account, not once at launch before anyone has signed in
+  // The token and the push preference are stored per account on the server,
+  // so register the token and load the saved preference for each signed-in
+  // account, not once at launch before anyone has signed in. Loading it here
+  // keeps the Settings toggle true to the account: before this it showed the
+  // default (on) whatever the server held, so a tap meant to turn pushes on
+  // could turn them off. Signed out, the toggle goes back to the default.
   useEffect(() => {
-    if (isAuthenticated && userId) registerForPush();
-  }, [isAuthenticated, userId, registerForPush]);
+    if (isAuthenticated && userId) {
+      registerForPush();
+      refreshPreferences();
+    } else {
+      resetPreferences();
+    }
+  }, [isAuthenticated, userId, registerForPush, refreshPreferences, resetPreferences]);
 
   useEffect(() => {
     let cancelled = false;

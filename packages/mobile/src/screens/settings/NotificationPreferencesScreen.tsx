@@ -1,4 +1,4 @@
-import React, { useCallback } from 'react';
+import React, { useCallback, useEffect } from 'react';
 import { View, Text, StyleSheet, ScrollView, Switch } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
@@ -19,8 +19,14 @@ export const NotificationPreferencesScreen: React.FC = () => {
   const {
     pushEnabled,
     updatePushEnabled,
+    refreshPreferences,
     expoPushToken,
   } = useNotificationStore();
+
+  // Show the saved choice, not whatever the store last held
+  useEffect(() => {
+    refreshPreferences();
+  }, [refreshPreferences]);
 
   const handlePushToggle = useCallback(
     (value: boolean) => {

@@ -17,6 +17,8 @@ interface NotificationState {
   initialize: () => Promise<void>;
   registerForPushNotifications: () => Promise<string | null>;
   refreshPreferences: () => Promise<void>;
+  /** Back to the default (on) when nobody is signed in, so the next account never inherits the last one's choice. */
+  resetPreferences: () => void;
   updatePushEnabled: (enabled: boolean) => Promise<void>;
   setLastNotification: (notification: Notification | null) => void;
   setLastNotificationResponse: (response: NotificationResponse | null) => void;
@@ -74,8 +76,9 @@ export const useNotificationStore = create<NotificationState>((set, get) => ({
       // signed in (and again on every sign-in): the server stores it per
       // account, and this runs before any account exists.
 
-      // Load preferences from backend
-      await get().refreshPreferences();
+      // The saved preference is loaded per account by useNotifications on
+      // sign-in; at launch nobody may be signed in yet, so nothing is
+      // fetched here and the toggle starts from the default (on).
 
       set({ isInitialized: true, isLoading: false });
     } catch (error) {
@@ -149,6 +152,8 @@ export const useNotificationStore = create<NotificationState>((set, get) => ({
       console.error('[notifications] Failed to load preferences:', error);
     }
   },
+
+  resetPreferences: () => set({ pushEnabled: true }),
 
   updatePushEnabled: async (enabled: boolean) => {
     try {
