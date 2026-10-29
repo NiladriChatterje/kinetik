@@ -194,6 +194,7 @@ export const ONBOARDING_STEPS: readonly string[] = [
   'splash',
   'identity',
   'about',
+  'details',
   'location',
   'photos',
   'face',

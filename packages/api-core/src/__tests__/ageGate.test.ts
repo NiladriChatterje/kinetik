@@ -155,6 +155,27 @@ describe('PUT /users/profile', () => {
     expect(mockUpdateUser).toHaveBeenCalledWith(USER, expect.objectContaining({ date_of_birth: '1999-02-28' }));
   });
 
+  // The bio rule (services/bio.ts) rides on the same route
+  it('refuses a bio with an emoji and stores nothing', async () => {
+    const res = await send('PUT', '/api/v1/users/profile', { bio: 'Coffee first \u2615 then plans' });
+    expect(res.statusCode).toBe(400);
+    expect(res.json().error.message).toMatch(/plain letters/);
+    expect(mockUpdateUser).not.toHaveBeenCalled();
+  });
+
+  it('refuses a bio over 120 words and stores nothing', async () => {
+    const res = await send('PUT', '/api/v1/users/profile', { bio: Array(121).fill('word').join(' ') });
+    expect(res.statusCode).toBe(400);
+    expect(res.json().error.message).toMatch(/120 words/);
+    expect(mockUpdateUser).not.toHaveBeenCalled();
+  });
+
+  it('stores a plain bio of 120 words', async () => {
+    const res = await send('PUT', '/api/v1/users/profile', { bio: Array(120).fill('word').join(' ') });
+    expect(res.statusCode).toBe(200);
+    expect(mockUpdateUser).toHaveBeenCalled();
+  });
+
   it('leaves profile edits without a date of birth alone', async () => {
     const res = await send('PUT', '/api/v1/users/profile', { bio: 'Hello' });
     expect(res.statusCode).toBe(200);

@@ -7,6 +7,7 @@ import { getRedis } from '../services/redis';
 import { reverseGeocode } from '../services/geocoding';
 import { resolveCity } from '../services/locations';
 import { isAdultBirthDate, isWithinMaximumAge, UNDERAGE_MESSAGE, OVERAGE_MESSAGE } from '../services/age';
+import { bioProblem, BIO_MAX_CHARS } from '../services/bio';
 
 const UpdateProfileSchema = z.object({
   displayName: z.string().min(1).max(100).optional(),
@@ -16,7 +17,7 @@ const UpdateProfileSchema = z.object({
   ),
   gender: z.enum(['male', 'female', 'non_binary', 'other', 'prefer_not_to_say']).optional(),
   pronouns: z.string().max(50).optional(),
-  bio: z.string().max(500).optional(),
+  bio: z.string().max(BIO_MAX_CHARS).optional(),
   occupation: z.string().max(100).optional(),
   education: z.string().max(255).optional(),
   latitude: z.number().min(-90).max(90).optional(),
@@ -213,6 +214,15 @@ export async function userRoutes(app: FastifyInstance) {
       return reply.status(400).send({
         success: false,
         error: { code: ERROR_CODES.VALIDATION_ERROR, message: OVERAGE_MESSAGE },
+      });
+    }
+
+    // The description is plain ASCII, at most 120 words (services/bio.ts)
+    const bioIssue = data.bio !== undefined ? bioProblem(data.bio) : null;
+    if (bioIssue) {
+      return reply.status(400).send({
+        success: false,
+        error: { code: ERROR_CODES.VALIDATION_ERROR, message: bioIssue },
       });
     }
 
