@@ -3,7 +3,7 @@ import { z } from 'zod';
 import { ERROR_CODES, ONBOARDING_STEPS } from '@kinetik/shared';
 import { updateUser, findUserById } from '../services/database';
 import { getRedis } from '../services/redis';
-import { isAdultBirthDate, birthDateToIso } from '../services/age';
+import { isAllowedBirthDate, birthDateToIso, MINIMUM_AGE, MAXIMUM_AGE } from '../services/age';
 
 const OnboardingStepSchema = z.object({
   step: z.enum(ONBOARDING_STEPS as any),
@@ -56,17 +56,18 @@ export async function onboardingRoutes(app: FastifyInstance) {
     const currentIndex = ONBOARDING_STEPS.indexOf(step);
     const isComplete = step === 'complete' || currentIndex >= ONBOARDING_STEPS.length - 1;
 
-    // Finishing onboarding opens the feeds, likes and chat. It needs an adult
-    // date of birth on the account, so the identity step cannot be skipped
-    // with a hand-made request (the app always sets it before this point).
+    // Finishing onboarding opens the feeds, likes and chat. It needs an
+    // allowed date of birth (18 to 75) on the account, so the identity step
+    // cannot be skipped with a hand-made request (the app always sets it
+    // before this point).
     if (isComplete) {
       const user = await findUserById(userId);
-      if (!isAdultBirthDate(birthDateToIso(user?.date_of_birth))) {
+      if (!isAllowedBirthDate(birthDateToIso(user?.date_of_birth))) {
         return reply.status(400).send({
           success: false,
           error: {
             code: ERROR_CODES.VALIDATION_ERROR,
-            message: 'Add your date of birth to finish. Kinetik is only for adults aged 18 and over.',
+            message: `Add your date of birth to finish. Kinetik is for people aged ${MINIMUM_AGE} to ${MAXIMUM_AGE}.`,
           },
         });
       }

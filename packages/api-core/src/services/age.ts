@@ -1,10 +1,14 @@
 /**
- * Kinetik is for adults. These checks back the 18+ rule on the server, so a
- * hand-made API call cannot set a minor's date of birth or finish onboarding
- * without one (the app checks too, but the app alone is not enough).
+ * Kinetik is for adults aged 18 to 75. These checks back that rule on the
+ * server, so a hand-made API call cannot set a minor's (or an impossible)
+ * date of birth or finish onboarding without one (the app checks too, but
+ * the app alone is not enough).
  */
 
 export const MINIMUM_AGE = 18;
+/** Oldest a member can be; also stops a mistyped year (1915 for 1995) from
+ *  making someone 111 and invisible to every age filter. */
+export const MAXIMUM_AGE = 75;
 
 /** The latest timezone on Earth (UTC+14). Judging "today" there means an
  *  18th birthday anywhere in the world counts as soon as it has begun, so a
@@ -32,9 +36,30 @@ export function isAdultBirthDate(iso: string | null | undefined, now: Date = new
   }
 
   const eighteenth = Date.UTC(year + MINIMUM_AGE, month - 1, day);
+  return eighteenth <= todayInLatestTimezone(now);
+}
+
+/**
+ * True when `iso` is a real date on which the person is at most MAXIMUM_AGE:
+ * their (MAXIMUM_AGE + 1)th birthday has not yet begun anywhere. Only a
+ * well-formed date can pass, so call it alongside isAdultBirthDate.
+ */
+export function isWithinMaximumAge(iso: string | null | undefined, now: Date = new Date()): boolean {
+  if (!iso) return false;
+  const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(iso);
+  if (!m) return false;
+  const tooOldFrom = Date.UTC(Number(m[1]) + MAXIMUM_AGE + 1, Number(m[2]) - 1, Number(m[3]));
+  return tooOldFrom > todayInLatestTimezone(now);
+}
+
+/** A date of birth the platform accepts: a real date, aged 18 to 75 today. */
+export function isAllowedBirthDate(iso: string | null | undefined, now: Date = new Date()): boolean {
+  return isAdultBirthDate(iso, now) && isWithinMaximumAge(iso, now);
+}
+
+function todayInLatestTimezone(now: Date): number {
   const latest = new Date(now.getTime() + LATEST_TZ_OFFSET_MS);
-  const todayLatest = Date.UTC(latest.getUTCFullYear(), latest.getUTCMonth(), latest.getUTCDate());
-  return eighteenth <= todayLatest;
+  return Date.UTC(latest.getUTCFullYear(), latest.getUTCMonth(), latest.getUTCDate());
 }
 
 /**
@@ -58,3 +83,4 @@ export function birthDateToIso(value: unknown): string | null {
 }
 
 export const UNDERAGE_MESSAGE = 'Enter a valid date of birth. Kinetik is only for adults aged 18 and over.';
+export const OVERAGE_MESSAGE = `Enter a valid date of birth. Kinetik is for people aged ${MINIMUM_AGE} to ${MAXIMUM_AGE}.`;

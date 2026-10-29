@@ -184,7 +184,7 @@ export const ERROR_CODES = {
 // ─── Age Constraints ──────────────────────────────────────
 
 export const MIN_AGE = 18;
-export const MAX_AGE = 120;
+export const MAX_AGE = 75;
 export const DEFAULT_AGE_MIN = 18;
 export const DEFAULT_AGE_MAX = 60;
 

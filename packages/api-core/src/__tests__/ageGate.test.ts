@@ -1,7 +1,7 @@
 import { describe, it, expect, vi, beforeAll, afterAll, beforeEach } from 'vitest';
 import Fastify, { FastifyInstance } from 'fastify';
 import jwt from '@fastify/jwt';
-import { isAdultBirthDate, birthDateToIso } from '../services/age';
+import { isAdultBirthDate, isWithinMaximumAge, isAllowedBirthDate, birthDateToIso } from '../services/age';
 
 // ─── 18+ on the server ──────────────────────────────────────────────
 // The app refuses minors on its identity screen; these checks make sure a
@@ -45,6 +45,30 @@ describe('isAdultBirthDate', () => {
     expect(isAdultBirthDate('18/10/2000', now)).toBe(false);
     expect(isAdultBirthDate('', now)).toBe(false);
     expect(isAdultBirthDate(null, now)).toBe(false);
+  });
+});
+
+describe('isWithinMaximumAge', () => {
+  const now = new Date('2026-10-18T12:00:00Z');
+
+  it('accepts someone aged 75 and refuses someone who has turned 76', () => {
+    expect(isWithinMaximumAge('1951-10-18', now)).toBe(true);
+    expect(isWithinMaximumAge('1950-10-20', now)).toBe(true);
+    // 76th birthday on 19 Oct has already begun in UTC+14
+    expect(isWithinMaximumAge('1950-10-19', now)).toBe(false);
+    expect(isWithinMaximumAge('1915-03-03', now)).toBe(false);
+  });
+
+  it('accepts the young and refuses malformed input', () => {
+    expect(isWithinMaximumAge('2000-01-01', now)).toBe(true);
+    expect(isWithinMaximumAge('18/10/2000', now)).toBe(false);
+    expect(isWithinMaximumAge(null, now)).toBe(false);
+  });
+
+  it('isAllowedBirthDate needs both ends of the range', () => {
+    expect(isAllowedBirthDate('1995-07-14', now)).toBe(true);
+    expect(isAllowedBirthDate('2012-03-04', now)).toBe(false);
+    expect(isAllowedBirthDate('1915-03-03', now)).toBe(false);
   });
 });
 
@@ -118,6 +142,13 @@ describe('PUT /users/profile', () => {
     expect(mockUpdateUser).not.toHaveBeenCalled();
   });
 
+  it('refuses a date of birth older than 75 and stores nothing', async () => {
+    const res = await send('PUT', '/api/v1/users/profile', { dateOfBirth: '1915-03-03' });
+    expect(res.statusCode).toBe(400);
+    expect(res.json().error.message).toMatch(/75/);
+    expect(mockUpdateUser).not.toHaveBeenCalled();
+  });
+
   it('stores an adult\'s date of birth', async () => {
     const res = await send('PUT', '/api/v1/users/profile', { dateOfBirth: '1999-02-28' });
     expect(res.statusCode).toBe(200);
@@ -149,6 +180,14 @@ describe('POST /onboarding/step', () => {
     storedDob = new Date(2013, 0, 1);
     const res = await send('POST', '/api/v1/onboarding/step', { step: 'complete' });
     expect(res.statusCode).toBe(400);
+    expect(mockUpdateUser).not.toHaveBeenCalled();
+  });
+
+  it('refuses to finish onboarding with a date of birth older than 75', async () => {
+    storedDob = new Date(1915, 2, 3);
+    const res = await send('POST', '/api/v1/onboarding/step', { step: 'complete' });
+    expect(res.statusCode).toBe(400);
+    expect(res.json().error.message).toMatch(/75/);
     expect(mockUpdateUser).not.toHaveBeenCalled();
   });
 
