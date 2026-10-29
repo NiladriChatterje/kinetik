@@ -29,9 +29,9 @@ export const FilterConstraintsScreen: React.FC<{ navigation: any }> = ({ navigat
           <Text style={styles.sliderValue}>{ageMin} - {ageMax} years</Text>
           <View style={styles.sliderRow}>
             <Text style={styles.sliderMin}>18</Text>
-            <Slider style={styles.slider} step={1} minimumValue={18} maximumValue={80} value={ageMin} onValueChange={setAgeMin} minimumTrackTintColor={colors.textPrimary} maximumTrackTintColor={colors.surfaceHighlight} thumbTintColor={colors.textPrimary} />
-            <Slider style={styles.slider} step={1} minimumValue={18} maximumValue={80} value={ageMax} onValueChange={setAgeMax} minimumTrackTintColor={colors.textPrimary} maximumTrackTintColor={colors.surfaceHighlight} thumbTintColor={colors.textPrimary} />
-            <Text style={styles.sliderMax}>80</Text>
+            <Slider style={styles.slider} step={1} minimumValue={18} maximumValue={75} value={ageMin} onValueChange={setAgeMin} minimumTrackTintColor={colors.textPrimary} maximumTrackTintColor={colors.surfaceHighlight} thumbTintColor={colors.textPrimary} />
+            <Slider style={styles.slider} step={1} minimumValue={18} maximumValue={75} value={ageMax} onValueChange={setAgeMax} minimumTrackTintColor={colors.textPrimary} maximumTrackTintColor={colors.surfaceHighlight} thumbTintColor={colors.textPrimary} />
+            <Text style={styles.sliderMax}>75</Text>
           </View>
         </Card>
 

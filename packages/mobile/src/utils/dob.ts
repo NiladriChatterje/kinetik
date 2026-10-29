@@ -1,8 +1,12 @@
 /**
  * Date of birth as the forms hold it (DD/MM/YYYY) and as the server stores
  * it (YYYY-MM-DD). Shared by the identity onboarding step and Edit profile,
- * so both apply the same formatting and the same 18+ rule.
+ * so both apply the same formatting and the same 18-to-75 rule (the server
+ * enforces the same range in services/age.ts).
  */
+
+export const MIN_AGE = 18;
+export const MAX_AGE = 75;
 
 /** Auto-format DOB input as DD/MM/YYYY
  *  Adds "/" the moment DD is complete (2 digits) and when MM is complete (2 more digits). */
@@ -22,7 +26,7 @@ export function formatDob(raw: string): string {
   return formatted;
 }
 
-/** Parse DD/MM/YYYY string and check age >= 18. */
+/** Parse DD/MM/YYYY string and check the age is 18 to 75. */
 export function validateDob(dob: string): { valid: boolean; error?: string } {
   const parts = dob.split('/');
   if (parts.length !== 3) {
@@ -55,8 +59,11 @@ export function validateDob(dob: string): { valid: boolean; error?: string } {
     age--;
   }
 
-  if (age < 18) {
-    return { valid: false, error: 'You must be at least 18 years old to use Kinetik.' };
+  if (age < MIN_AGE) {
+    return { valid: false, error: `You must be at least ${MIN_AGE} years old to use Kinetik.` };
+  }
+  if (age > MAX_AGE) {
+    return { valid: false, error: `Kinetik is for people aged ${MIN_AGE} to ${MAX_AGE}. Check the year you entered.` };
   }
 
   return { valid: true };
