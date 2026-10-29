@@ -3936,18 +3936,22 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     gap: spacing.sm,
     paddingHorizontal: spacing.md,
-    paddingVertical: spacing.xs,
-  },
-  suggestionChip: {
-    paddingHorizontal: spacing.md,
     paddingVertical: spacing.sm,
-    backgroundColor: colors.surface,
+  },
+  // Outlined in black on white, like the outline button: the light grey
+  // fill with a hairline border all but vanished against the page and the
+  // vibe row beneath it
+  suggestionChip: {
+    paddingHorizontal: spacing.lg,
+    paddingVertical: spacing.sm + 1,
+    backgroundColor: colors.background,
     borderRadius: radius.full,
     borderWidth: 1,
-    borderColor: colors.cardBorder,
+    borderColor: colors.textPrimary,
   },
   suggestionText: {
     ...typography.body2,
+    fontWeight: '600',
     color: colors.textPrimary,
   },
 
