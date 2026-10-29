@@ -55,3 +55,6 @@ packages/mobile/credentials/
 packages/mobile/google-services.json
 packages/mobile/firebase-service-account*.json
 packages/mobile/android/app/google-services.json
+
+# Play Store graphics are kept locally, never in the repo
+screenshots/
