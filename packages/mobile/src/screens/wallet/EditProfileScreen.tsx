@@ -27,6 +27,7 @@ import {
   isDatingCategoryValue,
 } from '../../components/profile/profileOptions';
 import { formatDob, validateDob, dobToIso, isoToDob } from '../../utils/dob';
+import { BIO_MAX_CHARS, BIO_MAX_WORDS, countWords, sanitizeBio, validateBio } from '../../utils/bio';
 import { useToast } from '../../hooks/useToast';
 import { useAuthStore } from '../../store/authStore';
 import { api } from '../../services/api';
@@ -35,7 +36,6 @@ import { colors, typography, spacing, radius } from '../../theme';
 // Same limits as the profile endpoint (api-core routes/users.ts)
 const NAME_MAX = 100;
 const PRONOUNS_MAX = 50;
-const BIO_MAX = 500;
 const OCCUPATION_MAX = 100;
 const EDUCATION_MAX = 255;
 
@@ -64,7 +64,8 @@ function formFromProfile(p: any): FormState {
     gender: genderOptionFor(p?.gender),
     pronouns: str(p?.pronouns),
     datingCategory: isDatingCategoryValue(p?.datingCategory) ? p.datingCategory : null,
-    bio: str(p?.bio),
+    // A bio saved before the plain-text rule may hold emoji: shown stripped, saved only if edited
+    bio: sanitizeBio(str(p?.bio)),
     occupation: str(p?.occupation),
     education: str(p?.education),
     aboutAnswers: aboutAnswersFromProfile(p?.aboutAnswers) ?? emptyAboutAnswers(),
@@ -105,6 +106,8 @@ function firstProblem(form: FormState): [string, string] | null {
   if (form.dob.length < 10) return ['Date of birth incomplete', 'Enter it as DD/MM/YYYY.'];
   const dob = validateDob(form.dob);
   if (!dob.valid) return ['Invalid date of birth', dob.error || 'Check the date.'];
+  const bio = validateBio(form.bio);
+  if (!bio.valid) return ['Check your bio', bio.error || 'Plain text, up to 120 words.'];
   if (!form.gender) return ['Gender missing', 'Pick one to continue.'];
   if (!form.datingCategory) return ['Looking for?', 'Pick what you are here for.'];
   if (!tidy(form.pronouns)) return ['Pronouns missing', 'Add how people should refer to you.'];
@@ -196,7 +199,7 @@ export const EditProfileScreen: React.FC = () => {
     displayName: (v: string) => setForm((p) => (p ? { ...p, displayName: v } : p)),
     dob: (v: string) => setForm((p) => (p ? { ...p, dob: formatDob(v) } : p)),
     pronouns: (v: string) => setForm((p) => (p ? { ...p, pronouns: v } : p)),
-    bio: (v: string) => setForm((p) => (p ? { ...p, bio: v } : p)),
+    bio: (v: string) => setForm((p) => (p ? { ...p, bio: sanitizeBio(v) } : p)),
     occupation: (v: string) => setForm((p) => (p ? { ...p, occupation: v } : p)),
     education: (v: string) => setForm((p) => (p ? { ...p, education: v } : p)),
     gender: (g: GenderOption) => setForm((p) => (p ? { ...p, gender: g } : p)),
@@ -361,16 +364,16 @@ export const EditProfileScreen: React.FC = () => {
                 style={[styles.bioInput, bioFocused && styles.bioInputFocused]}
                 value={form.bio}
                 onChangeText={handlers.bio}
-                placeholder="A few lines about you"
+                placeholder="A few lines about you, in plain text"
                 placeholderTextColor={colors.textMuted}
                 multiline
-                maxLength={BIO_MAX}
+                maxLength={BIO_MAX_CHARS}
                 textAlignVertical="top"
                 autoCapitalize="sentences"
                 onFocus={() => setBioFocused(true)}
                 onBlur={() => setBioFocused(false)}
               />
-              <Text style={styles.counter}>{form.bio.length} / {BIO_MAX}</Text>
+              <Text style={styles.counter}>{countWords(form.bio)} / {BIO_MAX_WORDS} words</Text>
 
               <Input
                 label="Work"

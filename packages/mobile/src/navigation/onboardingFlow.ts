@@ -10,6 +10,7 @@
 export const ONBOARDING_SCREENS = [
   'Identity',
   'About',
+  'Details',
   'Location',
   'Photos',
   'FaceVerification',
@@ -25,7 +26,8 @@ export type OnboardingScreen = (typeof ONBOARDING_SCREENS)[number];
 /** users.onboarding_step is the last finished step; this maps it to the next screen. */
 const RESUME_SCREEN: Record<string, OnboardingScreen> = {
   identity: 'About',
-  about: 'Location',
+  about: 'Details',
+  details: 'Location',
   location: 'Photos',
   photos: 'FaceVerification',
   // Users who finished the selfie but not KYC were never marked complete;

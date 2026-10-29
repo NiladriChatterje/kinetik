@@ -61,6 +61,7 @@ import { OTPVerifyScreen } from '../screens/onboarding/OTPVerifyScreen';
 import { ForgotPasswordScreen } from '../screens/onboarding/ForgotPasswordScreen';
 import { IdentityScreen } from '../screens/onboarding/IdentityScreen';
 import { AboutYouScreen } from '../screens/onboarding/AboutYouScreen';
+import { AboutYourselfScreen } from '../screens/onboarding/AboutYourselfScreen';
 import { LocationPermissionScreen } from '../screens/onboarding/LocationPermissionScreen';
 import { PhotoUploadScreen } from '../screens/onboarding/PhotoUploadScreen';
 // Lazy-load to defer NitroModules / react-native-fast-tflite native init
@@ -144,6 +145,7 @@ export type OnboardingStackParamList = {
   ForgotPassword: { email?: string } | undefined;
   Identity: undefined;
   About: undefined;
+  Details: undefined;
   Location: undefined;
   Photos: undefined;
   FaceVerification: undefined;
@@ -186,6 +188,7 @@ const AuthNavigator = React.memo(function AuthNavigator() {
       <OnboardingStack.Screen name="ForgotPassword" component={ForgotPasswordScreen} />
       <OnboardingStack.Screen name="Identity" component={IdentityScreen} />
       <OnboardingStack.Screen name="About" component={AboutYouScreen} />
+      <OnboardingStack.Screen name="Details" component={AboutYourselfScreen} />
       <OnboardingStack.Screen name="Location" component={LocationPermissionScreen} />
       <OnboardingStack.Screen name="Photos" component={PhotoUploadScreen} />
       <OnboardingStack.Screen name="FaceVerification">

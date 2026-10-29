@@ -261,7 +261,7 @@ export const FaceVerificationScreen: React.FC<{ navigation: any }> = ({ navigati
     return (
       <SafeAreaView style={styles.container}>
         <View style={styles.content}>
-          <StepLabel label="Step 5 of 5" onBack={goBack} />
+          <StepLabel label="Step 6 of 6" onBack={goBack} />
           <Text style={styles.title}>Verify You're Real</Text>
           <Text style={styles.subtitle}>
             We need access to your camera to take a verification selfie.
@@ -322,7 +322,7 @@ export const FaceVerificationScreen: React.FC<{ navigation: any }> = ({ navigati
       <SafeAreaView style={styles.container}>
         {/* Scrolls so the tips stay reachable on short screens */}
         <ScrollView style={styles.resultScroll} contentContainerStyle={styles.resultContent}>
-          <StepLabel label="Step 5 of 5" onBack={goBack} />
+          <StepLabel label="Step 6 of 6" onBack={goBack} />
           <Text style={styles.title}>Verify You're Real</Text>
           <Text style={styles.subtitle}>We match your selfie against the photos you uploaded</Text>
 
@@ -384,7 +384,7 @@ export const FaceVerificationScreen: React.FC<{ navigation: any }> = ({ navigati
     return (
       <SafeAreaView style={styles.container}>
         <View style={styles.content}>
-          <StepLabel label="Step 5 of 5" onBack={goBack} backDisabled />
+          <StepLabel label="Step 6 of 6" onBack={goBack} backDisabled />
           <Text style={styles.title}>Verify You're Real</Text>
           <Text style={styles.subtitle}>We match your selfie against the photos you uploaded</Text>
 
@@ -407,7 +407,7 @@ export const FaceVerificationScreen: React.FC<{ navigation: any }> = ({ navigati
     return (
       <SafeAreaView style={styles.container}>
         <View style={styles.content}>
-          <StepLabel label="Step 5 of 5" onBack={goBack} />
+          <StepLabel label="Step 6 of 6" onBack={goBack} />
           <Text style={styles.title}>Verify You're Real</Text>
           <Text style={styles.subtitle}>Check your selfie before submitting</Text>
 
@@ -438,7 +438,7 @@ export const FaceVerificationScreen: React.FC<{ navigation: any }> = ({ navigati
   return (
     <SafeAreaView style={styles.container}>
       <View style={styles.content}>
-        <StepLabel label="Step 5 of 5" onBack={goBack} />
+        <StepLabel label="Step 6 of 6" onBack={goBack} />
         <Text style={styles.title}>Verify You're Real</Text>
         <Text style={styles.subtitle}>Take a clear selfie so we can match it to your photos</Text>
 
