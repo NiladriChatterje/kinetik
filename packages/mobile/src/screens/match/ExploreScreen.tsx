@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback, useRef } from 'react';
+import React, { useState, useEffect, useCallback, useRef, useMemo } from 'react';
 import {
   View, Text, StyleSheet, FlatList, TouchableOpacity,
   ActivityIndicator, RefreshControl, Dimensions,
@@ -33,22 +33,164 @@ interface GridProfile {
 
 const PAGE_SIZE = 24;
 
+// ─── Layout ───────────────────────────────────────────────
+// The page reads top to bottom in distance bands ("Within 5 km", …). Inside
+// a band the nearest person gets a full-width card, the next four come as
+// two pairs, then the rhythm repeats: one big, two rows of two. Text sits
+// under the photo in black on white, never printed over it, so the photo
+// stays a photo and every name is readable whatever the picture.
 const SCREEN_WIDTH = Dimensions.get('window').width;
-const GRID_GAP = spacing.md;
-const CARD_WIDTH = (SCREEN_WIDTH - spacing.xxl * 2 - GRID_GAP) / 2;
-const TALL = Math.round(CARD_WIDTH * 1.45);
-const SHORT = Math.round(CARD_WIDTH * 1.1);
+const GAP = spacing.md;
+const CONTENT_WIDTH = SCREEN_WIDTH - spacing.xxl * 2;
+const PAIR_WIDTH = (CONTENT_WIDTH - GAP) / 2;
+// A near-square hero and 5:6 pairs: a hero plus one pair fit on one screen
+const HERO_PHOTO_H = Math.round(CONTENT_WIDTH * 0.9);
+const PAIR_PHOTO_H = Math.round(PAIR_WIDTH * 1.2);
+/** Profiles per rhythm inside a band: one hero, then two pairs */
+const RHYTHM = 5;
 
-/** Staggered height: tall–short per column, offset between columns */
-const cardHeight = (index: number) => {
-  const mod = index % 4;
-  return mod === 0 || mod === 3 ? TALL : SHORT;
-};
+type Row =
+  | { kind: 'band'; key: string; label: string }
+  | { kind: 'hero'; key: string; profile: GridProfile }
+  | { kind: 'pair'; key: string; profiles: [GridProfile, GridProfile | undefined] };
 
-const COLS = 2;
+/** The band a profile falls in; the server already orders nearest first, NULL last. */
+function bandLabel(distanceKm: number | undefined): string {
+  if (distanceKm == null) return 'Distance unknown';
+  if (distanceKm < 5) return 'Within 5 km';
+  if (distanceKm < 20) return '5 to 20 km';
+  if (distanceKm < 50) return '20 to 50 km';
+  return 'Further away';
+}
+
+/**
+ * Profiles → rows for the list. Bands are shown only when the viewer has a
+ * location (some distance is known); without one the list is a single
+ * unlabelled rhythm. A dropped profile simply reflows the rows after it.
+ */
+function buildRows(profiles: GridProfile[]): Row[] {
+  const withBands = profiles.some((p) => p.distanceKm != null);
+  const rows: Row[] = [];
+  let band: string | null = null;
+  let posInBand = 0;
+  let pending: GridProfile | null = null;
+
+  const flushPair = () => {
+    if (pending) {
+      rows.push({ kind: 'pair', key: `pair:${pending.userId}`, profiles: [pending, undefined] });
+      pending = null;
+    }
+  };
+
+  for (const p of profiles) {
+    const label = withBands ? bandLabel(p.distanceKm) : '';
+    if (withBands && label !== band) {
+      flushPair();
+      band = label;
+      posInBand = 0;
+      rows.push({ kind: 'band', key: `band:${label}`, label });
+    }
+    if (posInBand % RHYTHM === 0) {
+      flushPair();
+      rows.push({ kind: 'hero', key: `hero:${p.userId}`, profile: p });
+    } else if (pending) {
+      rows.push({ kind: 'pair', key: `pair:${pending.userId}`, profiles: [pending, p] });
+      pending = null;
+    } else {
+      pending = p;
+    }
+    posInBand += 1;
+  }
+  flushPair();
+  return rows;
+}
 
 /** Cross on the Face unverified tag, as on the Discover card */
 const UNVERIFIED_RED = '#E53935';
+
+const primaryPhoto = (p: GridProfile) => p.photos.find((ph) => ph.isPrimary) || p.photos[0];
+
+/** One person: photo on top, name and details underneath. */
+const ProfileTile = React.memo(function ProfileTile({
+  profile,
+  hero,
+  onPress,
+}: {
+  profile: GridProfile;
+  hero: boolean;
+  onPress: (profile: GridProfile) => void;
+}) {
+  const photo = primaryPhoto(profile);
+  const width = hero ? CONTENT_WIDTH : PAIR_WIDTH;
+  const photoHeight = hero ? HERO_PHOTO_H : PAIR_PHOTO_H;
+  const details = [
+    profile.occupation || profile.interests.slice(0, 2).map((i) => i.name).join(' · ') || null,
+    profile.distanceKm != null ? `~${profile.distanceKm} km` : null,
+  ].filter(Boolean).join(' · ');
+
+  return (
+    <TouchableOpacity
+      style={{ width }}
+      activeOpacity={0.85}
+      onPress={() => onPress(profile)}
+      accessibilityRole="button"
+      accessibilityLabel={`${profile.displayName}, ${profile.age}`}
+    >
+      <View style={[styles.photoFrame, { height: photoHeight }]}>
+        {photo ? (
+          <ProgressiveImage
+            uri={resolveUrl(photo.thumbnailUrl || photo.url)}
+            style={[styles.photo, profile.likedYou && styles.likedYouPhoto]}
+          />
+        ) : (
+          <View style={[styles.photo, styles.noPhoto, profile.likedYou && styles.likedYouPhoto]}>
+            <Ionicons name="person-outline" size={hero ? 48 : 36} color={colors.textMuted} />
+          </View>
+        )}
+
+        {profile.likedYou && (
+          <View style={styles.likedYouPill}>
+            <Ionicons name="heart" size={11} color="#fff" />
+            <Text style={styles.badgeText}>Liked you</Text>
+          </View>
+        )}
+
+        {profile.photos.length > 1 && (
+          <View style={styles.photoCountBadge}>
+            <Ionicons name="images-outline" size={11} color="#fff" />
+            <Text style={styles.badgeText}>{profile.photos.length}</Text>
+          </View>
+        )}
+      </View>
+
+      <View style={styles.caption}>
+        <View style={styles.nameRow}>
+          <Text style={hero ? styles.heroName : styles.pairName} numberOfLines={1}>
+            {profile.displayName}, {profile.age}
+          </Text>
+          {/* Face tag: tick when their selfie matched, cross when unverified or skipped */}
+          <Ionicons
+            name={profile.isVerified ? 'checkmark-circle' : 'close-circle'}
+            size={hero ? 16 : 14}
+            color={profile.isVerified ? colors.textPrimary : UNVERIFIED_RED}
+            accessibilityLabel={profile.isVerified ? 'Face verified' : 'Face unverified'}
+          />
+          {hero && (
+            <Text style={[styles.faceText, !profile.isVerified && styles.faceTextUnverified]}>
+              {profile.isVerified ? 'Face verified' : 'Face unverified'}
+            </Text>
+          )}
+        </View>
+        <View style={styles.detailRow}>
+          <DatingCategoryBadge category={profile.datingCategory} compact={!hero} />
+          {details ? (
+            <Text style={styles.detailText} numberOfLines={1}>{details}</Text>
+          ) : null}
+        </View>
+      </View>
+    </TouchableOpacity>
+  );
+});
 
 export const ExploreScreen: React.FC<{ navigation: any }> = ({ navigation }) => {
   const [profiles, setProfiles] = useState<GridProfile[]>([]);
@@ -78,7 +220,7 @@ export const ExploreScreen: React.FC<{ navigation: any }> = ({ navigation }) => 
     }
   }, []);
 
-  /** Infinite scroll: append the next page, deduped against the grid. */
+  /** Infinite scroll: append the next page, deduped against the list. */
   const loadMore = useCallback(async () => {
     if (loadingMoreRef.current || !hasMore) return;
     loadingMoreRef.current = true;
@@ -104,7 +246,7 @@ export const ExploreScreen: React.FC<{ navigation: any }> = ({ navigation }) => 
     fetchProfiles();
   }, [fetchProfiles]);
 
-  // Live grid updates from the shared /presence socket:
+  // Live updates from the shared /presence socket:
   //  - match:new → drop the profile (matched users leave Explore)
   //  - likes:new → grey the liker's card in place: they are in the Likes list
   //  - a like or pass sent from the deck → drop that card (the server leaves
@@ -126,7 +268,7 @@ export const ExploreScreen: React.FC<{ navigation: any }> = ({ navigation }) => 
     const onLikesNew = (data: any) => {
       // The id is present for Premium viewers and for a free viewer whose
       // lifetime reveal allowance had room; otherwise nothing is shown and
-      // the grid catches up on its next load.
+      // the list catches up on its next load.
       if (data?.likedByUserId) {
         setProfiles((prev) =>
           prev.map((p) => (p.userId === data.likedByUserId ? { ...p, likedYou: true } : p)),
@@ -136,7 +278,7 @@ export const ExploreScreen: React.FC<{ navigation: any }> = ({ navigation }) => 
     socket.on('match:new', onMatchNew);
     socket.on('likes:new', onLikesNew);
     // Premium gained or lost: "Liked you" is only sent to Premium viewers,
-    // so reload the grid once, quietly, as a pull-to-refresh would
+    // so reload once, quietly, as a pull-to-refresh would
     const offPremiumChanged = onPremiumChanged(() => {
       fetchProfiles(true);
     });
@@ -148,85 +290,33 @@ export const ExploreScreen: React.FC<{ navigation: any }> = ({ navigation }) => 
     };
   }, [fetchProfiles]);
 
-  const openProfile = (profile: GridProfile) => {
+  const openProfile = useCallback((profile: GridProfile) => {
     navigation.navigate('Discover', { focusProfile: profile });
-  };
+  }, [navigation]);
 
-  const primaryPhoto = (p: GridProfile) =>
-    p.photos.find((ph) => ph.isPrimary) || p.photos[0];
+  const rows = useMemo(() => buildRows(profiles), [profiles]);
 
-  const renderItem = useCallback(({ item, index }: { item: GridProfile; index: number }) => {
-    const photo = primaryPhoto(item);
-    const height = cardHeight(index);
-
-    return (
-      <TouchableOpacity
-        style={[styles.card, { height }]}
-        activeOpacity={0.85}
-        onPress={() => openProfile(item)}
-      >
-        {photo ? (
-          <ProgressiveImage
-            uri={resolveUrl(photo.thumbnailUrl || photo.url)}
-            style={[styles.cardImage, item.likedYou && styles.likedYouImage]}
-          />
-        ) : (
-          <View style={[styles.cardImage, styles.noPhoto, item.likedYou && styles.likedYouImage]}>
-            <Ionicons name="person-outline" size={36} color={colors.textMuted} />
-          </View>
-        )}
-
-        {item.likedYou && (
-          <View style={styles.likedYouPill}>
-            <Ionicons name="heart" size={11} color="#fff" />
-            <Text style={styles.photoCountText}>Liked you</Text>
-          </View>
-        )}
-
-        {item.photos.length > 1 && (
-          <View style={styles.photoCountBadge}>
-            <Ionicons name="images-outline" size={11} color="#fff" />
-            <Text style={styles.photoCountText}>{item.photos.length}</Text>
-          </View>
-        )}
-
-        {item.distanceKm != null && (
-          <View style={styles.distanceBadge}>
-            <Ionicons name="location-outline" size={11} color="#fff" />
-            <Text style={styles.photoCountText}>~{item.distanceKm} km</Text>
-          </View>
-        )}
-
-        <View style={styles.cardScrim}>
-          <View style={styles.nameRow}>
-            <Text style={styles.cardName} numberOfLines={1}>
-              {item.displayName}, {item.age}
-            </Text>
-            {/* Face tag: tick when their selfie matched, cross when unverified or skipped */}
-            <Ionicons
-              name={item.isVerified ? 'checkmark-circle' : 'close-circle'}
-              size={14}
-              color={item.isVerified ? colors.success : UNVERIFIED_RED}
-              accessibilityLabel={item.isVerified ? 'Face verified' : 'Face unverified'}
-            />
-          </View>
-          {!item.isVerified && (
-            <Text style={styles.cardUnverified} numberOfLines={1}>Face unverified</Text>
-          )}
-          <DatingCategoryBadge category={item.datingCategory} onDark compact style={styles.cardCategory} />
-          {item.occupation ? (
-            <Text style={styles.cardSub} numberOfLines={1}>{item.occupation}</Text>
-          ) : item.interests.length > 0 ? (
-            <Text style={styles.cardSub} numberOfLines={1}>
-              {item.interests.slice(0, 2).map((i) => i.name).join(' · ')}
-            </Text>
-          ) : null}
+  const renderRow = useCallback(({ item }: { item: Row }) => {
+    if (item.kind === 'band') {
+      return <Text style={styles.bandLabel}>{item.label}</Text>;
+    }
+    if (item.kind === 'hero') {
+      return (
+        <View style={styles.row}>
+          <ProfileTile profile={item.profile} hero onPress={openProfile} />
         </View>
-      </TouchableOpacity>
+      );
+    }
+    const [a, b] = item.profiles;
+    return (
+      <View style={[styles.row, styles.pairRow]}>
+        <ProfileTile profile={a} hero={false} onPress={openProfile} />
+        {b ? <ProfileTile profile={b} hero={false} onPress={openProfile} /> : <View style={{ width: PAIR_WIDTH }} />}
+      </View>
     );
-  }, []);
+  }, [openProfile]);
 
-  const keyExtractor = useCallback((item: GridProfile) => item.userId, []);
+  const keyExtractor = useCallback((row: Row) => row.key, []);
 
   return (
     <SafeAreaView style={styles.container}>
@@ -264,22 +354,15 @@ export const ExploreScreen: React.FC<{ navigation: any }> = ({ navigation }) => 
         </View>
       ) : (
         <FlatList
-          data={profiles}
+          data={rows}
           keyExtractor={keyExtractor}
-          renderItem={renderItem}
-          numColumns={COLS}
-          columnWrapperStyle={styles.gridRow}
-          contentContainerStyle={styles.gridContent}
+          renderItem={renderRow}
+          contentContainerStyle={styles.listContent}
           showsVerticalScrollIndicator={false}
           removeClippedSubviews
-          maxToRenderPerBatch={8}
-          windowSize={9}
-          initialNumToRender={6}
-          getItemLayout={(_, index) => ({
-            length: TALL + GRID_GAP,
-            offset: (TALL + GRID_GAP) * Math.floor(index / COLS),
-            index,
-          })}
+          maxToRenderPerBatch={6}
+          windowSize={7}
+          initialNumToRender={4}
           onEndReached={() => loadMore()}
           onEndReachedThreshold={1.5}
           refreshControl={
@@ -347,23 +430,31 @@ const styles = StyleSheet.create({
     borderRadius: radius.full,
   },
   refreshBtnText: { ...typography.button, color: colors.textInverse },
-  gridContent: { paddingHorizontal: spacing.xxl, paddingBottom: spacing.xxl },
-  gridRow: { gap: GRID_GAP },
-  card: {
-    flex: 1,
+
+  // ─── The list ───────────────────────────────────────────
+  listContent: { paddingHorizontal: spacing.xxl, paddingBottom: spacing.xxl },
+  bandLabel: {
+    ...typography.label,
+    color: colors.textMuted,
+    marginTop: spacing.sm,
+    marginBottom: spacing.md,
+  },
+  row: { marginBottom: spacing.xl },
+  pairRow: { flexDirection: 'row', gap: GAP },
+  photoFrame: {
+    width: '100%',
     borderRadius: radius.lg,
     overflow: 'hidden',
     backgroundColor: colors.surfaceHighlight,
   },
-  cardImage: { width: '100%', height: '100%' },
+  photo: { width: '100%', height: '100%' },
   noPhoto: { justifyContent: 'center', alignItems: 'center' },
-  // "Liked you" state — the photo is greyed and a pill labels it at the
-  // top; badges and the scrim stay at full opacity above the photo
-  likedYouImage: { opacity: 0.35 },
+  // "Liked you": the photo is greyed and a pill labels it; the caption below stays as it is
+  likedYouPhoto: { opacity: 0.35 },
   likedYouPill: {
     position: 'absolute',
     top: spacing.sm,
-    alignSelf: 'center',
+    left: spacing.sm,
     flexDirection: 'row',
     alignItems: 'center',
     gap: 4,
@@ -371,7 +462,6 @@ const styles = StyleSheet.create({
     paddingHorizontal: spacing.md,
     paddingVertical: 3,
     borderRadius: radius.full,
-    zIndex: 2,
   },
   photoCountBadge: {
     position: 'absolute',
@@ -385,34 +475,17 @@ const styles = StyleSheet.create({
     paddingVertical: 2,
     borderRadius: radius.full,
   },
-  photoCountText: { ...typography.caption, fontSize: 10, color: '#fff', fontWeight: '600' },
-  distanceBadge: {
-    position: 'absolute',
-    top: spacing.sm,
-    left: spacing.sm,
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 3,
-    backgroundColor: 'rgba(0,0,0,0.55)',
-    paddingHorizontal: 7,
-    paddingVertical: 2,
-    borderRadius: radius.full,
-  },
-  cardScrim: {
-    position: 'absolute',
-    left: 0,
-    right: 0,
-    bottom: 0,
-    paddingHorizontal: spacing.sm,
-    paddingTop: spacing.sm,
-    paddingBottom: spacing.sm,
-    backgroundColor: 'rgba(0,0,0,0.55)',
-  },
+  badgeText: { ...typography.caption, fontSize: 10, color: '#fff', fontWeight: '600' },
+
+  // ─── Under the photo ────────────────────────────────────
+  caption: { paddingTop: spacing.sm, paddingHorizontal: 2 },
   nameRow: { flexDirection: 'row', alignItems: 'center', gap: 4 },
-  cardName: { ...typography.body2, color: '#fff', fontWeight: '700', flexShrink: 1 },
-  cardUnverified: { ...typography.caption, color: 'rgba(255,255,255,0.75)', fontSize: 11, fontWeight: '600', marginTop: 1 },
-  cardCategory: { marginTop: 3, marginBottom: 2 },
-  cardSub: { ...typography.caption, color: 'rgba(255,255,255,0.75)', fontSize: 11, marginTop: 1 },
+  heroName: { ...typography.h3, color: colors.textPrimary, flexShrink: 1 },
+  pairName: { ...typography.body1, fontWeight: '700', color: colors.textPrimary, flexShrink: 1 },
+  faceText: { ...typography.caption, color: colors.textSecondary, fontWeight: '600', marginLeft: 2 },
+  faceTextUnverified: { color: UNVERIFIED_RED },
+  detailRow: { flexDirection: 'row', alignItems: 'center', gap: spacing.sm, marginTop: 4 },
+  detailText: { ...typography.caption, color: colors.textMuted, flexShrink: 1 },
   footerHint: {
     ...typography.caption,
     color: colors.textMuted,
