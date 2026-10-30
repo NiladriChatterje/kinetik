@@ -2372,6 +2372,9 @@ export const ChatScreen: React.FC<{ navigation: any; route: any }> = ({ navigati
               horizontal
               showsHorizontalScrollIndicator={false}
               keyboardShouldPersistTaps="handled"
+              // Exactly as tall as its chips: a ScrollView grows and shrinks
+              // by default and would share the column with the message list
+              style={styles.suggestionScroll}
               contentContainerStyle={styles.suggestionRow}
             >
               {suggestions.map((chip) => (
@@ -2382,7 +2385,7 @@ export const ChatScreen: React.FC<{ navigation: any; route: any }> = ({ navigati
                   activeOpacity={0.7}
                   accessibilityRole="button"
                 >
-                  <Text style={styles.suggestionText}>{chip}</Text>
+                  <Text style={styles.suggestionText} numberOfLines={1}>{chip}</Text>
                 </TouchableOpacity>
               ))}
             </ScrollView>
@@ -3932,20 +3935,34 @@ const styles = StyleSheet.create({
     marginTop: spacing.xs,
   },
   // ─── Icebreaker Bar ──────────────────────────────────
+  // The chip row keeps the height of its chips and nothing else. A
+  // ScrollView has flexGrow and flexShrink of 1 by default and so split the
+  // chat column with the message list: in a long chat the row was squeezed
+  // to a sliver and the text spilled over the outline, in a short one it
+  // ballooned.
+  suggestionScroll: {
+    flexGrow: 0,
+    flexShrink: 0,
+  },
   suggestionRow: {
     flexDirection: 'row',
+    alignItems: 'center',
     gap: spacing.sm,
     paddingHorizontal: spacing.md,
     paddingVertical: spacing.sm,
   },
   // Outlined in black on white, like the outline button: the light grey
   // fill with a hairline border all but vanished against the page and the
-  // vibe row beneath it
+  // vibe row beneath it. A fixed height, the 36 of the vibe circles below,
+  // with the text centred in it: an emoji or a Bengali or Devanagari word
+  // stands taller than the Latin line box and still keeps clear of the
+  // outline.
   suggestionChip: {
+    height: 36,
     paddingHorizontal: spacing.lg,
-    paddingVertical: spacing.sm + 1,
+    justifyContent: 'center',
     backgroundColor: colors.background,
-    borderRadius: radius.full,
+    borderRadius: 18,
     borderWidth: 1,
     borderColor: colors.textPrimary,
   },
