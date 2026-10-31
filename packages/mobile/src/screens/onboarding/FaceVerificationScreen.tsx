@@ -295,9 +295,8 @@ export const FaceVerificationScreen: React.FC<{ navigation: any }> = ({ navigati
         break;
       case 'mismatch':
         title = 'Not Matched';
-        message = outcome.issues.includes('low_match')
-          ? `Your selfie needs at least a ${needed}% match with your photos. Retake it, or skip for now.`
-          : 'Your face matched, but the selfie needs a retake. Retake it, or skip for now.';
+        // A selfie that matched is verified, so a mismatch is always a low match
+        message = `Your selfie needs at least a ${needed}% match with your photos. Retake it, or skip for now.`;
         tips = outcome.issues.map((issue) => FACE_ISSUE_TIPS[issue]);
         break;
       case 'no_face':

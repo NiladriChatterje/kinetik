@@ -14,7 +14,8 @@
  * Match: cosine similarity between the selfie embedding and each profile
  * photo embedding. confidence = 0.7·best + 0.3·avg, threshold 0.55, and at
  * least 2 profile photos must contain a detectable face — same rules the
- * old server-side face service enforced.
+ * old server-side face service enforced. The head-angle and second-face
+ * checks only explain a miss; they never fail a selfie that matched.
  *
  * This is an identity match only: it answers "is this the same person as the
  * uploaded photos?". It is NOT a liveness or anti-spoofing check — a printed
@@ -39,8 +40,9 @@ async function getFastTflite() {
 
 // ─── Tunables (parity with the retired server-side face service) ─
 // The two head-angle limits are an image-quality guard, not a pose challenge:
-// a face turned far from the camera yields an unreliable embedding, so the
-// selfie is rejected as unusable rather than judged as a mismatch.
+// a face turned far from the camera yields an unreliable embedding, so a miss
+// is explained by the pose rather than judged as a mismatch. A selfie that
+// matched despite the pose is a match.
 const MAX_HEAD_YAW_DEG = 30; // |rotationY| — left/right turn
 const MAX_HEAD_PITCH_DEG = 25; // |rotationX| — up/down nod
 export const MIN_MATCH_THRESHOLD = 0.55; // cosine similarity on MobileFaceNet embeddings
@@ -298,15 +300,23 @@ export async function verifySelfie(
   const best = scores.length ? Math.max(...scores) : 0;
   const avg = scores.length ? scores.reduce((s, v) => s + v, 0) / scores.length : 0;
   const confidence = best * 0.7 + avg * 0.3;
+  const matched = scores.length > 0 && confidence >= MIN_MATCH_THRESHOLD;
 
-  if (scores.length && confidence < MIN_MATCH_THRESHOLD) issues.push('low_match');
+  if (scores.length && !matched) issues.push('low_match');
+
+  // A match at or above the threshold verifies, given enough profile photos
+  // with a face. The head-angle and second-face notes guard against an
+  // unreliable embedding, so they explain a miss and never undo a match: a
+  // 65% selfie used to fail for a nodded head, under "65% match, 55% needed".
+  const verified = matched && !issues.includes('few_profile_faces');
 
   return {
-    verified: issues.length === 0,
+    verified,
     confidence: Math.round(confidence * 1000) / 1000,
     scores: scores.map((s) => Math.round(s * 10000) / 10000),
     faceDetectedInSelfie: true,
     profileFacesDetected: profileEmbeddings.length,
-    issues,
+    // Why it did not verify; nothing when it did
+    issues: verified ? [] : issues,
   };
 }
