@@ -16,6 +16,7 @@ import { getRedis, publishChatMessage } from '../services/redis';
 import { savePhoto, saveEncryptedChatFile, getEncryptedChatFileBuffer, deleteChatFile } from '../services/photoStorage';
 import { cursorTimestampSql, decodeCursor, encodeCursor, pageLimit } from '../services/listCursor';
 import { isMessageId, quoteFromRow, ReplyQuote } from '../services/messageReply';
+import { isPlanDayOver } from '../services/planDay';
 
 const MESSAGE_ENCRYPTION_KEY = process.env.MESSAGE_ENCRYPTION_KEY || '';
 const redis = getRedis();
@@ -1965,7 +1966,10 @@ export async function matchRoutes(app: FastifyInstance) {
       `SELECT planner_data FROM ${TABLES.MATCHES} WHERE id = $1`,
       [matchId],
     );
-    const plannerData = result.rows[0]?.planner_data || null;
+    const stored = result.rows[0]?.planner_data || null;
+    // A plan whose day is over is not handed out: the planner opens empty
+    // for the next one, on every app version. The row stays as it is.
+    const plannerData = stored && isPlanDayOver(stored.date) ? null : stored;
 
     return reply.send({ success: true, data: { plannerData } });
   });
@@ -2020,8 +2024,9 @@ export async function matchRoutes(app: FastifyInstance) {
   // Stores a date both users have agreed on for their meet-up (the DM
   // "fix a date" flow). The date is a plain YYYY-MM-DD (the sender's local
   // calendar day) so both ends display the same day regardless of timezone.
-  // The row is kept after the date passes — the client treats a date before
-  // "today" as expired and stops showing the pinned banner.
+  // A day that is already over is refused. The row is kept after the date
+  // passes (the profile counts dates planned); the app drops the pinned
+  // banner and the plan once the day is over.
   app.put('/:id/date', async (request: FastifyRequest<{ Params: { id: string } }>, reply: FastifyReply) => {
     const { sub: userId } = request.user as any;
     const { id: matchId } = request.params;
@@ -2047,6 +2052,12 @@ export async function matchRoutes(app: FastifyInstance) {
       return reply.status(400).send({
         success: false,
         error: { code: ERROR_CODES.VALIDATION_ERROR, message: 'date is not a valid calendar date' },
+      });
+    }
+    if (isPlanDayOver(date)) {
+      return reply.status(400).send({
+        success: false,
+        error: { code: ERROR_CODES.VALIDATION_ERROR, message: 'That day has already passed. Pick today or a later date.' },
       });
     }
 
