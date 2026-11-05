@@ -23,6 +23,7 @@ import { errorHandler } from './middleware/errorHandler';
 import { eventBus } from './services/eventBus';
 import { initializeRedis } from './services/redis';
 import { startSubscriptionSweep } from './services/subscriptionSweep';
+import { startPlanCleanup } from './services/planCleanup';
 
 const PORT = parseInt(process.env.PORT || '3001', 10);
 const JWT_SECRET = process.env.JWT_SECRET || 'super-secret-jwt-key-change-in-production-2024';
@@ -136,6 +137,9 @@ async function bootstrap() {
 
     // Picks up Play renewals and missed acknowledgements when RTDN is absent
     startSubscriptionSweep();
+
+    // Once a day, empties date plans whose day is over
+    startPlanCleanup();
 
     // Graceful shutdown — must be inside bootstrap() so eventBus/redis are in scope
     const shutdown = async (signal: string) => {
