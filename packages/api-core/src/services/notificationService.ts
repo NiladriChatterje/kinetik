@@ -79,7 +79,22 @@ export interface NotificationPayload {
   badge?: number;
   /** Android notification channel the app created ('default' or 'messages') */
   channelId?: string;
+  /**
+   * Pushes of one kind share one tray entry: a new push with the same group
+   * replaces the one already showing instead of stacking under it (Android
+   * notification tag, iOS collapse id). Each push carries the current count,
+   * so the entry left in the tray is always the up-to-date one.
+   */
+  group?: PushGroup;
 }
+
+/** One tray entry per kind of activity */
+export const PUSH_GROUPS = {
+  messages: 'kinetik.messages',
+  likes: 'kinetik.likes',
+  matches: 'kinetik.matches',
+} as const;
+export type PushGroup = (typeof PUSH_GROUPS)[keyof typeof PUSH_GROUPS];
 
 /**
  * Send a push notification to a single user.
@@ -149,6 +164,7 @@ async function sendToTokens(
       priority: payload.priority ?? 'high',
       badge: payload.badge,
       channelId: payload.channelId,
+      ...(payload.group ? { tag: payload.group, collapseId: payload.group } : {}),
     }));
 
   if (messages.length === 0) return;
@@ -232,17 +248,45 @@ export const notificationEvents = {
       sound: 'default',
       badge: unread,
       channelId: 'messages',
+      group: PUSH_GROUPS.messages,
     });
   },
 
-  /** A new match. A tap opens the new chat, where the opening line waits. */
+  /**
+   * A new match. The push says how many new matches are waiting: matches the
+   * recipient has neither written in nor opened (no message of theirs, none
+   * read), always counting this one. While this is the only one a tap opens
+   * the new chat, where the opening line waits, otherwise the chat list.
+   */
   async newMatch(userId: string, chat: PushChatTarget): Promise<void> {
+    let fresh = 1;
+    try {
+      const result = await query<{ fresh: number }>(
+        `SELECT COUNT(*)::int AS fresh
+         FROM ${TABLES.MATCHES} m
+         WHERE m.is_active = TRUE
+           AND (m.user_a_id = $1 OR m.user_b_id = $1)
+           AND (m.id = $2 OR NOT EXISTS (
+             SELECT 1 FROM ${TABLES.MESSAGES} msg
+             WHERE msg.match_id = m.id
+               AND (msg.sender_id = $1 OR msg.read_at IS NOT NULL)
+           ))`,
+        [userId, chat.matchId],
+      );
+      fresh = Math.max(1, result.rows[0]?.fresh ?? 1);
+    } catch (error) {
+      console.warn('[notifications] Could not count new matches:', (error as Error)?.message);
+    }
+
     await sendPushNotification(userId, 'new.match', {
-      title: 'New match',
-      body: 'You have a new match! Say hi',
-      data: { type: 'new.match', screen: 'Chat', matchId: chat.matchId, partnerId: chat.partnerId, partnerName: chat.partnerName },
+      title: fresh > 1 ? 'New matches' : 'New match',
+      body: fresh > 1 ? `You have ${fresh} new matches! Say hi` : 'You have a new match! Say hi',
+      data: fresh > 1
+        ? { type: 'new.match', screen: 'ChatList' }
+        : { type: 'new.match', screen: 'Chat', matchId: chat.matchId, partnerId: chat.partnerId, partnerName: chat.partnerName },
       sound: 'default',
       channelId: 'messages',
+      group: PUSH_GROUPS.matches,
     });
   },
 
@@ -270,6 +314,7 @@ export const notificationEvents = {
       body: pending > 1 ? `${pending} people liked your profile!` : '1 person liked your profile!',
       data: { type: 'new.like', screen: 'Likes' },
       channelId: 'default',
+      group: PUSH_GROUPS.likes,
     });
   },
 };
