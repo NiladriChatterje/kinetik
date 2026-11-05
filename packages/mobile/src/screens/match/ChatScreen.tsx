@@ -3,7 +3,7 @@ import {
   View, Text, StyleSheet, FlatList, TextInput, TouchableOpacity,
   Image, KeyboardAvoidingView, Platform, Keyboard, ActivityIndicator,
   Modal, Alert, Dimensions, Linking, Pressable, Clipboard,
-  StatusBar, Animated, ScrollView, Easing, PanResponder,
+  StatusBar, Animated, ScrollView, Easing, PanResponder, AppState,
 } from 'react-native';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import Svg, { Path } from 'react-native-svg';
@@ -101,6 +101,23 @@ function todayDateStr(): string {
   return toDateStr(new Date());
 }
 
+/**
+ * A plan belongs to its day. Once that day is over, the plan is dropped: its
+ * date, activities and notes go, and the planner opens empty for the next one.
+ * A plan with no date yet (only ideas so far) is kept. The server keeps the
+ * row, so a date that happened still counts on the profile.
+ */
+function isPastDay(dateStr: string | null | undefined, today: string): boolean {
+  return !!dateStr && dateStr < today;
+}
+
+/** Milliseconds until the next local midnight, plus a second's margin */
+function msUntilMidnight(): number {
+  const now = new Date();
+  const next = new Date(now.getFullYear(), now.getMonth(), now.getDate() + 1);
+  return next.getTime() - now.getTime() + 1000;
+}
+
 // 'YYYY-MM-DD' → 'Fri, Aug 21' (built from the string's parts — no drift)
 function formatScheduledDate(dateStr: string): string {
   const [y, m, d] = dateStr.split('-').map(Number);
@@ -113,8 +130,6 @@ function formatScheduledDate(dateStr: string): string {
 }
 
 // Calendar helpers — swipeable month view for date selection
-const TODAY = new Date();
-const TODAY_STR = toDateStr(TODAY);
 
 const WEEKDAYS = ['S', 'M', 'T', 'W', 'T', 'F', 'S'];
 const MONTH_NAMES = [
@@ -122,7 +137,10 @@ const MONTH_NAMES = [
   'July', 'August', 'September', 'October', 'November', 'December',
 ];
 
-function getMonthDays(year: number, month: number): { date: Date; dateStr: string; day: number; isCurrentMonth: boolean; isPast: boolean }[] {
+// `today` is 'YYYY-MM-DD'. It is passed in, not read once when the module
+// loads: the app can stay open past midnight, and yesterday must not stay
+// pickable.
+function getMonthDays(year: number, month: number, today: string): { date: Date; dateStr: string; day: number; isCurrentMonth: boolean; isPast: boolean }[] {
   const firstDay = new Date(year, month, 1);
   const startDow = firstDay.getDay(); // 0=Sun
   const daysInMonth = new Date(year, month + 1, 0).getDate();
@@ -133,13 +151,13 @@ function getMonthDays(year: number, month: number): { date: Date; dateStr: strin
   // Previous month fill
   for (let i = startDow - 1; i >= 0; i--) {
     const d = new Date(year, month - 1, prevMonthDays - i);
-    cells.push({ date: d, dateStr: toDateStr(d), day: prevMonthDays - i, isCurrentMonth: false, isPast: d < new Date(TODAY.getFullYear(), TODAY.getMonth(), TODAY.getDate()) });
+    cells.push({ date: d, dateStr: toDateStr(d), day: prevMonthDays - i, isCurrentMonth: false, isPast: toDateStr(d) < today });
   }
 
   // Current month
   for (let i = 1; i <= daysInMonth; i++) {
     const d = new Date(year, month, i);
-    cells.push({ date: d, dateStr: toDateStr(d), day: i, isCurrentMonth: true, isPast: d < new Date(TODAY.getFullYear(), TODAY.getMonth(), TODAY.getDate()) });
+    cells.push({ date: d, dateStr: toDateStr(d), day: i, isCurrentMonth: true, isPast: toDateStr(d) < today });
   }
 
   // Next month fill
@@ -819,9 +837,13 @@ export const ChatScreen: React.FC<{ navigation: any; route: any }> = ({ navigati
   } | null>(null); // Currently being viewed in one-time viewer
 
   // ─── Date Planner State ────────────────────────────────
+  // Today's local date, kept fresh: it moves at midnight and when the app
+  // comes back to the foreground, so a plan whose day is over drops even
+  // from a chat left open overnight.
+  const [today, setToday] = useState(todayDateStr);
   const [plannerDate, setPlannerDate] = useState<string | null>(null); // YYYY-MM-DD
-  const [calendarMonth, setCalendarMonth] = useState(() => TODAY.getMonth());
-  const [calendarYear, setCalendarYear] = useState(() => TODAY.getFullYear());
+  const [calendarMonth, setCalendarMonth] = useState(() => new Date().getMonth());
+  const [calendarYear, setCalendarYear] = useState(() => new Date().getFullYear());
   const [plannerActivities, setPlannerActivities] = useState<string[]>([]);
   const [plannerNotes, setPlannerNotes] = useState<string[]>([]);
   const [newNoteText, setNewNoteText] = useState('');
@@ -1029,7 +1051,7 @@ export const ChatScreen: React.FC<{ navigation: any; route: any }> = ({ navigati
   const syncScheduledDate = useCallback(async () => {
     try {
       const res = await api.getMatchDetail(matchId);
-      if (res.success && res.data?.dateScheduled) {
+      if (res.success && res.data?.dateScheduled && !isPastDay(res.data.dateScheduled, todayDateStr())) {
         setScheduledDate(res.data.dateScheduled);
       }
     } catch {
@@ -1038,19 +1060,59 @@ export const ChatScreen: React.FC<{ navigation: any; route: any }> = ({ navigati
   }, [matchId]);
 
   // ─── Load the date planner data ─────────────────────────
+  // A plan whose day is over loads as an empty planner (see isPastDay)
+  const applyPlanner = useCallback((pd: any) => {
+    if (!pd || isPastDay(pd.date, todayDateStr())) {
+      setPlannerDate(null);
+      setPlannerActivities([]);
+      setPlannerNotes([]);
+      return;
+    }
+    setPlannerDate(pd.date || null);
+    setPlannerActivities(pd.activities || []);
+    setPlannerNotes(normalizeNotes(pd.notes));
+  }, []);
+
   const syncPlanner = useCallback(async () => {
     try {
       const res = await api.getMatchPlanner(matchId);
-      if (res.success && res.data?.plannerData) {
-        const pd = res.data.plannerData;
-        setPlannerDate(pd.date || null);
-        setPlannerActivities(pd.activities || []);
-        setPlannerNotes(normalizeNotes(pd.notes));
-      }
+      if (res.success) applyPlanner(res.data?.plannerData ?? null);
     } catch {
       // Silent
     }
-  }, [matchId]);
+  }, [matchId, applyPlanner]);
+
+  // Keep `today` true: a timer to the next midnight, and a check whenever
+  // the app returns to the foreground (a timer does not run while the phone
+  // sleeps)
+  useEffect(() => {
+    let timer: ReturnType<typeof setTimeout>;
+    const refresh = () => setToday(todayDateStr());
+    const arm = () => {
+      timer = setTimeout(() => {
+        refresh();
+        arm();
+      }, msUntilMidnight());
+    };
+    arm();
+    const sub = AppState.addEventListener('change', (state) => {
+      if (state === 'active') refresh();
+    });
+    return () => {
+      clearTimeout(timer);
+      sub.remove();
+    };
+  }, []);
+
+  // The day turned over with the chat open: drop a plan that is now past
+  useEffect(() => {
+    if (isPastDay(plannerDate, today)) {
+      setPlannerDate(null);
+      setPlannerActivities([]);
+      setPlannerNotes([]);
+    }
+    if (isPastDay(scheduledDate, today)) setScheduledDate(null);
+  }, [today, plannerDate, scheduledDate]);
 
   // ─── Add one planner note ───────────────────────────────
   const addPlannerNote = useCallback(() => {
@@ -1299,17 +1361,14 @@ export const ChatScreen: React.FC<{ navigation: any; route: any }> = ({ navigati
     // A date was fixed (by either side) — update the pinned banner live
     const onDateSet = (data: any) => {
       if (data?.matchId !== matchId) return;
-      setScheduledDate(data.dateScheduled || null);
+      const date = data.dateScheduled || null;
+      setScheduledDate(isPastDay(date, todayDateStr()) ? null : date);
     };
 
     // Planner data updated by the partner -- sync live
     const onPlannerUpdate = (data: any) => {
       if (data?.matchId !== matchId) return;
-      if (data.plannerData) {
-        setPlannerDate(data.plannerData.date || null);
-        setPlannerActivities(data.plannerData.activities || []);
-        setPlannerNotes(normalizeNotes(data.plannerData.notes));
-      }
+      if (data.plannerData) applyPlanner(data.plannerData);
     };
 
     // Partner unmatched — pop back to the chat list
@@ -2246,8 +2305,8 @@ export const ChatScreen: React.FC<{ navigation: any; route: any }> = ({ navigati
         </View>
 
         {/* Pinned scheduled date / planner — sticky under the header, visible on both
-          ends. Hidden once the date has passed ("expired"). Tapping opens the planner. */}
-        {scheduledDate && scheduledDate >= todayDateStr() && (
+          ends. Gone once the date has passed. Tapping opens the planner. */}
+        {scheduledDate && !isPastDay(scheduledDate, today) && (
           <TouchableOpacity
             style={styles.dateBanner}
             onPress={() => openDatePicker()}
@@ -2772,9 +2831,9 @@ export const ChatScreen: React.FC<{ navigation: any; route: any }> = ({ navigati
 
                 {/* Day grid */}
                 <View style={styles.calGrid}>
-                  {getMonthDays(calendarYear, calendarMonth).map((cell, i) => {
+                  {getMonthDays(calendarYear, calendarMonth, today).map((cell, i) => {
                     const selected = plannerDate === cell.dateStr;
-                    const isToday = cell.dateStr === TODAY_STR;
+                    const isToday = cell.dateStr === today;
                     return (
                       <TouchableOpacity
                         key={i}
