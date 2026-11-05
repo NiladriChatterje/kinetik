@@ -240,16 +240,10 @@ function normalizeNotes(raw: unknown): string[] {
 }
 
 // ─── Vibe Check Options ─────────────────────────────────
-// Each tap sends the emoji itself as the message (it used to send a word
-// such as "Approved"). `filled` is the icon shown while the tap pops.
-const VIBE_OPTIONS = [
-  { icon: 'heart-outline' as const, filled: 'heart' as const, sentAs: '❤️' },
-  { icon: 'thumbs-up-outline' as const, filled: 'thumbs-up' as const, sentAs: '👍' },
-  { icon: 'star-outline' as const, filled: 'star' as const, sentAs: '⭐' },
-  { icon: 'flame-outline' as const, filled: 'flame' as const, sentAs: '🔥' },
-  { icon: 'musical-notes-outline' as const, filled: 'musical-notes' as const, sentAs: '🎵' },
-  { icon: 'sparkles-outline' as const, filled: 'sparkles' as const, sentAs: '✨' },
-];
+// Each button shows the emoji a tap sends as the message. The faces have no
+// line icon (no icon set draws heart eyes), so the row shows the emoji
+// themselves. 🌚 is the cheeky one.
+const VIBE_OPTIONS = ['❤️', '👍', '🔥', '😂', '😍', '😢', '🌚'] as const;
 
 /**
  * Minimum clearance between the input bar and the bottom of the screen,
@@ -2394,24 +2388,22 @@ export const ChatScreen: React.FC<{ navigation: any; route: any }> = ({ navigati
           {/* Vibe check row — shown when not recording and no text input */}
           {!isRecording && inputText.trim().length === 0 && (
             <View style={styles.vibeCheckRow}>
-              {VIBE_OPTIONS.map((vibe, idx) => {
+              {VIBE_OPTIONS.map((emoji, idx) => {
                 const pressed = pressedVibe === idx;
                 return (
-                  <Animated.View key={idx} style={pressed ? { transform: [{ scale: vibeScale }] } : undefined}>
+                  <Animated.View key={emoji} style={pressed ? { transform: [{ scale: vibeScale }] } : undefined}>
                     <TouchableOpacity
                       style={[styles.vibeCheckBtn, pressed && styles.vibeCheckBtnPressed]}
                       onPress={() => {
                         if (sending) return;
                         popVibe(idx);
-                        void sendText(vibe.sentAs);
+                        void sendText(emoji);
                       }}
                       activeOpacity={0.6}
+                      accessibilityRole="button"
+                      accessibilityLabel={`Send ${emoji}`}
                     >
-                      <Ionicons
-                        name={pressed ? vibe.filled : vibe.icon}
-                        size={18}
-                        color={pressed ? ROSE : colors.textSecondary}
-                      />
+                      <Text style={styles.vibeCheckEmoji}>{emoji}</Text>
                     </TouchableOpacity>
                   </Animated.View>
                 );
@@ -3973,11 +3965,13 @@ const styles = StyleSheet.create({
   },
 
   // ─── Vibe Check Row ──────────────────────────────────
+  // Seven 36 circles with 12 between them and 12 either side: 348, inside a
+  // 360-wide phone.
   vibeCheckRow: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
-    gap: spacing.lg,
+    gap: spacing.md,
     paddingHorizontal: spacing.md,
     paddingVertical: spacing.sm,
   },
@@ -3993,5 +3987,13 @@ const styles = StyleSheet.create({
   },
   vibeCheckBtnPressed: {
     borderColor: ROSE,
+  },
+  // Centred in the circle without the font's extra top padding, which
+  // would push the emoji below the middle on Android
+  vibeCheckEmoji: {
+    fontSize: 18,
+    lineHeight: 22,
+    textAlign: 'center',
+    includeFontPadding: false,
   },
 });
