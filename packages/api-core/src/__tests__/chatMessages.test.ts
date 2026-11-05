@@ -264,13 +264,10 @@ describe('Chat Message API - Send Message', () => {
           : matchRow.user_a_id;
 
       // Simulate the notification call: the push is addressed to the
-      // partner, and the sender's name only heads the chat a tap opens
-      await notificationEvents.newMessage(partnerId, { matchId: 'match-1', partnerId: senderId, partnerName: 'Alice' });
+      // partner, and a tap opens the chat list
+      await notificationEvents.newMessage(partnerId);
 
-      expect(notificationEvents.newMessage).toHaveBeenCalledWith(
-        'user-789',
-        { matchId: 'match-1', partnerId: 'user-123', partnerName: 'Alice' },
-      );
+      expect(notificationEvents.newMessage).toHaveBeenCalledWith('user-789');
     });
   });
 

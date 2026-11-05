@@ -1430,18 +1430,16 @@ export async function matchRoutes(app: FastifyInstance) {
       });
     }
 
-    // Verify user is part of this match. The lock check and the sender's
-    // name are read-only and independent of it, so the three round trips
-    // overlap instead of queueing; the decisions below are made in the
-    // same order as before.
-    const [matchCheck, senderLocked, senderResult] = await Promise.all([
+    // Verify user is part of this match. The lock check is read-only and
+    // independent of it, so the two round trips overlap instead of
+    // queueing; the decisions below are made in the same order as before.
+    const [matchCheck, senderLocked] = await Promise.all([
       query(
         `SELECT id, user_a_id, user_b_id FROM ${TABLES.MATCHES}
          WHERE id = $1 AND (user_a_id = $2 OR user_b_id = $2) AND is_active = TRUE`,
         [matchId, userId],
       ),
       isChatLocked(userId, matchId),
-      query(`SELECT display_name FROM ${TABLES.USERS} WHERE id = $1`, [userId]),
     ]);
     if (!matchCheck.rows[0]) {
       return reply.status(404).send({
@@ -1498,10 +1496,8 @@ export async function matchRoutes(app: FastifyInstance) {
     // reconnect blip, which would otherwise silently drop the live broadcast
     publishChatMessage(REDIS_KEYS.CHAT_MESSAGES_CHANNEL, messagePayload);
 
-    // Notify the partner via push. The push names nobody and shows no text;
-    // the sender's name only heads the chat a tap opens.
-    const senderName = senderResult.rows[0]?.display_name || 'Someone';
-    notificationEvents.newMessage(partnerId, { matchId, partnerId: userId, partnerName: senderName }).catch(() => {});
+    // Notify the partner via push. The push names nobody and shows no text.
+    notificationEvents.newMessage(partnerId).catch(() => {});
 
     return reply.status(201).send({
       success: true,
@@ -1671,12 +1667,10 @@ export async function matchRoutes(app: FastifyInstance) {
     publishChatMessage(REDIS_KEYS.CHAT_MESSAGES_CHANNEL, messagePayload);
 
     // Notify the partner. The push names nobody and says nothing about the
-    // media; the sender's name only heads the chat a tap opens.
+    // media.
     const matchRow = matchCheck.rows[0];
     const partnerId = matchRow.user_a_id === userId ? matchRow.user_b_id : matchRow.user_a_id;
-    const senderResult = await query(`SELECT display_name FROM ${TABLES.USERS} WHERE id = $1`, [userId]);
-    const senderName = senderResult.rows[0]?.display_name || 'Someone';
-    notificationEvents.newMessage(partnerId, { matchId, partnerId: userId, partnerName: senderName }).catch(() => {});
+    notificationEvents.newMessage(partnerId).catch(() => {});
 
     return reply.status(201).send({
       success: true,

@@ -18,11 +18,11 @@ vi.mock('expo-server-sdk', () => {
   return { Expo };
 });
 
-const counts = { unread: 1, chats: 1, pending: 1, fresh: 1 };
+const counts = { unread: 1, pending: 1, fresh: 1 };
 const mockQuery = vi.fn(async (sql: string) => {
   if (sql.includes('push_enabled')) return { rows: [{ push_enabled: true }], rowCount: 1 };
   if (sql.includes('FROM push_tokens')) return { rows: [{ token: 'ExponentPushToken[abc]' }], rowCount: 1 };
-  if (sql.includes('AS unread')) return { rows: [{ unread: counts.unread, chats: counts.chats }], rowCount: 1 };
+  if (sql.includes('AS unread')) return { rows: [{ unread: counts.unread }], rowCount: 1 };
   if (sql.includes('AS pending')) return { rows: [{ pending: counts.pending }], rowCount: 1 };
   if (sql.includes('AS fresh')) return { rows: [{ fresh: counts.fresh }], rowCount: 1 };
   return { rows: [], rowCount: 0 };
@@ -47,35 +47,25 @@ describe('push text: counts, never names', () => {
   beforeEach(() => {
     sent.length = 0;
     counts.unread = 1;
-    counts.chats = 1;
     counts.pending = 1;
     counts.fresh = 1;
   });
 
-  it('one unread message: a plain line, and a tap opens that chat', async () => {
-    await notificationEvents.newMessage('u1', chat);
+  it('one unread message: a plain line, and a tap opens the chat list', async () => {
+    await notificationEvents.newMessage('u1');
     expect(last().title).toBe('New message');
     expect(last().body).toBe('You have a message!');
-    expect(last().data).toMatchObject({ type: 'new.message', screen: 'Chat', matchId: 'match-1', partnerId: 'partner-1' });
-    expect(last().title + last().body).not.toContain('Alice');
+    expect(last().data).toEqual({ type: 'new.message', screen: 'ChatList' });
     expect(last().channelId).toBe('messages');
   });
 
-  it('several unread messages in one chat: the count, still that chat', async () => {
-    counts.unread = 3;
-    await notificationEvents.newMessage('u1', chat);
-    expect(last().title).toBe('New messages');
-    expect(last().body).toBe('You have 3 new messages!');
-    expect(last().data.screen).toBe('Chat');
-    expect(last().badge).toBe(3);
-  });
-
-  it('unread messages in several chats: the count, and a tap opens the list', async () => {
+  it('several unread messages, from one person or many: the count, and the chat list', async () => {
     counts.unread = 4;
-    counts.chats = 2;
-    await notificationEvents.newMessage('u1', chat);
+    await notificationEvents.newMessage('u1');
+    expect(last().title).toBe('New messages');
     expect(last().body).toBe('You have 4 new messages!');
     expect(last().data).toEqual({ type: 'new.message', screen: 'ChatList' });
+    expect(last().badge).toBe(4);
   });
 
   it('a like: how many are waiting, never who', async () => {
@@ -107,8 +97,8 @@ describe('push text: counts, never names', () => {
   it('each kind keeps one tray entry: a newer push replaces the last of its kind', async () => {
     await notificationEvents.newLike('u1');
     await notificationEvents.newLike('u1');
-    await notificationEvents.newMessage('u1', chat);
-    await notificationEvents.newMessage('u1', chat);
+    await notificationEvents.newMessage('u1');
+    await notificationEvents.newMessage('u1');
     await notificationEvents.newMatch('u1', chat);
     await notificationEvents.newMatch('u1', chat);
     const [like1, like2, msg1, msg2, match1, match2] = sent;

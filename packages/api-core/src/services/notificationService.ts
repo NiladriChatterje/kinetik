@@ -198,8 +198,8 @@ async function sendToTokens(
 // ─── Event Handlers ──────────────────────────────────────
 
 /**
- * Where a tapped push leads. The name only heads the chat screen it opens;
- * no push ever shows it.
+ * Where a tapped match push leads. The name only heads the chat screen it
+ * opens; no push ever shows it.
  */
 export interface PushChatTarget {
   matchId: string;
@@ -215,15 +215,15 @@ export interface PushChatTarget {
 export const notificationEvents = {
   /**
    * A message the recipient has not seen. The push says how many messages
-   * are waiting across their chats. While only one chat has unread messages
-   * a tap opens that chat, otherwise the chat list.
+   * are waiting across all their chats, and a tap always opens the chat
+   * list: one tray entry covers every sender, so it cannot stand for any
+   * one chat.
    */
-  async newMessage(userId: string, chat?: PushChatTarget): Promise<void> {
+  async newMessage(userId: string): Promise<void> {
     let unread = 1;
-    let chats = 1;
     try {
-      const result = await query<{ unread: number; chats: number }>(
-        `SELECT COUNT(*)::int AS unread, COUNT(DISTINCT msg.match_id)::int AS chats
+      const result = await query<{ unread: number }>(
+        `SELECT COUNT(*)::int AS unread
          FROM ${TABLES.MESSAGES} msg
          JOIN ${TABLES.MATCHES} m ON m.id = msg.match_id
          WHERE m.is_active = TRUE
@@ -233,7 +233,6 @@ export const notificationEvents = {
         [userId],
       );
       unread = Math.max(1, result.rows[0]?.unread ?? 1);
-      chats = Math.max(1, result.rows[0]?.chats ?? 1);
     } catch (error) {
       // The count only shapes the text; the push itself still goes out
       console.warn('[notifications] Could not count unread messages:', (error as Error)?.message);
@@ -242,9 +241,7 @@ export const notificationEvents = {
     await sendPushNotification(userId, 'new.message', {
       title: unread > 1 ? 'New messages' : 'New message',
       body: unread > 1 ? `You have ${unread} new messages!` : 'You have a message!',
-      data: chats > 1 || !chat
-        ? { type: 'new.message', screen: 'ChatList' }
-        : { type: 'new.message', screen: 'Chat', matchId: chat.matchId, partnerId: chat.partnerId, partnerName: chat.partnerName },
+      data: { type: 'new.message', screen: 'ChatList' },
       sound: 'default',
       badge: unread,
       channelId: 'messages',
