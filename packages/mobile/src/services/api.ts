@@ -4,6 +4,7 @@ import { API_URL, WS_URL } from '../config';
 // Deferred-use circular import (proximity.ts calls api.getAreaDetails at
 // runtime, never at module init) — safe under Metro.
 import { rankByProximity } from '../utils/proximity';
+import type { ChatGame, DotsEdge } from '../components/games/gameTypes';
 
 /** The sign-up form, sent before the emailed code is verified. */
 export interface SignupForm {
@@ -707,6 +708,42 @@ class ApiClient {
     return this.request<{ plannerData: any }>(`/api/v1/matches/${matchId}/planner`, {
       method: 'PUT',
       body: JSON.stringify({ plannerData }),
+    });
+  }
+
+  // ─── Games inside a chat ────────────────────────────
+  /** The chat's current game: the latest one, unless it is over and this user closed it. */
+  async getMatchGame(matchId: string) {
+    return this.request<{ game: ChatGame | null }>(`/api/v1/matches/${matchId}/game`);
+  }
+
+  /** Start Dots and Boxes; the starter picks the size and moves first. */
+  async startDotsGame(matchId: string, rows: number, cols: number) {
+    return this.request<{ game: ChatGame }>(`/api/v1/matches/${matchId}/game`, {
+      method: 'POST',
+      body: JSON.stringify({ type: 'dots_boxes', rows, cols }),
+    });
+  }
+
+  /** Draw one line. The server checks the move and answers with the new board. */
+  async playDotsMove(matchId: string, gameId: string, edge: DotsEdge) {
+    return this.request<{ game: ChatGame }>(`/api/v1/matches/${matchId}/game/${gameId}/move`, {
+      method: 'POST',
+      body: JSON.stringify(edge),
+    });
+  }
+
+  /** Stop the game that is going on, for both players. */
+  async endMatchGame(matchId: string, gameId: string) {
+    return this.request<{ game: ChatGame }>(`/api/v1/matches/${matchId}/game/${gameId}/end`, {
+      method: 'POST',
+    });
+  }
+
+  /** Close a game that is over, in this user's chat only. */
+  async hideMatchGame(matchId: string, gameId: string) {
+    return this.request<{ hidden: boolean }>(`/api/v1/matches/${matchId}/game/${gameId}/hide`, {
+      method: 'POST',
     });
   }
 

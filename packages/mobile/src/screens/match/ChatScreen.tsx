@@ -27,6 +27,9 @@ import { ReportBlockSheet } from '../../components/safety/ReportBlockSheet';
 import { findLinks, openLink } from '../../utils/links';
 import { suggestReplies } from '../../services/replySuggestions';
 import { hapticImpact, hapticLight } from '../../utils/haptics';
+import { GamePickerSheet } from '../../components/games/GamePickerSheet';
+import { DotsBoxesPanel } from '../../components/games/DotsBoxesPanel';
+import type { ChatGame, DotsEdge } from '../../components/games/gameTypes';
 import { resolveUrl } from '../../config';
 import { colors, typography, spacing, radius } from '../../theme';
 
@@ -870,6 +873,14 @@ export const ChatScreen: React.FC<{ navigation: any; route: any }> = ({ navigati
   // ─── Report / block sheet ────────────────────────────────
   const [safetyVisible, setSafetyVisible] = useState(false);
 
+  // ─── Game inside the chat ─────────────────────────────
+  // The chat's current game (Dots and Boxes), shown above the messages. The
+  // board folds away on its header, and while the keyboard is up.
+  const [game, setGame] = useState<ChatGame | null>(null);
+  const [gamePickerVisible, setGamePickerVisible] = useState(false);
+  const [gameCollapsed, setGameCollapsed] = useState(false);
+  const [pendingEdge, setPendingEdge] = useState<DotsEdge | null>(null);
+
   // ─── Unmatch confirmation modal state ────────────────────
   const [unmatchModalVisible, setUnmatchModalVisible] = useState(false);
   const unmatchOverlayOpacity = useRef(new Animated.Value(0)).current;
@@ -1082,6 +1093,85 @@ export const ChatScreen: React.FC<{ navigation: any; route: any }> = ({ navigati
     }
   }, [matchId, applyPlanner]);
 
+  // ─── Load the chat's game ───────────────────────────────
+  const syncGame = useCallback(async () => {
+    try {
+      const res = await api.getMatchGame(matchId);
+      if (res.success) setGame(res.data?.game ?? null);
+    } catch {
+      // Silent: retried on the next (re)connect
+    }
+  }, [matchId]);
+
+  const startDotsGame = useCallback(async (rows: number, cols: number): Promise<boolean> => {
+    try {
+      const res = await api.startDotsGame(matchId, rows, cols);
+      if (res.success && res.data?.game) {
+        setGame(res.data.game);
+        setGameCollapsed(false);
+        setPendingEdge(null);
+        return true;
+      }
+      toast.showError('Could not start the game', res.error?.message || 'Please try again.');
+      // Someone started one a moment ago: show theirs
+      syncGame();
+    } catch (err: any) {
+      toast.showError('Could not start the game', err?.message || 'Check your connection and try again.');
+    }
+    return false;
+  }, [matchId, toast, syncGame]);
+
+  const playDotsMove = useCallback(async (edge: DotsEdge) => {
+    if (!game || pendingEdge) return;
+    hapticLight();
+    setPendingEdge(edge);
+    try {
+      const res = await api.playDotsMove(matchId, game.id, edge);
+      if (res.success && res.data?.game) {
+        setGame(res.data.game);
+      } else {
+        toast.showError('Move not played', res.error?.message || 'Please try again.');
+        syncGame();
+      }
+    } catch (err: any) {
+      toast.showError('Move not played', err?.message || 'Check your connection and try again.');
+    } finally {
+      setPendingEdge(null);
+    }
+  }, [matchId, game, pendingEdge, toast, syncGame]);
+
+  const endGame = useCallback(async () => {
+    if (!game) return;
+    try {
+      const res = await api.endMatchGame(matchId, game.id);
+      if (res.success && res.data?.game) setGame(res.data.game);
+      else syncGame();
+    } catch (err: any) {
+      toast.showError('Could not end the game', err?.message || 'Check your connection and try again.');
+    }
+  }, [matchId, game, toast, syncGame]);
+
+  const closeGame = useCallback(async () => {
+    if (!game) return;
+    const closing = game;
+    setGame(null);
+    try {
+      await api.hideMatchGame(matchId, closing.id);
+    } catch {
+      // Still closed here; it may show again on the next open
+    }
+  }, [matchId, game]);
+
+  // The gamepad: a game going on unfolds; otherwise choose one to start
+  const openGames = useCallback(() => {
+    if (game?.status === 'active') {
+      setGameCollapsed(false);
+      Keyboard.dismiss();
+      return;
+    }
+    setGamePickerVisible(true);
+  }, [game]);
+
   // Keep `today` true: a timer to the next midnight, and a check whenever
   // the app returns to the foreground (a timer does not run while the phone
   // sleeps)
@@ -1260,6 +1350,7 @@ export const ChatScreen: React.FC<{ navigation: any; route: any }> = ({ navigati
       syncMessages();
       syncScheduledDate();
       syncPlanner();
+      syncGame();
     };
 
     // Incoming message — from partner OR our own broadcast.
@@ -1371,6 +1462,19 @@ export const ChatScreen: React.FC<{ navigation: any; route: any }> = ({ navigati
       if (data.plannerData) applyPlanner(data.plannerData);
     };
 
+    // The game changed (started, a line drawn, ended) — redraw it. A game
+    // that is over arrives only from a move or an end, so it stays shown
+    // until this player closes it.
+    const onGameUpdate = (data: any) => {
+      if (data?.matchId !== matchId || !data.game) return;
+      setGame((current) => {
+        const incoming = data.game as ChatGame;
+        // An older game's late update never replaces a newer one
+        if (current && current.id !== incoming.id && current.createdAt > incoming.createdAt) return current;
+        return incoming;
+      });
+    };
+
     // Partner unmatched — pop back to the chat list
     const onMatchUnmatched = (data: any) => {
       if (data?.matchId !== matchId) return;
@@ -1384,6 +1488,7 @@ export const ChatScreen: React.FC<{ navigation: any; route: any }> = ({ navigati
     socket.on('media:viewed', onMediaViewed);
     socket.on('date:set', onDateSet);
     socket.on('planner:update', onPlannerUpdate);
+    socket.on('game:update', onGameUpdate);
     socket.on('match:unmatched', onMatchUnmatched);
     socket.on('disconnect', onDisconnect);
     // The shared socket is usually already connected when this screen mounts,
@@ -1402,11 +1507,12 @@ export const ChatScreen: React.FC<{ navigation: any; route: any }> = ({ navigati
       socket.off('media:viewed', onMediaViewed);
       socket.off('date:set', onDateSet);
       socket.off('planner:update', onPlannerUpdate);
+      socket.off('game:update', onGameUpdate);
       socket.off('match:unmatched', onMatchUnmatched);
       socket.off('disconnect', onDisconnect);
       socketRef.current = null;
     };
-  }, [matchId, syncMessages, syncScheduledDate, syncPlanner]);
+  }, [matchId, syncMessages, syncScheduledDate, syncPlanner, syncGame]);
 
   // ─── Signal to ChatListScreen that this DM is open ──
   // So the chat list doesn't inflate the unread badge for messages
@@ -1459,6 +1565,11 @@ export const ChatScreen: React.FC<{ navigation: any; route: any }> = ({ navigati
   useEffect(() => {
     syncPlanner();
   }, [syncPlanner]);
+
+  // ─── Fetch the chat's game on mount ──────────────────
+  useEffect(() => {
+    syncGame();
+  }, [syncGame]);
 
   // ─── Track keyboard state for dynamic padding ──────
   // Both edges matter: with only a show listener this latched on the first
@@ -2268,7 +2379,7 @@ export const ChatScreen: React.FC<{ navigation: any; route: any }> = ({ navigati
               </View>
             )}
             <View style={styles.headerInfo}>
-              <Text style={styles.headerName}>{partnerName}</Text>
+              <Text style={styles.headerName} numberOfLines={1}>{partnerName}</Text>
             </View>
           </TouchableOpacity>
 
@@ -2279,6 +2390,16 @@ export const ChatScreen: React.FC<{ navigation: any; route: any }> = ({ navigati
             activeOpacity={0.7}
           >
             <Ionicons name="calendar-outline" size={20} color={colors.textPrimary} />
+          </TouchableOpacity>
+
+          {/* Games — a game going on unfolds, otherwise pick one to start */}
+          <TouchableOpacity
+            style={styles.callBtn}
+            onPress={openGames}
+            activeOpacity={0.7}
+            accessibilityLabel="Games"
+          >
+            <Ionicons name="game-controller-outline" size={20} color={colors.textPrimary} />
           </TouchableOpacity>
 
           {/* Report or block — Play requires both for profiles and chat */}
@@ -2334,6 +2455,26 @@ export const ChatScreen: React.FC<{ navigation: any; route: any }> = ({ navigati
           behavior="padding"
           keyboardVerticalOffset={insets.top}
         >
+          {game && authUser?.id && game.state.players.includes(authUser.id) ? (
+            <DotsBoxesPanel
+              game={game}
+              myId={authUser.id}
+              partnerName={partnerName}
+              collapsed={gameCollapsed || keyboardVisible}
+              onToggleCollapsed={() => {
+                if (keyboardVisible) {
+                  Keyboard.dismiss();
+                  setGameCollapsed(false);
+                } else {
+                  setGameCollapsed((c) => !c);
+                }
+              }}
+              pending={pendingEdge}
+              onMove={playDotsMove}
+              onEnd={endGame}
+              onClose={closeGame}
+            />
+          ) : null}
           {loading ? (
             <View style={styles.centered}>
               <ActivityIndicator size="large" color={colors.primary} />
@@ -3027,6 +3168,13 @@ export const ChatScreen: React.FC<{ navigation: any; route: any }> = ({ navigati
           openLinkOrSay(url);
         }}
         onClose={() => setLinkChoices(null)}
+      />
+
+      {/* Games to start, from the gamepad in the header */}
+      <GamePickerSheet
+        visible={gamePickerVisible}
+        onClose={() => setGamePickerVisible(false)}
+        onStartDots={startDotsGame}
       />
 
       {/* Report / block — last, so it covers the whole screen */}
