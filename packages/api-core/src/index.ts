@@ -10,6 +10,7 @@ import { authRoutes } from './routes/auth';
 import { userRoutes } from './routes/users';
 import { onboardingRoutes } from './routes/onboarding';
 import { matchRoutes } from './routes/matches';
+import { matchGameRoutes } from './routes/matchGames';
 import { paymentRoutes } from './routes/payments';
 import { venueRoutes } from './routes/venues';
 import { webhookRoutes } from './routes/webhooks';
@@ -119,6 +120,7 @@ async function bootstrap() {
   await app.register(userRoutes, { prefix: API_ROUTES.USERS_PREFIX });
   await app.register(onboardingRoutes, { prefix: '/api/v1/onboarding' });
   await app.register(matchRoutes, { prefix: API_ROUTES.MATCHES_PREFIX });
+  await app.register(matchGameRoutes, { prefix: API_ROUTES.MATCHES_PREFIX });
   await app.register(venueRoutes, { prefix: API_ROUTES.VENUES_PREFIX });
   await app.register(paymentRoutes, { prefix: API_ROUTES.PAYMENTS_PREFIX });
   await app.register(webhookRoutes, { prefix: '/api/v1/webhooks' });

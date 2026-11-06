@@ -163,4 +163,5 @@ export const TABLES = {
   AUDIT_LOG: 'audit_log',
   USER_REPORTS: 'user_reports',
   USER_BLOCKS: 'user_blocks',
+  MATCH_GAMES: 'match_games',
 } as const;
