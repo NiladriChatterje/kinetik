@@ -7,28 +7,33 @@ import { publishChatMessage } from '../services/redis';
 import {
   applyDotsMove, dotsWinner, isValidDotsSize, newDotsGame, parseDotsEdge, DotsMoveError, DotsState,
 } from '../services/dotsAndBoxes';
+import {
+  applyReversiMove, newReversiGame, parseReversiCell, reversiWinner, ReversiMoveError, ReversiState,
+} from '../services/reversi';
 
 // ─── Games inside a chat ────────────────────────────────────
-// Dots and Boxes for now. The player who starts a game picks the board
-// size and moves first. A chat has at most one active game; either player
-// can end it. Every change reaches both open chats through the chat room
-// as `game:update`. A game is part of the conversation, so a locked chat
-// locks it too.
+// Dots and Boxes and Reversi. The player who starts a game moves first
+// (and for Dots and Boxes picks the board size). A chat has at most one
+// active game; either player can end it. Every change reaches both open
+// chats through the chat room as `game:update`. A game is part of the
+// conversation, so a locked chat locks it too.
 //
 //   GET  /:id/game                       the chat's current game, or null
-//   POST /:id/game                       start one { type, rows, cols }
-//   POST /:id/game/:gameId/move          draw a line { kind, r, c }
+//   POST /:id/game                       start one: { type: 'dots_boxes', rows, cols }
+//                                        or { type: 'reversi' }
+//   POST /:id/game/:gameId/move          Dots and Boxes: draw a line { kind, r, c }
+//                                        Reversi: place a disc { r, c }
 //   POST /:id/game/:gameId/end           stop the active game
 //   POST /:id/game/:gameId/hide          close a game that is over, for me
 
-export const GAME_TYPES = ['dots_boxes'] as const;
+export const GAME_TYPES = ['dots_boxes', 'reversi'] as const;
 type GameType = (typeof GAME_TYPES)[number];
 
 interface GameRow {
   id: string;
   match_id: string;
   game_type: GameType;
-  state: DotsState;
+  state: DotsState | ReversiState;
   status: 'active' | 'finished' | 'ended';
   started_by: string;
   ended_by: string | null;
@@ -46,7 +51,7 @@ export interface GameView {
   startedBy: string;
   endedBy: string | null;
   winnerId: string | null;
-  state: DotsState;
+  state: DotsState | ReversiState;
   createdAt: string;
   updatedAt: string;
 }
@@ -66,11 +71,14 @@ export function toGameView(row: GameRow): GameView {
   };
 }
 
-const MOVE_ERRORS: Record<DotsMoveError, string> = {
+const MOVE_ERRORS: Record<DotsMoveError | ReversiMoveError, string> = {
   not_a_player: 'You are not playing this game.',
   not_your_turn: 'It is not your turn yet.',
   bad_line: 'That line is not on the board.',
   line_taken: 'That line is already drawn.',
+  bad_square: 'That square is not on the board.',
+  square_taken: 'That square is already taken.',
+  flips_nothing: 'That move does not flip any disc.',
 };
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
@@ -154,13 +162,18 @@ export async function matchGameRoutes(app: FastifyInstance) {
     const { type, rows, cols } = (request.body ?? {}) as { type?: string; rows?: unknown; cols?: unknown };
     if (await isChatLocked(userId, matchId)) return sendChatLocked(reply);
 
-    if (type !== 'dots_boxes') return badRequest(reply, 'Unknown game.');
-    if (!isValidDotsSize(rows, cols)) return badRequest(reply, 'Pick a board between 2 x 2 and 8 x 8 boxes.');
+    if (type !== 'dots_boxes' && type !== 'reversi') return badRequest(reply, 'Unknown game.');
+    if (type === 'dots_boxes' && !isValidDotsSize(rows, cols)) {
+      return badRequest(reply, 'Pick a board between 2 x 2 and 8 x 8 boxes.');
+    }
 
     const partnerId = await partnerIn(matchId, userId);
     if (!partnerId) return notFound(reply, 'Match not found or inactive');
 
-    const state = newDotsGame(rows as number, cols as number, userId, partnerId);
+    const state =
+      type === 'reversi'
+        ? newReversiGame(userId, partnerId)
+        : newDotsGame(rows as number, cols as number, userId, partnerId);
     let row: GameRow | undefined;
     try {
       const result = await query<GameRow>(
@@ -194,8 +207,10 @@ export async function matchGameRoutes(app: FastifyInstance) {
       const { id: matchId, gameId } = request.params;
       if (await isChatLocked(userId, matchId)) return sendChatLocked(reply);
 
+      // Which shape a move takes depends on the game, known once its row is read
       const edge = parseDotsEdge(request.body);
-      if (!edge) return badRequest(reply, 'A move needs a line: kind (h or v), r and c.');
+      const cell = parseReversiCell(request.body);
+      if (!edge && !cell) return badRequest(reply, 'A move needs a line (kind, r, c) or a square (r, c).');
       if (!UUID_RE.test(gameId)) return notFound(reply, 'Game not found');
       if (!(await partnerIn(matchId, userId))) return notFound(reply, 'Match not found or inactive');
 
@@ -209,10 +224,23 @@ export async function matchGameRoutes(app: FastifyInstance) {
         if (!current) return { kind: 'missing' as const };
         if (current.status !== 'active') return { kind: 'over' as const };
 
-        const moved = applyDotsMove(current.state, userId, edge);
+        let moved:
+          | { ok: true; state: DotsState | ReversiState; finished: boolean; winnerId: string | null }
+          | { ok: false; error: DotsMoveError | ReversiMoveError };
+        if (current.game_type === 'reversi') {
+          // A Dots and Boxes line ({ kind, r, c }) also reads as a square, so
+          // the kind field marks a move meant for the other game
+          if (!cell || edge) return { kind: 'malformed' as const };
+          const r = applyReversiMove(current.state as ReversiState, userId, cell);
+          moved = r.ok ? { ...r, winnerId: r.finished ? reversiWinner(r.state) : null } : r;
+        } else {
+          if (!edge) return { kind: 'malformed' as const };
+          const r = applyDotsMove(current.state as DotsState, userId, edge);
+          moved = r.ok ? { ok: true, state: r.state, finished: r.finished, winnerId: r.finished ? dotsWinner(r.state) : null } : r;
+        }
         if (!moved.ok) return { kind: 'refused' as const, error: moved.error };
 
-        const winnerId = moved.finished ? dotsWinner(moved.state) : null;
+        const winnerId = moved.winnerId;
         const updated = (await tx<GameRow>(
           `UPDATE ${TABLES.MATCH_GAMES}
               SET state = $2, status = $3, winner_id = $4, updated_at = NOW()
@@ -224,6 +252,7 @@ export async function matchGameRoutes(app: FastifyInstance) {
       });
 
       if (outcome.kind === 'missing') return notFound(reply, 'Game not found');
+      if (outcome.kind === 'malformed') return badRequest(reply, 'That move does not fit this game.');
       if (outcome.kind === 'over') {
         return reply.status(409).send({
           success: false,

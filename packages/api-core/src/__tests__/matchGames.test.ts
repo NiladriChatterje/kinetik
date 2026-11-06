@@ -253,3 +253,66 @@ describe('ending and closing', () => {
     expect((await get(`${MATCH}/game`, ME)).json().data.game.id).toBe(id);
   });
 });
+
+describe('Reversi', () => {
+  const startReversi = (userId = ME) => post(`${MATCH}/game`, { type: 'reversi' }, userId);
+  const place = (gameId: string, r: number, c: number, userId: string) =>
+    post(`${MATCH}/game/${gameId}/move`, { r, c }, userId);
+
+  it('starts on the usual 8 x 8 opening, starter first, with the squares they may take', async () => {
+    const res = await startReversi();
+    expect(res.statusCode).toBe(201);
+    const { game } = res.json().data;
+    expect(game).toMatchObject({ type: 'reversi', status: 'active', startedBy: ME });
+    expect(game.state.size).toBe(8);
+    expect(game.state.players).toEqual([ME, HER]);
+    expect(game.state.scores).toEqual([2, 2]);
+    expect(game.state.legal).toHaveLength(4);
+    expect(mockPublish).toHaveBeenCalledWith(expect.any(String), { type: 'game:update', matchId: MATCH, game });
+  });
+
+  it('one game at a time, whatever the game', async () => {
+    expect((await start(3, 3)).statusCode).toBe(201);
+    expect((await startReversi(HER)).statusCode).toBe(409);
+  });
+
+  it('plays squares in turn, flipping discs, and refuses moves that break the rules', async () => {
+    const id = (await startReversi()).json().data.game.id;
+    expect((await place(id, 2, 3, HER)).json().error.message).toMatch(/not your turn/);
+    expect((await place(id, 0, 0, ME)).json().error.message).toMatch(/does not flip/);
+    expect((await place(id, 3, 3, ME)).json().error.message).toMatch(/already taken/);
+    expect((await place(id, 8, 8, ME)).json().error.message).toMatch(/not on the board/);
+
+    const moved = await place(id, 2, 3, ME);
+    expect(moved.statusCode).toBe(200);
+    const g = moved.json().data.game;
+    expect(g.state.scores).toEqual([4, 1]);
+    expect(g.state.turn).toBe(1);
+    expect(g.state.last).toEqual({ r: 2, c: 3 });
+
+    // Her reply, from the squares the server says she may take
+    const pick = g.state.legal[0];
+    const reply = await place(id, Math.floor(pick / 8), pick % 8, HER);
+    expect(reply.statusCode).toBe(200);
+    expect(reply.json().data.game.state.turn).toBe(0);
+  });
+
+  it('a move meant for the other game is refused, both ways', async () => {
+    const id = (await startReversi()).json().data.game.id;
+    const dotsShaped = await post(`${MATCH}/game/${id}/move`, { kind: 'h', r: 2, c: 3 }, ME);
+    expect(dotsShaped.statusCode).toBe(400);
+    await post(`${MATCH}/game/${id}/end`, {}, ME);
+
+    const dotsId = (await start(3, 3)).json().data.game.id;
+    const square = await post(`${MATCH}/game/${dotsId}/move`, { r: 0, c: 0 }, ME);
+    expect(square.statusCode).toBe(400);
+    expect(games.find((x) => x.id === dotsId)!.state.moves).toBe(0);
+  });
+
+  it('ends and closes like any game', async () => {
+    const id = (await startReversi()).json().data.game.id;
+    expect((await post(`${MATCH}/game/${id}/end`, {}, HER)).json().data.game).toMatchObject({ status: 'ended', endedBy: HER });
+    await post(`${MATCH}/game/${id}/hide`, {}, ME);
+    expect((await get(`${MATCH}/game`, ME)).json().data.game).toBeNull();
+  });
+});
