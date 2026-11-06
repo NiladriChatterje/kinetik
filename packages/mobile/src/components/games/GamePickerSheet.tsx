@@ -5,12 +5,12 @@ import {
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { colors, typography, spacing, radius } from '../../theme';
-import { DOTS_SIZES } from './gameTypes';
+import { DOTS_MIN_SIDE, DOTS_SIDES } from './gameTypes';
 
 /**
  * The games a chat can start, opened from the gamepad in the chat header.
- * Pick a game, then (as the one starting it) the board size for Dots and
- * Boxes, or a confirm for Reversi.
+ * Pick a game, then (as the one starting it) the board for Dots and
+ * Boxes (columns and rows, 6 to 8 each), or a confirm for Reversi.
  *
  * An overlay inside the chat screen like ReportBlockSheet, not a <Modal>,
  * for the same keyboard reasons. Render it near the end of the screen so it
@@ -30,14 +30,16 @@ interface GamePickerSheetProps {
 export const GamePickerSheet: React.FC<GamePickerSheetProps> = ({ visible, onClose, onStartDots, onStartReversi }) => {
   const insets = useSafeAreaInsets();
   const [step, setStep] = useState<Step>('games');
-  const [size, setSize] = useState(4);
+  const [cols, setCols] = useState(DOTS_MIN_SIDE);
+  const [rows, setRows] = useState(DOTS_MIN_SIDE);
   const [busy, setBusy] = useState(false);
 
   // Start fresh every time the sheet opens
   useEffect(() => {
     if (visible) {
       setStep('games');
-      setSize(4);
+      setCols(DOTS_MIN_SIDE);
+      setRows(DOTS_MIN_SIDE);
       setBusy(false);
     }
   }, [visible]);
@@ -63,7 +65,7 @@ export const GamePickerSheet: React.FC<GamePickerSheetProps> = ({ visible, onClo
   const start = async () => {
     if (busy) return;
     setBusy(true);
-    const started = step === 'reversi' ? await onStartReversi() : await onStartDots(size, size);
+    const started = step === 'reversi' ? await onStartReversi() : await onStartDots(rows, cols);
     setBusy(false);
     if (started) onClose();
   };
@@ -150,30 +152,39 @@ export const GamePickerSheet: React.FC<GamePickerSheetProps> = ({ visible, onClo
           {step === 'size' && (
             <>
               {backTitle('Board size')}
-              <Text style={styles.body}>Boxes on each side. You move first.</Text>
+              <Text style={styles.body}>Pick how many boxes across and down. You move first.</Text>
 
-              <View style={styles.sizeGrid}>
-                {DOTS_SIZES.map((option) => {
-                  const selected = option.size === size;
-                  return (
-                    <TouchableOpacity
-                      key={option.size}
-                      style={[styles.sizeTile, selected && styles.sizeTileSelected]}
-                      onPress={() => setSize(option.size)}
-                      disabled={busy}
-                      activeOpacity={0.7}
-                      accessibilityRole="button"
-                      accessibilityState={{ selected }}
-                      accessibilityLabel={`${option.size} by ${option.size}, ${option.label}`}
-                    >
-                      <Text style={[styles.sizeValue, selected && styles.sizeTextSelected]}>
-                        {option.size} × {option.size}
-                      </Text>
-                      <Text style={[styles.sizeLabel, selected && styles.sizeTextSelected]}>{option.label}</Text>
-                    </TouchableOpacity>
-                  );
-                })}
-              </View>
+              {([
+                ['Across', cols, setCols],
+                ['Down', rows, setRows],
+              ] as const).map(([label, value, set]) => (
+                <View key={label} style={styles.sideRow}>
+                  <Text style={styles.sideLabel}>{label}</Text>
+                  <View style={styles.sideChoices}>
+                    {DOTS_SIDES.map((n) => {
+                      const selected = n === value;
+                      return (
+                        <TouchableOpacity
+                          key={n}
+                          style={[styles.sizeTile, selected && styles.sizeTileSelected]}
+                          onPress={() => set(n)}
+                          disabled={busy}
+                          activeOpacity={0.7}
+                          accessibilityRole="button"
+                          accessibilityState={{ selected }}
+                          accessibilityLabel={`${n} boxes ${label.toLowerCase()}`}
+                        >
+                          <Text style={[styles.sizeValue, selected && styles.sizeTextSelected]}>{n}</Text>
+                        </TouchableOpacity>
+                      );
+                    })}
+                  </View>
+                </View>
+              ))}
+
+              <Text style={styles.sizeSummary}>
+                {cols} × {rows} board · {cols * rows} boxes to take
+              </Text>
 
               {startButton}
             </>
@@ -236,15 +247,23 @@ const styles = StyleSheet.create({
   gameText: { flex: 1 },
   gameLabel: { ...typography.h4, color: colors.textPrimary },
   gameHint: { ...typography.body2, color: colors.textMuted, marginTop: 2 },
-  sizeGrid: {
+  sideRow: {
     flexDirection: 'row',
-    flexWrap: 'wrap',
-    justifyContent: 'space-between',
-    rowGap: spacing.md,
+    alignItems: 'center',
+    gap: spacing.md,
+    marginBottom: spacing.md,
+  },
+  sideLabel: { ...typography.h4, color: colors.textPrimary, width: 64 },
+  sideChoices: { flex: 1, flexDirection: 'row', gap: spacing.sm },
+  sizeSummary: {
+    ...typography.body2,
+    color: colors.textMuted,
+    textAlign: 'center',
+    marginTop: spacing.xs,
     marginBottom: spacing.lg,
   },
   sizeTile: {
-    width: '48%',
+    flex: 1,
     paddingVertical: spacing.md,
     borderRadius: radius.lg,
     borderWidth: 1,
@@ -257,7 +276,6 @@ const styles = StyleSheet.create({
     borderColor: colors.primary,
   },
   sizeValue: { ...typography.h3, color: colors.textPrimary },
-  sizeLabel: { ...typography.body2, color: colors.textMuted, marginTop: 2 },
   sizeTextSelected: { color: colors.textInverse },
   primaryBtn: {
     backgroundColor: colors.primary,

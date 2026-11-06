@@ -87,10 +87,15 @@ export function isKnownGame(game: { type?: unknown } | null | undefined): game i
   return !!game && (game.type === 'dots_boxes' || game.type === 'reversi');
 }
 
-/** Board sizes offered when starting, in boxes per side */
-export const DOTS_SIZES: Array<{ size: number; label: string }> = [
-  { size: 3, label: 'Quick' },
-  { size: 4, label: 'Classic' },
-  { size: 5, label: 'Longer' },
-  { size: 6, label: 'Long' },
-];
+/**
+ * Dots and Boxes boards offered when starting, in boxes: columns and rows
+ * each from 6 to 8, not necessarily square. 8 is the most that still leaves
+ * lines easy to tap on a 360-wide phone with the board above the chat (the
+ * server accepts 2 to 8).
+ */
+export const DOTS_MIN_SIDE = 6;
+export const DOTS_MAX_SIDE = 8;
+export const DOTS_SIDES: number[] = Array.from(
+  { length: DOTS_MAX_SIDE - DOTS_MIN_SIDE + 1 },
+  (_, i) => DOTS_MIN_SIDE + i,
+);
