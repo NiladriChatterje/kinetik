@@ -671,6 +671,22 @@ describe('ChatHandler', () => {
       });
     });
 
+    it('should forward game:update events from CHAT_MESSAGES_CHANNEL to the match room', () => {
+      const { socket } = simulateConnection(nsp);
+      socket.rooms.add('match:match-g456');
+
+      const messageHandler = getMessageHandler(subClient);
+      const game = { id: 'game-1', matchId: 'match-g456', type: 'dots_boxes', status: 'active' };
+      messageHandler(
+        REDIS_KEYS.CHAT_MESSAGES_CHANNEL,
+        JSON.stringify({ type: 'game:update', matchId: 'match-g456', game }),
+      );
+
+      expect(socket.emit).toHaveBeenCalledWith('game:update', { matchId: 'match-g456', game });
+      // Not mistaken for a chat message
+      expect(socket.emit).not.toHaveBeenCalledWith('chat:message', expect.anything());
+    });
+
     it('should exclude the sender from typing events on CHAT_TYPING_CHANNEL', () => {
       const { socket: sender } = simulateConnection(nsp);
       const receiver = simulateSecondConnection(nsp, 'user-456');

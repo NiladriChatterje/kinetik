@@ -211,6 +211,18 @@ export class ChatHandler {
       return;
     }
 
+    // A game inside the chat changed (started, a line drawn, ended): both
+    // open chats redraw it
+    if (payload.type === 'game:update') {
+      if (payload.matchId && payload.game) {
+        this.emitToLocalRoom(`match:${payload.matchId}`, 'game:update', {
+          matchId: payload.matchId,
+          game: payload.game,
+        });
+      }
+      return;
+    }
+
     // Match was unmatched — notify all sockets in the room so the partner's
     // ChatScreen can pop back to the conversation list
     if (payload.type === 'match:unmatched') {
