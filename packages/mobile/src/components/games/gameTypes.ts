@@ -31,17 +31,60 @@ export interface DotsState {
   moves: number;
 }
 
-export interface ChatGame {
+/**
+ * Reversi board, size x size (8). board[r * size + c] is 0 or 1 (index into
+ * players) or null. Player 0 started, plays black and moves first. `legal`
+ * holds the squares the player to move may take (empty once it is over);
+ * `passed` means the other player had no move, so the mover goes again.
+ */
+export interface ReversiState {
+  size: number;
+  board: (0 | 1 | null)[];
+  players: [string, string];
+  turn: 0 | 1;
+  scores: [number, number];
+  last: ReversiCell | null;
+  flipped: number[];
+  legal: number[];
+  passed: boolean;
+  moves: number;
+}
+
+export interface ReversiCell {
+  r: number;
+  c: number;
+}
+
+interface ChatGameBase {
   id: string;
   matchId: string;
-  type: 'dots_boxes';
   status: 'active' | 'finished' | 'ended';
   startedBy: string;
   endedBy: string | null;
   winnerId: string | null;
-  state: DotsState;
   createdAt: string;
   updatedAt: string;
+}
+
+export interface DotsGame extends ChatGameBase {
+  type: 'dots_boxes';
+  state: DotsState;
+}
+
+export interface ReversiGame extends ChatGameBase {
+  type: 'reversi';
+  state: ReversiState;
+}
+
+export type ChatGame = DotsGame | ReversiGame;
+
+/**
+ * Whether this app can draw the game. A newer app may start a game an older
+ * one does not know; the older one then shows nothing rather than a broken
+ * board.
+ */
+export function isKnownGame(game: { type?: unknown } | null | undefined): game is ChatGame {
+  return !!game && (game.type === 'dots_boxes' || game.type === 'reversi');
 }
 
 /** Board sizes offered when starting, in boxes per side */

@@ -29,7 +29,9 @@ import { suggestReplies } from '../../services/replySuggestions';
 import { hapticImpact, hapticLight } from '../../utils/haptics';
 import { GamePickerSheet } from '../../components/games/GamePickerSheet';
 import { DotsBoxesPanel } from '../../components/games/DotsBoxesPanel';
-import type { ChatGame, DotsEdge } from '../../components/games/gameTypes';
+import { ReversiBar, ReversiScreen, MiniChatLine } from '../../components/games/ReversiGame';
+import { isKnownGame } from '../../components/games/gameTypes';
+import type { ChatGame, DotsEdge, ReversiCell } from '../../components/games/gameTypes';
 import { resolveUrl } from '../../config';
 import { colors, typography, spacing, radius } from '../../theme';
 
@@ -880,6 +882,9 @@ export const ChatScreen: React.FC<{ navigation: any; route: any }> = ({ navigati
   const [gamePickerVisible, setGamePickerVisible] = useState(false);
   const [gameCollapsed, setGameCollapsed] = useState(false);
   const [pendingEdge, setPendingEdge] = useState<DotsEdge | null>(null);
+  // Reversi opens full screen over the chat; the chat keeps a slim bar
+  const [reversiOpen, setReversiOpen] = useState(false);
+  const [pendingSquare, setPendingSquare] = useState<ReversiCell | null>(null);
 
   // ─── Unmatch confirmation modal state ────────────────────
   const [unmatchModalVisible, setUnmatchModalVisible] = useState(false);
@@ -1097,7 +1102,8 @@ export const ChatScreen: React.FC<{ navigation: any; route: any }> = ({ navigati
   const syncGame = useCallback(async () => {
     try {
       const res = await api.getMatchGame(matchId);
-      if (res.success) setGame(res.data?.game ?? null);
+      // A game this version cannot draw (started from a newer app) is left out
+      if (res.success) setGame(isKnownGame(res.data?.game) ? res.data!.game : null);
     } catch {
       // Silent: retried on the next (re)connect
     }
@@ -1121,8 +1127,45 @@ export const ChatScreen: React.FC<{ navigation: any; route: any }> = ({ navigati
     return false;
   }, [matchId, toast, syncGame]);
 
+  const startReversiGame = useCallback(async (): Promise<boolean> => {
+    try {
+      const res = await api.startReversiGame(matchId);
+      if (res.success && res.data?.game) {
+        setGame(res.data.game);
+        setPendingSquare(null);
+        Keyboard.dismiss();
+        setReversiOpen(true);
+        return true;
+      }
+      toast.showError('Could not start the game', res.error?.message || 'Please try again.');
+      syncGame();
+    } catch (err: any) {
+      toast.showError('Could not start the game', err?.message || 'Check your connection and try again.');
+    }
+    return false;
+  }, [matchId, toast, syncGame]);
+
+  const playReversiMove = useCallback(async (cell: ReversiCell) => {
+    if (!game || game.type !== 'reversi' || pendingSquare) return;
+    hapticLight();
+    setPendingSquare(cell);
+    try {
+      const res = await api.playReversiMove(matchId, game.id, cell);
+      if (res.success && res.data?.game) {
+        setGame(res.data.game);
+      } else {
+        toast.showError('Move not played', res.error?.message || 'Please try again.');
+        syncGame();
+      }
+    } catch (err: any) {
+      toast.showError('Move not played', err?.message || 'Check your connection and try again.');
+    } finally {
+      setPendingSquare(null);
+    }
+  }, [matchId, game, pendingSquare, toast, syncGame]);
+
   const playDotsMove = useCallback(async (edge: DotsEdge) => {
-    if (!game || pendingEdge) return;
+    if (!game || game.type !== 'dots_boxes' || pendingEdge) return;
     hapticLight();
     setPendingEdge(edge);
     try {
@@ -1155,6 +1198,7 @@ export const ChatScreen: React.FC<{ navigation: any; route: any }> = ({ navigati
     if (!game) return;
     const closing = game;
     setGame(null);
+    setReversiOpen(false);
     try {
       await api.hideMatchGame(matchId, closing.id);
     } catch {
@@ -1165,8 +1209,9 @@ export const ChatScreen: React.FC<{ navigation: any; route: any }> = ({ navigati
   // The gamepad: a game going on unfolds; otherwise choose one to start
   const openGames = useCallback(() => {
     if (game?.status === 'active') {
-      setGameCollapsed(false);
       Keyboard.dismiss();
+      if (game.type === 'reversi') setReversiOpen(true);
+      else setGameCollapsed(false);
       return;
     }
     setGamePickerVisible(true);
@@ -1466,7 +1511,7 @@ export const ChatScreen: React.FC<{ navigation: any; route: any }> = ({ navigati
     // that is over arrives only from a move or an end, so it stays shown
     // until this player closes it.
     const onGameUpdate = (data: any) => {
-      if (data?.matchId !== matchId || !data.game) return;
+      if (data?.matchId !== matchId || !isKnownGame(data.game)) return;
       setGame((current) => {
         const incoming = data.game as ChatGame;
         // An older game's late update never replaces a newer one
@@ -1565,6 +1610,22 @@ export const ChatScreen: React.FC<{ navigation: any; route: any }> = ({ navigati
   useEffect(() => {
     syncPlanner();
   }, [syncPlanner]);
+
+  // The full screen belongs to a Reversi game; with none (closed, or the
+  // chat's game is another one now) it is shut, so it never pops up later
+  useEffect(() => {
+    if (!game || game.type !== 'reversi') setReversiOpen(false);
+  }, [game]);
+
+  // The last few messages, for the chat under a full-screen game
+  const recentChatLines = useMemo<MiniChatLine[]>(() => {
+    const label: Record<string, string> = { image: '📷 Photo', video: '🎥 Video', audio: '🎤 Voice message', file: '📎 File' };
+    return messages.slice(-4).map((m) => ({
+      id: m.id,
+      mine: m.senderId === authUser?.id,
+      text: m.content?.trim() ? m.content : m.media ? label[m.media.mediaType] ?? 'Attachment' : '',
+    }));
+  }, [messages, authUser?.id]);
 
   // ─── Fetch the chat's game on mount ──────────────────
   useEffect(() => {
@@ -2455,7 +2516,7 @@ export const ChatScreen: React.FC<{ navigation: any; route: any }> = ({ navigati
           behavior="padding"
           keyboardVerticalOffset={insets.top}
         >
-          {game && authUser?.id && game.state.players.includes(authUser.id) ? (
+          {game && game.type === 'dots_boxes' && authUser?.id && game.state.players.includes(authUser.id) ? (
             <DotsBoxesPanel
               game={game}
               myId={authUser.id}
@@ -2472,6 +2533,18 @@ export const ChatScreen: React.FC<{ navigation: any; route: any }> = ({ navigati
               pending={pendingEdge}
               onMove={playDotsMove}
               onEnd={endGame}
+              onClose={closeGame}
+            />
+          ) : null}
+          {game && game.type === 'reversi' && authUser?.id && game.state.players.includes(authUser.id) ? (
+            <ReversiBar
+              game={game}
+              myId={authUser.id}
+              partnerName={partnerName}
+              onOpen={() => {
+                Keyboard.dismiss();
+                setReversiOpen(true);
+              }}
               onClose={closeGame}
             />
           ) : null}
@@ -3170,11 +3243,36 @@ export const ChatScreen: React.FC<{ navigation: any; route: any }> = ({ navigati
         onClose={() => setLinkChoices(null)}
       />
 
+      {/* Reversi, full screen over the chat */}
+      {game && game.type === 'reversi' && authUser?.id && game.state.players.includes(authUser.id) ? (
+        <ReversiScreen
+          visible={reversiOpen}
+          game={game}
+          myId={authUser.id}
+          partnerName={partnerName}
+          pending={pendingSquare}
+          onMove={playReversiMove}
+          onEnd={endGame}
+          onClose={closeGame}
+          onMinimize={() => {
+            Keyboard.dismiss();
+            setReversiOpen(false);
+          }}
+          recent={recentChatLines}
+          onSend={(text) => {
+            if (sending) return false;
+            void sendText(text);
+            return true;
+          }}
+        />
+      ) : null}
+
       {/* Games to start, from the gamepad in the header */}
       <GamePickerSheet
         visible={gamePickerVisible}
         onClose={() => setGamePickerVisible(false)}
         onStartDots={startDotsGame}
+        onStartReversi={startReversiGame}
       />
 
       {/* Report / block — last, so it covers the whole screen */}

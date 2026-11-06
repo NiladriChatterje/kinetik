@@ -4,7 +4,7 @@ import { API_URL, WS_URL } from '../config';
 // Deferred-use circular import (proximity.ts calls api.getAreaDetails at
 // runtime, never at module init) — safe under Metro.
 import { rankByProximity } from '../utils/proximity';
-import type { ChatGame, DotsEdge } from '../components/games/gameTypes';
+import type { ChatGame, DotsEdge, ReversiCell } from '../components/games/gameTypes';
 
 /** The sign-up form, sent before the emailed code is verified. */
 export interface SignupForm {
@@ -730,6 +730,22 @@ class ApiClient {
     return this.request<{ game: ChatGame }>(`/api/v1/matches/${matchId}/game/${gameId}/move`, {
       method: 'POST',
       body: JSON.stringify(edge),
+    });
+  }
+
+  /** Start Reversi (8 x 8); the starter plays black and moves first. */
+  async startReversiGame(matchId: string) {
+    return this.request<{ game: ChatGame }>(`/api/v1/matches/${matchId}/game`, {
+      method: 'POST',
+      body: JSON.stringify({ type: 'reversi' }),
+    });
+  }
+
+  /** Place one Reversi disc. The server checks the move and answers with the new board. */
+  async playReversiMove(matchId: string, gameId: string, cell: ReversiCell) {
+    return this.request<{ game: ChatGame }>(`/api/v1/matches/${matchId}/game/${gameId}/move`, {
+      method: 'POST',
+      body: JSON.stringify({ r: cell.r, c: cell.c }),
     });
   }
 

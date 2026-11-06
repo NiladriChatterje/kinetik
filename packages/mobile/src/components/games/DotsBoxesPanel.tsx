@@ -4,7 +4,7 @@ import {
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { colors, typography, spacing, radius } from '../../theme';
-import type { ChatGame, DotsEdge } from './gameTypes';
+import type { DotsGame, DotsEdge } from './gameTypes';
 
 /**
  * Dots and Boxes, shown at the top of the chat while a game is on (and once
@@ -28,7 +28,7 @@ const PAD = 14;
 const MAX_CELL = 56;
 
 interface DotsBoxesPanelProps {
-  game: ChatGame;
+  game: DotsGame;
   myId: string;
   partnerName: string;
   collapsed: boolean;

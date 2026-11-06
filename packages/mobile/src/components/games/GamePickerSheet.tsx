@@ -9,23 +9,25 @@ import { DOTS_SIZES } from './gameTypes';
 
 /**
  * The games a chat can start, opened from the gamepad in the chat header.
- * Pick a game, then (as the one starting it) the board size.
+ * Pick a game, then (as the one starting it) the board size for Dots and
+ * Boxes, or a confirm for Reversi.
  *
  * An overlay inside the chat screen like ReportBlockSheet, not a <Modal>,
  * for the same keyboard reasons. Render it near the end of the screen so it
  * covers the chat.
  */
 
-type Step = 'games' | 'size';
+type Step = 'games' | 'size' | 'reversi';
 
 interface GamePickerSheetProps {
   visible: boolean;
   onClose: () => void;
   /** Starts the game; resolves true when it started (the sheet then closes) */
   onStartDots: (rows: number, cols: number) => Promise<boolean>;
+  onStartReversi: () => Promise<boolean>;
 }
 
-export const GamePickerSheet: React.FC<GamePickerSheetProps> = ({ visible, onClose, onStartDots }) => {
+export const GamePickerSheet: React.FC<GamePickerSheetProps> = ({ visible, onClose, onStartDots, onStartReversi }) => {
   const insets = useSafeAreaInsets();
   const [step, setStep] = useState<Step>('games');
   const [size, setSize] = useState(4);
@@ -61,10 +63,38 @@ export const GamePickerSheet: React.FC<GamePickerSheetProps> = ({ visible, onClo
   const start = async () => {
     if (busy) return;
     setBusy(true);
-    const started = await onStartDots(size, size);
+    const started = step === 'reversi' ? await onStartReversi() : await onStartDots(size, size);
     setBusy(false);
     if (started) onClose();
   };
+
+  const startButton = (
+    <TouchableOpacity
+      style={[styles.primaryBtn, busy && styles.primaryBtnBusy]}
+      onPress={start}
+      disabled={busy}
+      accessibilityRole="button"
+    >
+      {busy ? (
+        <ActivityIndicator size="small" color={colors.textInverse} />
+      ) : (
+        <Text style={styles.primaryText}>Start game</Text>
+      )}
+    </TouchableOpacity>
+  );
+
+  const backTitle = (title: string) => (
+    <View style={styles.titleRow}>
+      <TouchableOpacity
+        onPress={() => !busy && setStep('games')}
+        hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+        accessibilityLabel="Back"
+      >
+        <Ionicons name="chevron-back" size={22} color={colors.textPrimary} />
+      </TouchableOpacity>
+      <Text style={[styles.title, styles.titleInRow]}>{title}</Text>
+    </View>
+  );
 
   return (
     <View style={styles.overlay}>
@@ -91,21 +121,35 @@ export const GamePickerSheet: React.FC<GamePickerSheetProps> = ({ visible, onClo
                 </View>
                 <Ionicons name="chevron-forward" size={18} color={colors.textMuted} />
               </TouchableOpacity>
+              <TouchableOpacity
+                style={styles.gameRow}
+                onPress={() => setStep('reversi')}
+                accessibilityRole="button"
+                accessibilityLabel="Reversi"
+              >
+                <View style={styles.gameIcon}>
+                  <Ionicons name="ellipse" size={20} color={colors.textPrimary} />
+                </View>
+                <View style={styles.gameText}>
+                  <Text style={styles.gameLabel}>Reversi</Text>
+                  <Text style={styles.gameHint}>Trap their discs between yours to flip them. Most discs wins.</Text>
+                </View>
+                <Ionicons name="chevron-forward" size={18} color={colors.textMuted} />
+              </TouchableOpacity>
+            </>
+          )}
+
+          {step === 'reversi' && (
+            <>
+              {backTitle('Reversi')}
+              <Text style={styles.body}>8 × 8 board. You play black and move first. It opens full screen, with the chat below the board.</Text>
+              {startButton}
             </>
           )}
 
           {step === 'size' && (
             <>
-              <View style={styles.titleRow}>
-                <TouchableOpacity
-                  onPress={() => !busy && setStep('games')}
-                  hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
-                  accessibilityLabel="Back"
-                >
-                  <Ionicons name="chevron-back" size={22} color={colors.textPrimary} />
-                </TouchableOpacity>
-                <Text style={[styles.title, styles.titleInRow]}>Board size</Text>
-              </View>
+              {backTitle('Board size')}
               <Text style={styles.body}>Boxes on each side. You move first.</Text>
 
               <View style={styles.sizeGrid}>
@@ -131,18 +175,7 @@ export const GamePickerSheet: React.FC<GamePickerSheetProps> = ({ visible, onClo
                 })}
               </View>
 
-              <TouchableOpacity
-                style={[styles.primaryBtn, busy && styles.primaryBtnBusy]}
-                onPress={start}
-                disabled={busy}
-                accessibilityRole="button"
-              >
-                {busy ? (
-                  <ActivityIndicator size="small" color={colors.textInverse} />
-                ) : (
-                  <Text style={styles.primaryText}>Start game</Text>
-                )}
-              </TouchableOpacity>
+              {startButton}
             </>
           )}
         </View>
