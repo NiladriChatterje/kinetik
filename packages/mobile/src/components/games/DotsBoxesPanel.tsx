@@ -1,9 +1,10 @@
-import React, { useMemo } from 'react';
+import React, { useMemo, useState } from 'react';
 import {
-  View, Text, StyleSheet, TouchableOpacity, Pressable, Alert, useWindowDimensions,
+  View, Text, StyleSheet, TouchableOpacity, Pressable, useWindowDimensions,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { colors, typography, spacing, radius } from '../../theme';
+import { ConfirmModal } from '../common/ConfirmModal';
 import type { DotsGame, DotsEdge } from './gameTypes';
 
 /**
@@ -48,6 +49,7 @@ export const DotsBoxesPanel: React.FC<DotsBoxesPanelProps> = ({
   game, myId, partnerName, collapsed, onToggleCollapsed, pending, onMove, onEnd, onClose,
 }) => {
   const { width: screenWidth } = useWindowDimensions();
+  const [confirmEnd, setConfirmEnd] = useState(false);
   const { state, status } = game;
   const { rows, cols } = state;
   const me = state.players.indexOf(myId);
@@ -71,13 +73,6 @@ export const DotsBoxesPanel: React.FC<DotsBoxesPanelProps> = ({
   } else {
     statusText = game.endedBy === myId ? 'You ended the game' : `${partnerName} ended the game`;
   }
-
-  const confirmEnd = () => {
-    Alert.alert('End this game?', 'It ends for both of you.', [
-      { text: 'Keep playing', style: 'cancel' },
-      { text: 'End game', style: 'destructive', onPress: onEnd },
-    ]);
-  };
 
   const lines = useMemo(() => {
     const out: Array<{ edge: DotsEdge; drawn: boolean }> = [];
@@ -120,7 +115,7 @@ export const DotsBoxesPanel: React.FC<DotsBoxesPanelProps> = ({
           {statusText}
         </Text>
         {status === 'active' ? (
-          <TouchableOpacity onPress={confirmEnd} style={styles.action} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }} accessibilityRole="button">
+          <TouchableOpacity onPress={() => setConfirmEnd(true)} style={styles.action} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }} accessibilityRole="button">
             <Text style={styles.actionText}>End</Text>
           </TouchableOpacity>
         ) : (
@@ -200,6 +195,19 @@ export const DotsBoxesPanel: React.FC<DotsBoxesPanelProps> = ({
             )}
         </View>
       )}
+
+      <ConfirmModal
+        visible={confirmEnd}
+        title="End this game?"
+        message="It ends for both of you."
+        keepLabel="Keep playing"
+        confirmLabel="End game"
+        onDismiss={() => setConfirmEnd(false)}
+        onConfirm={() => {
+          setConfirmEnd(false);
+          onEnd();
+        }}
+      />
     </View>
   );
 };

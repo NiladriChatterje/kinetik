@@ -1,11 +1,12 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import {
   View, Text, StyleSheet, TouchableOpacity, Pressable, TextInput, KeyboardAvoidingView,
-  Keyboard, BackHandler, Alert, LayoutChangeEvent, ScrollView,
+  Keyboard, BackHandler, LayoutChangeEvent, ScrollView,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { colors, typography, spacing, radius } from '../../theme';
+import { ConfirmModal } from '../common/ConfirmModal';
 import type { ReversiCell, ReversiGame } from './gameTypes';
 
 /**
@@ -133,6 +134,7 @@ export const ReversiScreen: React.FC<ReversiScreenProps> = ({
   const [area, setArea] = useState({ width: 0, height: 0 });
   const [draft, setDraft] = useState('');
   const [typing, setTyping] = useState(false);
+  const [confirmEnd, setConfirmEnd] = useState(false);
   const chatScroll = useRef<ScrollView>(null);
 
   const { state, status } = game;
@@ -178,13 +180,6 @@ export const ReversiScreen: React.FC<ReversiScreenProps> = ({
   const cell = Math.floor(boardSize / state.size);
   const disc = Math.round(cell * 0.78);
 
-  const confirmEnd = () => {
-    Alert.alert('End this game?', 'It ends for both of you.', [
-      { text: 'Keep playing', style: 'cancel' },
-      { text: 'End game', style: 'destructive', onPress: onEnd },
-    ]);
-  };
-
   const send = () => {
     const text = draft.trim();
     if (!text) return;
@@ -201,7 +196,7 @@ export const ReversiScreen: React.FC<ReversiScreenProps> = ({
           </TouchableOpacity>
           <Text style={styles.title}>Reversi</Text>
           {status === 'active' ? (
-            <TouchableOpacity onPress={confirmEnd} style={styles.pill} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }} accessibilityRole="button">
+            <TouchableOpacity onPress={() => setConfirmEnd(true)} style={styles.pill} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }} accessibilityRole="button">
               <Text style={styles.pillText}>End</Text>
             </TouchableOpacity>
           ) : (
@@ -307,6 +302,19 @@ export const ReversiScreen: React.FC<ReversiScreenProps> = ({
           </View>
         </View>
       </KeyboardAvoidingView>
+
+      <ConfirmModal
+        visible={confirmEnd}
+        title="End this game?"
+        message="It ends for both of you."
+        keepLabel="Keep playing"
+        confirmLabel="End game"
+        onDismiss={() => setConfirmEnd(false)}
+        onConfirm={() => {
+          setConfirmEnd(false);
+          onEnd();
+        }}
+      />
     </View>
   );
 };
