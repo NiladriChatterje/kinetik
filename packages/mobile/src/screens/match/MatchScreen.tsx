@@ -4,7 +4,7 @@ import React, { useState, useEffect, useLayoutEffect, useRef, useCallback } from
   ScrollView,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { Ionicons } from '@expo/vector-icons';
+import Ionicons from '@expo/vector-icons/Ionicons';
 import { useAuthStore } from '../../store/authStore';
 import { api } from '../../services/api';
 import { useToast } from '../../hooks/useToast';

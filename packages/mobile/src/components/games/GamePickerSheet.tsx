@@ -3,7 +3,7 @@ import {
   View, Text, StyleSheet, TouchableOpacity, BackHandler, ActivityIndicator,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { Ionicons } from '@expo/vector-icons';
+import Ionicons from '@expo/vector-icons/Ionicons';
 import { colors, typography, spacing, radius } from '../../theme';
 import { DOTS_MIN_SIDE, DOTS_SIDES } from './gameTypes';
 

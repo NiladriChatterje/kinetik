@@ -9,7 +9,7 @@ import {
   StyleSheet,
   Keyboard,
 } from 'react-native';
-import { Ionicons } from '@expo/vector-icons';
+import Ionicons from '@expo/vector-icons/Ionicons';
 import { colors, typography, spacing, radius } from '../../theme';
 
 // ─── Country data ──────────────────────────────────────

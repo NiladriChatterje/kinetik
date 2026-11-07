@@ -4,7 +4,7 @@ import {
   ActivityIndicator, ScrollView, Platform,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { Ionicons } from '@expo/vector-icons';
+import Ionicons from '@expo/vector-icons/Ionicons';
 import * as DocumentPicker from 'expo-document-picker';
 import { Button } from '../../components/common/Button';
 import { StepLabel } from '../../components/common/StepLabel';

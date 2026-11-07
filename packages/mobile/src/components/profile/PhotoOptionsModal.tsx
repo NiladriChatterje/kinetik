@@ -10,7 +10,7 @@ import {
   TouchableWithoutFeedback,
   ActivityIndicator,
 } from 'react-native';
-import { Ionicons } from '@expo/vector-icons';
+import Ionicons from '@expo/vector-icons/Ionicons';
 import { resolveUrl } from '../../config';
 import { useNavigationBarInset } from '../common/SystemBars';
 import { colors, typography, spacing, radius } from '../../theme';

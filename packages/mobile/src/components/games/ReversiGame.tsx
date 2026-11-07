@@ -4,7 +4,7 @@ import {
   Keyboard, BackHandler, LayoutChangeEvent, ScrollView,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { Ionicons } from '@expo/vector-icons';
+import Ionicons from '@expo/vector-icons/Ionicons';
 import { colors, typography, spacing, radius } from '../../theme';
 import { ConfirmModal } from '../common/ConfirmModal';
 import type { ReversiCell, ReversiGame } from './gameTypes';

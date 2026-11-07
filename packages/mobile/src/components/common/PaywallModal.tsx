@@ -2,7 +2,7 @@ import React, { useEffect, useRef } from 'react';
 import {
   View, Text, StyleSheet, Modal, Animated, Dimensions,
 } from 'react-native';
-import { Ionicons } from '@expo/vector-icons';
+import Ionicons from '@expo/vector-icons/Ionicons';
 import { colors, typography, spacing, radius } from '../../theme';
 import { Button } from './Button';
 

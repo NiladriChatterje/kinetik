@@ -4,7 +4,7 @@ import {
   ActivityIndicator,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { Ionicons } from '@expo/vector-icons';
+import Ionicons from '@expo/vector-icons/Ionicons';
 import { api } from '../../services/api';
 import { getPresenceSocket } from '../../services/presenceSocket';
 import { onLikeAnswered, onPremiumChanged } from '../../services/appEvents';

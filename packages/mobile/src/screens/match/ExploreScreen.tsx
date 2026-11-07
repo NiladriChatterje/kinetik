@@ -4,7 +4,7 @@ import {
   ActivityIndicator, RefreshControl, Dimensions,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { Ionicons } from '@expo/vector-icons';
+import Ionicons from '@expo/vector-icons/Ionicons';
 import { api } from '../../services/api';
 import { ProgressiveImage } from '../../components/common/ProgressiveImage';
 import { DatingCategoryBadge, DatingCategory } from '../../components/common/DatingCategoryBadge';

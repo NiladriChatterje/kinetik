@@ -11,7 +11,7 @@ import { useAudioRecorder, createAudioPlayer, AudioPlayer, setAudioModeAsync, re
 import { usePreventScreenCapture } from 'expo-screen-capture';
 
 import * as FileSystem from 'expo-file-system/legacy';
-import { Ionicons } from '@expo/vector-icons';
+import Ionicons from '@expo/vector-icons/Ionicons';
 import * as ImagePicker from 'expo-image-picker';
 import { Socket } from 'socket.io-client';
 import { api } from '../../services/api';
