@@ -21,7 +21,8 @@ const THEIR_BOX = 'rgba(0, 0, 0, 0.16)';
 const MY_DOT = '#FF6B6B';
 const THEIR_DOT = 'rgba(0, 0, 0, 0.35)';
 const LINE = 'rgba(0, 0, 0, 0.55)';
-const LINE_LAST = '#000000';
+/** The newest line, whoever drew it, so it is easy to spot */
+const LINE_LAST = '#E53935';
 const LINE_EMPTY = 'rgba(0, 0, 0, 0.07)';
 
 const DOT = 8;
@@ -150,23 +151,30 @@ export const DotsBoxesPanel: React.FC<DotsBoxesPanelProps> = ({
             );
           })}
 
-          {/* Lines: drawn, the last one drawn, the one being sent, empty */}
-          {lines.map(({ edge, drawn }) => {
-            const isPending = sameEdge(edge, pending);
-            const isLast = drawn && sameEdge(edge, state.last);
-            const shown = drawn || isPending;
-            return (
-              <View
-                key={`l${edge.kind}${edge.r}-${edge.c}`}
-                pointerEvents="none"
-                style={[
-                  styles.line,
-                  lineFrame(edge, shown ? 4 : 2),
-                  { backgroundColor: isLast ? LINE_LAST : shown ? LINE : LINE_EMPTY },
-                ]}
-              />
-            );
-          })}
+          {/* Lines: drawn, empty, then the newest on top (the one being
+              sent, else the last one drawn) so it is not hidden under a
+              neighbour */}
+          {lines.map(({ edge, drawn }) => (
+            <View
+              key={`l${edge.kind}${edge.r}-${edge.c}`}
+              pointerEvents="none"
+              style={[
+                styles.line,
+                lineFrame(edge, drawn ? 4 : 2),
+                { backgroundColor: drawn ? LINE : LINE_EMPTY },
+              ]}
+            />
+          ))}
+          {(pending || state.last) && (
+            <View
+              pointerEvents="none"
+              style={[
+                styles.line,
+                lineFrame((pending ?? state.last)!, 6),
+                { backgroundColor: LINE_LAST, borderRadius: 3 },
+              ]}
+            />
+          )}
 
           {/* Dots */}
           {Array.from({ length: (rows + 1) * (cols + 1) }, (_, i) => {
