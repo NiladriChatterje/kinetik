@@ -4,11 +4,14 @@
  * Uploads profile photos to a MinIO bucket, generates thumbnails via sharp,
  * and returns pre-signed or public URLs.
  *
- * Full-res photos and thumbnails are both stored as lossy WebP.
+ * Profile photos and all thumbnails are stored as lossy WebP. Chat photos
+ * keep the bytes the phone sent, metadata stripped (see saveChatImage).
  *
  * Bucket structure:
- *   kinetik-photos/{userId}/{photoId}.webp        (full-res, q88)
+ *   kinetik-photos/{userId}/{photoId}.webp        (profile photo, q88)
  *   kinetik-photos/{userId}/{photoId}_thumb.webp   (thumbnail, 300px, lossy)
+ *   kinetik-photos/{userId}/{photoId}.jpg|png|webp (chat photo, as sent)
+ *   kinetik-photos/{userId}/{photoId}_thumb.webp   (chat thumbnail, 640px short side)
  *
  * Environment variables:
  *   MINIO_ENDPOINT   — MinIO server address (default: localhost:9000)
@@ -22,9 +25,11 @@
 
 import { S3Client, PutObjectCommand, GetObjectCommand, DeleteObjectCommand, ListObjectsV2Command } from '@aws-sdk/client-s3';
 import sharp from 'sharp';
+import type { Metadata as SharpMetadata } from 'sharp';
 import { v4 as uuidv4 } from 'uuid';
 import { encode } from 'blurhash';
 import { encryptBuffer, decryptBuffer } from '@kinetik/shared';
+import { ImageMetadataError, sniffImageFormat, stripJpegMetadata, stripPngMetadata } from './imageMetadata';
 
 // ─── sharp tuning for the 0.5 CPU / 256 MB api-core container ────────
 // Every image here is processed exactly once, so libvips's operation cache
@@ -197,6 +202,157 @@ export async function savePhoto(
     url: `${PUBLIC_URL}${fullKey}`,
     thumbnailUrl: `${PUBLIC_URL}${thumbKey}`,
     blurHash,
+  };
+}
+
+// ─── Chat photos ─────────────────────────────────────────────────────
+//
+// A chat photo is stored as the phone sent it, never re-encoded: the app
+// sends the camera's own JPEG (or the PNG) with its metadata stripped
+// losslessly, so the receiver sees the original quality. The server strips
+// once more (imageMetadata.ts) so that no client, however modified, can
+// store a photo that still carries its GPS position. Only the bubble
+// thumbnail is made here.
+//
+// Older app versions send a 1200px WebP with no metadata; that is kept
+// as it is too.
+
+/** Short side of the bubble thumbnail. The bubble is 200 x 200 dp, about 600 px on a 3x screen. */
+const CHAT_THUMB_SHORT_SIDE = 640;
+
+/**
+ * Pixel ceiling for a chat photo. The app sends at most 4096 x 4096
+ * (16.8 MP); the headroom covers older versions, which scaled every photo
+ * to 1200 px wide, so a long screenshot could be very tall. Checked from the
+ * header before anything is decoded.
+ */
+export const CHAT_IMAGE_MAX_PIXELS = 25_000_000;
+
+/** A chat photo the server will not store: the message is for the sender. */
+export class ChatImageRejected extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = 'ChatImageRejected';
+  }
+}
+
+export interface CleanChatImage {
+  buffer: Buffer;
+  mimeType: 'image/jpeg' | 'image/png' | 'image/webp';
+  ext: 'jpg' | 'png' | 'webp';
+}
+
+function toBuffer(bytes: Uint8Array): Buffer {
+  return Buffer.from(bytes.buffer, bytes.byteOffset, bytes.length);
+}
+
+/**
+ * The bytes to store for a chat photo, free of metadata. JPEG and PNG are
+ * stripped without touching the pixels; a WebP without metadata (what older
+ * app versions send) is kept; anything else, or a file the strippers will
+ * not vouch for, is re-encoded once at high quality, which also drops all
+ * metadata (sharp writes none unless asked).
+ */
+export async function cleanChatImage(input: Buffer): Promise<CleanChatImage> {
+  if (input.length === 0) throw new ChatImageRejected('That photo is empty.');
+  if (input.length > MAX_FILE_SIZE) throw new ChatImageRejected('That photo is too large. Max 10 MB.');
+
+  let meta: SharpMetadata;
+  try {
+    // Header only, nothing is decoded; the pixel ceiling is checked just below
+    meta = await sharp(input, { limitInputPixels: false }).metadata();
+  } catch {
+    throw new ChatImageRejected('That file is not a photo we can show.');
+  }
+  if (!meta.width || !meta.height) throw new ChatImageRejected('That file is not a photo we can show.');
+  if (meta.width * meta.height > CHAT_IMAGE_MAX_PIXELS) {
+    throw new ChatImageRejected('That photo has too many pixels to send.');
+  }
+
+  const bytes = new Uint8Array(input.buffer, input.byteOffset, input.length);
+  try {
+    if (meta.format === 'jpeg' && sniffImageFormat(bytes) === 'jpeg') {
+      return { buffer: toBuffer(stripJpegMetadata(bytes).bytes), mimeType: 'image/jpeg', ext: 'jpg' };
+    }
+    if (meta.format === 'png' && sniffImageFormat(bytes) === 'png') {
+      return { buffer: toBuffer(stripPngMetadata(bytes).bytes), mimeType: 'image/png', ext: 'png' };
+    }
+  } catch (err) {
+    if (!(err instanceof ImageMetadataError)) throw err;
+    // Falls through to the re-encode below
+  }
+  if (meta.format === 'webp' && !meta.exif && !meta.xmp && !meta.iptc && (meta.pages ?? 1) === 1) {
+    return { buffer: input, mimeType: 'image/webp', ext: 'webp' };
+  }
+
+  try {
+    const buffer = await sharp(input, { limitInputPixels: CHAT_IMAGE_MAX_PIXELS })
+      .rotate() // apply the orientation before it is dropped with the rest
+      .jpeg({ quality: 92 })
+      .toBuffer();
+    return { buffer, mimeType: 'image/jpeg', ext: 'jpg' };
+  } catch {
+    throw new ChatImageRejected('That file is not a photo we can show.');
+  }
+}
+
+/** The bubble thumbnail: upright, short side 640 px (never enlarged), WebP. */
+export async function makeChatThumbnail(image: Buffer): Promise<Buffer> {
+  try {
+    return await sharp(image, { limitInputPixels: CHAT_IMAGE_MAX_PIXELS })
+      .rotate()
+      .resize(CHAT_THUMB_SHORT_SIDE, CHAT_THUMB_SHORT_SIDE, { fit: 'outside', withoutEnlargement: true })
+      .webp({ quality: 80, effort: 4 })
+      .toBuffer();
+  } catch {
+    throw new ChatImageRejected('That file is not a photo we can show.');
+  }
+}
+
+/**
+ * Store a chat photo and its bubble thumbnail. Throws ChatImageRejected
+ * when the file itself is the problem; any other error is storage.
+ */
+export async function saveChatImage(
+  userId: string,
+  input: Buffer,
+): Promise<{ url: string; thumbnailUrl: string; mimeType: string; sizeBytes: number }> {
+  const clean = await cleanChatImage(input);
+  const thumbBuffer = await makeChatThumbnail(clean.buffer);
+
+  const photoId = uuidv4();
+  const fullKey = `${userId}/${photoId}.${clean.ext}`;
+  const thumbKey = `${userId}/${photoId}_thumb.webp`;
+  const client = getS3Client();
+  const cacheControl = 'public, max-age=31536000, immutable';
+  await Promise.all([
+    client.send(new PutObjectCommand({
+      Bucket: BUCKET,
+      Key: fullKey,
+      Body: clean.buffer,
+      ContentType: clean.mimeType,
+      CacheControl: cacheControl,
+    })),
+    client.send(new PutObjectCommand({
+      Bucket: BUCKET,
+      Key: thumbKey,
+      Body: thumbBuffer,
+      ContentType: 'image/webp',
+      CacheControl: cacheControl,
+    })),
+  ]);
+
+  console.log(
+    `[photoStorage] Chat photo minio://${BUCKET}/${fullKey} ` +
+      `| received=${(input.length / 1024).toFixed(1)}KB stored=${(clean.buffer.length / 1024).toFixed(1)}KB ` +
+      `${clean.mimeType} thumb=${(thumbBuffer.length / 1024).toFixed(1)}KB`,
+  );
+
+  return {
+    url: `${PUBLIC_URL}${fullKey}`,
+    thumbnailUrl: `${PUBLIC_URL}${thumbKey}`,
+    mimeType: clean.mimeType,
+    sizeBytes: clean.buffer.length,
   };
 }
 

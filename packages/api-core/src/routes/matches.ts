@@ -13,7 +13,7 @@ import { hasActivePremium, getChatAccess, isChatLocked, invalidateFreeChatCache,
 import { eventBus } from '../services/eventBus';
 import { isBlockedPair, isReportedPair } from '../services/blocks';
 import { getRedis, publishChatMessage } from '../services/redis';
-import { savePhoto, saveEncryptedChatFile, getEncryptedChatFileBuffer, deleteChatFile } from '../services/photoStorage';
+import { saveChatImage, ChatImageRejected, saveEncryptedChatFile, getEncryptedChatFileBuffer, deleteChatFile } from '../services/photoStorage';
 import { cursorTimestampSql, decodeCursor, encodeCursor, pageLimit } from '../services/listCursor';
 import { isMessageId, quoteFromRow, ReplyQuote } from '../services/messageReply';
 import { isPlanDayOver } from '../services/planDay';
@@ -1607,11 +1607,28 @@ export async function matchRoutes(app: FastifyInstance) {
     // Save to storage
     let url: string;
     let thumbnailUrl: string | null = null;
+    let storedMimeType = mimeType;
+    let storedSize = fileBuffer.length;
 
     if (mediaType === 'image') {
-      const saved = await savePhoto(userId, fileBuffer, mimeType, { lossless: false });
+      // Kept at the quality the phone sent, metadata stripped (see saveChatImage).
+      // The stored type comes from the bytes, not from what the client claimed.
+      let saved: Awaited<ReturnType<typeof saveChatImage>>;
+      try {
+        saved = await saveChatImage(userId, fileBuffer);
+      } catch (err) {
+        if (err instanceof ChatImageRejected) {
+          return reply.status(400).send({
+            success: false,
+            error: { code: 'INVALID_IMAGE', message: err.message },
+          });
+        }
+        throw err;
+      }
       url = saved.url;
       thumbnailUrl = saved.thumbnailUrl;
+      storedMimeType = saved.mimeType;
+      storedSize = saved.sizeBytes;
     } else {
       // All non-image media (audio, video, file) use encrypted-at-rest storage
       const saved = await saveEncryptedChatFile(userId, fileBuffer, mimeType, fileId);
@@ -1633,7 +1650,7 @@ export async function matchRoutes(app: FastifyInstance) {
     const mediaResult = await query(
       `INSERT INTO ${TABLES.CHAT_MEDIA} (message_id, sender_id, media_type, url, thumbnail_url, mime_type, file_size, duration_secs, is_view_once)
        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9) RETURNING *`,
-      [message.id, userId, mediaType, url, thumbnailUrl, mimeType, fileBuffer.length, durationSecs, viewOnce],
+      [message.id, userId, mediaType, url, thumbnailUrl, storedMimeType, storedSize, durationSecs, viewOnce],
     );
     const media = mediaResult.rows[0];
 
@@ -1867,7 +1884,7 @@ export async function matchRoutes(app: FastifyInstance) {
     const mediaResult = await query(
       `UPDATE ${TABLES.CHAT_MEDIA} SET viewed_at = NOW()
        WHERE id = $1 AND is_view_once = TRUE AND viewed_at IS NULL
-       RETURNING id, sender_id, url, message_id`,
+       RETURNING id, sender_id, url, thumbnail_url, message_id`,
       [mediaId],
     );
 
@@ -1903,9 +1920,13 @@ export async function matchRoutes(app: FastifyInstance) {
       const uploadKey = url.replace('/uploads/', '');
       if (uploadKey) {
         await deleteChatFile(uploadKey).catch(() => {});
-        // Also delete thumbnail if it exists
-        const thumbKey = uploadKey.replace('.webp', '_thumb.webp');
-        if (thumbKey !== uploadKey) {
+        // The thumbnail goes too. Its URL is on the row: a chat photo may be
+        // .jpg or .png, so the key cannot be derived from the photo's own.
+        const thumbUrl: string | null = mediaRow.thumbnail_url;
+        const thumbKey = thumbUrl?.startsWith('/uploads/')
+          ? thumbUrl.replace('/uploads/', '')
+          : uploadKey.replace('.webp', '_thumb.webp');
+        if (thumbKey && thumbKey !== uploadKey) {
           await deleteChatFile(thumbKey).catch(() => {});
         }
       }
