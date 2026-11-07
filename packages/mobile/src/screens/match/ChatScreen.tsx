@@ -29,9 +29,11 @@ import { suggestReplies } from '../../services/replySuggestions';
 import { hapticImpact, hapticLight } from '../../utils/haptics';
 import { GamePickerSheet } from '../../components/games/GamePickerSheet';
 import { DotsBoxesPanel } from '../../components/games/DotsBoxesPanel';
-import { ReversiBar, ReversiScreen, MiniChatLine } from '../../components/games/ReversiGame';
+import { ReversiBar, ReversiScreen } from '../../components/games/ReversiGame';
+import { CheckersBar, CheckersScreen } from '../../components/games/ChineseCheckersGame';
+import type { MiniChatLine } from '../../components/games/FullScreenGame';
 import { isKnownGame } from '../../components/games/gameTypes';
-import type { ChatGame, DotsEdge, ReversiCell } from '../../components/games/gameTypes';
+import type { ChatGame, CheckersMove, DotsEdge, ReversiCell } from '../../components/games/gameTypes';
 import { resolveUrl } from '../../config';
 import { colors, typography, spacing, radius } from '../../theme';
 
@@ -889,7 +891,7 @@ export const ChatScreen: React.FC<{ navigation: any; route: any }> = ({ navigati
   const [safetyVisible, setSafetyVisible] = useState(false);
 
   // ─── Game inside the chat ─────────────────────────────
-  // The chat's current game (Dots and Boxes), shown above the messages. The
+  // The chat's current game. Dots and Boxes shows above the messages; its
   // board folds away on its header, and while the keyboard is up.
   const [game, setGame] = useState<ChatGame | null>(null);
   const [gamePickerVisible, setGamePickerVisible] = useState(false);
@@ -898,6 +900,9 @@ export const ChatScreen: React.FC<{ navigation: any; route: any }> = ({ navigati
   // Reversi opens full screen over the chat; the chat keeps a slim bar
   const [reversiOpen, setReversiOpen] = useState(false);
   const [pendingSquare, setPendingSquare] = useState<ReversiCell | null>(null);
+  // Chinese Checkers too
+  const [checkersOpen, setCheckersOpen] = useState(false);
+  const [pendingHop, setPendingHop] = useState<CheckersMove | null>(null);
 
   // ─── Unmatch confirmation modal state ────────────────────
   const [unmatchModalVisible, setUnmatchModalVisible] = useState(false);
@@ -1158,6 +1163,43 @@ export const ChatScreen: React.FC<{ navigation: any; route: any }> = ({ navigati
     return false;
   }, [matchId, toast, syncGame]);
 
+  const startCheckersGame = useCallback(async (): Promise<boolean> => {
+    try {
+      const res = await api.startCheckersGame(matchId);
+      if (res.success && res.data?.game) {
+        setGame(res.data.game);
+        setPendingHop(null);
+        Keyboard.dismiss();
+        setCheckersOpen(true);
+        return true;
+      }
+      toast.showError('Could not start the game', res.error?.message || 'Please try again.');
+      syncGame();
+    } catch (err: any) {
+      toast.showError('Could not start the game', err?.message || 'Check your connection and try again.');
+    }
+    return false;
+  }, [matchId, toast, syncGame]);
+
+  const playCheckersMove = useCallback(async (move: CheckersMove) => {
+    if (!game || game.type !== 'chinese_checkers' || pendingHop) return;
+    hapticLight();
+    setPendingHop(move);
+    try {
+      const res = await api.playCheckersMove(matchId, game.id, move);
+      if (res.success && res.data?.game) {
+        setGame(res.data.game);
+      } else {
+        toast.showError('Move not played', res.error?.message || 'Please try again.');
+        syncGame();
+      }
+    } catch (err: any) {
+      toast.showError('Move not played', err?.message || 'Check your connection and try again.');
+    } finally {
+      setPendingHop(null);
+    }
+  }, [matchId, game, pendingHop, toast, syncGame]);
+
   const playReversiMove = useCallback(async (cell: ReversiCell) => {
     if (!game || game.type !== 'reversi' || pendingSquare) return;
     hapticLight();
@@ -1212,6 +1254,7 @@ export const ChatScreen: React.FC<{ navigation: any; route: any }> = ({ navigati
     const closing = game;
     setGame(null);
     setReversiOpen(false);
+    setCheckersOpen(false);
     try {
       await api.hideMatchGame(matchId, closing.id);
     } catch {
@@ -1224,6 +1267,7 @@ export const ChatScreen: React.FC<{ navigation: any; route: any }> = ({ navigati
     if (game?.status === 'active') {
       Keyboard.dismiss();
       if (game.type === 'reversi') setReversiOpen(true);
+      else if (game.type === 'chinese_checkers') setCheckersOpen(true);
       else setGameCollapsed(false);
       return;
     }
@@ -1624,10 +1668,11 @@ export const ChatScreen: React.FC<{ navigation: any; route: any }> = ({ navigati
     syncPlanner();
   }, [syncPlanner]);
 
-  // The full screen belongs to a Reversi game; with none (closed, or the
-  // chat's game is another one now) it is shut, so it never pops up later
+  // A full screen belongs to its game; with none (closed, or the chat's
+  // game is another one now) it is shut, so it never pops up later
   useEffect(() => {
     if (!game || game.type !== 'reversi') setReversiOpen(false);
+    if (!game || game.type !== 'chinese_checkers') setCheckersOpen(false);
   }, [game]);
 
   // The last few messages, for the chat under a full-screen game
@@ -2569,6 +2614,18 @@ export const ChatScreen: React.FC<{ navigation: any; route: any }> = ({ navigati
               onClose={closeGame}
             />
           ) : null}
+          {game && game.type === 'chinese_checkers' && authUser?.id && game.state.players.includes(authUser.id) ? (
+            <CheckersBar
+              game={game}
+              myId={authUser.id}
+              partnerName={partnerName}
+              onOpen={() => {
+                Keyboard.dismiss();
+                setCheckersOpen(true);
+              }}
+              onClose={closeGame}
+            />
+          ) : null}
           {loading ? (
             <View style={styles.centered}>
               <ActivityIndicator size="large" color={colors.primary} />
@@ -3303,12 +3360,37 @@ export const ChatScreen: React.FC<{ navigation: any; route: any }> = ({ navigati
         />
       ) : null}
 
+      {/* Chinese Checkers, full screen over the chat */}
+      {game && game.type === 'chinese_checkers' && authUser?.id && game.state.players.includes(authUser.id) ? (
+        <CheckersScreen
+          visible={checkersOpen}
+          game={game}
+          myId={authUser.id}
+          partnerName={partnerName}
+          pending={pendingHop}
+          onMove={playCheckersMove}
+          onEnd={endGame}
+          onClose={closeGame}
+          onMinimize={() => {
+            Keyboard.dismiss();
+            setCheckersOpen(false);
+          }}
+          recent={recentChatLines}
+          onSend={(text) => {
+            if (sending) return false;
+            void sendText(text);
+            return true;
+          }}
+        />
+      ) : null}
+
       {/* Games to start, from the gamepad in the header */}
       <GamePickerSheet
         visible={gamePickerVisible}
         onClose={() => setGamePickerVisible(false)}
         onStartDots={startDotsGame}
         onStartReversi={startReversiGame}
+        onStartCheckers={startCheckersGame}
       />
 
       {/* Report / block — last, so it covers the whole screen */}

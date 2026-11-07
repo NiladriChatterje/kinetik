@@ -10,14 +10,15 @@ import { DOTS_MIN_SIDE, DOTS_SIDES } from './gameTypes';
 /**
  * The games a chat can start, opened from the gamepad in the chat header.
  * Pick a game, then (as the one starting it) the board for Dots and
- * Boxes (columns and rows, 6 to 8 each), or a confirm for Reversi.
+ * Boxes (columns and rows, 6 to 8 each), or a confirm for Reversi and
+ * Chinese Checkers.
  *
  * An overlay inside the chat screen like ReportBlockSheet, not a <Modal>,
  * for the same keyboard reasons. Render it near the end of the screen so it
  * covers the chat.
  */
 
-type Step = 'games' | 'size' | 'reversi';
+type Step = 'games' | 'size' | 'reversi' | 'checkers';
 
 interface GamePickerSheetProps {
   visible: boolean;
@@ -25,9 +26,12 @@ interface GamePickerSheetProps {
   /** Starts the game; resolves true when it started (the sheet then closes) */
   onStartDots: (rows: number, cols: number) => Promise<boolean>;
   onStartReversi: () => Promise<boolean>;
+  onStartCheckers: () => Promise<boolean>;
 }
 
-export const GamePickerSheet: React.FC<GamePickerSheetProps> = ({ visible, onClose, onStartDots, onStartReversi }) => {
+export const GamePickerSheet: React.FC<GamePickerSheetProps> = ({
+  visible, onClose, onStartDots, onStartReversi, onStartCheckers,
+}) => {
   const insets = useSafeAreaInsets();
   const [step, setStep] = useState<Step>('games');
   const [cols, setCols] = useState(DOTS_MIN_SIDE);
@@ -65,7 +69,10 @@ export const GamePickerSheet: React.FC<GamePickerSheetProps> = ({ visible, onClo
   const start = async () => {
     if (busy) return;
     setBusy(true);
-    const started = step === 'reversi' ? await onStartReversi() : await onStartDots(rows, cols);
+    const started =
+      step === 'reversi' ? await onStartReversi()
+        : step === 'checkers' ? await onStartCheckers()
+          : await onStartDots(rows, cols);
     setBusy(false);
     if (started) onClose();
   };
@@ -138,6 +145,21 @@ export const GamePickerSheet: React.FC<GamePickerSheetProps> = ({ visible, onClo
                 </View>
                 <Ionicons name="chevron-forward" size={18} color={colors.textMuted} />
               </TouchableOpacity>
+              <TouchableOpacity
+                style={styles.gameRow}
+                onPress={() => setStep('checkers')}
+                accessibilityRole="button"
+                accessibilityLabel="Chinese Checkers"
+              >
+                <View style={styles.gameIcon}>
+                  <Ionicons name="star-outline" size={20} color={colors.textPrimary} />
+                </View>
+                <View style={styles.gameText}>
+                  <Text style={styles.gameLabel}>Chinese Checkers</Text>
+                  <Text style={styles.gameHint}>Race your 10 pegs across the star. Hop over pegs to go further.</Text>
+                </View>
+                <Ionicons name="chevron-forward" size={18} color={colors.textMuted} />
+              </TouchableOpacity>
             </>
           )}
 
@@ -145,6 +167,16 @@ export const GamePickerSheet: React.FC<GamePickerSheetProps> = ({ visible, onClo
             <>
               {backTitle('Reversi')}
               <Text style={styles.body}>8 × 8 board. You play black and move first. It opens full screen, with the chat below the board.</Text>
+              {startButton}
+            </>
+          )}
+
+          {step === 'checkers' && (
+            <>
+              {backTitle('Chinese Checkers')}
+              <Text style={styles.body}>
+                Move one peg a turn: a step to the next hole, or hops over any peg into the hole behind it, as many hops in a row as you can. First to fill the far point wins. You move first. It opens full screen, with the chat below the board.
+              </Text>
               {startButton}
             </>
           )}

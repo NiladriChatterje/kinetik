@@ -55,6 +55,53 @@ export interface ReversiCell {
   c: number;
 }
 
+/**
+ * Chinese Checkers for two: the 121-hole star (CHECKERS_BOARD). board[i] is
+ * 0 or 1 (index into players) or null. Player 0 started, begins in the
+ * bottom point and heads for the top; player 1 the other way. `legal` holds,
+ * for the player to move, each peg that can move and the holes it can reach
+ * (empty once it is over); `last` is the route of the last move, start to
+ * end; `scores` counts the pegs each player has in the point they head for.
+ */
+export interface CheckersState {
+  board: (0 | 1 | null)[];
+  players: [string, string];
+  turn: 0 | 1;
+  scores: [number, number];
+  last: number[] | null;
+  legal: CheckersOption[];
+  passed: boolean;
+  moves: number;
+}
+
+export interface CheckersOption {
+  from: number;
+  to: number[];
+}
+
+export interface CheckersMove {
+  from: number;
+  to: number;
+}
+
+/** Pegs per player, and so the score that wins */
+export const CHECKERS_PEGS = 10;
+
+/**
+ * Where each hole sits, in the server's numbering (api-core
+ * services/chineseCheckers.ts): row 0 is the top point, row 16 the bottom
+ * one; x is the position across in half-hole steps from the centre line.
+ * Only the layout lives here; the rules stay on the server.
+ */
+export const CHECKERS_BOARD: ReadonlyArray<{ r: number; x: number }> = (() => {
+  const holes: Array<{ r: number; x: number }> = [];
+  for (let r = 0; r < 17; r++) {
+    const halfWidth = Math.max(r <= 12 ? r : -1, r >= 4 ? 16 - r : -1);
+    for (let x = 0 - halfWidth; x <= halfWidth; x += 2) holes.push({ r, x });
+  }
+  return holes;
+})();
+
 interface ChatGameBase {
   id: string;
   matchId: string;
@@ -76,7 +123,12 @@ export interface ReversiGame extends ChatGameBase {
   state: ReversiState;
 }
 
-export type ChatGame = DotsGame | ReversiGame;
+export interface CheckersGame extends ChatGameBase {
+  type: 'chinese_checkers';
+  state: CheckersState;
+}
+
+export type ChatGame = DotsGame | ReversiGame | CheckersGame;
 
 /**
  * Whether this app can draw the game. A newer app may start a game an older
@@ -84,7 +136,7 @@ export type ChatGame = DotsGame | ReversiGame;
  * board.
  */
 export function isKnownGame(game: { type?: unknown } | null | undefined): game is ChatGame {
-  return !!game && (game.type === 'dots_boxes' || game.type === 'reversi');
+  return !!game && (game.type === 'dots_boxes' || game.type === 'reversi' || game.type === 'chinese_checkers');
 }
 
 /**
