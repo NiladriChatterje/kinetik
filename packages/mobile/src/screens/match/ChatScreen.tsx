@@ -15,7 +15,7 @@ import Ionicons from '@expo/vector-icons/Ionicons';
 import * as ImagePicker from 'expo-image-picker';
 import { Socket } from 'socket.io-client';
 import { api } from '../../services/api';
-import { compressPhoto } from '../../services/photoService';
+import { prepareChatImage, discardPreparedChatImage, ChatImageError, type PreparedChatImage } from '../../services/chatImage';
 import { getChatSocket } from '../../services/chatSocket';
 import { onPremiumChanged } from '../../services/appEvents';
 import { useAuthStore } from '../../store/authStore';
@@ -446,7 +446,8 @@ interface MessageRowProps {
   avatarUri?: string;
   isAudioPlaying: boolean;
   onOpenOneTimeView: (media: ChatMedia) => void;
-  onPreviewPhoto: (url: string) => void;
+  /** Full-size photo, and its thumbnail to show while the full one loads. */
+  onPreviewPhoto: (url: string, thumbnailUrl?: string) => void;
   onToggleAudio: (messageId: string, url: string) => void;
   onRetry: (message: Message) => void;
   /** A tap on a text with links: one opens, several ask which */
@@ -512,8 +513,12 @@ const MessageRow = React.memo(function MessageRow({
       return (
         <TouchableOpacity
           onPress={() => {
-            // Sender can preview their own view-once images normally
-            onPreviewPhoto(resolveUrl(media.thumbnailUrl || media.url));
+            // Sender can preview their own view-once images normally.
+            // Full size in the viewer; the bubble keeps the thumbnail.
+            onPreviewPhoto(
+              resolveUrl(media.url || media.thumbnailUrl || ''),
+              media.thumbnailUrl ? resolveUrl(media.thumbnailUrl) : undefined,
+            );
           }}
           activeOpacity={0.9}
         >
@@ -824,7 +829,15 @@ export const ChatScreen: React.FC<{ navigation: any; route: any }> = ({ navigati
   const [keyboardVisible, setKeyboardVisible] = useState(false);
   const [isRecording, setIsRecording] = useState(false);
   const [recordingDuration, setRecordingDuration] = useState(0);
-  const [previewPhotoUrl, setPreviewPhotoUrl] = useState<string | null>(null);
+  const [previewPhoto, setPreviewPhoto] = useState<{ url: string; thumbnailUrl?: string } | null>(null);
+  // The full-size photo loads over its thumbnail: loading, shown, or failed (thumbnail stays)
+  const [previewState, setPreviewState] = useState<'loading' | 'loaded' | 'failed'>('loading');
+  const openPhotoPreview = useCallback((url: string, thumbnailUrl?: string) => {
+    if (!url) return;
+    setPreviewState('loading');
+    setPreviewPhoto({ url, thumbnailUrl });
+  }, []);
+  const closePhotoPreview = useCallback(() => setPreviewPhoto(null), []);
   const [playingAudioId, setPlayingAudioId] = useState<string | null>(null);
 
   // ─── Fix-a-Date State ────────────────────────────────
@@ -1793,20 +1806,20 @@ export const ChatScreen: React.FC<{ navigation: any; route: any }> = ({ navigati
       readAt: null,
     }]);
 
+    let prepared: PreparedChatImage | null = null;
     try {
-      // Compress images client-side (resize to 1200px + WebP) — same pipeline
-      // as profile photos. Full-resolution camera photos previously uploaded
-      // as-is, tripping the gateway's 10MB body limit / 60s timeout (502).
+      // Photos go at their original quality with the metadata (GPS, camera
+      // details) removed on the phone; see services/chatImage.ts. A photo that
+      // cannot be prepared is not sent at all, never as the untouched original.
       let uploadUri = uri;
+      let contentType: string | undefined;
       if (mediaType === 'image') {
-        try {
-          uploadUri = (await compressPhoto(uri)).uri;
-        } catch (err) {
-          console.warn('[ChatMedia] Compression failed — sending original:', err);
-        }
+        prepared = await prepareChatImage(uri);
+        uploadUri = prepared.uri;
+        contentType = prepared.mimeType;
       }
 
-      const res = await api.sendMediaMessage(matchId, uploadUri, mediaType, undefined, applyViewOnce, durationSecs);
+      const res = await api.sendMediaMessage(matchId, uploadUri, mediaType, undefined, applyViewOnce, durationSecs, contentType);
       if (res.success && res.data) {
         // Replace temp with confirmed message; drop the temp if the real id already arrived
         setMessages((prev) => prev.some((m) => m.id === res.data.id)
@@ -1830,8 +1843,13 @@ export const ChatScreen: React.FC<{ navigation: any; route: any }> = ({ navigati
       }
       // Remove failed temp message and show error
       setMessages((prev) => prev.filter((m) => m.id !== tempId));
-      Alert.alert('Send Failed', err.message || 'Could not send media. Please try again.');
+      if (err instanceof ChatImageError) {
+        Alert.alert('Photo not sent', err.message);
+      } else {
+        Alert.alert('Send Failed', err.message || 'Could not send media. Please try again.');
+      }
     } finally {
+      discardPreparedChatImage(prepared);
       setSending(false);
     }
   };
@@ -2231,9 +2249,11 @@ export const ChatScreen: React.FC<{ navigation: any; route: any }> = ({ navigati
     // The system photo picker needs no storage permission (and the build
     // declares none: Play's photo/video policy reserves READ_MEDIA_* for
     // gallery-type apps), so launch it directly.
+    // quality 1: the picker hands over the original file unchanged (any lower
+    // value re-encodes it); chatImage.ts strips its metadata before sending
     const result = await ImagePicker.launchImageLibraryAsync({
       mediaTypes: ['images'],
-      quality: 0.8,
+      quality: 1,
       allowsEditing: false,
     });
 
@@ -2249,8 +2269,9 @@ export const ChatScreen: React.FC<{ navigation: any; route: any }> = ({ navigati
       return;
     }
 
+    // quality 1: the camera's own JPEG, not a re-encoded copy
     const result = await ImagePicker.launchCameraAsync({
-      quality: 0.8,
+      quality: 1,
     });
 
     if (!result.canceled && result.assets[0]) {
@@ -2332,7 +2353,7 @@ export const ChatScreen: React.FC<{ navigation: any; route: any }> = ({ navigati
       avatarUri={pAvatar}
       isAudioPlaying={playingAudioId === item.id}
       onOpenOneTimeView={openOneTimeView}
-      onPreviewPhoto={setPreviewPhotoUrl}
+      onPreviewPhoto={openPhotoPreview}
       onToggleAudio={handleToggleAudio}
       onRetry={handleRetry}
       onOpenLinks={handleOpenLinks}
@@ -2755,17 +2776,17 @@ export const ChatScreen: React.FC<{ navigation: any; route: any }> = ({ navigati
 
       {/* Full-Screen Photo Preview Modal */}
       <Modal
-        visible={previewPhotoUrl !== null}
+        visible={previewPhoto !== null}
         transparent
         animationType="fade"
         statusBarTranslucent
-        onRequestClose={() => setPreviewPhotoUrl(null)}
+        onRequestClose={closePhotoPreview}
       >
         <StatusBar barStyle="light-content" backgroundColor="#000" />
         <View style={styles.previewOverlay}>
           <TouchableOpacity
             style={styles.previewCloseBtn}
-            onPress={() => setPreviewPhotoUrl(null)}
+            onPress={closePhotoPreview}
             activeOpacity={0.7}
           >
             <View style={styles.previewCloseBtnInner}>
@@ -2776,14 +2797,29 @@ export const ChatScreen: React.FC<{ navigation: any; route: any }> = ({ navigati
           <TouchableOpacity
             style={styles.previewImageContainer}
             activeOpacity={1}
-            onPress={() => setPreviewPhotoUrl(null)}
+            onPress={closePhotoPreview}
           >
-            {previewPhotoUrl && (
-              <Image
-                source={{ uri: previewPhotoUrl }}
-                style={styles.previewImage}
-                resizeMode="contain"
-              />
+            {previewPhoto && (
+              <View style={styles.previewImage}>
+                {/* The thumbnail holds the place until the full photo is in */}
+                {previewPhoto.thumbnailUrl && previewState !== 'loaded' ? (
+                  <Image
+                    source={{ uri: previewPhoto.thumbnailUrl }}
+                    style={StyleSheet.absoluteFill}
+                    resizeMode="contain"
+                  />
+                ) : null}
+                <Image
+                  source={{ uri: previewPhoto.url }}
+                  style={StyleSheet.absoluteFill}
+                  resizeMode="contain"
+                  onLoad={() => setPreviewState('loaded')}
+                  onError={() => setPreviewState('failed')}
+                />
+                {previewState === 'loading' ? (
+                  <ActivityIndicator style={styles.previewSpinner} color="#fff" />
+                ) : null}
+              </View>
             )}
           </TouchableOpacity>
 
@@ -3636,6 +3672,11 @@ const styles = StyleSheet.create({
   previewImage: {
     width: SCREEN_WIDTH,
     height: SCREEN_HEIGHT,
+  },
+  previewSpinner: {
+    position: 'absolute',
+    alignSelf: 'center',
+    top: SCREEN_HEIGHT / 2 - 12,
   },
   previewHint: {
     position: 'absolute',

@@ -1197,7 +1197,8 @@ class ApiClient {
     });
   }
 
-  async sendMediaMessage(matchId: string, uri: string, mediaType: string, caption?: string, viewOnce?: boolean, durationSecs?: number) {
+  /** `contentType` is the file's real type (chat photos are JPEG or PNG); a default by media type otherwise. */
+  async sendMediaMessage(matchId: string, uri: string, mediaType: string, caption?: string, viewOnce?: boolean, durationSecs?: number, contentType?: string) {
     const token = await this.getFreshToken();
     let url = `${API_URL}/api/v1/matches/conversations/${matchId}/media?media_type=${mediaType}`;
     if (caption) url += `&caption=${encodeURIComponent(caption)}`;
@@ -1212,12 +1213,13 @@ class ApiClient {
     //
     // The caller (ChatScreen) now writes audio recordings to the FileSystem cache
     // directory first, so they are accessible to FileInputStream (no sandbox issue).
-    // Chat images are compressed to WebP client-side before upload. The server
-    // sniffs the actual bytes (sharp) — this header only gates validation, and
-    // WebP is on its allowlist either way.
-    const mimeType =
-      mediaType === 'image'
-        ? 'image/webp'
+    // Chat photos arrive as JPEG or PNG (services/chatImage.ts) and say so in
+    // `contentType`. The server goes by the bytes anyway; this header is only
+    // a label.
+    const mimeType = contentType
+      ? contentType
+      : mediaType === 'image'
+        ? 'image/jpeg'
         : mediaType === 'audio'
           ? 'audio/mp4'
           : mediaType === 'video'

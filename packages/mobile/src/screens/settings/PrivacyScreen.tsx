@@ -27,6 +27,7 @@ const SECTIONS: { title: string; icon: keyof typeof Ionicons.glyphMap; points: s
     points: [
       'Messages are encrypted before they are stored.',
       'Photos, voice notes and files in chat are encrypted at rest with AES-256.',
+      'Photos you send in chat keep their full quality. Location, camera details and other hidden data are removed on your phone before they are sent.',
       'One-time photos are deleted from storage the moment they are viewed. No copy is kept.',
       'Unmatching deletes the whole conversation and its media for both sides, unless one of you reported the other. A reported chat is kept for review instead.',
     ],
