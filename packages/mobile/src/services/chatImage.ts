@@ -1,18 +1,22 @@
 /**
  * Chat photos: prepared on the phone before they are sent.
  *
- * The goal is the original quality with nothing personal attached.
+ * The goal is a small file that still looks sharp, with nothing personal
+ * attached.
  *
- *  1. JPEG (camera photos) and PNG (screenshots) are sent as they are, with
- *     only their metadata removed. That removal works on the file's bytes
- *     (utils/imageMetadata.ts) and never re-encodes the picture, so it is
- *     lossless: GPS position, camera details, comments and anything stored
- *     after the image (motion-photo videos, depth maps) go; every pixel stays.
- *  2. Only a photo too big to send that way (over 16.8 MP, an edge over
- *     8192 px, or more than 9 MB after the strip), or one in another format
- *     (HEIC, WebP, GIF), is re-encoded: scaled to fit those limits if needed
- *     and saved as a high-quality JPEG (92). The re-encode applies the
- *     photo's rotation and writes no metadata.
+ *  1. Every photo is decoded (its rotation applied), scaled down to at most
+ *     about 4.9 MP (2560 x 1920; sharper than any phone screen, with room to
+ *     zoom) and saved as WebP: quality 80 for photos, 85 for PNGs
+ *     (screenshots, graphics, text). Measured on real phone photos, a 12 MP
+ *     camera shot of about 3 MB comes out at 100 to 200 KB, and 33 photos
+ *     went from 44.6 MB to 4.7 MB, with only fine sensor grain smoothed. The
+ *     encoder writes no metadata, so GPS position, camera details and
+ *     anything stored after the image (motion-photo videos, depth maps) are
+ *     gone.
+ *  2. A JPEG or PNG that is already small (within the pixel target, and
+ *     under 200 KB, or smaller than its WebP would be) is sent as it is,
+ *     with only its metadata removed. That removal works on the file's bytes
+ *     (utils/imageMetadata.ts) and never re-encodes the picture.
  *
  * The server strips once more and keeps the result as it is; it makes only
  * the small bubble thumbnail.
@@ -34,22 +38,30 @@ import {
 
 /** Under the server's 10 MB limit with room for the multipart envelope. */
 export const CHAT_IMAGE_MAX_BYTES = 9 * 1024 * 1024;
-/** 4096 x 4096. A 12 MP camera photo (4000 x 3000) goes untouched. */
+/** What a photo is scaled down to: 2560 x 1920, about 4.9 MP. */
+export const CHAT_IMAGE_TARGET_PIXELS = 2560 * 1920;
+/** The most an original may have to go as it is when it cannot be decoded here (4096 x 4096). */
 export const CHAT_IMAGE_MAX_PIXELS = 4096 * 4096;
 /** A long screenshot may be tall, but not taller than this. */
 export const CHAT_IMAGE_MAX_EDGE = 8192;
+/** An original already this small (and within the pixel target) is not re-encoded. */
+const KEEP_ORIGINAL_BYTES = 200 * 1024;
 
-/** Re-encode quality, then two smaller tries if a photo is still over the byte limit. */
-const REENCODE_STEPS = [
-  { scale: 1, quality: 0.92 },
-  { scale: 0.8, quality: 0.9 },
-  { scale: 0.64, quality: 0.88 },
+/** WebP quality for photos, and for PNGs, where sharp text matters more. */
+const PHOTO_QUALITY = 0.8;
+const GRAPHIC_QUALITY = 0.85;
+
+/** Smaller tries if a picture is somehow still over the byte limit. */
+const STEP_DOWN = [
+  { scale: 1, quality: 1 },
+  { scale: 0.8, quality: 0.95 },
+  { scale: 0.64, quality: 0.9 },
 ] as const;
 
 export interface PreparedChatImage {
   /** A file in the app's cache, made for this upload. Remove it with discardPreparedChatImage. */
   uri: string;
-  mimeType: 'image/jpeg' | 'image/png';
+  mimeType: 'image/jpeg' | 'image/png' | 'image/webp';
   width: number;
   height: number;
   sizeBytes: number;
@@ -64,58 +76,56 @@ export class ChatImageError extends Error {
   }
 }
 
-function fitsAsIs(image: StrippedImage): boolean {
-  return (
-    image.bytes.length <= CHAT_IMAGE_MAX_BYTES &&
-    image.width * image.height <= CHAT_IMAGE_MAX_PIXELS &&
-    Math.max(image.width, image.height) <= CHAT_IMAGE_MAX_EDGE
-  );
-}
-
 function cacheFile(ext: 'jpg' | 'png'): File {
   return new File(Paths.cache, `chat-photo-${Date.now()}-${Math.random().toString(36).slice(2, 8)}.${ext}`);
 }
 
-/** The largest scale (at most 1) that brings a picture within the pixel and edge limits. */
-function scaleToFit(width: number, height: number): number {
-  return Math.min(
-    1,
-    Math.sqrt(CHAT_IMAGE_MAX_PIXELS / (width * height)),
-    CHAT_IMAGE_MAX_EDGE / Math.max(width, height),
-  );
+function deleteQuietly(uri: string): void {
+  try {
+    const file = new File(uri);
+    if (file.exists) file.delete();
+  } catch { /* cache, cleared by the system */ }
 }
 
-/** Lossless path. Null when the photo needs a re-encode instead. */
-async function stripAsIs(original: Uint8Array): Promise<PreparedChatImage | null> {
+/** The largest scale (at most 1) that brings a picture within `pixels` and the edge limit. */
+function scaleToFit(width: number, height: number, pixels: number): number {
+  return Math.min(1, Math.sqrt(pixels / (width * height)), CHAT_IMAGE_MAX_EDGE / Math.max(width, height));
+}
+
+function withinTarget(image: StrippedImage): boolean {
+  return scaleToFit(image.width, image.height, CHAT_IMAGE_TARGET_PIXELS) === 1;
+}
+
+/** The original's bytes with only the metadata removed; null when it is not a JPEG or PNG this can read. */
+function stripOriginal(original: Uint8Array): { image: StrippedImage; format: 'jpeg' | 'png' } | null {
   const format = sniffImageFormat(original);
   if (format === 'other') return null;
-
-  let stripped: StrippedImage;
   try {
-    stripped = format === 'jpeg' ? stripJpegMetadata(original) : stripPngMetadata(original);
+    return { image: format === 'jpeg' ? stripJpegMetadata(original) : stripPngMetadata(original), format };
   } catch (err) {
     if (err instanceof ImageMetadataError) {
-      console.warn(`[ChatImage] ${format} not stripped as-is (${err.message}); re-encoding`);
+      console.warn(`[ChatImage] ${format} metadata not removable as-is (${err.message})`);
       return null;
     }
     throw err;
   }
-  if (!fitsAsIs(stripped)) return null;
+}
 
-  const out = cacheFile(format === 'jpeg' ? 'jpg' : 'png');
-  out.write(stripped.bytes);
+function saveStripped(stripped: { image: StrippedImage; format: 'jpeg' | 'png' }): PreparedChatImage {
+  const out = cacheFile(stripped.format === 'jpeg' ? 'jpg' : 'png');
+  out.write(stripped.image.bytes);
   return {
     uri: out.uri,
-    mimeType: format === 'jpeg' ? 'image/jpeg' : 'image/png',
-    width: stripped.width,
-    height: stripped.height,
-    sizeBytes: stripped.bytes.length,
+    mimeType: stripped.format === 'jpeg' ? 'image/jpeg' : 'image/png',
+    width: stripped.image.width,
+    height: stripped.image.height,
+    sizeBytes: stripped.image.bytes.length,
     lossless: true,
   };
 }
 
-/** Re-encode path: upright, within the limits, JPEG 92, no metadata. */
-async function reencode(uri: string): Promise<PreparedChatImage> {
+/** Upright, at most the pixel target, WebP, no metadata. */
+async function compress(uri: string, quality: number): Promise<PreparedChatImage> {
   // The decoder applies the EXIF rotation, so width/height are as seen
   const context = ImageManipulator.manipulate(uri);
   let decoded: ImageRef;
@@ -125,13 +135,13 @@ async function reencode(uri: string): Promise<PreparedChatImage> {
     context.release();
   }
   try {
-    const fit = scaleToFit(decoded.width, decoded.height);
-    for (const step of REENCODE_STEPS) {
+    const fit = scaleToFit(decoded.width, decoded.height, CHAT_IMAGE_TARGET_PIXELS);
+    for (const step of STEP_DOWN) {
       const scale = fit * step.scale;
       let image = decoded;
       if (scale < 1) {
         const resize = ImageManipulator.manipulate(decoded)
-          .resize({ width: Math.max(1, Math.floor(decoded.width * scale)) });
+          .resize({ width: Math.max(1, Math.round(decoded.width * scale)) });
         try {
           image = await resize.renderAsync();
         } finally {
@@ -139,22 +149,19 @@ async function reencode(uri: string): Promise<PreparedChatImage> {
         }
       }
       try {
-        const saved = await image.saveAsync({ compress: step.quality, format: SaveFormat.JPEG });
-        const file = new File(saved.uri);
-        const size = file.size;
+        const saved = await image.saveAsync({ compress: quality * step.quality, format: SaveFormat.WEBP });
+        const size = new File(saved.uri).size;
         if (size > 0 && size <= CHAT_IMAGE_MAX_BYTES) {
           return {
             uri: saved.uri,
-            mimeType: 'image/jpeg',
+            mimeType: 'image/webp',
             width: saved.width,
             height: saved.height,
             sizeBytes: size,
             lossless: false,
           };
         }
-        try {
-          file.delete();
-        } catch { /* cache, cleared by the system */ }
+        deleteQuietly(saved.uri);
       } finally {
         if (image !== decoded) image.release();
       }
@@ -179,9 +186,39 @@ export async function prepareChatImage(uri: string): Promise<PreparedChatImage> 
     throw new ChatImageError('Could not read this photo. Please pick it again.');
   }
 
-  let prepared: PreparedChatImage | null = null;
+  let prepared: PreparedChatImage;
   try {
-    prepared = (await stripAsIs(original)) ?? (await reencode(uri));
+    const stripped = stripOriginal(original);
+    const smallEnough = !!stripped && withinTarget(stripped.image);
+
+    if (stripped && smallEnough && stripped.image.bytes.length <= KEEP_ORIGINAL_BYTES) {
+      // Already lean: nothing to gain from a re-encode
+      prepared = saveStripped(stripped);
+    } else {
+      let compressed: PreparedChatImage | null = null;
+      try {
+        compressed = await compress(uri, stripped?.format === 'png' ? GRAPHIC_QUALITY : PHOTO_QUALITY);
+      } catch (err) {
+        // Could not decode or shrink it here: the stripped original may still go
+        const fallback =
+          stripped &&
+          stripped.image.bytes.length <= CHAT_IMAGE_MAX_BYTES &&
+          stripped.image.width * stripped.image.height <= CHAT_IMAGE_MAX_PIXELS &&
+          Math.max(stripped.image.width, stripped.image.height) <= CHAT_IMAGE_MAX_EDGE;
+        if (!fallback) throw err;
+        console.warn('[ChatImage] Could not compress; sending the original with metadata removed:', err);
+      }
+
+      if (!compressed) {
+        prepared = saveStripped(stripped!);
+      } else if (stripped && smallEnough && stripped.image.bytes.length <= compressed.sizeBytes) {
+        // The original is no bigger than its WebP: keep every pixel instead
+        deleteQuietly(compressed.uri);
+        prepared = saveStripped(stripped);
+      } else {
+        prepared = compressed;
+      }
+    }
   } catch (err) {
     if (err instanceof ChatImageError) throw err;
     console.warn('[ChatImage] Could not prepare photo:', err);
@@ -191,16 +228,12 @@ export async function prepareChatImage(uri: string): Promise<PreparedChatImage> 
   console.log(
     `[ChatImage] ${(original.length / 1024).toFixed(0)}KB -> ${(prepared.sizeBytes / 1024).toFixed(0)}KB ` +
       `| ${prepared.width}x${prepared.height} ${prepared.mimeType} ` +
-      `| ${prepared.lossless ? 'metadata stripped, pixels untouched' : 're-encoded'} | ${Date.now() - startMs}ms`,
+      `| ${prepared.lossless ? 'metadata stripped, pixels untouched' : 'compressed'} | ${Date.now() - startMs}ms`,
   );
   return prepared;
 }
 
 /** Remove the prepared file once it is uploaded (or the send failed). */
 export function discardPreparedChatImage(prepared: PreparedChatImage | null): void {
-  if (!prepared) return;
-  try {
-    const file = new File(prepared.uri);
-    if (file.exists) file.delete();
-  } catch { /* cache, cleared by the system */ }
+  if (prepared) deleteQuietly(prepared.uri);
 }
