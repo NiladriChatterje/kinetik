@@ -316,3 +316,90 @@ describe('Reversi', () => {
     expect((await get(`${MATCH}/game`, ME)).json().data.game).toBeNull();
   });
 });
+
+describe('Chinese Checkers', () => {
+  const startCheckers = (userId = ME) => post(`${MATCH}/game`, { type: 'chinese_checkers' }, userId);
+  const hop = (gameId: string, from: number, to: number, userId: string) =>
+    post(`${MATCH}/game/${gameId}/move`, { from, to }, userId);
+
+  it('starts with ten pegs each, starter first, with the pegs that can move', async () => {
+    const res = await startCheckers();
+    expect(res.statusCode).toBe(201);
+    const { game } = res.json().data;
+    expect(game).toMatchObject({ type: 'chinese_checkers', status: 'active', startedBy: ME });
+    expect(game.state.board).toHaveLength(121);
+    expect(game.state.players).toEqual([ME, HER]);
+    expect(game.state.turn).toBe(0);
+    expect(game.state.legal.length).toBeGreaterThan(0);
+    expect(mockPublish).toHaveBeenCalledWith(expect.any(String), { type: 'game:update', matchId: MATCH, game });
+  });
+
+  it('one game at a time, whatever the game', async () => {
+    expect((await startCheckers()).statusCode).toBe(201);
+    expect((await post(`${MATCH}/game`, { type: 'reversi' }, HER)).statusCode).toBe(409);
+  });
+
+  it('moves pegs in turn, keeps the route, and refuses moves that break the rules', async () => {
+    const g0 = (await startCheckers()).json().data.game;
+    const { from, to } = { from: g0.state.legal[0].from, to: g0.state.legal[0].to[0] };
+    expect((await hop(g0.id, from, to, HER)).json().error.message).toMatch(/not your turn/);
+    expect((await hop(g0.id, from, 500, ME)).json().error.message).toMatch(/not on the board/);
+    expect((await hop(g0.id, 0, 5, ME)).json().error.message).toMatch(/not one of your pegs/);
+    expect((await hop(g0.id, from, 60, ME)).json().error.message).toMatch(/cannot get there/);
+
+    const moved = await hop(g0.id, from, to, ME);
+    expect(moved.statusCode).toBe(200);
+    const g = moved.json().data.game;
+    expect(g.state.board[from]).toBeNull();
+    expect(g.state.board[to]).toBe(0);
+    expect(g.state.last).toEqual([from, to]);
+    expect(g.state.turn).toBe(1);
+
+    // Her reply, from the moves the server says she has
+    const pick = g.state.legal[0];
+    const reply = await hop(g.id, pick.from, pick.to[0], HER);
+    expect(reply.statusCode).toBe(200);
+    expect(reply.json().data.game.state.turn).toBe(0);
+  });
+
+  it('a win finishes the game for the winner', async () => {
+    const id = (await startCheckers()).json().data.game.id;
+    // Nine of my pegs home on the top point, the tenth one step away
+    const row = games.find((x) => x.id === id)!;
+    const { CHECKERS_TARGET, CHECKERS_BOARD } = await import('../services/chineseCheckers');
+    const at = (r: number, x: number) => CHECKERS_BOARD.findIndex((h) => h.r === r && h.x === x);
+    const lastHole = at(3, -3);
+    const board = new Array(121).fill(null);
+    for (const i of CHECKERS_TARGET[0]) if (i !== lastHole) board[i] = 0;
+    board[at(4, -4)] = 0;
+    board[at(8, 0)] = 1;
+    row.state = { ...row.state, board, legal: [{ from: at(4, -4), to: [lastHole] }] };
+
+    const won = await hop(id, at(4, -4), lastHole, ME);
+    expect(won.statusCode).toBe(200);
+    expect(won.json().data.game).toMatchObject({ status: 'finished', winnerId: ME });
+    expect((await hop(id, lastHole, at(4, -4), HER)).json().error.message).toMatch(/over/);
+  });
+
+  it('a move meant for another game is refused, both ways', async () => {
+    const id = (await startCheckers()).json().data.game.id;
+    expect((await post(`${MATCH}/game/${id}/move`, { r: 4, c: 4 }, ME)).statusCode).toBe(400);
+    expect((await post(`${MATCH}/game/${id}/move`, { kind: 'h', r: 0, c: 0 }, ME)).statusCode).toBe(400);
+    await post(`${MATCH}/game/${id}/end`, {}, ME);
+
+    const reversiId = (await post(`${MATCH}/game`, { type: 'reversi' })).json().data.game.id;
+    expect((await hop(reversiId, 1, 2, ME)).statusCode).toBe(400);
+    await post(`${MATCH}/game/${reversiId}/end`, {}, ME);
+
+    const dotsId = (await start(3, 3)).json().data.game.id;
+    expect((await hop(dotsId, 1, 2, ME)).statusCode).toBe(400);
+    expect(games.find((x) => x.id === dotsId)!.state.moves).toBe(0);
+  });
+
+  it('ends and closes like any game', async () => {
+    const id = (await startCheckers()).json().data.game.id;
+    expect((await post(`${MATCH}/game/${id}/end`, {}, HER)).json().data.game).toMatchObject({ status: 'ended', endedBy: HER });
+    await post(`${MATCH}/game/${id}/hide`, {}, ME);
+    expect((await get(`${MATCH}/game`, ME)).json().data.game).toBeNull();
+  });
+});

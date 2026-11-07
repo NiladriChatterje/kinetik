@@ -10,9 +10,12 @@ import {
 import {
   applyReversiMove, newReversiGame, parseReversiCell, reversiWinner, ReversiMoveError, ReversiState,
 } from '../services/reversi';
+import {
+  applyCheckersMove, newCheckersGame, parseCheckersMove, CheckersMoveError, CheckersState,
+} from '../services/chineseCheckers';
 
 // ─── Games inside a chat ────────────────────────────────────
-// Dots and Boxes and Reversi. The player who starts a game moves first
+// Dots and Boxes, Reversi and Chinese Checkers. The player who starts a game moves first
 // (and for Dots and Boxes picks the board size). A chat has at most one
 // active game; either player can end it. Every change reaches both open
 // chats through the chat room as `game:update`. A game is part of the
@@ -20,20 +23,24 @@ import {
 //
 //   GET  /:id/game                       the chat's current game, or null
 //   POST /:id/game                       start one: { type: 'dots_boxes', rows, cols }
-//                                        or { type: 'reversi' }
+//                                        or { type: 'reversi' } or { type: 'chinese_checkers' }
 //   POST /:id/game/:gameId/move          Dots and Boxes: draw a line { kind, r, c }
 //                                        Reversi: place a disc { r, c }
+//                                        Chinese Checkers: move a peg { from, to }
 //   POST /:id/game/:gameId/end           stop the active game
 //   POST /:id/game/:gameId/hide          close a game that is over, for me
 
-export const GAME_TYPES = ['dots_boxes', 'reversi'] as const;
+export const GAME_TYPES = ['dots_boxes', 'reversi', 'chinese_checkers'] as const;
 type GameType = (typeof GAME_TYPES)[number];
+
+type GameState = DotsState | ReversiState | CheckersState;
+type MoveError = DotsMoveError | ReversiMoveError | CheckersMoveError;
 
 interface GameRow {
   id: string;
   match_id: string;
   game_type: GameType;
-  state: DotsState | ReversiState;
+  state: GameState;
   status: 'active' | 'finished' | 'ended';
   started_by: string;
   ended_by: string | null;
@@ -51,7 +58,7 @@ export interface GameView {
   startedBy: string;
   endedBy: string | null;
   winnerId: string | null;
-  state: DotsState | ReversiState;
+  state: GameState;
   createdAt: string;
   updatedAt: string;
 }
@@ -71,7 +78,7 @@ export function toGameView(row: GameRow): GameView {
   };
 }
 
-const MOVE_ERRORS: Record<DotsMoveError | ReversiMoveError, string> = {
+const MOVE_ERRORS: Record<MoveError, string> = {
   not_a_player: 'You are not playing this game.',
   not_your_turn: 'It is not your turn yet.',
   bad_line: 'That line is not on the board.',
@@ -79,6 +86,9 @@ const MOVE_ERRORS: Record<DotsMoveError | ReversiMoveError, string> = {
   bad_square: 'That square is not on the board.',
   square_taken: 'That square is already taken.',
   flips_nothing: 'That move does not flip any disc.',
+  bad_hole: 'That hole is not on the board.',
+  not_your_peg: 'That is not one of your pegs.',
+  cannot_reach: 'That peg cannot get there in one move.',
 };
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
@@ -162,7 +172,7 @@ export async function matchGameRoutes(app: FastifyInstance) {
     const { type, rows, cols } = (request.body ?? {}) as { type?: string; rows?: unknown; cols?: unknown };
     if (await isChatLocked(userId, matchId)) return sendChatLocked(reply);
 
-    if (type !== 'dots_boxes' && type !== 'reversi') return badRequest(reply, 'Unknown game.');
+    if (!GAME_TYPES.includes(type as GameType)) return badRequest(reply, 'Unknown game.');
     if (type === 'dots_boxes' && !isValidDotsSize(rows, cols)) {
       return badRequest(reply, 'Pick a board between 2 x 2 and 8 x 8 boxes.');
     }
@@ -170,10 +180,12 @@ export async function matchGameRoutes(app: FastifyInstance) {
     const partnerId = await partnerIn(matchId, userId);
     if (!partnerId) return notFound(reply, 'Match not found or inactive');
 
-    const state =
+    const state: GameState =
       type === 'reversi'
         ? newReversiGame(userId, partnerId)
-        : newDotsGame(rows as number, cols as number, userId, partnerId);
+        : type === 'chinese_checkers'
+          ? newCheckersGame(userId, partnerId)
+          : newDotsGame(rows as number, cols as number, userId, partnerId);
     let row: GameRow | undefined;
     try {
       const result = await query<GameRow>(
@@ -199,7 +211,7 @@ export async function matchGameRoutes(app: FastifyInstance) {
     return reply.status(201).send({ success: true, data: { game } });
   });
 
-  // ─── Draw a line ──────────────────────────────────────────
+  // ─── Make a move ──────────────────────────────────────────
   app.post(
     '/:id/game/:gameId/move',
     async (request: FastifyRequest<{ Params: { id: string; gameId: string } }>, reply: FastifyReply) => {
@@ -210,7 +222,10 @@ export async function matchGameRoutes(app: FastifyInstance) {
       // Which shape a move takes depends on the game, known once its row is read
       const edge = parseDotsEdge(request.body);
       const cell = parseReversiCell(request.body);
-      if (!edge && !cell) return badRequest(reply, 'A move needs a line (kind, r, c) or a square (r, c).');
+      const hop = parseCheckersMove(request.body);
+      if (!edge && !cell && !hop) {
+        return badRequest(reply, 'A move needs a line (kind, r, c), a square (r, c) or a peg (from, to).');
+      }
       if (!UUID_RE.test(gameId)) return notFound(reply, 'Game not found');
       if (!(await partnerIn(matchId, userId))) return notFound(reply, 'Match not found or inactive');
 
@@ -225,16 +240,23 @@ export async function matchGameRoutes(app: FastifyInstance) {
         if (current.status !== 'active') return { kind: 'over' as const };
 
         let moved:
-          | { ok: true; state: DotsState | ReversiState; finished: boolean; winnerId: string | null }
-          | { ok: false; error: DotsMoveError | ReversiMoveError };
-        if (current.game_type === 'reversi') {
+          | { ok: true; state: GameState; finished: boolean; winnerId: string | null }
+          | { ok: false; error: MoveError };
+        if (current.game_type === 'chinese_checkers') {
+          // The other games' moves carry r and c; a peg move never does
+          if (!hop || cell) return { kind: 'malformed' as const };
+          const r = applyCheckersMove(current.state as CheckersState, userId, hop);
+          moved = r.ok
+            ? { ok: true, state: r.state, finished: r.finished, winnerId: r.winner === null ? null : r.state.players[r.winner] }
+            : r;
+        } else if (current.game_type === 'reversi') {
           // A Dots and Boxes line ({ kind, r, c }) also reads as a square, so
           // the kind field marks a move meant for the other game
-          if (!cell || edge) return { kind: 'malformed' as const };
+          if (!cell || edge || hop) return { kind: 'malformed' as const };
           const r = applyReversiMove(current.state as ReversiState, userId, cell);
           moved = r.ok ? { ...r, winnerId: r.finished ? reversiWinner(r.state) : null } : r;
         } else {
-          if (!edge) return { kind: 'malformed' as const };
+          if (!edge || hop) return { kind: 'malformed' as const };
           const r = applyDotsMove(current.state as DotsState, userId, edge);
           moved = r.ok ? { ok: true, state: r.state, finished: r.finished, winnerId: r.finished ? dotsWinner(r.state) : null } : r;
         }
