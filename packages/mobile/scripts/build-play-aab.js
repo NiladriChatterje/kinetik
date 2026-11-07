@@ -21,7 +21,7 @@
  *   run out of memory on a 16 GB machine during a cold native compile.
  *
  * Usage (from packages/mobile):
- *   node scripts/build-play-aab.js            offline, all four ABIs
+ *   node scripts/build-play-aab.js            offline, the ABIs in android/gradle.properties (ARM only since v36)
  *   node scripts/build-play-aab.js --online   let Gradle download dependencies
  *
  * Output: android/app/build/outputs/bundle/release/app-release.aab

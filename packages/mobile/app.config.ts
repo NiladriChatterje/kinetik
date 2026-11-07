@@ -237,6 +237,8 @@ export default ({ config }: ConfigContext): ExpoConfig => {
             usesCleartextTraffic,
             // R8 on for release (Play's DEX optimisation rule); see android/gradle.properties
             enableMinifyInReleaseBuilds: true,
+            // ARM only; x86 builds ran only on emulators (see android/gradle.properties)
+            buildArchs: ['armeabi-v7a', 'arm64-v8a'],
             extraProguardRules: `${FACE_VERIFICATION_PROGUARD_RULES}\n${BILLING_PROGUARD_RULES}\n${HERMES_PROGUARD_RULES}`,
           },
         },
