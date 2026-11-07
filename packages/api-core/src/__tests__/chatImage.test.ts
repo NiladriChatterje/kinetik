@@ -27,7 +27,7 @@ vi.mock('@aws-sdk/client-s3', () => {
 
 import {
   cleanChatImage,
-  makeChatThumbnail,
+  makeChatPreview,
   saveChatImage,
   ChatImageRejected,
   CHAT_IMAGE_MAX_PIXELS,
@@ -105,39 +105,44 @@ describe('cleanChatImage', () => {
     await expect(cleanChatImage(Buffer.from('not a photo at all'))).rejects.toBeInstanceOf(ChatImageRejected);
     const jpeg = await canvas(200, 200).jpeg().toBuffer();
     await expect(
-      cleanChatImage(jpeg.subarray(0, Math.floor(jpeg.length * 0.6))).then((c) => makeChatThumbnail(c.buffer)),
+      cleanChatImage(jpeg.subarray(0, Math.floor(jpeg.length * 0.6))).then((c) => makeChatPreview(c.buffer)),
     ).rejects.toBeInstanceOf(ChatImageRejected);
   });
 });
 
-describe('makeChatThumbnail', () => {
-  it('is upright with a 640 px short side', async () => {
+describe('makeChatPreview', () => {
+  it('a tiny upright WebP, and the photo size as seen', async () => {
     const input = await canvas(1600, 1200).jpeg().withMetadata({ orientation: 6 }).toBuffer();
-    const meta = await sharp(await makeChatThumbnail(input)).metadata();
+    const p = await makeChatPreview(input);
+    expect([p.width, p.height]).toEqual([1200, 1600]);
+    const meta = await sharp(Buffer.from(p.preview, 'base64')).metadata();
     expect(meta.format).toBe('webp');
-    expect([meta.width, meta.height]).toEqual([640, 853]);
+    expect([meta.width, meta.height]).toEqual([15, 20]);
+    expect(p.preview.length).toBeLessThan(600);
   });
 
-  it('never enlarges a small photo', async () => {
-    const input = await canvas(300, 200).png().toBuffer();
-    const meta = await sharp(await makeChatThumbnail(input)).metadata();
-    expect([meta.width, meta.height]).toEqual([300, 200]);
+  it('a tall screenshot keeps its shape', async () => {
+    const p = await makeChatPreview(await canvas(1080, 2400).png().toBuffer());
+    expect([p.width, p.height]).toEqual([1080, 2400]);
+    const meta = await sharp(Buffer.from(p.preview, 'base64')).metadata();
+    expect(meta.height).toBe(20);
   });
 });
 
 describe('saveChatImage', () => {
-  it('stores the clean photo under its real type and a WebP thumbnail', async () => {
+  it('stores only the clean photo, under its real type, with a preview and its size', async () => {
     const input = await located(canvas(900, 700).jpeg({ quality: 95 })).toBuffer();
     const saved = await saveChatImage('user-1', input);
 
     expect(saved.mimeType).toBe('image/jpeg');
     expect(saved.url).toMatch(/^\/uploads\/user-1\/[0-9a-f-]{36}\.jpg$/);
-    expect(saved.thumbnailUrl).toBe(saved.url.replace(/\.jpg$/, '_thumb.webp'));
+    expect([saved.width, saved.height]).toEqual([900, 700]);
+    expect(saved.preview.length).toBeGreaterThan(0);
 
-    const full = puts.find((p) => saved.url.endsWith(p.Key))!;
-    const thumb = puts.find((p) => saved.thumbnailUrl.endsWith(p.Key))!;
+    expect(puts).toHaveLength(1); // no thumbnail file
+    const full = puts[0];
+    expect(saved.url.endsWith(full.Key)).toBe(true);
     expect(full.ContentType).toBe('image/jpeg');
-    expect(thumb.ContentType).toBe('image/webp');
     expect(has(full.Body, 'SECRET')).toBe(false);
     expect(saved.sizeBytes).toBe(full.Body.length);
     expect((await sharp(full.Body).raw().toBuffer()).equals(await sharp(input).raw().toBuffer())).toBe(true);

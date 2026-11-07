@@ -10,6 +10,9 @@ vi.mock('../services/database', () => ({
   query: mocks.query,
   TABLES: { MATCHES: 'matches' },
 }));
+// The same daily run also sweeps chat photos nobody saved (its own tests:
+// chatPhotoDelivery.test.ts); here it only has to be called
+vi.mock('../services/chatPhotoCleanup', () => ({ removeUnsavedChatPhotos: vi.fn(async () => 0) }));
 
 import { getDatabasePool } from '@kinetik/shared';
 import {

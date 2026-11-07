@@ -1,7 +1,9 @@
 import { getDatabasePool } from '@kinetik/shared';
 import { query, TABLES } from './database';
+import { removeUnsavedChatPhotos } from './chatPhotoCleanup';
 
-// Daily cleanup of date plans whose day is over.
+// Daily cleanup: date plans whose day is over, and chat photos nobody saved
+// in time (chatPhotoCleanup.ts).
 //
 // Reads already hide such a plan (isPlanDayOver in planDay.ts, and the app
 // on the exact local day); this empties the stored plan so old activities
@@ -56,6 +58,8 @@ export function startPlanCleanup(): void {
     try {
       const emptied = await cleanUpPastPlans();
       if (emptied) console.log(`[plan-cleanup] emptied ${emptied} past date plan(s)`);
+      const photos = await removeUnsavedChatPhotos();
+      if (photos) console.log(`[plan-cleanup] removed ${photos} chat photo(s) nobody saved`);
       nextRunAt = Date.now() + PLAN_CLEANUP_EVERY_MS;
     } catch (error: any) {
       console.error('[plan-cleanup] Run failed:', error?.message || error);

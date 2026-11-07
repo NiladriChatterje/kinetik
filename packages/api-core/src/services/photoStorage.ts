@@ -208,17 +208,19 @@ export async function savePhoto(
 // ─── Chat photos ─────────────────────────────────────────────────────
 //
 // A chat photo is stored as the phone sent it, never re-encoded: the app
-// sends the camera's own JPEG (or the PNG) with its metadata stripped
-// losslessly, so the receiver sees the original quality. The server strips
-// once more (imageMetadata.ts) so that no client, however modified, can
-// store a photo that still carries its GPS position. Only the bubble
-// thumbnail is made here.
+// compresses it (a metadata-free WebP), or sends a small JPEG/PNG with its
+// metadata stripped. The server strips once more (imageMetadata.ts) so that
+// no client, however modified, can store a photo that still carries its GPS
+// position.
 //
-// Older app versions send a 1200px WebP with no metadata; that is kept
-// as it is too.
+// The file is held only until the receiver's phone has saved it (or 30
+// days; services/chatPhotoCleanup.ts); the phones keep the photos. What
+// stays on the server is a tiny blurred preview in the database
+// (chat_media.preview), made here, so a phone without the photo can still
+// draw its place. No thumbnail file is stored.
 
-/** Short side of the bubble thumbnail. The bubble is 200 x 200 dp, about 600 px on a 3x screen. */
-const CHAT_THUMB_SHORT_SIDE = 640;
+/** Long side of the blurred preview, in pixels. Shown blurred, so it needs no more. */
+const CHAT_PREVIEW_SIDE = 20;
 
 /**
  * Pixel ceiling for a chat photo. The app sends at most 4096 x 4096
@@ -296,63 +298,65 @@ export async function cleanChatImage(input: Buffer): Promise<CleanChatImage> {
   }
 }
 
-/** The bubble thumbnail: upright, short side 640 px (never enlarged), WebP. */
-export async function makeChatThumbnail(image: Buffer): Promise<Buffer> {
+export interface ChatPreview {
+  /** A tiny WebP (long side 20 px), base64, shown blurred */
+  preview: string;
+  /** The photo's size as seen (rotation applied) */
+  width: number;
+  height: number;
+}
+
+/** The blurred preview and the upright size of a (clean) chat photo. */
+export async function makeChatPreview(image: Buffer): Promise<ChatPreview> {
   try {
-    return await sharp(image, { limitInputPixels: CHAT_IMAGE_MAX_PIXELS })
+    const { data, info } = await sharp(image, { limitInputPixels: CHAT_IMAGE_MAX_PIXELS })
       .rotate()
-      .resize(CHAT_THUMB_SHORT_SIDE, CHAT_THUMB_SHORT_SIDE, { fit: 'outside', withoutEnlargement: true })
-      .webp({ quality: 80, effort: 4 })
-      .toBuffer();
+      .resize(CHAT_PREVIEW_SIDE, CHAT_PREVIEW_SIDE, { fit: 'inside' })
+      .webp({ quality: 40, effort: 4 })
+      .toBuffer({ resolveWithObject: true });
+    const meta = await sharp(image, { limitInputPixels: CHAT_IMAGE_MAX_PIXELS }).metadata();
+    const turned = (meta.orientation ?? 1) >= 5;
+    const width = (turned ? meta.height : meta.width) ?? info.width;
+    const height = (turned ? meta.width : meta.height) ?? info.height;
+    return { preview: data.toString('base64'), width, height };
   } catch {
     throw new ChatImageRejected('That file is not a photo we can show.');
   }
 }
 
 /**
- * Store a chat photo and its bubble thumbnail. Throws ChatImageRejected
- * when the file itself is the problem; any other error is storage.
+ * Store a chat photo (until the receiver saves it) and make its blurred
+ * preview. Throws ChatImageRejected when the file itself is the problem;
+ * any other error is storage.
  */
 export async function saveChatImage(
   userId: string,
   input: Buffer,
-): Promise<{ url: string; thumbnailUrl: string; mimeType: string; sizeBytes: number }> {
+): Promise<{ url: string; mimeType: string; sizeBytes: number } & ChatPreview> {
   const clean = await cleanChatImage(input);
-  const thumbBuffer = await makeChatThumbnail(clean.buffer);
+  const preview = await makeChatPreview(clean.buffer);
 
-  const photoId = uuidv4();
-  const fullKey = `${userId}/${photoId}.${clean.ext}`;
-  const thumbKey = `${userId}/${photoId}_thumb.webp`;
-  const client = getS3Client();
-  const cacheControl = 'public, max-age=31536000, immutable';
-  await Promise.all([
-    client.send(new PutObjectCommand({
-      Bucket: BUCKET,
-      Key: fullKey,
-      Body: clean.buffer,
-      ContentType: clean.mimeType,
-      CacheControl: cacheControl,
-    })),
-    client.send(new PutObjectCommand({
-      Bucket: BUCKET,
-      Key: thumbKey,
-      Body: thumbBuffer,
-      ContentType: 'image/webp',
-      CacheControl: cacheControl,
-    })),
-  ]);
+  const fullKey = `${userId}/${uuidv4()}.${clean.ext}`;
+  await getS3Client().send(new PutObjectCommand({
+    Bucket: BUCKET,
+    Key: fullKey,
+    Body: clean.buffer,
+    ContentType: clean.mimeType,
+    // Fetched once by the receiver's phone, then deleted
+    CacheControl: 'private, no-store',
+  }));
 
   console.log(
     `[photoStorage] Chat photo minio://${BUCKET}/${fullKey} ` +
       `| received=${(input.length / 1024).toFixed(1)}KB stored=${(clean.buffer.length / 1024).toFixed(1)}KB ` +
-      `${clean.mimeType} thumb=${(thumbBuffer.length / 1024).toFixed(1)}KB`,
+      `${clean.mimeType} ${preview.width}x${preview.height} preview=${preview.preview.length}B`,
   );
 
   return {
     url: `${PUBLIC_URL}${fullKey}`,
-    thumbnailUrl: `${PUBLIC_URL}${thumbKey}`,
     mimeType: clean.mimeType,
     sizeBytes: clean.buffer.length,
+    ...preview,
   };
 }
 

@@ -1302,6 +1302,8 @@ export async function matchRoutes(app: FastifyInstance) {
          cm.height as media_height,
          cm.is_view_once as media_is_view_once,
          cm.viewed_at as media_viewed_at,
+         cm.preview as media_preview,
+         cm.file_removed_at as media_file_removed_at,
          r.id as reply_id,
          r.sender_id as reply_sender_id,
          r.content as reply_content,
@@ -1369,8 +1371,11 @@ export async function matchRoutes(app: FastifyInstance) {
               messageId: m.id,
               senderId: m.sender_id,
               mediaType: m.media_type,
-              url: m.media_url,
+              // A photo the receiver's phone saved is no longer on the server:
+              // no url, only its blurred preview
+              url: m.media_file_removed_at ? '' : m.media_url,
               thumbnailUrl: m.media_thumbnail_url || undefined,
+              preview: m.media_preview || undefined,
               mimeType: m.media_mime_type,
               fileSize: m.media_file_size,
               width: m.media_width || undefined,
@@ -1609,10 +1614,14 @@ export async function matchRoutes(app: FastifyInstance) {
     let thumbnailUrl: string | null = null;
     let storedMimeType = mimeType;
     let storedSize = fileBuffer.length;
+    let preview: string | null = null;
+    let width: number | null = null;
+    let height: number | null = null;
 
     if (mediaType === 'image') {
-      // Kept at the quality the phone sent, metadata stripped (see saveChatImage).
-      // The stored type comes from the bytes, not from what the client claimed.
+      // Kept as the phone sent it, metadata stripped, until the receiver's
+      // phone saves it (see saveChatImage). The stored type comes from the
+      // bytes, not from what the client claimed.
       let saved: Awaited<ReturnType<typeof saveChatImage>>;
       try {
         saved = await saveChatImage(userId, fileBuffer);
@@ -1626,9 +1635,11 @@ export async function matchRoutes(app: FastifyInstance) {
         throw err;
       }
       url = saved.url;
-      thumbnailUrl = saved.thumbnailUrl;
       storedMimeType = saved.mimeType;
       storedSize = saved.sizeBytes;
+      preview = saved.preview;
+      width = saved.width;
+      height = saved.height;
     } else {
       // All non-image media (audio, video, file) use encrypted-at-rest storage
       const saved = await saveEncryptedChatFile(userId, fileBuffer, mimeType, fileId);
@@ -1648,9 +1659,12 @@ export async function matchRoutes(app: FastifyInstance) {
 
     // Insert chat_media record
     const mediaResult = await query(
-      `INSERT INTO ${TABLES.CHAT_MEDIA} (message_id, sender_id, media_type, url, thumbnail_url, mime_type, file_size, duration_secs, is_view_once)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9) RETURNING *`,
-      [message.id, userId, mediaType, url, thumbnailUrl, storedMimeType, storedSize, durationSecs, viewOnce],
+      `INSERT INTO ${TABLES.CHAT_MEDIA}
+         (message_id, sender_id, media_type, url, thumbnail_url, mime_type, file_size, duration_secs, is_view_once,
+          preview, width, height)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12) RETURNING *`,
+      [message.id, userId, mediaType, url, thumbnailUrl, storedMimeType, storedSize, durationSecs, viewOnce,
+        preview, width, height],
     );
     const media = mediaResult.rows[0];
 
@@ -1662,6 +1676,7 @@ export async function matchRoutes(app: FastifyInstance) {
       mediaType: media.media_type,
       url: media.url,
       thumbnailUrl: media.thumbnail_url || undefined,
+      preview: media.preview || undefined,
       mimeType: media.mime_type,
       fileSize: media.file_size,
       width: media.width || undefined,
@@ -1857,6 +1872,76 @@ export async function matchRoutes(app: FastifyInstance) {
         error: { code: 'MEDIA_NOT_FOUND', message: 'Media file not found.' },
       });
     }
+  });
+
+  // ─── A chat photo is saved on the receiver's phone ──────
+  // The phones keep chat photos; the server holds one only until the
+  // receiver's phone has saved it. This call says it has: the file is
+  // deleted and only the row (with its blurred preview) stays. Only the
+  // receiver can say so, for a photo in a chat they are in, and only once.
+  // One-time photos have their own rule (/media/:mediaId/view).
+  app.post(
+    '/:id/media/:mediaId/saved',
+    async (request: FastifyRequest<{ Params: { id: string; mediaId: string } }>, reply: FastifyReply) => {
+      const { sub: userId } = request.user as any;
+      const { id: matchId, mediaId } = request.params;
+      if (!UUID_RE.test(matchId) || !UUID_RE.test(mediaId)) {
+        return reply.status(404).send({ success: false, error: { code: 'MEDIA_NOT_FOUND', message: 'Photo not found.' } });
+      }
+
+      const result = await query<{ url: string; thumbnail_url: string | null }>(
+        `UPDATE ${TABLES.CHAT_MEDIA} cm
+            SET delivered_at = NOW(), file_removed_at = NOW()
+           FROM ${TABLES.MESSAGES} msg, ${TABLES.MATCHES} mt
+          WHERE cm.id = $1
+            AND msg.id = cm.message_id
+            AND msg.match_id = $2
+            AND mt.id = msg.match_id
+            AND (mt.user_a_id = $3 OR mt.user_b_id = $3)
+            AND cm.sender_id <> $3
+            AND cm.media_type = 'image'
+            AND cm.is_view_once = FALSE
+            AND cm.file_removed_at IS NULL
+          RETURNING cm.url, cm.thumbnail_url`,
+        [mediaId, matchId, userId],
+      );
+      const row = result.rows[0];
+      if (row) {
+        // The photo, and the thumbnail file photos sent before this change have
+        for (const url of [row.url, row.thumbnail_url]) {
+          const key = url?.startsWith('/uploads/') ? url.replace('/uploads/', '') : null;
+          if (!key) continue;
+          await deleteChatFile(key).catch((err: Error) => {
+            console.error(`[ChatPhoto] Could not delete ${key}:`, err.message);
+          });
+        }
+      }
+      // Said twice, or by someone it is not for: nothing to do either way
+      return reply.send({ success: true, data: { removed: !!row } });
+    },
+  );
+
+  // ─── Which of these chats still exist ───────────────────
+  // The phone keeps each chat's photos in a folder per match. Once a chat is
+  // gone (unmatched, or the other account deleted) its photos go from the
+  // phone too; the app asks here which of its folders' chats are still
+  // active. One indexed query; called once per app start.
+  app.post('/active-check', async (request: FastifyRequest, reply: FastifyReply) => {
+    const { sub: userId } = request.user as any;
+    const ids = (request.body as { matchIds?: unknown } | undefined)?.matchIds;
+    if (!Array.isArray(ids) || ids.length > 500 || !ids.every((x) => typeof x === 'string' && UUID_RE.test(x))) {
+      return reply.status(400).send({
+        success: false,
+        error: { code: ERROR_CODES.VALIDATION_ERROR, message: 'matchIds must be a list of up to 500 ids.' },
+      });
+    }
+    if (ids.length === 0) return reply.send({ success: true, data: { active: [] } });
+    const result = await query<{ id: string }>(
+      `SELECT id FROM ${TABLES.MATCHES}
+        WHERE id = ANY($1::uuid[]) AND is_active = TRUE AND (user_a_id = $2 OR user_b_id = $2)`,
+      [ids, userId],
+    );
+    return reply.send({ success: true, data: { active: result.rows.map((r) => r.id) } });
   });
 
   // ─── Mark One-Time View Media as Viewed ─────────────────
