@@ -711,6 +711,22 @@ class ApiClient {
     });
   }
 
+  // ─── Chat photos live on the phones ─────────────────
+  /** This phone saved a received chat photo; the server may delete its copy. */
+  async markChatPhotoSaved(matchId: string, mediaId: string) {
+    return this.request<{ removed: boolean }>(`/api/v1/matches/${matchId}/media/${mediaId}/saved`, {
+      method: 'POST',
+    });
+  }
+
+  /** Which of these chats are still active (the others' photos leave the phone). */
+  async checkActiveChats(matchIds: string[]) {
+    return this.request<{ active: string[] }>(`/api/v1/matches/active-check`, {
+      method: 'POST',
+      body: JSON.stringify({ matchIds }),
+    });
+  }
+
   // ─── Games inside a chat ────────────────────────────
   /** The chat's current game: the latest one, unless it is over and this user closed it. */
   async getMatchGame(matchId: string) {

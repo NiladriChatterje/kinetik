@@ -4,6 +4,7 @@ import { useNavigation } from '@react-navigation/native';
 import { getNotificationsModule } from '../services/notifications';
 import { useNotificationStore } from '../store/notificationStore';
 import { useAuthStore } from '../store/authStore';
+import { pruneChatPhotos } from '../services/chatPhotoStore';
 
 /**
  * Where a push leads. The server sends `screen` and, for one chat, the
@@ -59,6 +60,9 @@ export function useNotifications() {
     if (isAuthenticated && userId) {
       registerForPush();
       refreshPreferences();
+      // Once per start and account: photos of chats that ended while the app
+      // was closed leave the phone (services/chatPhotoStore.ts)
+      void pruneChatPhotos(userId);
     } else {
       resetPreferences();
     }

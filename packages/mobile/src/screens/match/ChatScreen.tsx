@@ -16,6 +16,7 @@ import * as ImagePicker from 'expo-image-picker';
 import { Socket } from 'socket.io-client';
 import { api } from '../../services/api';
 import { prepareChatImage, discardPreparedChatImage, ChatImageError, type PreparedChatImage } from '../../services/chatImage';
+import { ensureChatPhoto, keepSentChatPhoto, deleteChatPhotos } from '../../services/chatPhotoStore';
 import { getChatSocket } from '../../services/chatSocket';
 import { onPremiumChanged } from '../../services/appEvents';
 import { useAuthStore } from '../../store/authStore';
@@ -44,6 +45,8 @@ interface ChatMedia {
   mediaType: 'image' | 'video' | 'audio' | 'file';
   url: string;
   thumbnailUrl?: string;
+  /** A photo's tiny blurred preview (base64 WebP), drawn when the photo is not on this phone */
+  preview?: string;
   fileName?: string;
   fileSize?: number;
   mimeType?: string;
@@ -450,6 +453,11 @@ interface MessageRowProps {
   onOpenOneTimeView: (media: ChatMedia) => void;
   /** Full-size photo, and its thumbnail to show while the full one loads. */
   onPreviewPhoto: (url: string, thumbnailUrl?: string) => void;
+  /**
+   * A photo's file on this phone: a uri once saved, null when it is neither
+   * here nor on the server, undefined while that is being found out.
+   */
+  localPhoto?: string | null;
   onToggleAudio: (messageId: string, url: string) => void;
   onRetry: (message: Message) => void;
   /** A tap on a text with links: one opens, several ask which */
@@ -469,6 +477,7 @@ const MessageRow = React.memo(function MessageRow({
   isAudioPlaying,
   onOpenOneTimeView,
   onPreviewPhoto,
+  localPhoto,
   onToggleAudio,
   onRetry,
   onOpenLinks,
@@ -507,6 +516,45 @@ const MessageRow = React.memo(function MessageRow({
           <Ionicons name="eye-outline" size={16} color={colors.textPrimary} />
           <Text style={styles.viewOnceCardLabel}>Tap to open</Text>
         </TouchableOpacity>
+      );
+    }
+
+    // A photo: drawn from this phone (chat photos live on the phones, the
+    // server keeps one only until the receiver's phone has saved it). Until
+    // it is here, or when it never will be, its blurred preview holds the
+    // place. A one-time photo stays on the server and is drawn below.
+    if (media.mediaType === 'image' && !media.isViewOnce) {
+      // Saved here, or (download failed) still on the server
+      const source = localPhoto || (localPhoto === null && media.url ? resolveUrl(media.url) : null);
+      if (source) {
+        return (
+          <TouchableOpacity onPress={() => onPreviewPhoto(source)} activeOpacity={0.9}>
+            <View style={styles.mediaImageWrap}>
+              <Image source={{ uri: source }} style={styles.mediaImage} resizeMode="cover" />
+            </View>
+          </TouchableOpacity>
+        );
+      }
+      const missing = localPhoto === null;
+      return (
+        <View style={[styles.mediaImageWrap, styles.mediaImage, styles.photoPlaceholder]}>
+          {media.preview ? (
+            <Image
+              source={{ uri: `data:image/webp;base64,${media.preview}` }}
+              style={StyleSheet.absoluteFill}
+              resizeMode="cover"
+              blurRadius={6}
+            />
+          ) : null}
+          {missing ? (
+            <View style={styles.photoMissing}>
+              <Ionicons name="image-outline" size={16} color="#fff" />
+              <Text style={styles.photoMissingText}>Not on this phone</Text>
+            </View>
+          ) : (
+            <ActivityIndicator color={media.preview ? '#fff' : colors.textMuted} />
+          )}
+        </View>
       );
     }
 
@@ -840,6 +888,10 @@ export const ChatScreen: React.FC<{ navigation: any; route: any }> = ({ navigati
     setPreviewPhoto({ url, thumbnailUrl });
   }, []);
   const closePhotoPreview = useCallback(() => setPreviewPhoto(null), []);
+  // Chat photos on this phone, by media id: a file uri, or null when a photo
+  // is neither here nor on the server (services/chatPhotoStore.ts)
+  const [localPhotos, setLocalPhotos] = useState<Record<string, string | null>>({});
+  const photoJobsRef = useRef(new Set<string>());
   const [playingAudioId, setPlayingAudioId] = useState<string | null>(null);
 
   // ─── Fix-a-Date State ────────────────────────────────
@@ -884,6 +936,9 @@ export const ChatScreen: React.FC<{ navigation: any; route: any }> = ({ navigati
   const leaveChat = () => {
     if (leavingRef.current) return;
     leavingRef.current = true;
+    // The chat is over: its photos leave this phone too
+    const owner = useAuthStore.getState().user?.id;
+    if (owner) deleteChatPhotos(owner, matchId);
     if (navigation.isFocused()) navigation.goBack();
   };
 
@@ -1002,6 +1057,27 @@ export const ChatScreen: React.FC<{ navigation: any; route: any }> = ({ navigati
   const flatListRef = useRef<FlatList>(null);
   const socketRef = useRef<Socket | null>(null);
   const authUser = useAuthStore((s) => s.user);
+
+  // Every photo in the chat is drawn from this phone: found here, or saved
+  // from the server once (which, for a received photo, lets the server
+  // delete its copy). Each photo is looked up once per visit; a failed
+  // download is tried again the next time the messages change.
+  useEffect(() => {
+    const myId = authUser?.id;
+    if (!myId) return;
+    for (const m of messages) {
+      const media = m.media;
+      if (!media || media.mediaType !== 'image' || media.isViewOnce || !media.id) continue;
+      if (photoJobsRef.current.has(media.id)) continue;
+      photoJobsRef.current.add(media.id);
+      const mediaId = media.id;
+      ensureChatPhoto({ owner: myId, matchId, mediaId, url: media.url || '', received: media.senderId !== myId })
+        .then((uri) => {
+          if (!uri && media.url) photoJobsRef.current.delete(mediaId); // download failed: retry later
+          setLocalPhotos((prev) => (prev[mediaId] === uri ? prev : { ...prev, [mediaId]: uri }));
+        });
+    }
+  }, [messages, matchId, authUser?.id]);
   // Reply chips from the shape of their latest message (a greeting, a when /
   // where question, thanks, a photo…), in their language; none when there is
   // nothing to answer (replySuggestions.ts)
@@ -1853,9 +1929,9 @@ export const ChatScreen: React.FC<{ navigation: any; route: any }> = ({ navigati
 
     let prepared: PreparedChatImage | null = null;
     try {
-      // Photos go at their original quality with the metadata (GPS, camera
-      // details) removed on the phone; see services/chatImage.ts. A photo that
-      // cannot be prepared is not sent at all, never as the untouched original.
+      // Photos are compressed, with the metadata (GPS, camera details)
+      // removed, on the phone; see services/chatImage.ts. A photo that cannot
+      // be prepared is not sent at all, never as the untouched original.
       let uploadUri = uri;
       let contentType: string | undefined;
       if (mediaType === 'image') {
@@ -1866,6 +1942,17 @@ export const ChatScreen: React.FC<{ navigation: any; route: any }> = ({ navigati
 
       const res = await api.sendMediaMessage(matchId, uploadUri, mediaType, undefined, applyViewOnce, durationSecs, contentType);
       if (res.success && res.data) {
+        // This phone keeps the photo it sent (the server copy goes once the
+        // receiver has it). A one-time photo is not kept.
+        const sentMedia = res.data.media;
+        if (prepared && sentMedia?.id && !applyViewOnce) {
+          const kept = authUser?.id ? keepSentChatPhoto(authUser.id, matchId, sentMedia.id, prepared.uri) : null;
+          if (kept) {
+            prepared = null; // moved, nothing left to discard
+            photoJobsRef.current.add(sentMedia.id);
+            setLocalPhotos((prev) => ({ ...prev, [sentMedia.id]: kept }));
+          }
+        }
         // Replace temp with confirmed message; drop the temp if the real id already arrived
         setMessages((prev) => prev.some((m) => m.id === res.data.id)
           ? prev.filter((m) => m.id !== tempId)
@@ -2399,6 +2486,7 @@ export const ChatScreen: React.FC<{ navigation: any; route: any }> = ({ navigati
       isAudioPlaying={playingAudioId === item.id}
       onOpenOneTimeView={openOneTimeView}
       onPreviewPhoto={openPhotoPreview}
+      localPhoto={item.media ? localPhotos[item.media.id] : undefined}
       onToggleAudio={handleToggleAudio}
       onRetry={handleRetry}
       onOpenLinks={handleOpenLinks}
@@ -2406,7 +2494,7 @@ export const ChatScreen: React.FC<{ navigation: any; route: any }> = ({ navigati
       onReply={handleReply}
       partnerName={partnerName}
     />
-  ), [myUserId, pAvatar, playingAudioId, openOneTimeView, handleToggleAudio, handleRetry, handleOpenLinks, handleCopyText, handleReply, partnerName]);
+  ), [myUserId, pAvatar, playingAudioId, openOneTimeView, openPhotoPreview, localPhotos, handleToggleAudio, handleRetry, handleOpenLinks, handleCopyText, handleReply, partnerName]);
 
   // ─── Input bar bottom spacing ──────────────────────
   // The SafeAreaView deliberately excludes the bottom edge, so this is the
@@ -3555,6 +3643,23 @@ const styles = StyleSheet.create({
     borderRadius: radius.md,
     marginVertical: 2,
   },
+  // A photo not (yet) on this phone: its blurred preview, with a spinner or a note
+  photoPlaceholder: {
+    overflow: 'hidden',
+    backgroundColor: colors.surfaceHighlight,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  photoMissing: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    paddingHorizontal: spacing.sm,
+    paddingVertical: 4,
+    borderRadius: radius.full,
+    backgroundColor: 'rgba(0, 0, 0, 0.45)',
+  },
+  photoMissingText: { ...typography.caption, color: '#fff', fontWeight: '600' },
   mediaFileContainer: {
     flexDirection: 'row',
     alignItems: 'center',

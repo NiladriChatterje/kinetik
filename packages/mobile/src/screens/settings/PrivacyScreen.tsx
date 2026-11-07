@@ -26,8 +26,9 @@ const SECTIONS: { title: string; icon: keyof typeof Ionicons.glyphMap; points: s
     icon: 'chatbubble-ellipses-outline',
     points: [
       'Messages are encrypted before they are stored.',
-      'Photos, voice notes and files in chat are encrypted at rest with AES-256.',
-      'Photos you send in chat keep their full quality. Location, camera details and other hidden data are removed on your phone before they are sent.',
+      'Chat photos are kept on your phones, not on our servers. We hold a photo only until the other phone has saved it, 30 days at most; after that only a tiny blurred preview stays with us.',
+      'Voice notes and files in chat are encrypted at rest with AES-256.',
+      'Photos you send in chat are made smaller on your phone, still sharp, before they are sent. Location, camera details and other hidden data are removed there too.',
       'One-time photos are deleted from storage the moment they are viewed. No copy is kept.',
       'Unmatching deletes the whole conversation and its media for both sides, unless one of you reported the other. A reported chat is kept for review instead.',
     ],

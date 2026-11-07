@@ -4,6 +4,7 @@ import Toast from 'react-native-toast-message';
 import { Socket } from 'socket.io-client';
 import { api, SignupForm, SignupCodeInfo } from '../services/api';
 import { closeChatSocket, getChatSocket } from '../services/chatSocket';
+import { deleteAllChatPhotos } from '../services/chatPhotoStore';
 import { closePresenceSocket, getPresenceSocket } from '../services/presenceSocket';
 import { emitPremiumChanged } from '../services/appEvents';
 import { isWelcomePending } from '../services/welcomeNotice';
@@ -761,6 +762,9 @@ export const useAuthStore = create<AuthState>((set, get) => ({
     try {
       const response = await api.deleteAccount();
       if (response.success) {
+        // The account's chat photos leave this phone with it
+        const owner = get().user?.id;
+        if (owner) deleteAllChatPhotos(owner);
         get().disconnectLikesSocket();
         get().disconnectChatsSocket();
         closeChatSocket();
