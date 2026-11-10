@@ -1,6 +1,8 @@
 package com.kinetik.app
 import expo.modules.splashscreen.SplashScreenManager
 
+import android.content.pm.ActivityInfo
+import android.content.res.Configuration
 import android.os.Build
 import android.os.Bundle
 
@@ -20,7 +22,24 @@ class MainActivity : ReactActivity() {
     // @generated begin expo-splashscreen - expo prebuild (DO NOT MODIFY) sync-f3ff59a738c56c9a6119210cb55f0b613eb8b6af
     SplashScreenManager.registerOnActivity(this)
     // @generated end expo-splashscreen
+    lockPortraitOnPhones(resources.configuration)
     super.onCreate(null)
+  }
+
+  // Phones stay portrait; tablets and unfolded foldables (600 dp and wider)
+  // turn freely. Set here, not in the manifest, so large screens are never
+  // restricted. Checked again on fold/unfold (handled without a restart).
+  override fun onConfigurationChanged(newConfig: Configuration) {
+    super.onConfigurationChanged(newConfig)
+    lockPortraitOnPhones(newConfig)
+  }
+
+  private fun lockPortraitOnPhones(config: Configuration) {
+    requestedOrientation = if (config.smallestScreenWidthDp < 600) {
+      ActivityInfo.SCREEN_ORIENTATION_PORTRAIT
+    } else {
+      ActivityInfo.SCREEN_ORIENTATION_UNSPECIFIED
+    }
   }
 
   /**
