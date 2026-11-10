@@ -17,6 +17,7 @@ import { Socket } from 'socket.io-client';
 import { api } from '../../services/api';
 import { prepareChatImage, discardPreparedChatImage, ChatImageError, type PreparedChatImage } from '../../services/chatImage';
 import { ensureChatPhoto, keepSentChatPhoto, deleteChatPhotos } from '../../services/chatPhotoStore';
+import { getChatGameView, setChatGameView, clearChatGameView, type SavedGameView } from '../../services/chatGameView';
 import { getChatSocket } from '../../services/chatSocket';
 import { onPremiumChanged } from '../../services/appEvents';
 import { useAuthStore } from '../../store/authStore';
@@ -938,7 +939,10 @@ export const ChatScreen: React.FC<{ navigation: any; route: any }> = ({ navigati
     leavingRef.current = true;
     // The chat is over: its photos leave this phone too
     const owner = useAuthStore.getState().user?.id;
-    if (owner) deleteChatPhotos(owner, matchId);
+    if (owner) {
+      deleteChatPhotos(owner, matchId);
+      clearChatGameView(owner, matchId);
+    }
     if (navigation.isFocused()) navigation.goBack();
   };
 
@@ -1349,6 +1353,53 @@ export const ChatScreen: React.FC<{ navigation: any; route: any }> = ({ navigati
     }
     setGamePickerVisible(true);
   }, [game]);
+
+  // ─── Remember how the game was left (on this phone only) ──
+  // Dots and Boxes folded or not, Reversi / Chinese Checkers full screen or
+  // down to their bar: coming back to the chat shows the game the way this
+  // player left it (chatGameView.ts). A different game id means a new game,
+  // which starts the usual way.
+  const myUserId = authUser?.id;
+  // undefined while reading, null when nothing is saved
+  const [savedGameView, setSavedGameView] = useState<SavedGameView | null | undefined>(undefined);
+  useEffect(() => {
+    if (!myUserId) return;
+    let cancelled = false;
+    getChatGameView(myUserId, matchId).then((saved) => {
+      if (!cancelled) setSavedGameView(saved);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [myUserId, matchId]);
+
+  const gameId = game?.id;
+  const gameType = game?.type;
+  const viewRestoredForRef = useRef<string | null>(null);
+  const lastSavedViewRef = useRef<string | null>(null);
+  useEffect(() => {
+    if (!gameId || !myUserId || savedGameView === undefined) return;
+    // First sight of this game: put it back the way it was left. Nothing is
+    // written before this, so the default never overwrites the saved view.
+    if (viewRestoredForRef.current !== gameId) {
+      viewRestoredForRef.current = gameId;
+      if (savedGameView?.gameId === gameId) {
+        lastSavedViewRef.current = `${gameId}:${savedGameView.view}`;
+        const wasOpen = savedGameView.view === 'open';
+        if (gameType === 'reversi') setReversiOpen(wasOpen);
+        else if (gameType === 'chinese_checkers') setCheckersOpen(wasOpen);
+        else setGameCollapsed(!wasOpen);
+        return;
+      }
+    }
+    const open = gameType === 'reversi' ? reversiOpen
+      : gameType === 'chinese_checkers' ? checkersOpen
+      : !gameCollapsed;
+    const view = open ? 'open' : 'folded';
+    if (lastSavedViewRef.current === `${gameId}:${view}`) return;
+    lastSavedViewRef.current = `${gameId}:${view}`;
+    setChatGameView(myUserId, matchId, { gameId, view });
+  }, [gameId, gameType, myUserId, matchId, savedGameView, reversiOpen, checkersOpen, gameCollapsed]);
 
   // Keep `today` true: a timer to the next midnight, and a check whenever
   // the app returns to the foreground (a timer does not run while the phone
@@ -2477,7 +2528,6 @@ export const ChatScreen: React.FC<{ navigation: any; route: any }> = ({ navigati
     setReplyTo(message);
   }, []);
 
-  const myUserId = authUser?.id;
   const renderMessage = useCallback(({ item }: { item: Message }) => (
     <MessageRow
       item={item}
