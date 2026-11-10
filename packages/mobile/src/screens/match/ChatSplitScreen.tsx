@@ -1,14 +1,14 @@
 import React, { useCallback, useEffect, useMemo } from 'react';
-import { BackHandler, StyleSheet, Text, View, useWindowDimensions } from 'react-native';
+import { BackHandler, StyleSheet, View, useWindowDimensions } from 'react-native';
 import { useNavigationState } from '@react-navigation/native';
-import Ionicons from '@expo/vector-icons/Ionicons';
 import { ChatListScreen } from './ChatListScreen';
 import { ChatScreen } from './ChatScreen';
 import { useAuthStore } from '../../store/authStore';
 import { useChatPaneStore, type PaneChat } from '../../store/chatPaneStore';
 import { PaneWidthContext } from '../../hooks/usePaneWidth';
-import { isChatSplitWidth } from '../../navigation/openChat';
-import { colors, spacing, typography } from '../../theme';
+import { isSplitWidth, splitListWidth } from '../../navigation/splitLayout';
+import { PaneEmptyState } from '../../components/common/PaneEmptyState';
+import { colors } from '../../theme';
 
 /**
  * The Chat tab. On a phone it is the chat list, and a chat opens as its own
@@ -22,7 +22,7 @@ import { colors, spacing, typography } from '../../theme';
  */
 export const ChatSplitScreen: React.FC<{ navigation: any }> = ({ navigation }) => {
   const { width } = useWindowDimensions();
-  const split = isChatSplitWidth(width);
+  const split = isSplitWidth(width);
   const userId = useAuthStore((s) => s.user?.id ?? null);
   const ownerId = useChatPaneStore((s) => s.ownerId);
   const storedChat = useChatPaneStore((s) => s.chat);
@@ -55,7 +55,7 @@ export const ChatSplitScreen: React.FC<{ navigation: any }> = ({ navigation }) =
     return () => sub.remove();
   }, [split, chat, tabInUse, navigation]);
 
-  const listWidth = Math.round(Math.min(400, Math.max(300, width * 0.36)));
+  const listWidth = splitListWidth(width);
   const paneRoute = useMemo(() => (chat ? { key: `pane-${chat.matchId}`, name: 'Chat', params: chat } : null), [chat]);
 
   if (!split) return <ChatListScreen navigation={navigation} />;
@@ -71,10 +71,11 @@ export const ChatSplitScreen: React.FC<{ navigation: any }> = ({ navigation }) =
             <ChatScreen key={chat.matchId} navigation={navigation} route={paneRoute} onClose={closePane} />
           </PaneWidthContext.Provider>
         ) : (
-          <View style={styles.empty}>
-            <Ionicons name="chatbubbles-outline" size={56} color={colors.textMuted} />
-            <Text style={styles.emptyText}>Pick a chat to open it here</Text>
-          </View>
+          <PaneEmptyState
+            icon="chatbubbles-outline"
+            title="No chat open yet"
+            text="Pick a conversation on the left to read and reply here."
+          />
         )}
       </View>
     </View>
@@ -85,6 +86,4 @@ const styles = StyleSheet.create({
   row: { flex: 1, flexDirection: 'row', backgroundColor: colors.background },
   list: { borderRightWidth: StyleSheet.hairlineWidth, borderRightColor: colors.surfaceHighlight },
   pane: { flex: 1 },
-  empty: { flex: 1, justifyContent: 'center', alignItems: 'center', padding: spacing.xxl, gap: spacing.md },
-  emptyText: { ...typography.body1, color: colors.textMuted, textAlign: 'center' },
 });
