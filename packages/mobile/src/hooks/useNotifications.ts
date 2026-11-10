@@ -5,6 +5,7 @@ import { getNotificationsModule } from '../services/notifications';
 import { useNotificationStore } from '../store/notificationStore';
 import { useAuthStore } from '../store/authStore';
 import { pruneChatPhotos } from '../services/chatPhotoStore';
+import { openChat, openChatList } from '../navigation/openChat';
 
 /**
  * Where a push leads. The server sends `screen` and, for one chat, the
@@ -14,13 +15,13 @@ import { pruneChatPhotos } from '../services/chatPhotoStore';
 function openFromNotification(navigation: any, data: Record<string, unknown> | undefined): void {
   if (!data || !useAuthStore.getState().isAuthenticated) return;
   if (data.screen === 'Chat' && typeof data.matchId === 'string') {
-    navigation.navigate('Chat', {
+    openChat(navigation, {
       matchId: data.matchId,
       partnerName: typeof data.partnerName === 'string' ? data.partnerName : 'Chat',
       partnerId: typeof data.partnerId === 'string' ? data.partnerId : undefined,
     });
   } else if (data.screen === 'ChatList') {
-    navigation.navigate('ChatList');
+    openChatList(navigation);
   } else if (data.screen === 'Likes') {
     navigation.navigate('Likes');
   }

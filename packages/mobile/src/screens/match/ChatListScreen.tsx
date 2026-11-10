@@ -34,7 +34,18 @@ const CHAT_LIST_CAPTURE_KEY = 'chat-list';
 /** Waits between automatic retries of a first load that failed */
 const LOAD_RETRY_DELAYS_MS = [3000, 6000, 12000];
 
-export const ChatListScreen: React.FC<{ navigation: any }> = ({ navigation }) => {
+interface ChatListScreenProps {
+  navigation: any;
+  // Beside the open chat on a large screen (ChatSplitScreen): a tap opens
+  // the chat there instead of on its own screen, and its row is marked
+  onOpenChat?: (chat: {
+    matchId: string; partnerName: string; partnerId?: string;
+    partnerPhotoUrl?: string; partnerThumbnailUrl?: string; locked?: boolean;
+  }) => void;
+  selectedMatchId?: string;
+}
+
+export const ChatListScreen: React.FC<ChatListScreenProps> = ({ navigation, onOpenChat, selectedMatchId }) => {
   const [conversations, setConversations] = useState<Conversation[]>([]);
   const [loading, setLoading] = useState(true);
   const authUser = useAuthStore((s) => s.user);
@@ -262,7 +273,7 @@ export const ChatListScreen: React.FC<{ navigation: any }> = ({ navigation }) =>
 
   const renderConversation = ({ item }: { item: Conversation }) => (
     <TouchableOpacity
-      style={styles.conversationCard}
+      style={[styles.conversationCard, item.matchId === selectedMatchId && styles.conversationSelected]}
       onPress={() => {
         // Opening the chat reads it, so drop its count here at once rather
         // than showing the old number on the way back until the reload lands.
@@ -272,16 +283,18 @@ export const ChatListScreen: React.FC<{ navigation: any }> = ({ navigation }) =>
             prev.map((c) => (c.matchId === item.matchId ? { ...c, unreadCount: 0 } : c)),
           );
         }
-        navigation.navigate('Chat', {
-        matchId: item.matchId,
-        partnerName: item.partnerName,
-        partnerId: item.partnerId,
-        partnerPhotoUrl: item.partnerPhotoUrl,
-        partnerThumbnailUrl: item.partnerThumbnailUrl,
-        // Known here already: a locked chat shows its lock at once, with
-        // nothing of the chat interface in between
-        locked: item.locked,
-        });
+        const chat = {
+          matchId: item.matchId,
+          partnerName: item.partnerName,
+          partnerId: item.partnerId,
+          partnerPhotoUrl: item.partnerPhotoUrl,
+          partnerThumbnailUrl: item.partnerThumbnailUrl,
+          // Known here already: a locked chat shows its lock at once, with
+          // nothing of the chat interface in between
+          locked: item.locked,
+        };
+        if (onOpenChat) onOpenChat(chat);
+        else navigation.navigate('Chat', chat);
       }}
       accessibilityHint={item.locked ? 'Locked. Upgrade to Premium to chat.' : undefined}
     >
@@ -389,6 +402,7 @@ export const ChatListScreen: React.FC<{ navigation: any }> = ({ navigation }) =>
           data={conversations}
           keyExtractor={(item) => item.matchId}
           renderItem={renderConversation}
+          extraData={selectedMatchId}
           contentContainerStyle={styles.list}
           showsVerticalScrollIndicator={false}
           removeClippedSubviews
@@ -443,6 +457,13 @@ const styles = StyleSheet.create({
     paddingVertical: spacing.md,
     borderBottomWidth: 1,
     borderBottomColor: colors.surfaceHighlight,
+  },
+  // The chat open beside the list (large screens)
+  conversationSelected: {
+    backgroundColor: colors.surface,
+    marginHorizontal: -spacing.md,
+    paddingHorizontal: spacing.md,
+    borderRadius: 12,
   },
   avatarContainer: { position: 'relative' },
   avatar: { width: 56, height: 56, borderRadius: 28 },

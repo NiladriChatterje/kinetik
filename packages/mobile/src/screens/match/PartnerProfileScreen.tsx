@@ -6,6 +6,7 @@ import Ionicons from '@expo/vector-icons/Ionicons';
 import { api } from '../../services/api';
 import { Button } from '../../components/common/Button';
 import { ReportBlockSheet } from '../../components/safety/ReportBlockSheet';
+import { useChatPaneStore } from '../../store/chatPaneStore';
 import { SwipeCard, SwipeProfile } from './MatchScreen';
 import { colors, typography, spacing, radius } from '../../theme';
 
@@ -88,7 +89,13 @@ export const PartnerProfileScreen: React.FC = () => {
         name={partnerName}
         matchId={matchId}
         onClose={() => setSafetyVisible(false)}
-        onBlocked={() => navigation.pop(2)}
+        onBlocked={() => {
+          // The chat goes too: on a large screen it is the pane beside the
+          // list, on a phone the screen under this one
+          const pane = useChatPaneStore.getState();
+          if (pane.chat?.matchId === matchId) pane.close();
+          navigation.pop(2);
+        }}
       />
     </SafeAreaView>
   );

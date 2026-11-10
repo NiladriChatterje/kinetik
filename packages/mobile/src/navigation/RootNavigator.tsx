@@ -88,6 +88,7 @@ import { MatchScreen } from '../screens/match/MatchScreen';
 import { LikeListScreen } from '../screens/match/LikeListScreen';
 import { ChatListScreen } from '../screens/match/ChatListScreen';
 import { ChatScreen } from '../screens/match/ChatScreen';
+import { ChatSplitScreen } from '../screens/match/ChatSplitScreen';
 
 // Wallet
 import { ProfileLedgerScreen } from '../screens/wallet/ProfileLedgerScreen';
@@ -258,7 +259,7 @@ const MainTabNavigator = React.memo(function MainTabNavigator() {
       />
       <MainTab.Screen
         name="ChatListTab"
-        component={ChatListScreen}
+        component={ChatSplitScreen}
         options={{
           tabBarLabel: 'Chat',
           tabBarIcon: ({ color }) => <ChatTabIcon color={color} />,

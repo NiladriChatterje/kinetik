@@ -21,6 +21,7 @@ import { ProgressiveImage } from '../../components/common/ProgressiveImage';
 import { DatingCategoryBadge, DatingCategory } from '../../components/common/DatingCategoryBadge';
 import { BounceSwipe } from '../../components/common/BounceSwipe';
 import { hapticSuccess, hapticImpact } from '../../utils/haptics';
+import { openChat } from '../../navigation/openChat';
 
 const SCREEN_WIDTH = Dimensions.get('window').width;
 const SCREEN_HEIGHT = Dimensions.get('window').height;
@@ -433,7 +434,7 @@ export const MatchScreen: React.FC<{ navigation: any; route?: any }> = ({ naviga
   const handleSayHello = () => {
     const { matchId, partnerId, partnerName, partnerPhotoUrl } = matchPopup;
     setMatchPopup((prev) => ({ ...prev, visible: false }));
-    navigation.navigate('Chat', {
+    openChat(navigation, {
       matchId,
       partnerName,
       partnerId,

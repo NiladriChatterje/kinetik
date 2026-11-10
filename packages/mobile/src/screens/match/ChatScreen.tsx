@@ -817,7 +817,9 @@ MessageRow.displayName = 'MessageRow';
 /** Waits between automatic retries of a chat's first load that failed */
 const FIRST_LOAD_RETRY_DELAYS_MS = [3000, 6000, 12000];
 
-export const ChatScreen: React.FC<{ navigation: any; route: any }> = ({ navigation, route }) => {
+// onClose: shown beside the chat list on a large screen (ChatSplitScreen);
+// leaving the chat closes that pane instead of going back a screen
+export const ChatScreen: React.FC<{ navigation: any; route: any; onClose?: () => void }> = ({ navigation, route, onClose }) => {
   const {
     matchId,
     partnerName: pName,
@@ -941,8 +943,10 @@ export const ChatScreen: React.FC<{ navigation: any; route: any }> = ({ navigati
       deleteChatPhotos(owner, matchId);
       clearChatGameView(owner, matchId);
     }
-    if (navigation.isFocused()) navigation.goBack();
+    if (onClose) onClose();
+    else if (navigation.isFocused()) navigation.goBack();
   };
+  const goBack = () => (onClose ? onClose() : navigation.goBack());
 
   // ─── Report / block sheet ────────────────────────────────
   const [safetyVisible, setSafetyVisible] = useState(false);
@@ -2575,7 +2579,7 @@ export const ChatScreen: React.FC<{ navigation: any; route: any }> = ({ navigati
     return (
       <SafeAreaView style={styles.container} edges={['top', 'left', 'right']}>
         <View style={styles.header}>
-          <TouchableOpacity onPress={() => navigation.goBack()} style={styles.backBtn}>
+          <TouchableOpacity onPress={goBack} style={styles.backBtn}>
             <Ionicons name="chevron-back" size={24} color={colors.textPrimary} />
           </TouchableOpacity>
           <View style={styles.headerInfo}>
@@ -2598,7 +2602,7 @@ export const ChatScreen: React.FC<{ navigation: any; route: any }> = ({ navigati
       <View style={{ flex: 1 }}>
         <LockedChatView
           partnerName={partnerName}
-          onBack={() => navigation.goBack()}
+          onBack={goBack}
           onUpgrade={() => navigation.navigate('SubscriptionCheckout', { fromPaywall: true })}
           onSafety={partnerId ? () => setSafetyVisible(true) : undefined}
         />
@@ -2621,7 +2625,7 @@ export const ChatScreen: React.FC<{ navigation: any; route: any }> = ({ navigati
       <Animated.View style={{ flex: 1, transform: [{ scale: contentScale }] }}>
         {/* Header */}
         <View style={styles.header}>
-          <TouchableOpacity onPress={() => navigation.goBack()} style={styles.backBtn}>
+          <TouchableOpacity onPress={goBack} style={styles.backBtn}>
             <Ionicons name="chevron-back" size={24} color={colors.textPrimary} />
           </TouchableOpacity>
 

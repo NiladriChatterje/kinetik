@@ -1,7 +1,8 @@
 import React, { useMemo, useState } from 'react';
 import {
-  View, Text, StyleSheet, TouchableOpacity, Pressable, useWindowDimensions,
+  View, Text, StyleSheet, TouchableOpacity, Pressable,
 } from 'react-native';
+import { usePaneWidth } from '../../hooks/usePaneWidth';
 import Ionicons from '@expo/vector-icons/Ionicons';
 import { colors, typography, spacing, radius } from '../../theme';
 import { ConfirmModal } from '../common/ConfirmModal';
@@ -49,7 +50,9 @@ function sameEdge(a: DotsEdge | null, b: DotsEdge | null): boolean {
 export const DotsBoxesPanel: React.FC<DotsBoxesPanelProps> = ({
   game, myId, partnerName, collapsed, onToggleCollapsed, pending, onMove, onEnd, onClose,
 }) => {
-  const { width: screenWidth } = useWindowDimensions();
+  // The chat's width: the window on a phone, the chat pane beside the list
+  // on a large screen
+  const screenWidth = usePaneWidth();
   const [confirmEnd, setConfirmEnd] = useState(false);
   const { state, status } = game;
   const { rows, cols } = state;
