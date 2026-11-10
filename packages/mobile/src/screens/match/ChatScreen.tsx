@@ -97,8 +97,6 @@ const REPLY_FOLLOW = 0.55;
 /** The not-sent icon, the same red as the Face unverified tag */
 const NOT_SENT_RED = '#E53935';
 
-const SCREEN_WIDTH = Dimensions.get('window').width;
-const SCREEN_HEIGHT = Dimensions.get('window').height;
 
 // ─── Fix-a-Date helpers ──────────────────────────────────
 // The scheduled date is stored as a plain 'YYYY-MM-DD' (the sender's local
@@ -3906,14 +3904,17 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     alignItems: 'center',
   },
+  // The whole screen, also after a tablet turns (a size read once at
+  // start-up would keep the old one)
   previewImage: {
-    width: SCREEN_WIDTH,
-    height: SCREEN_HEIGHT,
+    width: '100%',
+    height: '100%',
   },
   previewSpinner: {
     position: 'absolute',
     alignSelf: 'center',
-    top: SCREEN_HEIGHT / 2 - 12,
+    top: '50%',
+    marginTop: -12,
   },
   previewHint: {
     position: 'absolute',
@@ -4032,8 +4033,8 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   onceViewImage: {
-    width: SCREEN_WIDTH,
-    height: SCREEN_HEIGHT,
+    width: '100%',
+    height: '100%',
   },
   onceViewVideoPlaceholder: {
     alignItems: 'center',
