@@ -168,11 +168,12 @@ export const EditProfileScreen: React.FC = () => {
   }, [load]);
 
   // Going back with unsaved edits asks first. Both the back button here and
-  // the Android back button pop the screen, so the guard sits on the pop.
+  // the Android back button pop the screen, so the guard sits on the pop. On
+  // a large screen, picking another setting beside this page replaces it.
   useEffect(() => {
     const unsubscribe = navigation.addListener('beforeRemove', (e: any) => {
       const type = e?.data?.action?.type;
-      if (type !== 'GO_BACK' && type !== 'POP') return;
+      if (type !== 'GO_BACK' && type !== 'POP' && type !== 'REPLACE') return;
       if (leaveFreelyRef.current) return;
       const current = formRef.current;
       const base = initialRef.current;

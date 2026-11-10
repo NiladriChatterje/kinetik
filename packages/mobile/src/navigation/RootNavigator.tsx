@@ -89,9 +89,9 @@ import { LikeListScreen } from '../screens/match/LikeListScreen';
 import { ChatListScreen } from '../screens/match/ChatListScreen';
 import { ChatScreen } from '../screens/match/ChatScreen';
 import { ChatSplitScreen } from '../screens/match/ChatSplitScreen';
+import { ProfileSplitScreen } from '../screens/wallet/ProfileSplitScreen';
 
 // Wallet
-import { ProfileLedgerScreen } from '../screens/wallet/ProfileLedgerScreen';
 import { EditProfileScreen } from '../screens/wallet/EditProfileScreen';
 import { WelcomeScreen } from '../screens/onboarding/WelcomeScreen';
 import { PrimaryPhotoSelfieScreen } from '../screens/wallet/PrimaryPhotoSelfieScreen';
@@ -267,7 +267,7 @@ const MainTabNavigator = React.memo(function MainTabNavigator() {
       />
       <MainTab.Screen
         name="Profile"
-        component={ProfileLedgerScreen}
+        component={ProfileSplitScreen}
         options={{
           tabBarLabel: 'Profile',
           tabBarIcon: ({ color }) => <Ionicons name="person-outline" size={22} color={color} />,

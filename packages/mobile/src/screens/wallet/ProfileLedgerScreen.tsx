@@ -76,7 +76,17 @@ const SUPPORT_EMAIL = 'kinetik.dating@gmail.com';
 /** Cross on the Face Unverified badge, matching the delete confirmations */
 const UNVERIFIED_RED = '#E53935';
 
-export const ProfileLedgerScreen: React.FC = () => {
+// The pages this screen opens; on a large screen they open beside it
+type ProfilePage = 'EditProfile' | 'NotificationPreferences' | 'Privacy' | 'SubscriptionCheckout';
+
+interface ProfileLedgerScreenProps {
+  // Beside a pane on a large screen (ProfileSplitScreen): a page opens there
+  // instead of on its own screen, and its row is marked
+  onOpenPage?: (page: ProfilePage) => void;
+  openPage?: ProfilePage | null;
+}
+
+export const ProfileLedgerScreen: React.FC<ProfileLedgerScreenProps> = ({ onOpenPage, openPage }) => {
   const authUser = useAuthStore((s) => s.user);
   const logout = useAuthStore((s) => s.logout);
   // Shown on the Subscription row; purchases and the server's push keep it current
@@ -227,11 +237,21 @@ export const ProfileLedgerScreen: React.FC = () => {
         return;
       }
       if (screen) {
-        navigation.navigate(screen as never);
+        if (onOpenPage) onOpenPage(screen as ProfilePage);
+        else navigation.navigate(screen as never);
       }
     },
-    [navigation, openSupportMail],
+    [navigation, openSupportMail, onOpenPage],
   );
+
+  // Beside a pane this screen never loses focus, so the reload a phone gets
+  // on coming back happens when a page there closes or gives way to another
+  // (a saved edit shows here at once)
+  const lastOpenPageRef = useRef(openPage);
+  useEffect(() => {
+    if (lastOpenPageRef.current && lastOpenPageRef.current !== openPage) fetchProfileAndPhotos();
+    lastOpenPageRef.current = openPage;
+  }, [openPage, fetchProfileAndPhotos]);
 
   // Primary photo for the avatar
   const primaryPhoto = photos.find((p) => p.is_primary);
@@ -394,8 +414,8 @@ export const ProfileLedgerScreen: React.FC = () => {
             variant="outline"
             size="sm"
             icon={<Ionicons name="create-outline" size={14} color={colors.textPrimary} />}
-            onPress={() => navigation.navigate('EditProfile' as never)}
-            style={styles.editButton}
+            onPress={() => (onOpenPage ? onOpenPage('EditProfile') : navigation.navigate('EditProfile' as never))}
+            style={openPage === 'EditProfile' ? { ...styles.editButton, ...styles.editButtonOpen } : styles.editButton}
           />
         </View>
 
@@ -542,7 +562,7 @@ export const ProfileLedgerScreen: React.FC = () => {
             return (
               <React.Fragment key={s.label}>
                 <TouchableOpacity
-                  style={styles.settingRow}
+                  style={[styles.settingRow, !!s.screen && s.screen === openPage && styles.settingRowOpen]}
                   onPress={() => handleSettingPress(s.screen, 'action' in s ? s.action : undefined)}
                   disabled={!s.screen && !('action' in s)}
                 >
@@ -721,6 +741,7 @@ const styles = StyleSheet.create({
   verifiedBadge: { flexDirection: 'row', alignItems: 'center', backgroundColor: colors.surfaceHighlight, paddingHorizontal: spacing.lg, paddingVertical: spacing.xs, borderRadius: radius.full },
   verifiedText: { ...typography.caption, color: colors.textPrimary },
   editButton: { marginTop: spacing.md },
+  editButtonOpen: { backgroundColor: colors.surfaceHighlight },
   photosSection: { marginBottom: spacing.lg },
   sectionTitle: { ...typography.label, color: colors.textSecondary, marginBottom: spacing.sm },
   photosRow: { gap: spacing.sm },
@@ -775,6 +796,8 @@ const styles = StyleSheet.create({
   metricLabel: { ...typography.caption, color: colors.textMuted, marginTop: spacing.xs },
   settingsCard: { padding: 0, marginBottom: spacing.xxl },
   settingRow: { flexDirection: 'row', alignItems: 'center', padding: spacing.lg, gap: spacing.md },
+  // The page open beside this screen (large screens)
+  settingRowOpen: { backgroundColor: colors.surfaceHighlight, borderRadius: radius.xl },
   settingText: { ...typography.body1, color: colors.textPrimary, flex: 1 },
   settingDivider: { height: 1, backgroundColor: colors.cardBorder, marginHorizontal: spacing.lg },
 
