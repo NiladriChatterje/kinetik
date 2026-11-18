@@ -83,7 +83,7 @@ import { VenueSelectorScreen } from '../screens/scheduling/VenueSelectorScreen';
 import { ReservationLockerScreen } from '../screens/scheduling/ReservationLockerScreen';
 
 // Match
-import { ExploreScreen } from '../screens/match/ExploreScreen';
+import { ExploreSplitScreen } from '../screens/match/ExploreSplitScreen';
 import { MatchScreen } from '../screens/match/MatchScreen';
 import { LikeListScreen } from '../screens/match/LikeListScreen';
 import { ChatListScreen } from '../screens/match/ChatListScreen';
@@ -241,14 +241,15 @@ const MainTabNavigator = React.memo(function MainTabNavigator() {
     <MainTab.Navigator screenOptions={tabBarScreenOptions}>
       <MainTab.Screen
         name="Explore"
-        component={ExploreScreen}
+        component={ExploreSplitScreen}
         options={{
           tabBarLabel: 'Explore',
           tabBarIcon: ({ color }) => <Ionicons name="grid-outline" size={22} color={color} />,
         }}
       />
       {/* The tab opens the Likes list: Explore already covers discovery, and
-          the swipe deck is reached from a profile tapped there (Discover). */}
+          the swipe deck is reached from a profile tapped there (Discover).
+          On a large screen Likes also sits beside the Explore grid. */}
       <MainTab.Screen
         name="Match"
         component={LikeListScreen}
