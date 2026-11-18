@@ -1,17 +1,19 @@
-import React, { useEffect, useRef } from 'react';
-import { Animated, Dimensions, Easing, PanResponder, StyleProp, StyleSheet, View, ViewStyle } from 'react-native';
+import React, { useEffect, useMemo, useRef } from 'react';
+import { Animated, Easing, PanResponder, StyleProp, StyleSheet, View, ViewStyle } from 'react-native';
 import Ionicons from '@expo/vector-icons/Ionicons';
 import { colors } from '../../theme';
 import { hapticLight } from '../../utils/haptics';
+import { usePaneWidth } from '../../hooks/usePaneWidth';
 
 export type SwipeDirection = 'left' | 'right';
 
-const SCREEN_WIDTH = Dimensions.get('window').width;
-
+// Both are shares of the width the card is shown in: the screen, or the
+// pane it sits in on a large screen (the Likes list beside Explore), read
+// live so a turned tablet or an unfolded phone gets the right distances.
 /** Finger travel that commits a swipe. */
-const COMMIT_AT = SCREEN_WIDTH * 0.28;
+const COMMIT_SHARE = 0.28;
 /** Furthest the card moves, however far the finger goes: it never leaves the screen. */
-const MAX_TRAVEL = SCREEN_WIDTH * 0.26;
+const MAX_TRAVEL_SHARE = 0.26;
 const INDICATOR = 44;
 /** Like is green, pass / reject is red (the reds match the Face unverified tag). */
 const LIKE_GREEN = '#43A047';
@@ -19,13 +21,13 @@ const REJECT_RED = '#E53935';
 
 /**
  * Finger travel → card travel with growing resistance, like Android's back
- * gesture: close to the finger at first, then easing off towards MAX_TRAVEL.
+ * gesture: close to the finger at first, then easing off towards maxTravel.
  * Sampled for Animated.interpolate, which is linear between points.
  */
-function sampled(fn: (travel: number) => number) {
+function sampled(width: number, maxTravel: number, fn: (travel: number) => number) {
   const steps = 12;
-  const inputRange = Array.from({ length: steps + 1 }, (_, i) => ((i / steps) * 2 - 1) * SCREEN_WIDTH);
-  const outputRange = inputRange.map((x) => fn(MAX_TRAVEL * Math.tanh(x / MAX_TRAVEL)));
+  const inputRange = Array.from({ length: steps + 1 }, (_, i) => ((i / steps) * 2 - 1) * width);
+  const outputRange = inputRange.map((x) => fn(maxTravel * Math.tanh(x / maxTravel)));
   return { inputRange, outputRange, extrapolate: 'clamp' as const };
 }
 
@@ -79,6 +81,14 @@ export function BounceSwipe({
   style?: StyleProp<ViewStyle>;
   cardStyle?: StyleProp<ViewStyle>;
 }) {
+  const width = usePaneWidth();
+  const commitAt = width * COMMIT_SHARE;
+  const maxTravel = width * MAX_TRAVEL_SHARE;
+  // For the responder and the demo, which are set up once
+  const widthRef = useRef(width);
+  widthRef.current = width;
+  const commitAtRef = useRef(commitAt);
+  commitAtRef.current = commitAt;
   const drag = useRef(new Animated.Value(0)).current;
   // How far the card has gone off the screen after a committed fly-off swipe
   const exit = useRef(new Animated.Value(0)).current;
@@ -112,7 +122,7 @@ export function BounceSwipe({
       if (!enabledRef.current || goneRef.current) return;
       Animated.sequence([
         Animated.timing(drag, {
-          toValue: COMMIT_AT * 1.15,
+          toValue: commitAtRef.current * 1.15,
           duration: 700,
           easing: Easing.inOut(Easing.quad),
           useNativeDriver: true,
@@ -137,7 +147,7 @@ export function BounceSwipe({
       zone.current = 0;
       onSwipeRef.current(direction);
       Animated.timing(exit, {
-        toValue: (direction === 'right' ? 1 : -1) * SCREEN_WIDTH * 1.2,
+        toValue: (direction === 'right' ? 1 : -1) * widthRef.current * 1.2,
         duration: 240,
         easing: Easing.out(Easing.quad),
         useNativeDriver: true,
@@ -158,7 +168,8 @@ export function BounceSwipe({
       onPanResponderTerminationRequest: () => false,
       onPanResponderMove: (_, g) => {
         drag.setValue(g.dx);
-        const now = g.dx > COMMIT_AT ? 1 : g.dx < -COMMIT_AT ? -1 : 0;
+        const at = commitAtRef.current;
+        const now = g.dx > at ? 1 : g.dx < -at ? -1 : 0;
         if (now !== zone.current) {
           if (now !== 0) hapticLight();
           zone.current = now;
@@ -166,10 +177,11 @@ export function BounceSwipe({
       },
       onPanResponderRelease: (_, g) => {
         // Past the commit point, or a quick flick most of the way there
-        const flick = Math.abs(g.vx) > 1 && Math.abs(g.dx) > COMMIT_AT * 0.4;
+        const at = commitAtRef.current;
+        const flick = Math.abs(g.vx) > 1 && Math.abs(g.dx) > at * 0.4;
         const direction: SwipeDirection | null =
-          g.dx > COMMIT_AT || (flick && g.dx > 0) ? 'right'
-            : g.dx < -COMMIT_AT || (flick && g.dx < 0) ? 'left'
+          g.dx > at || (flick && g.dx > 0) ? 'right'
+            : g.dx < -at || (flick && g.dx < 0) ? 'left'
               : null;
         if (direction && enabledRef.current && !goneRef.current) commit(direction, g.vx);
         else bounceBack(g.vx);
@@ -178,15 +190,17 @@ export function BounceSwipe({
     }),
   ).current;
 
-  const translateX = Animated.add(drag.interpolate(sampled((t) => t)), exit);
-  // A slight tilt as the card flies out
-  const rotate = exit.interpolate({
-    inputRange: [-SCREEN_WIDTH, 0, SCREEN_WIDTH],
-    outputRange: ['-8deg', '0deg', '8deg'],
-  });
-  const scale = shrink
-    ? Animated.multiply(drag.interpolate(sampled((t) => 1 - 0.06 * Math.abs(t / MAX_TRAVEL))), enter)
-    : enter;
+  const { translateX, rotate, scale } = useMemo(() => ({
+    translateX: Animated.add(drag.interpolate(sampled(width, maxTravel, (t) => t)), exit),
+    // A slight tilt as the card flies out
+    rotate: exit.interpolate({
+      inputRange: [-width, 0, width],
+      outputRange: ['-8deg', '0deg', '8deg'],
+    }),
+    scale: shrink
+      ? Animated.multiply(drag.interpolate(sampled(width, maxTravel, (t) => 1 - 0.06 * Math.abs(t / maxTravel))), enter)
+      : enter,
+  }), [width, maxTravel, shrink, drag, exit, enter]);
 
   return (
     <View style={style} pointerEvents="box-none">
@@ -209,8 +223,8 @@ export function BounceSwipe({
       >
         {children}
       </Animated.View>
-      <EdgeIndicator drag={drag} side="right" icon="heart" />
-      <EdgeIndicator drag={drag} side="left" icon="close" />
+      <EdgeIndicator drag={drag} side="right" icon="heart" commitAt={commitAt} />
+      <EdgeIndicator drag={drag} side="left" icon="close" commitAt={commitAt} />
     </View>
   );
 }
@@ -220,19 +234,21 @@ function EdgeIndicator({
   drag,
   side,
   icon,
+  commitAt,
 }: {
   drag: Animated.Value;
   side: SwipeDirection;
   icon: 'heart' | 'close';
+  commitAt: number;
 }) {
   const sign = side === 'right' ? 1 : -1;
   const progress = drag.interpolate({
-    inputRange: side === 'right' ? [0, COMMIT_AT] : [-COMMIT_AT, 0],
+    inputRange: side === 'right' ? [0, commitAt] : [-commitAt, 0],
     outputRange: side === 'right' ? [0, 1] : [1, 0],
     extrapolate: 'clamp',
   });
   const committed = drag.interpolate({
-    inputRange: side === 'right' ? [COMMIT_AT - 1, COMMIT_AT] : [-COMMIT_AT, -COMMIT_AT + 1],
+    inputRange: side === 'right' ? [commitAt - 1, commitAt] : [-commitAt, -commitAt + 1],
     outputRange: side === 'right' ? [0, 1] : [1, 0],
     extrapolate: 'clamp',
   });
