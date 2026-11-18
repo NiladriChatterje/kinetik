@@ -49,7 +49,14 @@ function likedAgo(iso: string): string {
   return days < 7 ? `${days}d` : `${Math.floor(days / 7)}w`;
 }
 
-export const LikeListScreen: React.FC<{ navigation: any }> = ({ navigation }) => {
+/**
+ * Beside Explore on a large screen (ExploreSplitScreen): the button at the
+ * top left slides Explore away so Likes fills the screen, and back. Never
+ * passed on a phone, where the list keeps its usual header.
+ */
+export type LikesPaneToggle = { wide: boolean; onToggle: () => void };
+
+export const LikeListScreen: React.FC<{ navigation: any; paneToggle?: LikesPaneToggle }> = ({ navigation, paneToggle }) => {
   const [likes, setLikes] = useState<IncomingLike[]>([]);
   const [loading, setLoading] = useState(true);
   const [responding, setResponding] = useState<string | null>(null);
@@ -333,17 +340,36 @@ export const LikeListScreen: React.FC<{ navigation: any }> = ({ navigation }) =>
     </BounceSwipe>
   );
 
+  // Top left of the header: beside Explore, the button that widens Likes
+  // over the screen (and back); as the Match tab there is nothing to go
+  // back to; pushed from the deck's heart button there is
+  const headerStart = paneToggle ? (
+    <TouchableOpacity
+      onPress={paneToggle.onToggle}
+      hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+      accessibilityRole="button"
+      accessibilityLabel={paneToggle.wide ? 'Show Explore beside Likes' : 'Show Likes on the whole screen'}
+    >
+      <Ionicons
+        name={paneToggle.wide ? 'contract-outline' : 'expand-outline'}
+        size={22}
+        color={colors.textPrimary}
+        style={{ width: 24 }}
+      />
+    </TouchableOpacity>
+  ) : navigation.canGoBack() ? (
+    <TouchableOpacity onPress={() => navigation.goBack()}>
+      <Ionicons name="chevron-back" size={24} color={colors.textPrimary} />
+    </TouchableOpacity>
+  ) : (
+    <View style={{ width: 24 }} />
+  );
+
   if (loading) {
     return (
       <SafeAreaView style={styles.container}>
         <View style={styles.header}>
-          {navigation.canGoBack() ? (
-            <TouchableOpacity onPress={() => navigation.goBack()}>
-              <Ionicons name="chevron-back" size={24} color={colors.textPrimary} />
-            </TouchableOpacity>
-          ) : (
-            <View style={{ width: 24 }} />
-          )}
+          {headerStart}
           <Text style={styles.headerTitle}>Likes</Text>
           <View style={{ width: 24 }} />
         </View>
@@ -357,15 +383,7 @@ export const LikeListScreen: React.FC<{ navigation: any }> = ({ navigation }) =>
   return (
     <SafeAreaView style={styles.container}>
       <View style={styles.header}>
-        {/* As the Match tab there is nothing to go back to; pushed from the
-            deck's heart button there is */}
-        {navigation.canGoBack() ? (
-          <TouchableOpacity onPress={() => navigation.goBack()}>
-            <Ionicons name="chevron-back" size={24} color={colors.textPrimary} />
-          </TouchableOpacity>
-        ) : (
-          <View style={{ width: 24 }} />
-        )}
+        {headerStart}
         <Text style={styles.headerTitle}>Likes</Text>
         <TouchableOpacity onPress={fetchLikes}>
           <Ionicons name="refresh" size={22} color={colors.textSecondary} />
