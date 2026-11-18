@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useCallback, useRef, useMemo } from 'react';
 import {
   View, Text, StyleSheet, FlatList, TouchableOpacity,
-  ActivityIndicator, RefreshControl, Dimensions,
+  ActivityIndicator, RefreshControl,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import Ionicons from '@expo/vector-icons/Ionicons';
@@ -11,6 +11,7 @@ import { DatingCategoryBadge, DatingCategory } from '../../components/common/Dat
 import { getPresenceSocket } from '../../services/presenceSocket';
 import { onProfileLiked, onPremiumChanged } from '../../services/appEvents';
 import { resolveUrl } from '../../config';
+import { usePaneWidth } from '../../hooks/usePaneWidth';
 import { colors, typography, spacing, radius } from '../../theme';
 
 interface GridProfile {
@@ -39,13 +40,21 @@ const PAGE_SIZE = 24;
 // two pairs, then the rhythm repeats: one big, two rows of two. Text sits
 // under the photo in black on white, never printed over it, so the photo
 // stays a photo and every name is readable whatever the picture.
-const SCREEN_WIDTH = Dimensions.get('window').width;
 const GAP = spacing.md;
-const CONTENT_WIDTH = SCREEN_WIDTH - spacing.xxl * 2;
-const PAIR_WIDTH = (CONTENT_WIDTH - GAP) / 2;
-// A near-square hero and 5:6 pairs: a hero plus one pair fit on one screen
-const HERO_PHOTO_H = Math.round(CONTENT_WIDTH * 0.9);
-const PAIR_PHOTO_H = Math.round(PAIR_WIDTH * 1.2);
+
+/**
+ * Card sizes for the width the grid is drawn in: the screen on a phone, the
+ * left pane beside the Likes list on a large screen (ExploreSplitScreen).
+ * Read live, so a turned tablet or an unfolded phone resizes the cards.
+ * A near-square hero and 5:6 pairs: a hero plus one pair fit on one screen.
+ */
+type TileLayout = { content: number; pair: number; heroPhotoH: number; pairPhotoH: number };
+
+function tileLayout(width: number): TileLayout {
+  const content = width - spacing.xxl * 2;
+  const pair = (content - GAP) / 2;
+  return { content, pair, heroPhotoH: Math.round(content * 0.9), pairPhotoH: Math.round(pair * 1.2) };
+}
 /** Profiles per rhythm inside a band: one hero, then two pairs */
 const RHYTHM = 5;
 
@@ -114,15 +123,17 @@ const primaryPhoto = (p: GridProfile) => p.photos.find((ph) => ph.isPrimary) || 
 const ProfileTile = React.memo(function ProfileTile({
   profile,
   hero,
+  layout,
   onPress,
 }: {
   profile: GridProfile;
   hero: boolean;
+  layout: TileLayout;
   onPress: (profile: GridProfile) => void;
 }) {
   const photo = primaryPhoto(profile);
-  const width = hero ? CONTENT_WIDTH : PAIR_WIDTH;
-  const photoHeight = hero ? HERO_PHOTO_H : PAIR_PHOTO_H;
+  const width = hero ? layout.content : layout.pair;
+  const photoHeight = hero ? layout.heroPhotoH : layout.pairPhotoH;
   const details = [
     profile.occupation || profile.interests.slice(0, 2).map((i) => i.name).join(' · ') || null,
     profile.distanceKm != null ? `~${profile.distanceKm} km` : null,
@@ -193,6 +204,8 @@ const ProfileTile = React.memo(function ProfileTile({
 });
 
 export const ExploreScreen: React.FC<{ navigation: any }> = ({ navigation }) => {
+  const paneWidth = usePaneWidth();
+  const layout = useMemo(() => tileLayout(paneWidth), [paneWidth]);
   const [profiles, setProfiles] = useState<GridProfile[]>([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
@@ -303,18 +316,18 @@ export const ExploreScreen: React.FC<{ navigation: any }> = ({ navigation }) => 
     if (item.kind === 'hero') {
       return (
         <View style={styles.row}>
-          <ProfileTile profile={item.profile} hero onPress={openProfile} />
+          <ProfileTile profile={item.profile} hero layout={layout} onPress={openProfile} />
         </View>
       );
     }
     const [a, b] = item.profiles;
     return (
       <View style={[styles.row, styles.pairRow]}>
-        <ProfileTile profile={a} hero={false} onPress={openProfile} />
-        {b ? <ProfileTile profile={b} hero={false} onPress={openProfile} /> : <View style={{ width: PAIR_WIDTH }} />}
+        <ProfileTile profile={a} hero={false} layout={layout} onPress={openProfile} />
+        {b ? <ProfileTile profile={b} hero={false} layout={layout} onPress={openProfile} /> : <View style={{ width: layout.pair }} />}
       </View>
     );
-  }, [openProfile]);
+  }, [openProfile, layout]);
 
   const keyExtractor = useCallback((row: Row) => row.key, []);
 
