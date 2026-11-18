@@ -7,7 +7,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import Ionicons from '@expo/vector-icons/Ionicons';
 import { api } from '../../services/api';
 import { getPresenceSocket } from '../../services/presenceSocket';
-import { onLikeAnswered, onPremiumChanged } from '../../services/appEvents';
+import { emitLikeAnswered, onLikeAnswered, onPremiumChanged } from '../../services/appEvents';
 import { useToast } from '../../hooks/useToast';
 import { useAuthStore } from '../../store/authStore';
 import { resolveUrl } from '../../config';
@@ -80,6 +80,12 @@ export const LikeListScreen: React.FC<{ navigation: any }> = ({ navigation }) =>
   const loadingMoreRef = useRef(false);
   const [loadingMore, setLoadingMore] = useState(false);
   const [moreFailed, setMoreFailed] = useState(false);
+
+  // Likes answered on this copy of the list. On a large screen the list is
+  // shown twice (the Match tab, and beside Explore): an answer here tells the
+  // other copy (emitLikeAnswered), and this copy skips its own echo so the
+  // card and the hidden-likes total drop only once.
+  const answeredHereRef = useRef(new Set<string>());
 
   // One fewer person waiting: drop the card, and the total with it
   // (otherwise a blurred "one more" card would appear)
@@ -161,9 +167,11 @@ export const LikeListScreen: React.FC<{ navigation: any }> = ({ navigation }) =>
       fetchLikes();
     });
 
-    // Answered in Discover after opening the card there. Discover refreshes
-    // the badge itself: this screen can be open twice (tab and pushed).
+    // Answered in Discover after opening the card there, or on the other
+    // copy of this list. Whoever answered refreshes the badge: this screen
+    // can be open twice (tab and pushed, or tab and beside Explore).
     const offLikeAnswered = onLikeAnswered((userId) => {
+      if (answeredHereRef.current.delete(userId)) return;
       if (likesRef.current.some((l) => l.userId === userId)) dropLike(userId);
     });
 
@@ -190,11 +198,15 @@ export const LikeListScreen: React.FC<{ navigation: any }> = ({ navigation }) =>
         // Remove from list; one fewer person waiting, so the badge drops too
         dropLike(targetUserId);
         useAuthStore.setState((s) => ({ unreadLikeCount: Math.max(0, s.unreadLikeCount - 1) }));
+        answeredHereRef.current.add(targetUserId);
+        emitLikeAnswered(targetUserId);
       } else if (res.error?.code === 'NOT_FOUND') {
         // The like no longer exists for this viewer (withdrawn by a block,
         // or already answered elsewhere): drop the card quietly
         dropLike(targetUserId);
         useAuthStore.setState((s) => ({ unreadLikeCount: Math.max(0, s.unreadLikeCount - 1) }));
+        answeredHereRef.current.add(targetUserId);
+        emitLikeAnswered(targetUserId);
       } else if (res.error?.code === 'CHAT_LIMIT_REACHED') {
         const details = (res.error as any)?.details;
         setPaywall({

@@ -41,7 +41,9 @@ const LIKE_ANSWERED = 'kinetik:like:answered';
 
 /**
  * A like was answered (liked back or rejected) from Discover, where a liker
- * opened from the Likes list is shown in full. The Likes list drops them.
+ * opened from the Likes list is shown in full, or on one copy of the Likes
+ * list (a large screen shows it in the Match tab and beside Explore). The
+ * Likes list drops them.
  */
 export function emitLikeAnswered(userId: string): void {
   DeviceEventEmitter.emit(LIKE_ANSWERED, { userId });
