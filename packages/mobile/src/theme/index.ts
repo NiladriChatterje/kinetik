@@ -56,8 +56,11 @@ export const colors = {
   inputBg: '#F5F5F5',
   inputBorder: 'rgba(0, 0, 0, 0.12)',
   inputFocusBorder: '#000000',
-  tabBarBg: '#FFFFFF',
+  // Floating tab pill: frosted white, hairline edge, soft lift
+  tabBarBg: 'rgba(255, 255, 255, 0.88)',
   tabBarBorder: 'rgba(0, 0, 0, 0.08)',
+  tabBarShadow: '0px 8px 24px rgba(0, 0, 0, 0.12), 0px 1px 3px rgba(0, 0, 0, 0.06)',
+  tabBarRipple: 'rgba(0, 0, 0, 0.06)',
 };
 
 // ─── Typography ──────────────────────────────────────────

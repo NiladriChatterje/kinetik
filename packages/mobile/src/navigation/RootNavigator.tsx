@@ -2,10 +2,11 @@ import React from 'react';
 import { ActivityIndicator, View, StyleSheet, Text } from 'react-native';
 import { createNavigationContainerRef, NavigationContainer } from '@react-navigation/native';
 import { createStackNavigator } from '@react-navigation/stack';
-import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
+import { createBottomTabNavigator, type BottomTabBarProps } from '@react-navigation/bottom-tabs';
 import Ionicons from '@expo/vector-icons/Ionicons';
 import { useAuthStore } from '../store/authStore';
 import { colors, typography } from '../theme';
+import { FloatingTabBar } from './FloatingTabBar';
 
 /** Tab icon with a count badge — used by the Match and Chat tabs */
 function TabIcon({
@@ -220,25 +221,13 @@ PreferencesNavigator.displayName = 'PreferencesNavigator';
 
 const tabBarScreenOptions = {
   headerShown: false,
-  tabBarStyle: {
-    backgroundColor: colors.tabBarBg,
-    borderTopColor: colors.tabBarBorder,
-    borderTopWidth: 1,
-    height: 80,
-    paddingBottom: 20,
-    paddingTop: 10,
-  },
-  tabBarActiveTintColor: colors.textPrimary,
-  tabBarInactiveTintColor: colors.textMuted,
-  tabBarLabelStyle: {
-    ...typography.caption,
-    fontSize: 10,
-  },
 };
+
+const renderTabBar = (props: BottomTabBarProps) => <FloatingTabBar {...props} />;
 
 const MainTabNavigator = React.memo(function MainTabNavigator() {
   return (
-    <MainTab.Navigator screenOptions={tabBarScreenOptions}>
+    <MainTab.Navigator screenOptions={tabBarScreenOptions} tabBar={renderTabBar}>
       <MainTab.Screen
         name="Explore"
         component={ExploreSplitScreen}
