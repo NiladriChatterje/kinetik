@@ -1,5 +1,5 @@
 import React, { useContext, useEffect, useState } from 'react';
-import { Keyboard, Pressable, StyleSheet, Text, View } from 'react-native';
+import { Image, Keyboard, Pressable, StyleSheet, Text, View } from 'react-native';
 import { BottomTabBarHeightContext, type BottomTabBarProps } from '@react-navigation/bottom-tabs';
 import { CommonActions } from '@react-navigation/native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -7,9 +7,9 @@ import { colors, typography } from '../theme';
 
 /**
  * The main tabs as a compact pill floating over the bottom of the screen:
- * matte slate glass with white icons and labels (the open tab full white,
- * the others dimmed), a lit hairline edge and a soft shadow to lift it off
- * the page.
+ * flat matte near-black slate with a fine grain, white icons and labels
+ * (the open tab full white, the others dimmed), a hairline edge and a soft
+ * shadow to lift it off the page.
  *
  * The screens run under it, so a tab's scrolling list pads its end by
  * useTabBarSpace() to let the last row scroll clear of the pill. It hides
@@ -22,6 +22,13 @@ const BAR_HEIGHT = 58;
 const BAR_GAP = 12;
 /** Width of one tab; fixed so the icons sit close together, not spread out. */
 const ITEM_WIDTH = 68;
+/** Softly rounded corners rather than full round ends. */
+const BAR_RADIUS = 20;
+/**
+ * Tile of faint black and white specks (about 5% opacity on average). The
+ * file is grain@2x.png, 128px drawn as 64 dp; Metro picks it from this name.
+ */
+const GRAIN = require('../assets/images/grain.png');
 
 function useKeyboardVisible(enabled = true): boolean {
   const [visible, setVisible] = useState(false);
@@ -59,6 +66,10 @@ export const FloatingTabBar: React.FC<BottomTabBarProps> = ({ state, descriptors
   return (
     <View pointerEvents="box-none" style={[styles.wrap, { bottom: bottom + BAR_GAP }]}>
       <View style={styles.pill} accessibilityRole="tablist">
+        {/* Fine grain over the flat fill: the matte finish */}
+        <View pointerEvents="none" style={styles.grainClip}>
+          <Image source={GRAIN} resizeMode="repeat" style={StyleSheet.absoluteFill} />
+        </View>
         {state.routes.map((route, index) => {
           const { options } = descriptors[route.key];
           const focused = index === state.index;
@@ -110,14 +121,18 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     height: BAR_HEIGHT,
     paddingHorizontal: 6,
-    // Softly rounded corners rather than full round ends
-    borderRadius: 20,
+    borderRadius: BAR_RADIUS,
     backgroundColor: colors.tabBarBg,
-    // The glass sheen, clipped to the rounded corners (new architecture)
-    experimental_backgroundImage: colors.tabBarSheen,
     borderWidth: StyleSheet.hairlineWidth,
     borderColor: colors.tabBarBorder,
     boxShadow: colors.tabBarShadow,
+  },
+  // Its own clip, so the pill itself keeps no overflow clip that could cut
+  // its shadow
+  grainClip: {
+    ...StyleSheet.absoluteFill,
+    borderRadius: BAR_RADIUS,
+    overflow: 'hidden',
   },
   item: {
     width: ITEM_WIDTH,

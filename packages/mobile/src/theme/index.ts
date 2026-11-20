@@ -56,21 +56,19 @@ export const colors = {
   inputBg: '#F5F5F5',
   inputBorder: 'rgba(0, 0, 0, 0.12)',
   inputFocusBorder: '#000000',
-  // Floating tab bar: matte slate glass. Slate (#334155) at 99% (1% see-
-  // through), a faint top-down sheen and a lit top edge for the glass look,
-  // kept soft so it stays matte, and a cool slate shadow to lift it
-  tabBarBg: 'rgba(51, 65, 85, 0.99)',
-  tabBarSheen: 'linear-gradient(180deg, rgba(255, 255, 255, 0.10) 0%, rgba(255, 255, 255, 0.03) 55%, rgba(255, 255, 255, 0) 100%)',
-  tabBarBorder: 'rgba(255, 255, 255, 0.14)',
-  tabBarShadow:
-    'inset 0px 1px 0px rgba(255, 255, 255, 0.12), 0px 10px 28px rgba(15, 23, 42, 0.28), 0px 2px 6px rgba(15, 23, 42, 0.16)',
+  // Floating tab bar: flat matte near-black slate (#111827) at 99% (1% see-
+  // through), no gradient or shine; a fine grain texture laid over it
+  // (assets/images/grain@2x.png) gives the matte, slightly grainy finish
+  tabBarBg: 'rgba(17, 24, 39, 0.99)',
+  tabBarBorder: 'rgba(255, 255, 255, 0.08)',
+  tabBarShadow: '0px 10px 28px rgba(2, 6, 23, 0.30), 0px 2px 6px rgba(2, 6, 23, 0.18)',
   tabBarRipple: 'rgba(255, 255, 255, 0.16)',
   tabBarActive: '#FFFFFF',
   // Still white, dimmed so the open tab stands out
   tabBarInactive: 'rgba(255, 255, 255, 0.68)',
   // Count badge on the slate bar: white with slate figures
   tabBarBadgeBg: '#FFFFFF',
-  tabBarBadgeText: '#334155',
+  tabBarBadgeText: '#111827',
 };
 
 // ─── Typography ──────────────────────────────────────────
