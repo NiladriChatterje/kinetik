@@ -56,19 +56,20 @@ export const colors = {
   inputBg: '#F5F5F5',
   inputBorder: 'rgba(0, 0, 0, 0.12)',
   inputFocusBorder: '#000000',
-  // Floating tab bar: flat matte near-black slate (#111827) at 99% (1% see-
-  // through), no gradient or shine; a fine grain texture laid over it
-  // (assets/images/grain@2x.png) gives the matte, slightly grainy finish
-  tabBarBg: 'rgba(17, 24, 39, 0.99)',
+  // Floating tab bar: flat matte near-black (#0C0D10, a touch softer than
+  // pure black, not grey) at 99% (1% see-through), no gradient or shine; a
+  // fine grain texture laid over it (assets/images/grain@2x.png) gives the
+  // matte, slightly grainy finish
+  tabBarBg: 'rgba(12, 13, 16, 0.99)',
   tabBarBorder: 'rgba(255, 255, 255, 0.08)',
   tabBarShadow: '0px 10px 28px rgba(2, 6, 23, 0.30), 0px 2px 6px rgba(2, 6, 23, 0.18)',
   tabBarRipple: 'rgba(255, 255, 255, 0.16)',
   tabBarActive: '#FFFFFF',
   // Still white, dimmed so the open tab stands out
   tabBarInactive: 'rgba(255, 255, 255, 0.68)',
-  // Count badge on the slate bar: white with slate figures
+  // Count badge on the dark bar: white with near-black figures
   tabBarBadgeBg: '#FFFFFF',
-  tabBarBadgeText: '#111827',
+  tabBarBadgeText: '#0C0D10',
 };
 
 // ─── Typography ──────────────────────────────────────────

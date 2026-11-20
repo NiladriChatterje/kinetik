@@ -7,7 +7,7 @@ import { colors, typography } from '../theme';
 
 /**
  * The main tabs as a compact pill floating over the bottom of the screen:
- * flat matte near-black slate with a fine grain, white icons and labels
+ * flat matte near-black with a fine grain, white icons and labels
  * (the open tab full white, the others dimmed), a hairline edge and a soft
  * shadow to lift it off the page.
  *
