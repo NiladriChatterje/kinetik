@@ -220,45 +220,69 @@ export const ExploreScreen: React.FC<{ navigation: any }> = ({ navigation }) => 
   const [refreshing, setRefreshing] = useState(false);
   const [hasMore, setHasMore] = useState(true);
   const loadingMoreRef = useRef(false);
+  // A page that failed: the footer offers a retry instead of the list asking
+  // again by itself on every scroll
+  const [moreFailed, setMoreFailed] = useState(false);
+  const moreFailedRef = useRef(false);
   const offsetRef = useRef(0);
+  // A reload starts the list over. It bumps the generation, so a next page
+  // asked for before it is dropped instead of landing on the new list with
+  // an offset that no longer fits, and no next page is asked for while one
+  // runs.
+  const generationRef = useRef(0);
+  const reloadsInFlightRef = useRef(0);
   // Mirrors `profiles` for the socket/event handlers, which are set up once
   const profilesRef = useRef<GridProfile[]>([]);
   profilesRef.current = profiles;
 
   const fetchProfiles = useCallback(async (asRefresh = false) => {
+    const generation = ++generationRef.current;
+    reloadsInFlightRef.current += 1;
     asRefresh ? setRefreshing(true) : setLoading(true);
     try {
       const res = await api.getExploreProfiles(0, PAGE_SIZE);
-      if (res.success && res.data) {
+      // A later reload owns the list now
+      if (generation === generationRef.current && res.success && res.data) {
         setProfiles(res.data.profiles || []);
         offsetRef.current = (res.data.profiles || []).length;
         setHasMore(res.data.hasMore ?? false);
+        moreFailedRef.current = false;
+        setMoreFailed(false);
       }
     } catch {
       // Keep whatever is on screen — user can pull to retry
     } finally {
-      setLoading(false);
-      setRefreshing(false);
+      reloadsInFlightRef.current -= 1;
+      if (reloadsInFlightRef.current === 0) {
+        setLoading(false);
+        setRefreshing(false);
+      }
     }
   }, []);
 
   /** Infinite scroll: append the next page, deduped against the list. */
   const loadMore = useCallback(async () => {
-    if (loadingMoreRef.current || !hasMore) return;
+    if (loadingMoreRef.current || !hasMore || reloadsInFlightRef.current > 0) return;
+    const generation = generationRef.current;
     loadingMoreRef.current = true;
+    moreFailedRef.current = false;
+    setMoreFailed(false);
     try {
       const res = await api.getExploreProfiles(offsetRef.current, PAGE_SIZE);
-      if (res.success && res.data) {
-        const page: GridProfile[] = res.data.profiles || [];
-        offsetRef.current += page.length;
-        setHasMore(res.data.hasMore ?? false);
-        setProfiles((prev) => {
-          const seen = new Set(prev.map((p) => p.userId));
-          return [...prev, ...page.filter((p) => !seen.has(p.userId))];
-        });
-      }
+      if (generation !== generationRef.current) return; // the list was reloaded meanwhile
+      if (!res.success || !res.data) throw new Error(res.error?.message);
+      const page: GridProfile[] = res.data.profiles || [];
+      offsetRef.current += page.length;
+      setHasMore(res.data.hasMore ?? false);
+      setProfiles((prev) => {
+        const seen = new Set(prev.map((p) => p.userId));
+        return [...prev, ...page.filter((p) => !seen.has(p.userId))];
+      });
     } catch {
-      // Scroll again to retry
+      if (generation === generationRef.current) {
+        moreFailedRef.current = true;
+        setMoreFailed(true);
+      }
     } finally {
       loadingMoreRef.current = false;
     }
@@ -385,7 +409,10 @@ export const ExploreScreen: React.FC<{ navigation: any }> = ({ navigation }) => 
           maxToRenderPerBatch={6}
           windowSize={7}
           initialNumToRender={4}
-          onEndReached={() => loadMore()}
+          // After a failed page only the footer's retry asks again
+          onEndReached={() => {
+            if (!moreFailedRef.current) loadMore();
+          }}
           onEndReachedThreshold={1.5}
           refreshControl={
             <RefreshControl
@@ -395,7 +422,11 @@ export const ExploreScreen: React.FC<{ navigation: any }> = ({ navigation }) => 
             />
           }
           ListFooterComponent={
-            hasMore ? (
+            moreFailed ? (
+              <TouchableOpacity style={styles.footerRetry} onPress={() => loadMore()} accessibilityRole="button">
+                <Text style={styles.footerRetryText}>Couldn't load more · Tap to retry</Text>
+              </TouchableOpacity>
+            ) : hasMore ? (
               <ActivityIndicator style={styles.footerHint} size="small" color={colors.textMuted} />
             ) : (
               <Text style={styles.footerHint}>That's everyone on Kinetik right now</Text>
@@ -514,4 +545,7 @@ const styles = StyleSheet.create({
     textAlign: 'center',
     marginTop: spacing.xl,
   },
+  // Same wording and look as the Chat and Likes lists' retry
+  footerRetry: { alignItems: 'center', paddingVertical: spacing.lg, marginTop: spacing.sm },
+  footerRetryText: { ...typography.body2, color: colors.textSecondary },
 });
