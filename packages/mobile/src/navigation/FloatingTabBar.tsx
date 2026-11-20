@@ -7,8 +7,8 @@ import { colors, typography } from '../theme';
 
 /**
  * The main tabs as a compact pill floating over the bottom of the screen:
- * frosted white (mostly opaque, so what scrolls under it shows only
- * faintly), a hairline edge and a soft shadow to lift it off the page.
+ * solid black with white icons and labels (the open tab full white, the
+ * others dimmed), a hairline edge and a soft shadow to lift it off the page.
  *
  * The screens run under it, so a tab's scrolling list pads its end by
  * useTabBarSpace() to let the last row scroll clear of the pill. It hides
@@ -61,7 +61,7 @@ export const FloatingTabBar: React.FC<BottomTabBarProps> = ({ state, descriptors
         {state.routes.map((route, index) => {
           const { options } = descriptors[route.key];
           const focused = index === state.index;
-          const color = focused ? colors.textPrimary : colors.textMuted;
+          const color = focused ? colors.tabBarActive : colors.tabBarInactive;
           const label = typeof options.tabBarLabel === 'string' ? options.tabBarLabel : options.title ?? route.name;
 
           const onPress = () => {
@@ -113,8 +113,6 @@ const styles = StyleSheet.create({
     backgroundColor: colors.tabBarBg,
     borderWidth: StyleSheet.hairlineWidth,
     borderColor: colors.tabBarBorder,
-    // Drawn outside the pill only (unlike elevation), so it does not show
-    // through the translucent fill
     boxShadow: colors.tabBarShadow,
   },
   item: {

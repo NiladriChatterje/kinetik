@@ -56,11 +56,14 @@ export const colors = {
   inputBg: '#F5F5F5',
   inputBorder: 'rgba(0, 0, 0, 0.12)',
   inputFocusBorder: '#000000',
-  // Floating tab pill: frosted white, hairline edge, soft lift
-  tabBarBg: 'rgba(255, 255, 255, 0.88)',
-  tabBarBorder: 'rgba(0, 0, 0, 0.08)',
-  tabBarShadow: '0px 8px 24px rgba(0, 0, 0, 0.12), 0px 1px 3px rgba(0, 0, 0, 0.06)',
-  tabBarRipple: 'rgba(0, 0, 0, 0.06)',
+  // Floating tab pill: solid black, white icons and labels, soft lift
+  tabBarBg: '#000000',
+  tabBarBorder: 'rgba(255, 255, 255, 0.08)',
+  tabBarShadow: '0px 8px 24px rgba(0, 0, 0, 0.18), 0px 1px 3px rgba(0, 0, 0, 0.10)',
+  tabBarRipple: 'rgba(255, 255, 255, 0.14)',
+  tabBarActive: '#FFFFFF',
+  // Still white, dimmed so the open tab stands out
+  tabBarInactive: 'rgba(255, 255, 255, 0.55)',
 };
 
 // ─── Typography ──────────────────────────────────────────
