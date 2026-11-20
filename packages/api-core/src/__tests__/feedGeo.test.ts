@@ -116,8 +116,8 @@ describe('GET /matches/profiles — distance-aware feed', () => {
       const [q] = feedQueries();
       expectPlaceholdersMatchParams(q);
       // a pass of theirs, and a like from them they discarded
-      expect(q.sql).toMatch(/action = 'pass'\s+AND created_at > NOW\(\) - INTERVAL '7 days'/);
-      expect(q.sql).toMatch(/responded_at IS NULL\s+OR responded_at > NOW\(\) - INTERVAL '7 days'/);
+      expect(q.sql).toMatch(/action = 'pass'\s+AND created_at > NOW\(\) - INTERVAL '2 days'/);
+      expect(q.sql).toMatch(/responded_at IS NULL\s+OR responded_at > NOW\(\) - INTERVAL '2 days'/);
     });
   });
 

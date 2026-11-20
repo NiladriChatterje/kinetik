@@ -57,7 +57,7 @@ const FREE_VISIBLE_LIKES = 5;
  * passed on, or whose like they discarded. After that it circulates again.
  * Other viewers are unaffected.
  */
-const REJECT_COOLDOWN_DAYS = 7;
+const REJECT_COOLDOWN_DAYS = 2;
 
 /**
  * Who the viewer ($1) cannot swipe on, for the deck and Explore alike:
