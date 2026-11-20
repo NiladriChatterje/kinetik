@@ -56,18 +56,18 @@ export const colors = {
   inputBg: '#F5F5F5',
   inputBorder: 'rgba(0, 0, 0, 0.12)',
   inputFocusBorder: '#000000',
-  // Floating tab bar: the app's red (#E53935), white icons and labels,
-  // a soft red-tinted lift
-  tabBarBg: '#E53935',
+  // Floating tab bar: a deeper shade of the app's red (#E53935), white
+  // icons and labels, a soft red-tinted lift
+  tabBarBg: '#C62828',
   tabBarBorder: 'rgba(255, 255, 255, 0.12)',
-  tabBarShadow: '0px 8px 24px rgba(229, 57, 53, 0.28), 0px 1px 3px rgba(0, 0, 0, 0.12)',
+  tabBarShadow: '0px 8px 24px rgba(198, 40, 40, 0.28), 0px 1px 3px rgba(0, 0, 0, 0.12)',
   tabBarRipple: 'rgba(255, 255, 255, 0.18)',
   tabBarActive: '#FFFFFF',
   // Still white, dimmed so the open tab stands out
   tabBarInactive: 'rgba(255, 255, 255, 0.68)',
   // Count badge on the red bar: white with red figures
   tabBarBadgeBg: '#FFFFFF',
-  tabBarBadgeText: '#E53935',
+  tabBarBadgeText: '#C62828',
 };
 
 // ─── Typography ──────────────────────────────────────────
