@@ -24,11 +24,43 @@ const BAR_GAP = 12;
 const ITEM_WIDTH = 68;
 /** Softly rounded corners rather than full round ends. */
 const BAR_RADIUS = 20;
+/** Space between the pill's edge and the first and last tab. */
+const BAR_PADDING = 6;
 /**
  * Tile of faint black and white specks (about 5% opacity on average). The
  * file is grain@2x.png, 128px drawn as 64 dp; Metro picks it from this name.
  */
 const GRAIN = require('../assets/images/grain.png');
+const GRAIN_TILE = 64;
+
+/**
+ * The grain laid edge to edge as separate tiles. resizeMode="repeat" drew a
+ * single tile in the corner on Android (only the first tab looked grainy),
+ * so the tiles are placed here instead; the bitmap is decoded once and
+ * shared by all of them.
+ */
+const GrainTiles = React.memo(function GrainTiles({ width }: { width: number }) {
+  const cols = Math.ceil(width / GRAIN_TILE);
+  const rows = Math.ceil(BAR_HEIGHT / GRAIN_TILE);
+  const tiles: React.ReactNode[] = [];
+  for (let r = 0; r < rows; r++) {
+    for (let c = 0; c < cols; c++) {
+      tiles.push(
+        <Image
+          key={`${r}-${c}`}
+          source={GRAIN}
+          fadeDuration={0}
+          style={[styles.grainTile, { left: c * GRAIN_TILE, top: r * GRAIN_TILE }]}
+        />,
+      );
+    }
+  }
+  return (
+    <View pointerEvents="none" style={styles.grainClip}>
+      {tiles}
+    </View>
+  );
+});
 
 function useKeyboardVisible(enabled = true): boolean {
   const [visible, setVisible] = useState(false);
@@ -67,9 +99,7 @@ export const FloatingTabBar: React.FC<BottomTabBarProps> = ({ state, descriptors
     <View pointerEvents="box-none" style={[styles.wrap, { bottom: bottom + BAR_GAP }]}>
       <View style={styles.pill} accessibilityRole="tablist">
         {/* Fine grain over the flat fill: the matte finish */}
-        <View pointerEvents="none" style={styles.grainClip}>
-          <Image source={GRAIN} resizeMode="repeat" style={StyleSheet.absoluteFill} />
-        </View>
+        <GrainTiles width={state.routes.length * ITEM_WIDTH + BAR_PADDING * 2} />
         {state.routes.map((route, index) => {
           const { options } = descriptors[route.key];
           const focused = index === state.index;
@@ -120,7 +150,7 @@ const styles = StyleSheet.create({
   pill: {
     flexDirection: 'row',
     height: BAR_HEIGHT,
-    paddingHorizontal: 6,
+    paddingHorizontal: BAR_PADDING,
     borderRadius: BAR_RADIUS,
     backgroundColor: colors.tabBarBg,
     borderWidth: StyleSheet.hairlineWidth,
@@ -133,6 +163,11 @@ const styles = StyleSheet.create({
     ...StyleSheet.absoluteFill,
     borderRadius: BAR_RADIUS,
     overflow: 'hidden',
+  },
+  grainTile: {
+    position: 'absolute',
+    width: GRAIN_TILE,
+    height: GRAIN_TILE,
   },
   item: {
     width: ITEM_WIDTH,
