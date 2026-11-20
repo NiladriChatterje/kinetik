@@ -56,19 +56,21 @@ export const colors = {
   inputBg: '#F5F5F5',
   inputBorder: 'rgba(0, 0, 0, 0.12)',
   inputFocusBorder: '#000000',
-  // Floating tab bar: a deep shade of the app's red (#E53935), dark enough
-  // that red alerts and pills (#E53935, #FF6B6B, #F87171) read apart from it;
-  // white icons and labels, a soft red-tinted lift
-  tabBarBg: '#B71C1C',
-  tabBarBorder: 'rgba(255, 255, 255, 0.12)',
-  tabBarShadow: '0px 8px 24px rgba(183, 28, 28, 0.30), 0px 1px 3px rgba(0, 0, 0, 0.12)',
-  tabBarRipple: 'rgba(255, 255, 255, 0.18)',
+  // Floating tab bar: matte slate glass. Slate (#334155) at 99% (1% see-
+  // through), a faint top-down sheen and a lit top edge for the glass look,
+  // kept soft so it stays matte, and a cool slate shadow to lift it
+  tabBarBg: 'rgba(51, 65, 85, 0.99)',
+  tabBarSheen: 'linear-gradient(180deg, rgba(255, 255, 255, 0.10) 0%, rgba(255, 255, 255, 0.03) 55%, rgba(255, 255, 255, 0) 100%)',
+  tabBarBorder: 'rgba(255, 255, 255, 0.14)',
+  tabBarShadow:
+    'inset 0px 1px 0px rgba(255, 255, 255, 0.12), 0px 10px 28px rgba(15, 23, 42, 0.28), 0px 2px 6px rgba(15, 23, 42, 0.16)',
+  tabBarRipple: 'rgba(255, 255, 255, 0.16)',
   tabBarActive: '#FFFFFF',
   // Still white, dimmed so the open tab stands out
   tabBarInactive: 'rgba(255, 255, 255, 0.68)',
-  // Count badge on the red bar: white with red figures
+  // Count badge on the slate bar: white with slate figures
   tabBarBadgeBg: '#FFFFFF',
-  tabBarBadgeText: '#B71C1C',
+  tabBarBadgeText: '#334155',
 };
 
 // ─── Typography ──────────────────────────────────────────

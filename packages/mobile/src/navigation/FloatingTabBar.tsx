@@ -7,8 +7,9 @@ import { colors, typography } from '../theme';
 
 /**
  * The main tabs as a compact pill floating over the bottom of the screen:
- * the app's red with white icons and labels (the open tab full white, the
- * others dimmed), a hairline edge and a soft shadow to lift it off the page.
+ * matte slate glass with white icons and labels (the open tab full white,
+ * the others dimmed), a lit hairline edge and a soft shadow to lift it off
+ * the page.
  *
  * The screens run under it, so a tab's scrolling list pads its end by
  * useTabBarSpace() to let the last row scroll clear of the pill. It hides
@@ -112,6 +113,8 @@ const styles = StyleSheet.create({
     // Softly rounded corners rather than full round ends
     borderRadius: 20,
     backgroundColor: colors.tabBarBg,
+    // The glass sheen, clipped to the rounded corners (new architecture)
+    experimental_backgroundImage: colors.tabBarSheen,
     borderWidth: StyleSheet.hairlineWidth,
     borderColor: colors.tabBarBorder,
     boxShadow: colors.tabBarShadow,
