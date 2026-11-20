@@ -62,6 +62,14 @@ export const ChatListScreen: React.FC<ChatListScreenProps> = ({ navigation, onOp
   const loadingMoreRef = useRef(false);
   const [loadingMore, setLoadingMore] = useState(false);
   const [moreFailed, setMoreFailed] = useState(false);
+  const moreFailedRef = useRef(false);
+  // A reload (focus, a new match, a message for a chat not listed yet)
+  // starts the list over from the first page. It bumps the generation, so a
+  // next page asked for before it is dropped instead of landing after the
+  // new first page with a cursor from the old list, and no next page is
+  // asked for while one runs.
+  const generationRef = useRef(0);
+  const reloadsInFlightRef = useRef(0);
 
   // A list that could not be loaded at all (the database may still be waking
   // up) is retried on its own while the spinner shows, then offered as "Try
@@ -81,15 +89,23 @@ export const ChatListScreen: React.FC<ChatListScreenProps> = ({ navigation, onOp
       retryTimerRef.current = null;
     }
     let loaded = false;
+    const generation = ++generationRef.current;
+    reloadsInFlightRef.current += 1;
     try {
       setLoading(true);
       const res = await api.getConversations();
+      if (generation !== generationRef.current) {
+        // A later reload owns the list; this answer is out of date. That
+        // reload also settles the spinner and any retry.
+        return;
+      }
       if (res.success && res.data) {
         loaded = true;
         const list = res.data.conversations || [];
         conversationsRef.current = list;
         setConversations(list);
         nextCursorRef.current = res.data.nextCursor ?? null;
+        moreFailedRef.current = false;
         setMoreFailed(false);
         roomIdsRef.current = res.data.matchIds ?? list.map((conv: Conversation) => conv.matchId);
         // The tab badge counts the chats with unread messages, on any page.
@@ -106,6 +122,8 @@ export const ChatListScreen: React.FC<ChatListScreenProps> = ({ navigation, onOp
       }
     } catch {
       // Handled below like any other failed load
+    } finally {
+      reloadsInFlightRef.current -= 1;
     }
     if (!mountedRef.current) return;
     if (loaded || conversationsRef.current.length > 0) {
@@ -133,11 +151,15 @@ export const ChatListScreen: React.FC<ChatListScreenProps> = ({ navigation, onOp
   // retry instead of asking again on every scroll.
   const loadMore = useCallback(async () => {
     const cursor = nextCursorRef.current;
-    if (!cursor || loadingMoreRef.current) return;
+    if (!cursor || loadingMoreRef.current || reloadsInFlightRef.current > 0) return;
+    const generation = generationRef.current;
     loadingMoreRef.current = true;
+    moreFailedRef.current = false;
     setLoadingMore(true);
+    setMoreFailed(false);
     try {
       const res = await api.getConversations({ cursor });
+      if (generation !== generationRef.current) return; // the list was reloaded meanwhile
       if (!res.success || !res.data) throw new Error(res.error?.message);
       // A chat that moved up meanwhile is already listed
       const page = (res.data.conversations || []).filter(
@@ -147,9 +169,11 @@ export const ChatListScreen: React.FC<ChatListScreenProps> = ({ navigation, onOp
       conversationsRef.current = [...conversationsRef.current, ...page];
       if (!mountedRef.current) return;
       setConversations((prev) => [...prev, ...page]);
-      setMoreFailed(false);
     } catch {
-      if (mountedRef.current) setMoreFailed(true);
+      if (mountedRef.current && generation === generationRef.current) {
+        moreFailedRef.current = true;
+        setMoreFailed(true);
+      }
     } finally {
       loadingMoreRef.current = false;
       if (mountedRef.current) setLoadingMore(false);
@@ -413,7 +437,10 @@ export const ChatListScreen: React.FC<ChatListScreenProps> = ({ navigation, onOp
           maxToRenderPerBatch={10}
           windowSize={7}
           initialNumToRender={8}
-          onEndReached={loadMore}
+          // After a failed page only the footer's retry asks again
+          onEndReached={() => {
+            if (!moreFailedRef.current) loadMore();
+          }}
           onEndReachedThreshold={0.5}
           ListFooterComponent={
             loadingMore ? (
