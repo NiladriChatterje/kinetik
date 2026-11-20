@@ -149,8 +149,13 @@ const ProfileTile = React.memo(function ProfileTile({
     >
       <View style={[styles.photoFrame, { height: photoHeight }]}>
         {photo ? (
+          // The 300px thumbnail paints at once; the full photo (max 1200px,
+          // WebP) fades in over it. The thumbnail alone looked soft once
+          // stretched across a tile ~500-1100 physical px wide.
           <ProgressiveImage
-            uri={resolveUrl(photo.thumbnailUrl || photo.url)}
+            key={photo.id}
+            thumbnailUri={photo.thumbnailUrl ? resolveUrl(photo.thumbnailUrl) : undefined}
+            uri={resolveUrl(photo.url)}
             style={[styles.photo, profile.likedYou && styles.likedYouPhoto]}
           />
         ) : (
