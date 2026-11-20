@@ -27,8 +27,10 @@ const BAR_RADIUS = 20;
 /** Space between the pill's edge and the first and last tab. */
 const BAR_PADDING = 6;
 /**
- * Tile of faint black and white specks (about 5% opacity on average). The
- * file is grain@2x.png, 128px drawn as 64 dp; Metro picks it from this name.
+ * Tile of fine film grain: faint black and white specks, about 6% opacity
+ * on average. The file is grain@3x.png, 192px drawn as 64 dp, so on most
+ * phones one speck is one screen pixel (the finest, crispest grain); Metro
+ * picks it from this name.
  */
 const GRAIN = require('../assets/images/grain.png');
 const GRAIN_TILE = 64;

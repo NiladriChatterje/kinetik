@@ -58,7 +58,7 @@ export const colors = {
   inputFocusBorder: '#000000',
   // Floating tab bar: flat matte near-black (#0C0D10, a touch softer than
   // pure black, not grey) at 99% (1% see-through), no gradient or shine; a
-  // fine grain texture laid over it (assets/images/grain@2x.png) gives the
+  // fine grain texture laid over it (assets/images/grain@3x.png) gives the
   // matte, slightly grainy finish
   tabBarBg: 'rgba(12, 13, 16, 0.99)',
   tabBarBorder: 'rgba(255, 255, 255, 0.08)',
