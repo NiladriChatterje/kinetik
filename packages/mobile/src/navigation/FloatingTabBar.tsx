@@ -109,7 +109,8 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     height: BAR_HEIGHT,
     paddingHorizontal: 6,
-    borderRadius: BAR_HEIGHT / 2,
+    // Softly rounded corners rather than full round ends
+    borderRadius: 20,
     backgroundColor: colors.tabBarBg,
     borderWidth: StyleSheet.hairlineWidth,
     borderColor: colors.tabBarBorder,
