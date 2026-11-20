@@ -4,6 +4,7 @@ import {
   ActivityIndicator,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
+import { useTabBarSpace } from '../../navigation/FloatingTabBar';
 import Ionicons from '@expo/vector-icons/Ionicons';
 import { Socket } from 'socket.io-client';
 import { useFocusEffect } from '@react-navigation/native';
@@ -46,6 +47,9 @@ interface ChatListScreenProps {
 }
 
 export const ChatListScreen: React.FC<ChatListScreenProps> = ({ navigation, onOpenChat, selectedMatchId }) => {
+  // Room for the floating tab pill under the list's end (0 outside the tabs)
+  const tabSpace = useTabBarSpace();
+  const listEnd = { paddingBottom: spacing.xxl + tabSpace };
   const [conversations, setConversations] = useState<Conversation[]>([]);
   const [loading, setLoading] = useState(true);
   const authUser = useAuthStore((s) => s.user);
@@ -361,7 +365,7 @@ export const ChatListScreen: React.FC<ChatListScreenProps> = ({ navigation, onOp
           <Text style={styles.headerTitle}>Chat</Text>
           {!canGoBack && <View style={{ width: 24 }} />}
         </View>
-        <View style={styles.centered}>
+        <View style={[styles.centered, listEnd]}>
           <ActivityIndicator size="large" color={colors.primary} />
         </View>
       </SafeAreaView>
@@ -383,7 +387,7 @@ export const ChatListScreen: React.FC<ChatListScreenProps> = ({ navigation, onOp
       </View>
 
       {conversations.length === 0 && loadFailed ? (
-        <View style={styles.centered}>
+        <View style={[styles.centered, listEnd]}>
           <Ionicons name="cloud-offline-outline" size={64} color={colors.textMuted} />
           <Text style={styles.emptyTitle}>Couldn't load your chats</Text>
           <Text style={styles.emptySubtitle}>The connection is slow right now. Your chats are safe.</Text>
@@ -392,7 +396,7 @@ export const ChatListScreen: React.FC<ChatListScreenProps> = ({ navigation, onOp
           </TouchableOpacity>
         </View>
       ) : conversations.length === 0 ? (
-        <View style={styles.centered}>
+        <View style={[styles.centered, listEnd]}>
           <Ionicons name="chatbubbles-outline" size={64} color={colors.textMuted} />
           <Text style={styles.emptyTitle}>No Conversations</Text>
           <Text style={styles.emptySubtitle}>Match with someone to start chatting</Text>
@@ -403,7 +407,7 @@ export const ChatListScreen: React.FC<ChatListScreenProps> = ({ navigation, onOp
           keyExtractor={(item) => item.matchId}
           renderItem={renderConversation}
           extraData={selectedMatchId}
-          contentContainerStyle={styles.list}
+          contentContainerStyle={[styles.list, listEnd]}
           showsVerticalScrollIndicator={false}
           removeClippedSubviews
           maxToRenderPerBatch={10}

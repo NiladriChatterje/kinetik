@@ -4,6 +4,7 @@ import {
   ActivityIndicator,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
+import { useTabBarSpace } from '../../navigation/FloatingTabBar';
 import Ionicons from '@expo/vector-icons/Ionicons';
 import { api } from '../../services/api';
 import { getPresenceSocket } from '../../services/presenceSocket';
@@ -57,6 +58,9 @@ function likedAgo(iso: string): string {
 export type LikesPaneToggle = { wide: boolean; onToggle: () => void };
 
 export const LikeListScreen: React.FC<{ navigation: any; paneToggle?: LikesPaneToggle }> = ({ navigation, paneToggle }) => {
+  // Room for the floating tab pill under the list's end (0 outside the tabs)
+  const tabSpace = useTabBarSpace();
+  const listEnd = { paddingBottom: spacing.lg + tabSpace };
   const [likes, setLikes] = useState<IncomingLike[]>([]);
   const [loading, setLoading] = useState(true);
   const [responding, setResponding] = useState<string | null>(null);
@@ -373,7 +377,7 @@ export const LikeListScreen: React.FC<{ navigation: any; paneToggle?: LikesPaneT
           <Text style={styles.headerTitle}>Likes</Text>
           <View style={{ width: 24 }} />
         </View>
-        <View style={styles.centered}>
+        <View style={[styles.centered, listEnd]}>
           <ActivityIndicator size="large" color={colors.primary} />
         </View>
       </SafeAreaView>
@@ -391,7 +395,7 @@ export const LikeListScreen: React.FC<{ navigation: any; paneToggle?: LikesPaneT
       </View>
 
       {likes.length === 0 && hiddenCount === 0 ? (
-        <View style={styles.centered}>
+        <View style={[styles.centered, listEnd]}>
           <Ionicons name="heart-outline" size={64} color={colors.textMuted} />
           <Text style={styles.emptyTitle}>No Likes Yet</Text>
           <Text style={styles.emptySubtitle}>When someone likes your profile, they'll appear here</Text>
@@ -401,7 +405,7 @@ export const LikeListScreen: React.FC<{ navigation: any; paneToggle?: LikesPaneT
           data={likes}
           keyExtractor={(item) => item.userId}
           renderItem={renderLike}
-          contentContainerStyle={styles.list}
+          contentContainerStyle={[styles.list, listEnd]}
           showsVerticalScrollIndicator={false}
           removeClippedSubviews
           maxToRenderPerBatch={10}

@@ -9,6 +9,7 @@ import { PaneWidthContext } from '../../hooks/usePaneWidth';
 import { isSplitWidth, splitListWidth } from '../../navigation/splitLayout';
 import { PaneEmptyState } from '../../components/common/PaneEmptyState';
 import { colors } from '../../theme';
+import { useTabBarSpace } from '../../navigation/FloatingTabBar';
 
 /**
  * The Chat tab. On a phone it is the chat list, and a chat opens as its own
@@ -29,6 +30,9 @@ export const ChatSplitScreen: React.FC<{ navigation: any }> = ({ navigation }) =
   // A chat picked by another account on this device is not this one's
   const chat = storedChat && ownerId === userId ? storedChat : null;
   const tabInUse = useNavigationState((s) => s?.routes?.[s.index]?.name === 'ChatListTab');
+  // The open chat ends above the floating tab pill, so its text box is never
+  // under it (the pill hides while typing, and so does this gap)
+  const tabSpace = useTabBarSpace({ dropWhileTyping: true });
 
   const openInPane = useCallback((c: PaneChat) => {
     useChatPaneStore.getState().open(userId, c);
@@ -65,7 +69,7 @@ export const ChatSplitScreen: React.FC<{ navigation: any }> = ({ navigation }) =
       <View style={[styles.list, { width: listWidth }]}>
         <ChatListScreen navigation={navigation} onOpenChat={openInPane} selectedMatchId={chat?.matchId} />
       </View>
-      <View style={styles.pane}>
+      <View style={[styles.pane, { paddingBottom: tabSpace }]}>
         {chat && paneRoute && tabInUse ? (
           <PaneWidthContext.Provider value={width - listWidth}>
             <ChatScreen key={chat.matchId} navigation={navigation} route={paneRoute} onClose={closePane} />

@@ -4,6 +4,7 @@ import {
   ActivityIndicator, RefreshControl,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
+import { useTabBarSpace } from '../../navigation/FloatingTabBar';
 import Ionicons from '@expo/vector-icons/Ionicons';
 import { api } from '../../services/api';
 import { ProgressiveImage } from '../../components/common/ProgressiveImage';
@@ -209,6 +210,9 @@ const ProfileTile = React.memo(function ProfileTile({
 });
 
 export const ExploreScreen: React.FC<{ navigation: any }> = ({ navigation }) => {
+  // Room for the floating tab pill under the list's end (0 outside the tabs)
+  const tabSpace = useTabBarSpace();
+  const listEnd = { paddingBottom: spacing.xxl + tabSpace };
   const paneWidth = usePaneWidth();
   const layout = useMemo(() => tileLayout(paneWidth), [paneWidth]);
   const [profiles, setProfiles] = useState<GridProfile[]>([]);
@@ -353,12 +357,12 @@ export const ExploreScreen: React.FC<{ navigation: any }> = ({ navigation }) => 
       </View>
 
       {loading ? (
-        <View style={styles.centered}>
+        <View style={[styles.centered, listEnd]}>
           <ActivityIndicator size="large" color={colors.primary} />
           <Text style={styles.loadingText}>Gathering profiles…</Text>
         </View>
       ) : profiles.length === 0 ? (
-        <View style={styles.centered}>
+        <View style={[styles.centered, listEnd]}>
           <View style={styles.emptyCircle}>
             <Ionicons name="telescope-outline" size={40} color={colors.textMuted} />
           </View>
@@ -375,7 +379,7 @@ export const ExploreScreen: React.FC<{ navigation: any }> = ({ navigation }) => 
           data={rows}
           keyExtractor={keyExtractor}
           renderItem={renderRow}
-          contentContainerStyle={styles.listContent}
+          contentContainerStyle={[styles.listContent, listEnd]}
           showsVerticalScrollIndicator={false}
           removeClippedSubviews
           maxToRenderPerBatch={6}

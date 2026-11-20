@@ -13,6 +13,7 @@ import { PaneEmptyState, PaneShortcut } from '../../components/common/PaneEmptyS
 import { PaneWidthContext } from '../../hooks/usePaneWidth';
 import { isSplitWidth, splitListWidth } from '../../navigation/splitLayout';
 import { colors } from '../../theme';
+import { useTabBarSpace } from '../../navigation/FloatingTabBar';
 
 /**
  * The Profile tab. On a phone it is the profile page, and its settings open
@@ -118,6 +119,9 @@ export const ProfileSplitScreen: React.FC<{ navigation: any }> = ({ navigation }
   const split = isSplitWidth(width);
   const page = usePaneStore((s) => s.page);
   const tabInUse = useNavigationState((s) => s?.routes?.[s.index]?.name === 'Profile');
+  // Pages on the right end above the floating tab pill, so their buttons are
+  // never under it (the pill hides while typing, and so does this gap)
+  const tabSpace = useTabBarSpace({ dropWhileTyping: true });
 
   // The screen got narrow with a page open (a foldable folded): carry on
   // with it full screen, as on a phone
@@ -139,7 +143,7 @@ export const ProfileSplitScreen: React.FC<{ navigation: any }> = ({ navigation }
           <ProfileLedgerScreen onOpenPage={onOpenPage} openPage={page} />
         </PaneWidthContext.Provider>
       </View>
-      <View style={styles.pane}>
+      <View style={[styles.pane, { paddingBottom: tabSpace }]}>
         <PaneWidthContext.Provider value={width - listWidth}>
           <PaneStack.Navigator initialRouteName="PaneHome" screenOptions={paneScreenOptions}>
             <PaneStack.Screen name="PaneHome" component={PaneHome} />
