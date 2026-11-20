@@ -61,12 +61,13 @@ export const colors = {
   // fine grain texture laid over it (assets/images/grain@3x.png) gives the
   // matte, slightly grainy finish
   tabBarBg: 'rgba(12, 13, 16, 0.99)',
-  // Soft light caught in the two top corners, fading out well before the
-  // middle; the grain drawn over it hides any banding
-  tabBarShimmer:
-    'radial-gradient(ellipse 120px 65px at left top, rgba(255, 255, 255, 0.30) 0%, rgba(255, 255, 255, 0.12) 45%, rgba(255, 255, 255, 0) 100%), ' +
-    'radial-gradient(ellipse 120px 65px at right top, rgba(255, 255, 255, 0.30) 0%, rgba(255, 255, 255, 0.12) 45%, rgba(255, 255, 255, 0) 100%)',
-  tabBarBorder: 'rgba(255, 255, 255, 0.08)',
+  // The bar's 1 dp edge: a faint lift of the fill all round (#242528, the
+  // fill with 10% white) that catches the light at the two top corners and
+  // fades along the top and down the sides
+  tabBarBorder: '#242528',
+  tabBarBorderShimmer:
+    'radial-gradient(ellipse 150px 60px at left top, rgba(255, 255, 255, 0.75) 0%, rgba(255, 255, 255, 0.30) 40%, rgba(255, 255, 255, 0) 100%), ' +
+    'radial-gradient(ellipse 150px 60px at right top, rgba(255, 255, 255, 0.75) 0%, rgba(255, 255, 255, 0.30) 40%, rgba(255, 255, 255, 0) 100%)',
   tabBarShadow: '0px 10px 28px rgba(2, 6, 23, 0.30), 0px 2px 6px rgba(2, 6, 23, 0.18)',
   tabBarRipple: 'rgba(255, 255, 255, 0.16)',
   tabBarActive: '#FFFFFF',

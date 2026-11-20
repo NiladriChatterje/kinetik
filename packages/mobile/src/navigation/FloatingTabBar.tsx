@@ -7,9 +7,9 @@ import { colors, typography } from '../theme';
 
 /**
  * The main tabs as a compact pill floating over the bottom of the screen:
- * flat matte near-black with a fine grain and a soft shimmer in the two
- * top corners, white icons and labels (the open tab full white, the others
- * dimmed), a hairline edge and a soft shadow to lift it off the page.
+ * flat matte near-black with a fine grain, white icons and labels (the open
+ * tab full white, the others dimmed), a 1 dp edge that shimmers at the two
+ * top corners, and a soft shadow to lift it off the page.
  *
  * The screens run under it, so a tab's scrolling list pads its end by
  * useTabBarSpace() to let the last row scroll clear of the pill. It hides
@@ -24,6 +24,8 @@ const BAR_GAP = 12;
 const ITEM_WIDTH = 68;
 /** Softly rounded corners rather than full round ends. */
 const BAR_RADIUS = 20;
+/** Width of the shimmering edge around the bar. */
+const RING = 1;
 /** Space between the pill's edge and the first and last tab. */
 const BAR_PADDING = 6;
 /**
@@ -99,44 +101,47 @@ export const FloatingTabBar: React.FC<BottomTabBarProps> = ({ state, descriptors
 
   return (
     <View pointerEvents="box-none" style={[styles.wrap, { bottom: bottom + BAR_GAP }]}>
-      <View style={styles.pill} accessibilityRole="tablist">
-        {/* Fine grain over the flat fill: the matte finish */}
-        <GrainTiles width={state.routes.length * ITEM_WIDTH + BAR_PADDING * 2} />
-        {state.routes.map((route, index) => {
-          const { options } = descriptors[route.key];
-          const focused = index === state.index;
-          const color = focused ? colors.tabBarActive : colors.tabBarInactive;
-          const label = typeof options.tabBarLabel === 'string' ? options.tabBarLabel : options.title ?? route.name;
+      {/* The edge: this layer shows only as the 1 dp ring around the bar */}
+      <View style={styles.ring}>
+        <View style={styles.pill} accessibilityRole="tablist">
+          {/* Fine grain over the flat fill: the matte finish */}
+          <GrainTiles width={state.routes.length * ITEM_WIDTH + BAR_PADDING * 2} />
+          {state.routes.map((route, index) => {
+            const { options } = descriptors[route.key];
+            const focused = index === state.index;
+            const color = focused ? colors.tabBarActive : colors.tabBarInactive;
+            const label = typeof options.tabBarLabel === 'string' ? options.tabBarLabel : options.title ?? route.name;
 
-          const onPress = () => {
-            const event = navigation.emit({ type: 'tabPress', target: route.key, canPreventDefault: true });
-            if (!focused && !event.defaultPrevented) {
-              navigation.dispatch({
-                ...CommonActions.navigate({ name: route.name, merge: true }),
-                target: state.key,
-              });
-            }
-          };
-          const onLongPress = () => navigation.emit({ type: 'tabLongPress', target: route.key });
+            const onPress = () => {
+              const event = navigation.emit({ type: 'tabPress', target: route.key, canPreventDefault: true });
+              if (!focused && !event.defaultPrevented) {
+                navigation.dispatch({
+                  ...CommonActions.navigate({ name: route.name, merge: true }),
+                  target: state.key,
+                });
+              }
+            };
+            const onLongPress = () => navigation.emit({ type: 'tabLongPress', target: route.key });
 
-          return (
-            <Pressable
-              key={route.key}
-              onPress={onPress}
-              onLongPress={onLongPress}
-              style={styles.item}
-              android_ripple={{ color: colors.tabBarRipple, borderless: true, radius: 30 }}
-              accessibilityRole="tab"
-              accessibilityState={{ selected: focused }}
-              accessibilityLabel={label}
-            >
-              {options.tabBarIcon?.({ focused, color, size: 22 })}
-              <Text style={[styles.label, focused && styles.labelFocused, { color }]} numberOfLines={1}>
-                {label}
-              </Text>
-            </Pressable>
-          );
-        })}
+            return (
+              <Pressable
+                key={route.key}
+                onPress={onPress}
+                onLongPress={onLongPress}
+                style={styles.item}
+                android_ripple={{ color: colors.tabBarRipple, borderless: true, radius: 30 }}
+                accessibilityRole="tab"
+                accessibilityState={{ selected: focused }}
+                accessibilityLabel={label}
+              >
+                {options.tabBarIcon?.({ focused, color, size: 22 })}
+                <Text style={[styles.label, focused && styles.labelFocused, { color }]} numberOfLines={1}>
+                  {label}
+                </Text>
+              </Pressable>
+            );
+          })}
+        </View>
       </View>
     </View>
   );
@@ -149,24 +154,28 @@ const styles = StyleSheet.create({
     right: 0,
     alignItems: 'center',
   },
-  pill: {
-    flexDirection: 'row',
-    height: BAR_HEIGHT,
-    paddingHorizontal: BAR_PADDING,
+  // The shimmering edge. A border cannot take a gradient, so this layer
+  // carries the light (clipped to its rounded corners; new architecture)
+  // and the pill covers all of it but RING dp all round. A phone that cannot
+  // draw the gradient shows a plain faint edge.
+  ring: {
+    padding: RING,
     borderRadius: BAR_RADIUS,
-    backgroundColor: colors.tabBarBg,
-    // Shimmer in the top corners, clipped to the rounded corners (new
-    // architecture); a phone that cannot draw it shows the plain matte bar
-    experimental_backgroundImage: colors.tabBarShimmer,
-    borderWidth: StyleSheet.hairlineWidth,
-    borderColor: colors.tabBarBorder,
+    backgroundColor: colors.tabBarBorder,
+    experimental_backgroundImage: colors.tabBarBorderShimmer,
     boxShadow: colors.tabBarShadow,
   },
-  // Its own clip, so the pill itself keeps no overflow clip that could cut
-  // its shadow
+  pill: {
+    flexDirection: 'row',
+    height: BAR_HEIGHT - RING * 2,
+    paddingHorizontal: BAR_PADDING,
+    borderRadius: BAR_RADIUS - RING,
+    backgroundColor: colors.tabBarBg,
+  },
+  // Its own clip, so the pill itself needs no overflow clip
   grainClip: {
     ...StyleSheet.absoluteFill,
-    borderRadius: BAR_RADIUS,
+    borderRadius: BAR_RADIUS - RING,
     overflow: 'hidden',
   },
   grainTile: {
