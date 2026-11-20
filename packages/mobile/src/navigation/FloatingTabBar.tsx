@@ -7,9 +7,9 @@ import { colors, typography } from '../theme';
 
 /**
  * The main tabs as a compact pill floating over the bottom of the screen:
- * flat matte near-black with a fine grain, white icons and labels
- * (the open tab full white, the others dimmed), a hairline edge and a soft
- * shadow to lift it off the page.
+ * flat matte near-black with a fine grain and a soft shimmer in the two
+ * top corners, white icons and labels (the open tab full white, the others
+ * dimmed), a hairline edge and a soft shadow to lift it off the page.
  *
  * The screens run under it, so a tab's scrolling list pads its end by
  * useTabBarSpace() to let the last row scroll clear of the pill. It hides
@@ -155,6 +155,9 @@ const styles = StyleSheet.create({
     paddingHorizontal: BAR_PADDING,
     borderRadius: BAR_RADIUS,
     backgroundColor: colors.tabBarBg,
+    // Shimmer in the top corners, clipped to the rounded corners (new
+    // architecture); a phone that cannot draw it shows the plain matte bar
+    experimental_backgroundImage: colors.tabBarShimmer,
     borderWidth: StyleSheet.hairlineWidth,
     borderColor: colors.tabBarBorder,
     boxShadow: colors.tabBarShadow,
