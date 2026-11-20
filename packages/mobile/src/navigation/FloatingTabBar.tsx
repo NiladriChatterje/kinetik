@@ -7,7 +7,7 @@ import { colors, typography } from '../theme';
 
 /**
  * The main tabs as a compact pill floating over the bottom of the screen:
- * solid black with white icons and labels (the open tab full white, the
+ * the app's red with white icons and labels (the open tab full white, the
  * others dimmed), a hairline edge and a soft shadow to lift it off the page.
  *
  * The screens run under it, so a tab's scrolling list pads its end by

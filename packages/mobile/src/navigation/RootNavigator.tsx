@@ -26,7 +26,7 @@ function TabIcon({
           position: 'absolute',
           top: -6,
           right: -8,
-          backgroundColor: '#FF6B6B',
+          backgroundColor: colors.tabBarBadgeBg,
           minWidth: 18,
           height: 18,
           borderRadius: 9,
@@ -34,7 +34,7 @@ function TabIcon({
           alignItems: 'center',
           paddingHorizontal: 3,
         }}>
-          <Text style={{ color: '#fff', fontSize: 10, fontWeight: '800' }}>
+          <Text style={{ color: colors.tabBarBadgeText, fontSize: 10, fontWeight: '800' }}>
             {count > 9 ? '9+' : count}
           </Text>
         </View>
