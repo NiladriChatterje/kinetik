@@ -1,9 +1,15 @@
 // ─── Swipe / Interaction Limits ───────────────────────────
 
-// Right-swipe (like / super_like) allowance PER ACCOUNT — lifetime, not daily.
-// Once a free account has spent its 30 likes, only upgrading unlocks more.
+// Right swipes (like / super_like) are limited differently per plan:
+// - Free: 30 per account for its whole life, never reset. Once a free account
+//   has spent them, only upgrading unlocks more.
+// - Premium: 100 per day (resets at midnight India time), with no lifetime
+//   total at all.
+// Passing left is never limited. Enforced in api-core routes/matches.ts /swipe.
 export const FREE_SWIPE_LIMIT = 30;
-export const PREMIUM_SWIPE_LIMIT = 99999; // Effectively unlimited
+export const PREMIUM_DAILY_LIKE_LIMIT = 100;
+/** Time zone whose midnight starts a Premium user's new day of likes. */
+export const LIKE_DAY_TIME_ZONE = 'Asia/Kolkata';
 export const FREE_CHAT_LIMIT = 3;        // Max active matches for free users
 export const PREMIUM_CHAT_LIMIT = 99999;  // Effectively unlimited for premium
 export const SUPER_LIKE_LIMIT_DAILY_FREE = 5;
@@ -163,6 +169,7 @@ export const ERROR_CODES = {
 
   // Limits
   SWIPE_LIMIT_REACHED: 'SWIPE_LIMIT_REACHED',
+  DAILY_LIKE_LIMIT_REACHED: 'DAILY_LIKE_LIMIT_REACHED',
   CHAT_LIMIT_REACHED: 'CHAT_LIMIT_REACHED',
   SUPER_LIKE_LIMIT_REACHED: 'SUPER_LIKE_LIMIT_REACHED',
   RATE_LIMITED: 'RATE_LIMITED',

@@ -1,7 +1,7 @@
 import { FastifyInstance, FastifyRequest, FastifyReply } from 'fastify';
 import {
-  ERROR_CODES, REDIS_KEYS, FREE_SWIPE_LIMIT,
-  SUPER_LIKE_LIMIT_DAILY_FREE, SUPER_LIKE_LIMIT_DAILY_PREMIUM,
+  ERROR_CODES, REDIS_KEYS,
+  SUPER_LIKE_LIMIT_DAILY_FREE, SUPER_LIKE_LIMIT_DAILY_PREMIUM, PREMIUM_DAILY_LIKE_LIMIT,
   EVENT_BUS_CHANNELS, encryptMessage, decryptMessage, getOpeningLine,
   h3ToGeo,
 } from '@kinetik/shared';
@@ -17,6 +17,7 @@ import { saveChatImage, ChatImageRejected, saveEncryptedChatFile, getEncryptedCh
 import { cursorTimestampSql, decodeCursor, encodeCursor, pageLimit } from '../services/listCursor';
 import { isMessageId, quoteFromRow, ReplyQuote } from '../services/messageReply';
 import { isPlanDayOver } from '../services/planDay';
+import { countLikes, likeAllowance } from '../services/likeAllowance';
 
 const MESSAGE_ENCRYPTION_KEY = process.env.MESSAGE_ENCRYPTION_KEY || '';
 const redis = getRedis();
@@ -422,21 +423,17 @@ export async function matchRoutes(app: FastifyInstance) {
     // Every read the checks below need, in one round trip to the database:
     // they do not depend on each other, and each alone is a network round
     // trip (the swipe took two seconds when they ran one after another).
-    const [blocked, existing, subResult, usedResult, swiperNameResult, mutualCheck] = await Promise.all([
+    const [blocked, existing, premium, likeCounts, swiperNameResult, mutualCheck] = await Promise.all([
       isBlockedPair(userId, targetUserId),
       query(
         `SELECT id, action, is_mutual, responded_at FROM ${TABLES.USER_INTERACTIONS}
          WHERE actor_id = $1 AND target_id = $2`,
         [userId, targetUserId],
       ),
-      query(`SELECT tier, swipe_allowance FROM ${TABLES.SUBSCRIPTION_LEDGER} WHERE user_id = $1`, [userId]),
-      likes
-        ? query(
-            `SELECT COUNT(*)::int AS cnt FROM ${TABLES.USER_INTERACTIONS}
-             WHERE actor_id = $1 AND action IN ('like', 'super_like')`,
-            [userId],
-          )
-        : null,
+      // The same Premium answer the chat gate uses (Play expiry checked, cached)
+      hasActivePremium(userId),
+      // Likes sent, all-time and today (services/likeAllowance.ts)
+      likes ? countLikes(userId) : null,
       // The swiper's name, for notifications
       likes ? query(`SELECT display_name FROM ${TABLES.USERS} WHERE id = $1`, [userId]) : null,
       // Whether the target has already liked this user (regular or super like)
@@ -471,37 +468,40 @@ export async function matchRoutes(app: FastifyInstance) {
       });
     }
 
-    // The user's entitlement. swipe_allowance is FREE_SWIPE_LIMIT (30) for
-    // free accounts and PREMIUM_SWIPE_LIMIT (effectively unlimited) once a
-    // paid subscription is active — the payments/webhook flows set it on activation.
-    const sub = subResult.rows[0];
-    const tier = sub?.tier || 'free';
-    const swipeAllowance = sub?.swipe_allowance ?? FREE_SWIPE_LIMIT;
-
-    // Swipe limit — PER ACCOUNT (lifetime), not daily. Only right swipes
-    // (like / super_like) count; passing left is always free. Counted from the
-    // durable user_interactions table so a Redis restart can't reset it.
+    // Like limit (services/likeAllowance.ts): free accounts get 30 for life,
+    // Premium gets 100 a day with no lifetime total. Only right swipes
+    // (like / super_like) count; passing left is always free.
     let swipesRemaining: number | undefined;
-    if (usedResult) {
-      const usedCount = usedResult.rows[0]?.cnt ?? 0;
-      if (usedCount >= swipeAllowance) {
+    let likesPeriod: 'day' | 'lifetime' | undefined;
+    if (likeCounts) {
+      const allowance = likeAllowance(premium, likeCounts);
+      if (allowance.used >= allowance.limit) {
         return reply.status(429).send({
           success: false,
-          error: {
-            code: ERROR_CODES.SWIPE_LIMIT_REACHED,
-            message: "You've used all your free swipes. Upgrade to Premium for unlimited swipes.",
-            details: { used: usedCount, limit: swipeAllowance },
-          },
+          error: premium
+            ? {
+                // Not the paywall code: this user already pays. Older apps
+                // show this message in their generic "Swipe failed" toast.
+                code: ERROR_CODES.DAILY_LIKE_LIMIT_REACHED,
+                message: `You've used today's ${allowance.limit} likes. More at midnight.`,
+                details: { used: allowance.used, limit: allowance.limit, period: allowance.period },
+              }
+            : {
+                code: ERROR_CODES.SWIPE_LIMIT_REACHED,
+                message: `You've used all your free likes. Premium gives you ${PREMIUM_DAILY_LIKE_LIMIT} likes a day.`,
+                details: { used: allowance.used, limit: allowance.limit, period: allowance.period },
+              },
         });
       }
       // Remaining AFTER this swipe lands (recorded below)
-      swipesRemaining = Math.max(0, swipeAllowance - usedCount - 1);
+      swipesRemaining = Math.max(0, allowance.limit - allowance.used - 1);
+      likesPeriod = allowance.period;
     }
 
     // Check daily super like limit
     let superLikeRemaining = 0;
     if (action === 'super_like') {
-      const dailyLimit = tier === 'free' ? SUPER_LIKE_LIMIT_DAILY_FREE : SUPER_LIKE_LIMIT_DAILY_PREMIUM;
+      const dailyLimit = premium ? SUPER_LIKE_LIMIT_DAILY_PREMIUM : SUPER_LIKE_LIMIT_DAILY_FREE;
 
       const used = await redis.get(REDIS_KEYS.USER_SUPERLIKE_COUNT(userId));
       const usedCount = used ? parseInt(used, 10) : 0;
@@ -624,6 +624,7 @@ export async function matchRoutes(app: FastifyInstance) {
               partnerName,
               partnerId: targetUserId,
               swipesRemaining,
+              likesPeriod,
             },
           });
         }
@@ -689,6 +690,7 @@ export async function matchRoutes(app: FastifyInstance) {
           isSuperLike,
           superLikesRemaining: action === 'super_like' ? superLikeRemaining - 1 : undefined,
           swipesRemaining,
+          likesPeriod,
         },
       });
     }

@@ -1,6 +1,8 @@
 import { FastifyInstance, FastifyRequest, FastifyReply } from 'fastify';
 import { z } from 'zod';
-import { ERROR_CODES, FREE_SWIPE_LIMIT, FREE_CHAT_LIMIT, PREMIUM_SWIPE_LIMIT, PREMIUM_CHAT_LIMIT, getPricingForPhone } from '@kinetik/shared';
+import { ERROR_CODES, FREE_CHAT_LIMIT, PREMIUM_CHAT_LIMIT, getPricingForPhone } from '@kinetik/shared';
+import { countLikes, likeAllowance } from '../services/likeAllowance';
+import { hasActivePremium } from '../services/premiumAccess';
 import { query, TABLES, getSubscription } from '../services/database';
 import {
   isPlayBillingConfigured,
@@ -57,7 +59,8 @@ export async function paymentRoutes(app: FastifyInstance) {
       [userId],
     );
     const tier = subResult.rows[0]?.tier || 'free';
-    const isPremium = tier !== 'free';
+    // The same answer the gates use: a lapsed Play subscription is not Premium
+    const isPremium = await hasActivePremium(userId);
 
     // Active matches count
     const matchCountResult = await query(
@@ -67,22 +70,14 @@ export async function paymentRoutes(app: FastifyInstance) {
     );
     const activeChats = matchCountResult.rows[0]?.cnt ?? 0;
 
-    // Lifetime right-swipe count from the durable interactions table
-    const swipeCountResult = await query(
-      `SELECT COUNT(*)::int AS cnt FROM ${TABLES.USER_INTERACTIONS}
-       WHERE actor_id = $1 AND action IN ('like', 'super_like')`,
-      [userId],
-    );
-    const swipesUsed = swipeCountResult.rows[0]?.cnt ?? 0;
+    // Likes: free = 30 for life, Premium = 100 a day (services/likeAllowance.ts)
+    const swipes = likeAllowance(isPremium, await countLikes(userId));
 
     return reply.send({
       success: true,
       data: {
         tier,
-        swipes: {
-          used: swipesUsed,
-          limit: isPremium ? PREMIUM_SWIPE_LIMIT : FREE_SWIPE_LIMIT,
-        },
+        swipes,
         chats: {
           used: activeChats,
           limit: isPremium ? PREMIUM_CHAT_LIMIT : FREE_CHAT_LIMIT,

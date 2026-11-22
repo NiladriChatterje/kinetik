@@ -1,4 +1,6 @@
-import { FREE_SWIPE_LIMIT, PREMIUM_SWIPE_LIMIT } from '@kinetik/shared';
+// swipe_allowance on the ledger is a record of the plan's like limit only;
+// the /swipe gate reads services/likeAllowance.ts, never this column.
+import { FREE_SWIPE_LIMIT, PREMIUM_DAILY_LIKE_LIMIT } from '@kinetik/shared';
 import { invalidatePremiumCache } from './premiumAccess';
 import { query, TABLES } from './database';
 import { eventBus } from './eventBus';
@@ -104,7 +106,7 @@ export async function applyPlayEntitlement(
          auto_renew = $5,
          updated_at = NOW(),
          play_state = $6`,
-      [userId, PREMIUM_SWIPE_LIMIT, purchaseToken, sub.expiresAt, sub.autoRenewing, sub.state],
+      [userId, PREMIUM_DAILY_LIKE_LIMIT, purchaseToken, sub.expiresAt, sub.autoRenewing, sub.state],
     );
   } else {
     // Keep the token on the row: Play may later report the same subscription
