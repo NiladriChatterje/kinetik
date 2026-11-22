@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import {
   View, Text, StyleSheet, TouchableOpacity, Image,
-  ScrollView, Animated, Dimensions,
+  ScrollView, Animated, useWindowDimensions,
   KeyboardAvoidingView, Platform,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
@@ -16,9 +16,8 @@ import { colors, typography, spacing, radius } from '../../theme';
 
 const LOGO = require('../../assets/images/logo.png');
 
-const { width: SCREEN_WIDTH } = Dimensions.get('window');
-const SEGMENT_WIDTH = SCREEN_WIDTH - spacing.xxl * 2;
-const SEGMENT_TAB_WIDTH = (SEGMENT_WIDTH - 4) / 2;
+/** Inset of the Sign In / Sign Up pill inside its track, on every side. */
+const SEGMENT_INSET = 2;
 
 // Loose shape check only — the server validates properly and the one-time
 // code proves the address is real.
@@ -88,6 +87,12 @@ export const SplashScreen: React.FC<{ navigation: any; route?: any }> = ({ navig
   const formOpacity = useRef(new Animated.Value(0)).current;
   const formTranslateY = useRef(new Animated.Value(30)).current;
   const segmentX = useRef(new Animated.Value(mode === 'login' ? 0 : 1)).current;
+  // The Sign In / Sign Up pill covers half of the switch. Sized from the
+  // switch's measured width, so it still fits after a tablet turns or a
+  // foldable opens; until the first layout, from the width it gets here.
+  const { width: windowWidth } = useWindowDimensions();
+  const [segmentWidth, setSegmentWidth] = useState<number | null>(null);
+  const segmentTabWidth = ((segmentWidth ?? windowWidth - spacing.xxl * 2) - SEGMENT_INSET * 2) / 2;
 
   useEffect(() => {
     Animated.sequence([
@@ -219,9 +224,10 @@ export const SplashScreen: React.FC<{ navigation: any; route?: any }> = ({ navig
     }
   };
 
+  // From over Sign In to over Sign Up: exactly one tab across
   const indicatorTranslateX = segmentX.interpolate({
     inputRange: [0, 1],
-    outputRange: [0, SEGMENT_TAB_WIDTH + 4],
+    outputRange: [0, segmentTabWidth],
   });
 
   // Moving on to the saved step: no sign-in form flashing up first
@@ -245,9 +251,12 @@ export const SplashScreen: React.FC<{ navigation: any; route?: any }> = ({ navig
 
       {/* Segmented control sits just below the logo, still fixed */}
       <Animated.View style={[styles.segmentSection, { opacity: formOpacity, transform: [{ translateY: formTranslateY }] }]}>
-        <View style={styles.segmentTrack}>
+        <View
+          style={styles.segmentTrack}
+          onLayout={(e) => setSegmentWidth(e.nativeEvent.layout.width)}
+        >
           <Animated.View
-            style={[styles.segmentIndicator, { transform: [{ translateX: indicatorTranslateX }] }]}
+            style={[styles.segmentIndicator, { width: segmentTabWidth, transform: [{ translateX: indicatorTranslateX }] }]}
           />
           <TouchableOpacity
             style={styles.segmentTab}
@@ -432,14 +441,13 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     backgroundColor: colors.surface,
     borderRadius: radius.full,
-    padding: 2,
+    padding: SEGMENT_INSET,
     position: 'relative',
   },
   segmentIndicator: {
     position: 'absolute',
-    top: 2,
-    left: 2,
-    width: SEGMENT_TAB_WIDTH,
+    top: SEGMENT_INSET,
+    left: SEGMENT_INSET,
     height: 40,
     borderRadius: radius.full,
     backgroundColor: colors.textPrimary,
