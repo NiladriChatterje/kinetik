@@ -18,33 +18,45 @@ import {
   unansweredAboutQuestions,
 } from '../../components/profile/AboutAnswersEditor';
 import {
-  GENDER_OPTIONS,
-  GENDER_VALUES,
-  GenderOption,
   DATING_CATEGORIES,
   DatingCategoryValue,
-  genderOptionFor,
+  genderLabelFor,
   isDatingCategoryValue,
 } from '../../components/profile/profileOptions';
-import { formatDob, validateDob, dobToIso, isoToDob } from '../../utils/dob';
+import { isoToDob } from '../../utils/dob';
 import { BIO_MAX_CHARS, BIO_MAX_WORDS, countWords, sanitizeBio, validateBio } from '../../utils/bio';
 import { useToast } from '../../hooks/useToast';
-import { useAuthStore } from '../../store/authStore';
 import { api } from '../../services/api';
 import { colors, typography, spacing, radius } from '../../theme';
 
 // Same limits as the profile endpoint (api-core routes/users.ts)
-const NAME_MAX = 100;
 const PRONOUNS_MAX = 50;
 const OCCUPATION_MAX = 100;
 const EDUCATION_MAX = 255;
 
-/** Everything on the form, held the way the inputs show it */
-interface FormState {
+/**
+ * Name, date of birth and gender are set once at sign-up and shown here
+ * read-only: never edited, never sent, never validated on save (a profile
+ * holding a retired gender must still be able to save its other fields).
+ * The server refuses changes to them as well (api-core routes/users.ts).
+ */
+interface LockedBasics {
   displayName: string;
-  /** DD/MM/YYYY */
+  /** DD/MM/YYYY, or '' when not set */
   dob: string;
-  gender: GenderOption | null;
+  genderLabel: string;
+}
+
+function lockedFromProfile(p: any): LockedBasics {
+  return {
+    displayName: str(p?.displayName),
+    dob: isoToDob(p?.dateOfBirth),
+    genderLabel: genderLabelFor(p?.gender),
+  };
+}
+
+/** Everything on the form that can be edited, held the way the inputs show it */
+interface FormState {
   pronouns: string;
   datingCategory: DatingCategoryValue | null;
   bio: string;
@@ -59,9 +71,6 @@ const tidy = (s: string): string => s.trim().replace(/\s+/g, ' ');
 
 function formFromProfile(p: any): FormState {
   return {
-    displayName: str(p?.displayName),
-    dob: isoToDob(p?.dateOfBirth),
-    gender: genderOptionFor(p?.gender),
     pronouns: str(p?.pronouns),
     datingCategory: isDatingCategoryValue(p?.datingCategory) ? p.datingCategory : null,
     // A bio saved before the plain-text rule may hold emoji: shown stripped, saved only if edited
@@ -86,9 +95,6 @@ function sameAnswers(a: AboutAnswerMap, b: AboutAnswerMap): boolean {
  */
 function changesBetween(initial: FormState, current: FormState): Record<string, unknown> {
   const changes: Record<string, unknown> = {};
-  if (tidy(current.displayName) !== tidy(initial.displayName)) changes.displayName = tidy(current.displayName);
-  if (current.dob !== initial.dob) changes.dateOfBirth = dobToIso(current.dob);
-  if (current.gender && current.gender !== initial.gender) changes.gender = GENDER_VALUES[current.gender];
   if (tidy(current.pronouns) !== tidy(initial.pronouns)) changes.pronouns = tidy(current.pronouns);
   if (current.datingCategory && current.datingCategory !== initial.datingCategory) {
     changes.datingCategory = current.datingCategory;
@@ -102,13 +108,8 @@ function changesBetween(initial: FormState, current: FormState): Record<string, 
 
 /** The first thing stopping a save, as a toast title and message; null when the form is complete. */
 function firstProblem(form: FormState): [string, string] | null {
-  if (!tidy(form.displayName)) return ['Name missing', 'Add the name people see.'];
-  if (form.dob.length < 10) return ['Date of birth incomplete', 'Enter it as DD/MM/YYYY.'];
-  const dob = validateDob(form.dob);
-  if (!dob.valid) return ['Invalid date of birth', dob.error || 'Check the date.'];
   const bio = validateBio(form.bio);
   if (!bio.valid) return ['Check your bio', bio.error || 'Plain text, up to 120 words.'];
-  if (!form.gender) return ['Gender missing', 'Pick one to continue.'];
   if (!form.datingCategory) return ['Looking for?', 'Pick what you are here for.'];
   if (!tidy(form.pronouns)) return ['Pronouns missing', 'Add how people should refer to you.'];
   if (unansweredAboutQuestions(form.aboutAnswers).length > 0) {
@@ -118,10 +119,11 @@ function firstProblem(form: FormState): [string, string] | null {
 }
 
 /**
- * Everything a member told us about themselves at sign-up, editable in one
- * place: name, date of birth, gender, pronouns, what they are looking for,
- * bio, work and studies, and the five 'Knowing more about you' answers.
- * Photos and the feed location stay on the profile page itself.
+ * The member's choices and preferences, editable in one place: pronouns,
+ * what they are looking for, bio, work and studies, and the five 'Knowing
+ * more about you' answers. Name, date of birth and gender are shown
+ * read-only; email is not on this page. Photos and the feed location stay
+ * on the profile page itself.
  */
 export const EditProfileScreen: React.FC = () => {
   const navigation = useNavigation<any>();
@@ -132,6 +134,7 @@ export const EditProfileScreen: React.FC = () => {
   // What the server had when the form opened; a save sends only the difference
   const [initial, setInitial] = useState<FormState | null>(null);
   const [form, setForm] = useState<FormState | null>(null);
+  const [locked, setLocked] = useState<LockedBasics | null>(null);
   const [saving, setSaving] = useState(false);
   const [attempted, setAttempted] = useState(false);
   const [bioFocused, setBioFocused] = useState(false);
@@ -152,6 +155,7 @@ export const EditProfileScreen: React.FC = () => {
       const res = await api.getProfile();
       if (res.success && res.data) {
         const loaded = formFromProfile(res.data);
+        setLocked(lockedFromProfile(res.data));
         setInitial(loaded);
         setForm(loaded);
         setStatus('ready');
@@ -197,13 +201,10 @@ export const EditProfileScreen: React.FC = () => {
   // One stable handler per text field: the Input never re-renders for a new
   // callback, only for its value, which is how the onboarding forms use it
   const handlers = useMemo(() => ({
-    displayName: (v: string) => setForm((p) => (p ? { ...p, displayName: v } : p)),
-    dob: (v: string) => setForm((p) => (p ? { ...p, dob: formatDob(v) } : p)),
     pronouns: (v: string) => setForm((p) => (p ? { ...p, pronouns: v } : p)),
     bio: (v: string) => setForm((p) => (p ? { ...p, bio: sanitizeBio(v) } : p)),
     occupation: (v: string) => setForm((p) => (p ? { ...p, occupation: v } : p)),
     education: (v: string) => setForm((p) => (p ? { ...p, education: v } : p)),
-    gender: (g: GenderOption) => setForm((p) => (p ? { ...p, gender: g } : p)),
     datingCategory: (c: DatingCategoryValue) => setForm((p) => (p ? { ...p, datingCategory: c } : p)),
     aboutAnswers: (a: AboutAnswerMap) => setForm((p) => (p ? { ...p, aboutAnswers: a } : p)),
   }), []);
@@ -228,11 +229,6 @@ export const EditProfileScreen: React.FC = () => {
     try {
       const res = await api.updateProfile(changes);
       if (res.success) {
-        if (typeof changes.displayName === 'string') {
-          // The name the rest of the app already holds for this session
-          const user = useAuthStore.getState().user;
-          if (user) useAuthStore.getState().setUser({ ...user, displayName: changes.displayName });
-        }
         toast.showSuccess('Profile updated', 'Your changes are live.');
         leaveFreelyRef.current = true;
         navigation.goBack();
@@ -246,7 +242,6 @@ export const EditProfileScreen: React.FC = () => {
     }
   }, [form, initial, navigation, toast]);
 
-  const showGenderError = attempted && form !== null && !form.gender;
   const showCategoryError = attempted && form !== null && !form.datingCategory;
 
   return (
@@ -266,7 +261,7 @@ export const EditProfileScreen: React.FC = () => {
           <Text style={styles.headerTitle}>Edit profile</Text>
         </View>
 
-        {status === 'loading' || !form ? (
+        {status === 'loading' || !form || !locked ? (
           <View style={styles.centered}>
             {status === 'failed' ? (
               <>
@@ -288,25 +283,24 @@ export const EditProfileScreen: React.FC = () => {
             >
               {/* ─── Basics (identity step) ─────────────────── */}
               <Text style={styles.sectionTitle}>Basics</Text>
-              <Input
-                label="Name"
-                value={form.displayName}
-                onChangeText={handlers.displayName}
-                placeholder="Your first name"
-                autoCapitalize="words"
-                maxLength={NAME_MAX}
-                required
-              />
-              <Input
-                label="Date of Birth"
-                value={form.dob}
-                onChangeText={handlers.dob}
-                placeholder="DD/MM/YYYY"
-                keyboardType="numeric"
-                maxLength={10}
-                required
-                syncOnChange
-              />
+              {/* Set once at sign-up: shown, never editable */}
+              <View style={styles.lockedCard}>
+                {[
+                  { label: 'Name', value: locked.displayName || 'Not set' },
+                  { label: 'Date of Birth', value: locked.dob || 'Not set' },
+                  { label: 'Gender', value: locked.genderLabel },
+                ].map((row, i) => (
+                  <View key={row.label} style={[styles.lockedRow, i > 0 && styles.lockedRowDivider]}>
+                    <Text style={styles.lockedLabel}>{row.label}</Text>
+                    <View style={styles.lockedValueWrap}>
+                      <Text style={styles.lockedValue} numberOfLines={1}>{row.value}</Text>
+                      <Ionicons name="lock-closed" size={14} color={colors.textMuted} />
+                    </View>
+                  </View>
+                ))}
+              </View>
+              <Text style={styles.lockedHint}>Your name, date of birth and gender can't be changed.</Text>
+
               <Input
                 label="Pronouns"
                 value={form.pronouns}
@@ -315,23 +309,6 @@ export const EditProfileScreen: React.FC = () => {
                 maxLength={PRONOUNS_MAX}
                 required
               />
-
-              <Text style={styles.fieldLabel}>Gender *</Text>
-              <View style={styles.genderGrid}>
-                {GENDER_OPTIONS.map((g) => (
-                  <TouchableOpacity
-                    key={g}
-                    activeOpacity={0.7}
-                    style={[styles.genderChip, form.gender === g && styles.genderChipActive]}
-                    onPress={() => handlers.gender(g)}
-                  >
-                    <Text style={[styles.genderChipText, form.gender === g && styles.genderChipTextActive]}>
-                      {g}
-                    </Text>
-                  </TouchableOpacity>
-                ))}
-              </View>
-              {showGenderError && <Text style={styles.fieldError}>Please select your gender</Text>}
 
               <Text style={styles.fieldLabel}>What are you looking for? *</Text>
               <View style={styles.categoryGrid}>
@@ -453,16 +430,28 @@ const styles = StyleSheet.create({
   fieldLabel: { ...typography.label, color: colors.textSecondary, marginBottom: spacing.sm },
   fieldError: { ...typography.caption, color: colors.error, marginBottom: spacing.lg, marginTop: -spacing.sm },
 
-  // Gender chips and the looking-for cards, as the identity step draws them
-  genderGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: spacing.sm, marginBottom: spacing.lg },
-  genderChip: {
-    paddingHorizontal: spacing.lg, paddingVertical: spacing.md,
-    borderRadius: radius.full, backgroundColor: colors.inputBg,
-    borderWidth: 1, borderColor: colors.inputBorder,
+  // Name, date of birth and gender: read-only
+  lockedCard: {
+    borderRadius: radius.lg,
+    backgroundColor: colors.inputBg,
+    borderWidth: 1,
+    borderColor: colors.inputBorder,
+    paddingHorizontal: spacing.lg,
   },
-  genderChipActive: { borderColor: colors.primary, backgroundColor: colors.primary },
-  genderChipText: { ...typography.body2, color: colors.textSecondary },
-  genderChipTextActive: { color: colors.textInverse },
+  lockedRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    gap: spacing.md,
+    paddingVertical: spacing.md,
+  },
+  lockedRowDivider: { borderTopWidth: StyleSheet.hairlineWidth, borderTopColor: colors.inputBorder },
+  lockedLabel: { ...typography.label, color: colors.textSecondary },
+  lockedValueWrap: { flexDirection: 'row', alignItems: 'center', gap: spacing.xs, flexShrink: 1 },
+  lockedValue: { ...typography.body1, color: colors.textPrimary, flexShrink: 1 },
+  lockedHint: { ...typography.caption, color: colors.textMuted, marginTop: spacing.sm, marginBottom: spacing.lg },
+
+  // The looking-for cards, as the identity step draws them
   categoryGrid: { flexDirection: 'column', gap: spacing.sm, marginBottom: spacing.lg },
   categoryChip: {
     padding: spacing.md,
