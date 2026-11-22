@@ -805,7 +805,8 @@ class ApiClient {
   async getLimits() {
     return this.request<{
       tier: string;
-      swipes: { used: number; limit: number };
+      /** period 'day' = Premium's 100 a day, 'lifetime' = free's 30 per account */
+      swipes: { used: number; limit: number; period: 'day' | 'lifetime' };
       chats: { used: number; limit: number };
     }>('/api/v1/payments/limits');
   }
@@ -1135,7 +1136,7 @@ class ApiClient {
   }
 
   async swipe(targetUserId: string, action: 'like' | 'pass' | 'super_like') {
-    return this.request<{ matched: boolean; isSuperLike?: boolean; superLikesRemaining?: number; swipesRemaining?: number; matchId?: string; partnerName?: string; partnerId?: string }>('/api/v1/matches/swipe', {
+    return this.request<{ matched: boolean; isSuperLike?: boolean; superLikesRemaining?: number; swipesRemaining?: number; likesPeriod?: 'day' | 'lifetime'; matchId?: string; partnerName?: string; partnerId?: string }>('/api/v1/matches/swipe', {
       method: 'POST',
       body: JSON.stringify({ targetUserId, action }),
     });

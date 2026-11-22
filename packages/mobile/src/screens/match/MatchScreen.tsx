@@ -310,6 +310,8 @@ export const MatchScreen: React.FC<{ navigation: any; route?: any }> = ({ naviga
   // Lifetime swipe budget (free accounts) — shown quietly once it runs low,
   // so the paywall never lands as a surprise. null until the first swipe reports it.
   const [swipesRemaining, setSwipesRemaining] = useState<number | null>(null);
+  /** 'day' for Premium (100 a day), 'lifetime' for free (30 per account) */
+  const [likesPeriod, setLikesPeriod] = useState<'day' | 'lifetime'>('lifetime');
   const unreadLikeCount = useAuthStore((s) => s.unreadLikeCount);
   const fetchUnreadLikeCount = useAuthStore((s) => s.fetchUnreadLikeCount);
   const toast = useToast();
@@ -544,9 +546,10 @@ export const MatchScreen: React.FC<{ navigation: any; route?: any }> = ({ naviga
         ? await api.respondToLike(profile.userId, direction === 'right' ? 'like' : 'discard')
         : await api.swipe(profile.userId, action);
       if (res.success && res.data) {
-        const data: { matched: boolean; swipesRemaining?: number } = res.data;
+        const data: { matched: boolean; swipesRemaining?: number; likesPeriod?: 'day' | 'lifetime' } = res.data;
         if (typeof data.swipesRemaining === 'number') {
           setSwipesRemaining(data.swipesRemaining);
+          setLikesPeriod(data.likesPeriod === 'day' ? 'day' : 'lifetime');
         }
         // On a match, the match:new socket event drives the animated MatchPopup
         if (!data.matched && direction === 'right') {
@@ -570,7 +573,12 @@ export const MatchScreen: React.FC<{ navigation: any; route?: any }> = ({ naviga
         // deck, which is right either way.
         return;
       }
-      if (res.error?.code === 'SWIPE_LIMIT_REACHED') {
+      if (res.error?.code === 'DAILY_LIKE_LIMIT_REACHED') {
+        // Premium's 100 a day are spent: no paywall, they already pay
+        setSwipesRemaining(0);
+        setLikesPeriod('day');
+        toast.showInfo("That's today's likes", res.error.message || 'More at midnight.');
+      } else if (res.error?.code === 'SWIPE_LIMIT_REACHED') {
         const details = (res.error as any)?.details;
         setPaywall({
           visible: true,
@@ -718,14 +726,18 @@ export const MatchScreen: React.FC<{ navigation: any; route?: any }> = ({ naviga
             )}
             <Text style={styles.headerTitle}>Discover</Text>
           </View>
-        {/* Quiet swipe-budget counter — appears only when the free
-              lifetime allowance runs low, so the paywall isn't a surprise */}
+        {/* Quiet like-budget counter — appears only when the allowance runs
+              low (free: 30 for life, Premium: 100 a day), so the limit isn't a surprise */}
         {swipesRemaining !== null && swipesRemaining <= 5 && (
           <View style={styles.swipeBudgetPill}>
             <Text style={styles.swipeBudgetText}>
-              {swipesRemaining === 0
-                ? 'No swipes left'
-                : `${swipesRemaining} swipe${swipesRemaining === 1 ? '' : 's'} left`}
+              {likesPeriod === 'day'
+                ? swipesRemaining === 0
+                  ? 'No likes left today'
+                  : `${swipesRemaining} like${swipesRemaining === 1 ? '' : 's'} left today`
+                : swipesRemaining === 0
+                  ? 'No swipes left'
+                  : `${swipesRemaining} swipe${swipesRemaining === 1 ? '' : 's'} left`}
             </Text>
           </View>
         )}

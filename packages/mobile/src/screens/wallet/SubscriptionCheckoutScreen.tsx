@@ -48,7 +48,7 @@ const PAYMENT_ISSUE_ORANGE = '#FFA500';
 
 const FEATURES = [
   { icon: 'chatbubbles-outline' as const, label: 'Chat with your matches' },
-  { icon: 'infinite-outline' as const, label: 'Unlimited likes' },
+  { icon: 'heart-outline' as const, label: '100 likes a day' },
   { icon: 'eye-off-outline' as const, label: 'See everyone who liked you' },
 ];
 
