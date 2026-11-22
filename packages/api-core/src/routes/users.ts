@@ -201,6 +201,41 @@ export async function userRoutes(app: FastifyInstance) {
 
     const { preferredLocation, ...data } = validation.data;
 
+    // Name, date of birth and gender are set during onboarding and locked
+    // once it is finished: a different value is refused, the same value is
+    // dropped as a no-op, and a value never set before may still be set once.
+    // (The retired non_binary / other genders stay accepted above for older
+    // app versions; the current app only offers male, female, prefer not to say.)
+    if (data.displayName !== undefined || data.dateOfBirth !== undefined || data.gender !== undefined) {
+      const current = await query(
+        `SELECT onboarding_complete, display_name, gender,
+                to_char(date_of_birth, 'YYYY-MM-DD') AS dob
+           FROM ${TABLES.USERS} WHERE id = $1`,
+        [userId],
+      );
+      const row = current.rows[0];
+      if (row?.onboarding_complete) {
+        const locked: Array<{ key: 'displayName' | 'dateOfBirth' | 'gender'; stored: string | null; given: string | undefined }> = [
+          { key: 'displayName', stored: row.display_name?.trim() || null, given: data.displayName?.trim() },
+          { key: 'dateOfBirth', stored: row.dob || null, given: data.dateOfBirth },
+          { key: 'gender', stored: row.gender || null, given: data.gender },
+        ];
+        for (const field of locked) {
+          if (field.given === undefined || field.stored === null) continue;
+          if (field.given !== field.stored) {
+            return reply.status(400).send({
+              success: false,
+              error: {
+                code: 'PROFILE_FIELD_LOCKED',
+                message: "Your name, date of birth and gender can't be changed.",
+              },
+            });
+          }
+          delete data[field.key];
+        }
+      }
+    }
+
     // 18 to 75 is enforced here, not only in the app: no date of birth that
     // makes the member a minor, older than the platform allows, or is not a
     // real date is ever stored
@@ -264,6 +299,12 @@ export async function userRoutes(app: FastifyInstance) {
       if (value !== undefined) {
         updateData[fieldMap[key] || key] = value;
       }
+    }
+
+    // Nothing left to write (e.g. only unchanged locked fields were sent):
+    // an UPDATE with an empty SET list would be invalid SQL
+    if (Object.keys(updateData).length === 0) {
+      return reply.send({ success: true, data: await findUserById(userId) });
     }
 
     const updated = await updateUser(userId, updateData);
