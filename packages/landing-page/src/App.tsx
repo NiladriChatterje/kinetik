@@ -835,7 +835,7 @@ function Features() {
 
 /* ─── Premium Pricing ────────────────────────────────────── */
 const PREMIUM_FEATURES = [
-  'Unlimited likes',
+  '100 likes a day',
   'Chat with all your matches',
   'See everyone who liked you',
   'Cancel any time, from the app or Google Play',
