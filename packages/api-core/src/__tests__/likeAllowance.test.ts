@@ -1,9 +1,12 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
-// The database records the statement and answers with fixed counts
-const mockQuery = vi.fn(async (_sql: string, _params?: any[]) => ({
-  rows: [{ lifetime: 250, today: 7 }],
-  rowCount: 1,
+// The database records the statement and answers with fixed counts.
+// vi.hoisted: vi.mock below is hoisted above plain declarations.
+const { mockQuery } = vi.hoisted(() => ({
+  mockQuery: vi.fn(async (_sql: string, _params?: any[]): Promise<{ rows: any[]; rowCount: number }> => ({
+    rows: [{ lifetime: 250, today: 7 }],
+    rowCount: 1,
+  })),
 }));
 
 vi.mock('../services/database', async () => {
