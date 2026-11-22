@@ -14,7 +14,7 @@ import { useNavigationBarInset } from '../../components/common/SystemBars';
 import { useToast } from '../../hooks/useToast';
 import { useAuthStore } from '../../store/authStore';
 import { api } from '../../services/api';
-import { compressAndUploadPhoto } from '../../services/photoService';
+import { compressAndUploadPhoto, requireFaceAtUrl, PhotoFaceError, PHOTO_FACE_MESSAGES } from '../../services/photoService';
 import { resolveUrl } from '../../config';
 import { colors, typography, spacing, radius } from '../../theme';
 
@@ -292,19 +292,44 @@ export const ProfileLedgerScreen: React.FC<ProfileLedgerScreenProps> = ({ onOpen
     setMutatingPhotoId(`upload-${Date.now()}`);
 
     try {
-      await compressAndUploadPhoto(uri);
+      // Checks on the device for at least one face first (group photos are
+      // fine here, not as primary); nothing is uploaded when it fails
+      await compressAndUploadPhoto(uri, 'any');
       toast.showSuccess('Photo added', 'Uploaded successfully.');
       await fetchProfileAndPhotos();
     } catch (err: any) {
-      toast.showError('Upload failed', err?.message || 'Try again.');
+      if (err instanceof PhotoFaceError) {
+        const { title, message } = PHOTO_FACE_MESSAGES[err.problem];
+        toast.showError(title, message);
+      } else {
+        toast.showError('Upload failed', err?.message || 'Try again.');
+      }
     } finally {
       setMutatingPhotoId(null);
     }
   }, [toast, fetchProfileAndPhotos]);
 
   // The primary photo is the face others see first, so it is only set after
-  // a selfie check (PrimaryPhotoSelfieScreen). The profile refetches on focus.
-  const handleSetPrimary = (photo: ProfilePhoto) => {
+  // a selfie check (PrimaryPhotoSelfieScreen). Before that, the photo must
+  // show exactly one face, checked on the device. The profile refetches on focus.
+  const handleSetPrimary = async (photo: ProfilePhoto) => {
+    if (mutatingPhotoId) return;
+    setMutatingPhotoId(photo.id);
+    try {
+      await requireFaceAtUrl(resolveUrl(photo.url), 'one');
+    } catch (err) {
+      const problem = err instanceof PhotoFaceError ? err.problem : 'check_failed';
+      if (problem === 'multiple_faces') {
+        toast.showError('Multiple faces detected!', "Can't set this photo as primary.");
+      } else if (problem === 'no_face') {
+        toast.showError('No face detected!', "Can't set this photo as primary.");
+      } else {
+        toast.showError(PHOTO_FACE_MESSAGES.check_failed.title, PHOTO_FACE_MESSAGES.check_failed.message);
+      }
+      return;
+    } finally {
+      setMutatingPhotoId(null);
+    }
     (navigation as any).navigate('PrimaryPhotoSelfie', { photoId: photo.id, photoUrl: photo.url });
   };
 

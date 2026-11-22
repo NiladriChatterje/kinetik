@@ -151,12 +151,88 @@ export async function uploadPhoto(compressed: CompressedPhoto): Promise<{
   throw new Error(errorMessage);
 }
 
+// ─── Faces in profile photos ─────────────────────────────────────────
+//
+// Checked on the device (ML Kit) BEFORE anything is uploaded: a photo that
+// fails never reaches the server or MinIO. The rules:
+// - Onboarding photos: exactly one face. A refused photo stays in the grid,
+//   marked, and Continue stays blocked until the user removes it.
+// - Adding a photo on the Profile page: at least one face (group photos ok).
+// - Setting a photo as primary: exactly one face, checked before the selfie.
+
+/** Why a photo was refused. 'check_failed' = the detector itself failed. */
+export type PhotoFaceProblem = 'no_face' | 'multiple_faces' | 'check_failed';
+
+export const PHOTO_FACE_MESSAGES: Record<PhotoFaceProblem, { title: string; message: string }> = {
+  no_face: { title: 'No face detected', message: 'Add a clear photo of your face.' },
+  multiple_faces: { title: 'More than one face', message: 'Use a photo with only you in it.' },
+  check_failed: { title: "Couldn't check this photo", message: 'Try again.' },
+};
+
+export class PhotoFaceError extends Error {
+  constructor(public readonly problem: PhotoFaceProblem) {
+    super(`${PHOTO_FACE_MESSAGES[problem].title}. ${PHOTO_FACE_MESSAGES[problem].message}`);
+    this.name = 'PhotoFaceError';
+  }
+}
+
+/** 'one' = exactly one face, 'any' = at least one */
+export type FaceRule = 'one' | 'any';
+
 /**
- * Full pipeline: compress to upload for a single photo URI.
+ * Throws PhotoFaceError unless the image at `uri` passes the face rule.
+ * Run it on the compressed WebP: the orientation is baked in and the
+ * 1200px image is quicker to scan than the camera original.
+ */
+export async function requireOneFace(uri: string, rule: FaceRule = 'one'): Promise<void> {
+  let count: number;
+  try {
+    // Lazy: ML Kit loads only when a photo is actually checked
+    const { countFaces } = await import('./faceVerification');
+    count = await countFaces(uri);
+  } catch (err) {
+    console.warn('[photo] Face check failed:', err);
+    throw new PhotoFaceError('check_failed');
+  }
+  if (count === 0) throw new PhotoFaceError('no_face');
+  if (count > 1 && rule === 'one') throw new PhotoFaceError('multiple_faces');
+}
+
+/**
+ * The same check on a photo already on the server: downloaded to the cache,
+ * scanned, deleted. A failed download is 'check_failed', never a pass.
+ */
+export async function requireFaceAtUrl(url: string, rule: FaceRule = 'one'): Promise<void> {
+  const localPath = `${FileSystem.cacheDirectory}face-check-${Date.now()}-${Math.round(Math.random() * 1e6)}.webp`;
+  try {
+    let status = 0;
+    try {
+      // downloadAsync resolves on any HTTP status; an error page is no photo
+      status = (await FileSystem.downloadAsync(url, localPath)).status;
+    } catch {
+      throw new PhotoFaceError('check_failed');
+    }
+    if (status < 200 || status >= 300) throw new PhotoFaceError('check_failed');
+    await requireOneFace(localPath, rule);
+  } finally {
+    FileSystem.deleteAsync(localPath, { idempotent: true }).catch(() => {});
+  }
+}
+
+/**
+ * Full pipeline: compress, check faces by `rule`, then upload.
+ * Throws PhotoFaceError (nothing uploaded) when the face check fails.
  */
 export async function compressAndUploadPhoto(
   uri: string,
+  rule: FaceRule = 'one',
 ): Promise<{ id: string; url: string; thumbnailUrl: string }> {
   const compressed = await compressPhoto(uri);
+  try {
+    await requireOneFace(compressed.uri, rule);
+  } catch (err) {
+    FileSystem.deleteAsync(compressed.uri, { idempotent: true }).catch(() => {});
+    throw err;
+  }
   return await uploadPhoto(compressed);
 }

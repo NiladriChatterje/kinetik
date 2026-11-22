@@ -135,6 +135,15 @@ async function detectFace(imageUri: string): Promise<{ face: Face | null; count:
 }
 
 /**
+ * How many faces ML Kit finds in an image file. Used to gate every profile
+ * photo before it is uploaded (services/photoService.ts requireOneFace).
+ */
+export async function countFaces(imageUri: string): Promise<number> {
+  const faces = await FaceDetection.detect(imageUri, { performanceMode: 'accurate' });
+  return faces.length;
+}
+
+/**
  * Crop the face region (expanded box) and resize to the model input size.
  * Returns the URI of a 112×112 JPEG in the cache directory.
  */
