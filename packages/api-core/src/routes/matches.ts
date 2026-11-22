@@ -61,6 +61,12 @@ const FREE_VISIBLE_LIKES = 5;
 const REJECT_COOLDOWN_DAYS = 2;
 
 /**
+ * Genders shown to every viewer in the deck and Explore, male and female
+ * included. A viewer with one of these genders sees everyone in turn.
+ */
+const OPEN_GENDERS = ['non_binary', 'other', 'prefer_not_to_say'];
+
+/**
  * Who the viewer ($1) cannot swipe on, for the deck and Explore alike:
  * people they are chatting with (an active match), people with a like
  * waiting on them (those are answered from the Likes list, where a like-back
@@ -283,13 +289,15 @@ export async function matchRoutes(app: FastifyInstance) {
     const maxBirthDate = new Date(now.getFullYear() - ageMin, now.getMonth(), now.getDate()).toISOString().split('T')[0];
 
     // Build gender filter — the viewer's own gender decides who they see:
-    // male → female profiles only, female → male profiles only,
-    // any other gender (non_binary / other / prefer_not_to_say) → everyone.
+    // male → female profiles, female → male profiles, and both also see
+    // every open-gender profile (non_binary / other / prefer_not_to_say).
+    // An open-gender viewer sees everyone, so those profiles are shown to
+    // all genders and their owners see all genders.
     let genderFilter = '';
     const genderParams: any[] = [userId, minBirthDate, maxBirthDate];
     if (userRow.gender === 'male' || userRow.gender === 'female') {
       genderFilter = `AND u.gender = ANY($${genderParams.length + 1})`;
-      genderParams.push([userRow.gender === 'male' ? 'female' : 'male']);
+      genderParams.push([userRow.gender === 'male' ? 'female' : 'male', ...OPEN_GENDERS]);
     }
 
     // Great-circle km from the origin to each row (haversine on lat/lng, no

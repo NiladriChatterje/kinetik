@@ -169,3 +169,50 @@ describe('GET /matches/profiles — distance-aware feed', () => {
     });
   });
 });
+
+describe('GET /matches/profiles — gender visibility', () => {
+  const OPEN = ['non_binary', 'other', 'prefer_not_to_say'];
+
+  /** The gender list bound for `u.gender = ANY(...)`, or null when the feed has no gender filter. */
+  function genderList(q: { sql: string; params: any[] }): string[] | null {
+    const m = q.sql.match(/u\.gender = ANY\(\$(\d+)\)/);
+    return m ? q.params[Number(m[1]) - 1] : null;
+  }
+
+  function viewer(gender: string | null) {
+    viewerRow = { h3_index: null, date_of_birth: '1995-01-01', gender, latitude: 22.57, longitude: 88.36, preferred_latitude: null, preferred_longitude: null };
+  }
+
+  it('a male viewer sees women and every open-gender profile, never other men', async () => {
+    viewer('male');
+    for (const qs of ['', '?scope=explore']) {
+      mockQuery.mockClear();
+      await getProfiles(qs);
+      const [q] = feedQueries();
+      expectPlaceholdersMatchParams(q);
+      expect([...genderList(q)!].sort()).toEqual(['female', ...OPEN].sort());
+    }
+  });
+
+  it('a female viewer sees men and every open-gender profile, never other women', async () => {
+    viewer('female');
+    for (const qs of ['', '?scope=explore']) {
+      mockQuery.mockClear();
+      await getProfiles(qs);
+      const [q] = feedQueries();
+      expectPlaceholdersMatchParams(q);
+      expect([...genderList(q)!].sort()).toEqual(['male', ...OPEN].sort());
+    }
+  });
+
+  it.each(OPEN)('a %s viewer sees everyone (no gender filter)', async (gender) => {
+    viewer(gender);
+    for (const qs of ['', '?scope=explore']) {
+      mockQuery.mockClear();
+      await getProfiles(qs);
+      const [q] = feedQueries();
+      expectPlaceholdersMatchParams(q);
+      expect(genderList(q)).toBeNull();
+    }
+  });
+});
