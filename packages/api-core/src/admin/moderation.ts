@@ -12,6 +12,9 @@
  *                               Close a report without banning anyone
  *   purge [--yes]               Delete reported chats whose reports were all resolved
  *                               more than RETENTION_DAYS ago (dry run without --yes)
+ *   block-email <email> --yes   Bar an address (and its variants) from signing up,
+ *                               with or without an account. A ban does this itself.
+ *   unblock-email <email> --yes Lift that bar. Does not unban an account.
  *
  * Every report also reaches the support inbox by email (routes/safety.ts);
  * this tool is how a reviewer reads the evidence and acts on it.
@@ -20,6 +23,7 @@ import { transaction, closePool, decryptMessage, REDIS_KEYS } from '@kinetik/sha
 import { query, TABLES } from '../services/database';
 import { getRedis, publishChatMessage } from '../services/redis';
 import { deleteChatFile } from '../services/photoStorage';
+import { canonicalEmail, emailBanKey, BAN_EMAIL_SQL, UNBAN_EMAIL_SQL } from '../services/bannedEmails';
 
 /** Reported chats are kept this long after their last report is resolved.
  *  India's IT (Intermediary Guidelines) Rules 2021, rule 3(1)(g), require
@@ -104,7 +108,7 @@ export const SQL = {
 
   // banUser, in order, all with $1 = the user id
   banUser: `UPDATE ${TABLES.USERS} SET is_banned = TRUE, is_active = FALSE, updated_at = NOW()
-            WHERE id = $1 RETURNING display_name`,
+            WHERE id = $1 RETURNING display_name, email`,
   banRevokeSessions: `UPDATE refresh_tokens SET revoked_at = NOW() WHERE user_id = $1 AND revoked_at IS NULL`,
   banEndChats: `UPDATE ${TABLES.MATCHES} SET is_active = FALSE
                 WHERE is_active = TRUE AND (user_a_id = $1 OR user_b_id = $1)
@@ -127,7 +131,8 @@ export const SQL = {
 
 /**
  * Ban an account. In one transaction: barred from logging in (is_banned) and
- * from signing up again with that email, hidden from every feed and Likes
+ * from signing up again with that email or a variant of it (banned_emails,
+ * see services/bannedEmails.ts), hidden from every feed and Likes
  * (is_active), signed out everywhere (refresh tokens revoked; access tokens
  * expire within 15 minutes), its chats ended but kept as evidence, its
  * pending likes closed, its push tokens removed, and the open reports about
@@ -135,8 +140,10 @@ export const SQL = {
  */
 export async function banUser(userId: string): Promise<{ name: string; endedMatchIds: string[] } | null> {
   return transaction(async (q) => {
-    const user = await q<{ display_name: string }>(SQL.banUser, [userId]);
+    const user = await q<{ display_name: string; email: string | null }>(SQL.banUser, [userId]);
     if (!user.rows[0]) return null;
+    const email = user.rows[0].email;
+    if (email) await q(BAN_EMAIL_SQL, [emailBanKey(email), userId, 'ban']);
     await q(SQL.banRevokeSessions, [userId]);
     const ended = await q<{ id: string }>(SQL.banEndChats, [userId]);
     await q(SQL.banCloseLikes, [userId]);
@@ -244,6 +251,27 @@ async function cmdBan(userId: string, confirmed: boolean) {
   console.log('If this involved child sexual abuse material, report it at https://cybercrime.gov.in and to the police.');
 }
 
+function requireEmail(value: string | undefined): string {
+  if (!value || !/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(value.trim())) {
+    console.error('Give an email address.');
+    process.exit(2);
+  }
+  return value;
+}
+
+async function cmdBlockEmail(email: string, block: boolean, confirmed: boolean) {
+  if (!confirmed) {
+    console.error(`Re-run with --yes to ${block ? 'block' : 'unblock'} ${canonicalEmail(email)}.`);
+    process.exit(2);
+  }
+  const result = await query(block ? BAN_EMAIL_SQL : UNBAN_EMAIL_SQL,
+    block ? [emailBanKey(email), null, 'block-email'] : [emailBanKey(email)]);
+  const changed = (result.rowCount ?? 0) > 0;
+  console.log(block
+    ? `${canonicalEmail(email)} ${changed ? 'is now barred from signing up' : 'was already barred'}.`
+    : `${canonicalEmail(email)} ${changed ? 'may sign up again' : 'was not barred'}.`);
+}
+
 async function cmdResolve(reportId: string, outcome: string | undefined) {
   if (outcome !== 'actioned' && outcome !== 'dismissed') {
     console.error('Say how it was resolved: actioned or dismissed.');
@@ -308,8 +336,12 @@ async function main() {
     case 'purge':
       await cmdPurge(confirmed);
       break;
+    case 'block-email':
+    case 'unblock-email':
+      await cmdBlockEmail(requireEmail(arg1), command === 'block-email', confirmed);
+      break;
     default:
-      console.log('Usage: moderation.js reports | show <reportId> | ban <userId> --yes | resolve <reportId> actioned|dismissed | purge [--yes]');
+      console.log('Usage: moderation.js reports | show <reportId> | ban <userId> --yes | resolve <reportId> actioned|dismissed | purge [--yes] | block-email <email> --yes | unblock-email <email> --yes');
       process.exitCode = command ? 2 : 0;
   }
 }

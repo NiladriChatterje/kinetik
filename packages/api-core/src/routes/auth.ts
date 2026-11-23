@@ -14,6 +14,7 @@ import { invalidateFreeChatCache } from '../services/premiumAccess';
 import { eventBus } from '../services/eventBus';
 import { sendOtpEmail, isEmailConfigured, maskEmail } from '../services/email';
 import { resolveCity } from '../services/locations';
+import { isEmailBanned, EMAIL_BANNED_RESPONSE } from '../services/bannedEmails';
 
 /**
  * Extract a MinIO storage key from a chat media URL so the file can be
@@ -306,9 +307,10 @@ export async function authRoutes(app: FastifyInstance) {
 
   // ─── Sign up: step 1, email a code ───────────────────
   // Validates the form and emails a code. The account is created only by
-  // /signup/verify, so this touches no database: an address that is already
-  // registered is reported after verification, which also keeps this route
-  // from revealing who has an account.
+  // /signup/verify: an address that is already registered is reported after
+  // verification, which keeps this route from revealing who has an account.
+  // Its one database read is the banned-address list (services/bannedEmails),
+  // so a banned person is turned away before any code is emailed.
   app.post(
     '/signup',
     { config: { rateLimit: { max: 10, timeWindow: '1 hour' } } },
@@ -328,6 +330,7 @@ export async function authRoutes(app: FastifyInstance) {
       }
 
       try {
+        if (await isEmailBanned(email)) return reply.status(403).send(EMAIL_BANNED_RESPONSE);
         // Checked before hashing so a locked address costs no bcrypt work
         const lockedFor = await lockSeconds(email);
         if (lockedFor > 0) return reply.status(429).send(signupLocked(lockedFor));
@@ -374,6 +377,10 @@ export async function authRoutes(app: FastifyInstance) {
       try {
         const pending = await getPending(email);
         if (!pending) return reply.status(410).send(signupExpired);
+        if (await isEmailBanned(email)) {
+          await deletePending(email);
+          return reply.status(403).send(EMAIL_BANNED_RESPONSE);
+        }
 
         const waited = (Date.now() - pending.sentAt) / 1000;
         if (waited < SIGNUP_RESEND_COOLDOWN_SECONDS) {
@@ -460,6 +467,8 @@ export async function authRoutes(app: FastifyInstance) {
         success: false,
         error: { code: ERROR_CODES.EMAIL_EXISTS, message: 'This email is already registered. Please sign in.' },
       };
+      // Banned since the code was sent
+      if (await isEmailBanned(email)) return reply.status(403).send(EMAIL_BANNED_RESPONSE);
       if (await findUserByEmail(email)) return reply.status(409).send(emailTaken);
 
       let user;

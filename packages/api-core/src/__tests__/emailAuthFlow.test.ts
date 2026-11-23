@@ -14,7 +14,13 @@ const users = new Map<string, any>(); // id → row
 let idCounter = 0;
 
 const mockSendOtpEmail = vi.fn();
-const mockQuery = vi.fn().mockResolvedValue({ rows: [] });
+// Keys in banned_emails (services/bannedEmails.ts); every other query finds nothing
+const bannedKeys = new Set<string>();
+const defaultQuery = async (sql: string, params: any[] = []): Promise<{ rows: any[]; rowCount?: number }> =>
+  /FROM banned_emails/.test(sql) && bannedKeys.has(String(params[0]))
+    ? { rows: [{ banned: 1 }], rowCount: 1 }
+    : { rows: [], rowCount: 0 };
+const mockQuery = vi.fn(defaultQuery);
 const mockCreateUser = vi.fn(async (data: any) => {
   const row = {
     id: `user-${++idCounter}`,
@@ -162,6 +168,7 @@ beforeEach(() => {
   vi.setSystemTime(clock);
   users.clear();
   kv.clear();
+  bannedKeys.clear();
   storeDown = false;
   vi.clearAllMocks();
   mockSendOtpEmail.mockReset().mockResolvedValue(true);
@@ -195,14 +202,15 @@ const FORM = { email: EMAIL, password: PASSWORD, displayName: 'New', countryCode
 // ─── Tests ─────────────────────────────────────────────────────────
 
 describe('sign-up: emailed code before the account exists', () => {
-  it('emails a code and touches no database until it is verified', async () => {
+  it('emails a code and reads only the banned list until it is verified', async () => {
     const res = await post('/signup', FORM);
 
     expect(res.statusCode).toBe(200);
     expect(res.json().data).toEqual({ email: '**@example.com', expiresInSeconds: 300, maxAttempts: 3, sendsLeft: 2 });
     expect(mockSendOtpEmail).toHaveBeenCalledWith(STORED_EMAIL, expect.stringMatching(/^\d{6}$/));
 
-    expect(mockQuery).not.toHaveBeenCalled();
+    expect(mockQuery).toHaveBeenCalledTimes(1);
+    expect(mockQuery.mock.calls[0][0]).toMatch(/FROM banned_emails/);
     expect(mockFindUserByEmail).not.toHaveBeenCalled();
     expect(mockCreateUser).not.toHaveBeenCalled();
     // The password is stored only as a bcrypt hash
@@ -258,7 +266,8 @@ describe('sign-up: emailed code before the account exists', () => {
     const late = await post('/signup/verify', { email: EMAIL, otp: code });
     expect(late.json().error.code).toBe('SIGNUP_EXPIRED');
     expect(mockCreateUser).not.toHaveBeenCalled();
-    expect(mockQuery).not.toHaveBeenCalled();
+    // Only the sign-up's banned-address check reached the database
+    expect(mockQuery.mock.calls.every(([sql]) => /FROM banned_emails/.test(sql))).toBe(true);
   });
 
   it('the code expires after 5 minutes', async () => {
@@ -311,6 +320,59 @@ describe('sign-up: emailed code before the account exists', () => {
     const res = await post('/signup', FORM);
     expect(res.statusCode).toBe(503);
     expect(mockSendOtpEmail).not.toHaveBeenCalled();
+  });
+});
+
+describe('sign-up: banned addresses', () => {
+  const ban = async (email: string) => {
+    const { emailBanKey } = await import('../services/bannedEmails');
+    bannedKeys.add(emailBanKey(email));
+  };
+
+  it('turns a banned address away before any code is emailed, in any spelling', async () => {
+    await ban('someone@gmail.com');
+    for (const email of ['someone@gmail.com', ' SomeOne@Gmail.com', 'some.one@gmail.com', 'someone+2@gmail.com', 'so.me.one+x@googlemail.com']) {
+      const res = await post('/signup', { ...FORM, email });
+      expect(res.statusCode).toBe(403);
+      expect(res.json().error).toEqual({ code: 'FORBIDDEN', message: "This email can't be used to sign up for Kinetik." });
+    }
+    expect(mockSendOtpEmail).not.toHaveBeenCalled();
+    expect(kv.size).toBe(0);
+  });
+
+  it('keeps dots meaningful outside Gmail, but not plus tags', async () => {
+    await ban('first.last@example.com');
+    expect((await post('/signup', { ...FORM, email: 'firstlast@example.com' })).statusCode).toBe(200);
+    expect((await post('/signup', { ...FORM, email: 'first.last+dating@example.com' })).statusCode).toBe(403);
+  });
+
+  it('a ban during a sign-up stops the resend and the verify', async () => {
+    await post('/signup', FORM);
+    await ban(EMAIL);
+
+    advance(31);
+    const resend = await post('/signup/resend', { email: EMAIL });
+    expect(resend.statusCode).toBe(403);
+    expect(mockSendOtpEmail).toHaveBeenCalledTimes(1);
+
+    bannedKeys.clear();
+    await post('/signup', FORM);
+    const second = lastEmailedCode();
+    await ban(EMAIL);
+    const verify = await post('/signup/verify', { email: EMAIL, otp: second });
+    expect(verify.statusCode).toBe(403);
+    expect(mockCreateUser).not.toHaveBeenCalled();
+  });
+});
+
+describe('canonicalEmail', () => {
+  it('maps variants of one mailbox to one spelling', async () => {
+    const { canonicalEmail, emailBanKey } = await import('../services/bannedEmails');
+    expect(canonicalEmail(' A.B.C+tag@GoogleMail.com ')).toBe('abc@gmail.com');
+    expect(canonicalEmail('a.b+x@outlook.com')).toBe('a.b@outlook.com');
+    expect(emailBanKey('abc@gmail.com')).toBe(emailBanKey('a.b.c@gmail.com'));
+    // Same hex the SQL backfill (migration 032) produces for abc@gmail.com
+    expect(emailBanKey('abc@gmail.com')).toMatch(/^[0-9a-f]{64}$/);
   });
 });
 
@@ -468,7 +530,7 @@ describe('forgot password: emailed code, then a new password', () => {
   });
 
   afterEach(() => {
-    mockQuery.mockReset().mockResolvedValue({ rows: [] });
+    mockQuery.mockReset().mockImplementation(defaultQuery);
   });
 
   it('emails a code, sets the new password, signs other devices out, and the new password logs in', async () => {
