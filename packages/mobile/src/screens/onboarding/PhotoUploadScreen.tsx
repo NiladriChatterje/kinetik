@@ -1,7 +1,6 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { View, Text, StyleSheet, Image, TouchableOpacity, ScrollView, ActivityIndicator, Modal, Animated, Dimensions } from 'react-native';
 import * as ImagePicker from 'expo-image-picker';
-import * as LegacyFileSystem from 'expo-file-system/legacy';
 import Ionicons from '@expo/vector-icons/Ionicons';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Button } from '../../components/common/Button';
@@ -9,19 +8,21 @@ import { StepLabel } from '../../components/common/StepLabel';
 import { useNavigationBarInset } from '../../components/common/SystemBars';
 import { useToast } from '../../hooks/useToast';
 import {
-  compressPhoto, uploadPhoto, requireOneFace, requireFaceAtUrl, PhotoFaceError, PHOTO_FACE_MESSAGES, PhotoFaceProblem,
+  checkAndCompressPhoto, uploadPhoto, requireFaceAtUrl, pickedFromAsset,
+  PhotoCheckError, PHOTO_CHECK_MESSAGES, PhotoProblem, PickedPhoto,
 } from '../../services/photoService';
 import { api } from '../../services/api';
 import { resolveUrl } from '../../config';
 import { colors, typography, spacing, radius } from '../../theme';
 
 /**
- * Where a tile is. Every photo must show exactly one face, checked on the
- * device before upload (services/photoService.ts requireOneFace). A refused
- * photo stays in the grid, marked, until the user removes it; tapping it
- * runs the check again. Continue is blocked while any tile is refused.
+ * Where a tile is. Every new photo is checked on the device before upload
+ * (services/photoService.ts checkAndCompressPhoto): no screenshot, no
+ * AI-generated image, exactly one face. A refused photo stays in the grid,
+ * marked, until the user removes it; tapping it runs the check again.
+ * Continue is blocked while any tile is refused.
  */
-type PhotoStatus = 'checking' | 'uploading' | 'ok' | PhotoFaceProblem;
+type PhotoStatus = 'checking' | 'uploading' | 'ok' | PhotoProblem;
 
 interface UploadedPhoto {
   /** Stable grid key: the server id for saved photos, pending-… for new ones */
@@ -30,24 +31,33 @@ interface UploadedPhoto {
   id: string;
   url: string;
   thumbnailUrl: string;
-  /** Local URI shown while checking / uploading, and kept for a retry */
+  /** Local URI shown while checking / uploading */
   localUri: string;
+  /** The picked file, kept for a retry of a photo that never left the phone */
+  picked?: PickedPhoto;
   status: PhotoStatus;
 }
 
 const isBusy = (p: UploadedPhoto) => p.status === 'checking' || p.status === 'uploading';
-const isRefused = (p: UploadedPhoto) =>
-  p.status === 'no_face' || p.status === 'multiple_faces' || p.status === 'check_failed';
+const isRefused = (p: UploadedPhoto) => p.status in REFUSED_LABEL;
 
 /** Short label on a refused tile */
-const REFUSED_LABEL: Record<PhotoFaceProblem, string> = {
+const REFUSED_LABEL: Record<PhotoProblem, string> = {
   no_face: 'No face',
   multiple_faces: '2+ faces',
+  screenshot: 'Screenshot',
+  ai_generated: 'AI image',
   check_failed: 'Retry',
 };
 
 /** The line over Continue while a refused photo is in the grid */
 function refusedBanner(photos: UploadedPhoto[]): string | null {
+  if (photos.some((p) => p.status === 'screenshot')) {
+    return "Screenshots aren't allowed. Remove the marked photo and add an original photo of you.";
+  }
+  if (photos.some((p) => p.status === 'ai_generated')) {
+    return "AI-generated photos aren't allowed. Remove the marked photo and add a real photo of you.";
+  }
   if (photos.some((p) => p.status === 'no_face')) {
     return 'No face detected in your photos! Remove the marked photo and add one of you.';
   }
@@ -92,7 +102,7 @@ export const PhotoUploadScreen: React.FC<{ navigation: any }> = ({ navigation })
       await requireFaceAtUrl(resolveUrl(photo.url) || photo.url, 'one');
       setStatus(photo.key, { status: 'ok' });
     } catch (err) {
-      setStatus(photo.key, { status: err instanceof PhotoFaceError ? err.problem : 'check_failed' });
+      setStatus(photo.key, { status: err instanceof PhotoCheckError ? err.problem : 'check_failed' });
     }
   };
 
@@ -148,10 +158,11 @@ export const PhotoUploadScreen: React.FC<{ navigation: any }> = ({ navigation })
   const pickFromGallery = async () => {
     const result = await ImagePicker.launchImageLibraryAsync({
       mediaTypes: ['images'],
-      quality: 1.0,
+      quality: 1.0, // 1.0 = the original file, metadata intact, for the origin check
+      exif: true,
     });
     if (!result.canceled && result.assets[0]) {
-      await processPhoto(result.assets[0].uri);
+      await processPhoto(pickedFromAsset(result.assets[0]));
     }
   };
 
@@ -163,46 +174,41 @@ export const PhotoUploadScreen: React.FC<{ navigation: any }> = ({ navigation })
     }
     const result = await ImagePicker.launchCameraAsync({ quality: 1.0 });
     if (!result.canceled && result.assets[0]) {
-      await processPhoto(result.assets[0].uri);
+      await processPhoto(pickedFromAsset(result.assets[0], true));
     }
   };
 
   const promptSource = () => openModal();
 
   /**
-   * Full pipeline: compress → exactly one face (on the device) → upload.
-   * A photo that fails the face check is never uploaded; it stays in the
-   * grid, marked, until removed. `retryKey` re-runs a refused new photo.
+   * Full pipeline: every check on the device (no screenshot, no AI image,
+   * exactly one face), then upload. A photo that fails is never uploaded;
+   * it stays in the grid, marked, until removed. `retryKey` re-runs a
+   * refused new photo.
    */
-  const processPhoto = async (uri: string, retryKey?: string) => {
+  const processPhoto = async (picked: PickedPhoto, retryKey?: string) => {
     const key = retryKey ?? `pending-${Date.now()}`;
     if (retryKey) {
       setStatus(key, { status: 'checking' });
     } else {
       setPhotos((prev) => [
         ...prev,
-        { key, id: '', url: '', thumbnailUrl: '', localUri: uri, status: 'checking' },
+        { key, id: '', url: '', thumbnailUrl: '', localUri: picked.uri, picked, status: 'checking' },
       ]);
     }
 
     try {
-      const compressed = await compressPhoto(uri);
-      try {
-        await requireOneFace(compressed.uri);
-      } catch (err) {
-        LegacyFileSystem.deleteAsync(compressed.uri, { idempotent: true }).catch(() => {});
-        throw err;
-      }
+      const compressed = await checkAndCompressPhoto(picked, 'one');
 
       setStatus(key, { status: 'uploading' });
       const result = await uploadPhoto(compressed);
       setStatus(key, { id: result.id, url: result.url, thumbnailUrl: result.thumbnailUrl, status: 'ok' });
       console.log('[photos] Uploaded:', result.id);
     } catch (error: any) {
-      if (error instanceof PhotoFaceError) {
+      if (error instanceof PhotoCheckError) {
         // Kept in the grid, marked: Continue stays blocked until it is removed
         setStatus(key, { status: error.problem });
-        const { title, message } = PHOTO_FACE_MESSAGES[error.problem];
+        const { title, message } = PHOTO_CHECK_MESSAGES[error.problem];
         toast.showError(title, error.problem === 'check_failed' ? 'Tap the photo to retry.' : message);
         return;
       }
@@ -216,7 +222,7 @@ export const PhotoUploadScreen: React.FC<{ navigation: any }> = ({ navigation })
   /** Tapping a refused tile checks it again */
   const retryPhoto = (photo: UploadedPhoto) => {
     if (photo.id) checkSavedPhoto(photo);
-    else if (photo.localUri) processPhoto(photo.localUri, photo.key);
+    else if (photo.picked) processPhoto(photo.picked, photo.key);
   };
 
   const removePhoto = async (photo: UploadedPhoto) => {
@@ -249,9 +255,9 @@ export const PhotoUploadScreen: React.FC<{ navigation: any }> = ({ navigation })
     // each refused photo is removed (or passes a retry)
     const refused = photos.find(isRefused);
     if (refused) {
-      const problem = refused.status as PhotoFaceProblem;
+      const problem = refused.status as PhotoProblem;
       toast.showError(
-        PHOTO_FACE_MESSAGES[problem].title,
+        PHOTO_CHECK_MESSAGES[problem].title,
         problem === 'check_failed' ? 'Tap the marked photo to retry.' : 'Remove the marked photo to continue.',
       );
       return;
@@ -273,7 +279,7 @@ export const PhotoUploadScreen: React.FC<{ navigation: any }> = ({ navigation })
         <ScrollView contentContainerStyle={styles.content}>
           <StepLabel label="Step 5 of 6" onBack={() => navigation.goBack()} />
           <Text style={styles.title}>Add Photos</Text>
-          <Text style={styles.subtitle}>Add at least 2 clear photos. Your face must be in each, and only yours.</Text>
+          <Text style={styles.subtitle}>Add at least 2 clear photos of you, taken by you. Your face must be in each, and only yours. No screenshots or AI images.</Text>
 
           <View style={styles.photoGrid}>
             {[0, 1, 2, 3, 4, 5].map((i) => {
@@ -305,7 +311,7 @@ export const PhotoUploadScreen: React.FC<{ navigation: any }> = ({ navigation })
                         <View style={styles.refusedOverlay}>
                           <Ionicons name="refresh" size={18} color={colors.textInverse} />
                           <Text style={styles.refusedText}>
-                            {REFUSED_LABEL[photo.status as PhotoFaceProblem]}
+                            {REFUSED_LABEL[photo.status as PhotoProblem]}
                           </Text>
                         </View>
                       )}
@@ -334,7 +340,7 @@ export const PhotoUploadScreen: React.FC<{ navigation: any }> = ({ navigation })
           ) : (
             <Text style={styles.hintText}>
               {busy
-                ? 'Checking for your face...'
+                ? 'Checking your photos...'
                 : `${okCount}/2 minimum photos required`}
             </Text>
           )}

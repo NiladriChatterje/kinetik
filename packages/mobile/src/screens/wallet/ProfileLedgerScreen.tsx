@@ -14,7 +14,9 @@ import { useNavigationBarInset } from '../../components/common/SystemBars';
 import { useToast } from '../../hooks/useToast';
 import { useAuthStore } from '../../store/authStore';
 import { api } from '../../services/api';
-import { compressAndUploadPhoto, requireFaceAtUrl, PhotoFaceError, PHOTO_FACE_MESSAGES } from '../../services/photoService';
+import {
+  compressAndUploadPhoto, requireFaceAtUrl, pickedFromAsset, PhotoCheckError, PHOTO_CHECK_MESSAGES,
+} from '../../services/photoService';
 import { resolveUrl } from '../../config';
 import { colors, typography, spacing, radius } from '../../theme';
 
@@ -284,22 +286,24 @@ export const ProfileLedgerScreen: React.FC<ProfileLedgerScreenProps> = ({ onOpen
   const handleAddPhoto = useCallback(async () => {
     const result = await ImagePicker.launchImageLibraryAsync({
       mediaTypes: ['images'],
-      quality: 1.0,
+      quality: 1.0, // 1.0 = the original file, metadata intact, for the origin check
+      exif: true,
     });
     if (result.canceled || !result.assets[0]) return;
 
-    const uri = result.assets[0].uri;
+    const picked = pickedFromAsset(result.assets[0]);
     setMutatingPhotoId(`upload-${Date.now()}`);
 
     try {
-      // Checks on the device for at least one face first (group photos are
-      // fine here, not as primary); nothing is uploaded when it fails
-      await compressAndUploadPhoto(uri, 'any');
+      // Checked on the device first: no screenshot, no AI image, at least one
+      // face (group photos are fine here, not as primary); nothing is
+      // uploaded when a check fails
+      await compressAndUploadPhoto(picked, 'any');
       toast.showSuccess('Photo added', 'Uploaded successfully.');
       await fetchProfileAndPhotos();
     } catch (err: any) {
-      if (err instanceof PhotoFaceError) {
-        const { title, message } = PHOTO_FACE_MESSAGES[err.problem];
+      if (err instanceof PhotoCheckError) {
+        const { title, message } = PHOTO_CHECK_MESSAGES[err.problem];
         toast.showError(title, message);
       } else {
         toast.showError('Upload failed', err?.message || 'Try again.');
@@ -318,13 +322,13 @@ export const ProfileLedgerScreen: React.FC<ProfileLedgerScreenProps> = ({ onOpen
     try {
       await requireFaceAtUrl(resolveUrl(photo.url), 'one');
     } catch (err) {
-      const problem = err instanceof PhotoFaceError ? err.problem : 'check_failed';
+      const problem = err instanceof PhotoCheckError ? err.problem : 'check_failed';
       if (problem === 'multiple_faces') {
         toast.showError('Multiple faces detected!', "Can't set this photo as primary.");
       } else if (problem === 'no_face') {
         toast.showError('No face detected!', "Can't set this photo as primary.");
       } else {
-        toast.showError(PHOTO_FACE_MESSAGES.check_failed.title, PHOTO_FACE_MESSAGES.check_failed.message);
+        toast.showError(PHOTO_CHECK_MESSAGES.check_failed.title, PHOTO_CHECK_MESSAGES.check_failed.message);
       }
       return;
     } finally {

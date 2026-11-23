@@ -3,7 +3,7 @@
  *
  * Pipeline:
  *  1. Read raw image URI from ImagePicker
- *  2. Strip EXIF metadata (GPS, camera info)
+ *  2. Strip EXIF metadata (GPS, camera info) — read first by photoOrigin.ts
  *  3. Resize to max 1200px on longest edge
  *  4. Convert to WebP at quality 0.85
  *  5. Upload via FileSystem.uploadAsync (native multipart)
@@ -16,8 +16,12 @@
 
 import * as ImageManipulator from 'expo-image-manipulator';
 import * as FileSystem from 'expo-file-system/legacy';
+import type { ImagePickerAsset } from 'expo-image-picker';
 import { API_URL } from '../config';
 import { api } from './api';
+import { checkPhotoMetadata, PickedPhoto } from './photoOrigin';
+
+export type { PickedPhoto } from './photoOrigin';
 
 // ─── Constants ───────────────────────────────────────────────────────
 
@@ -151,28 +155,35 @@ export async function uploadPhoto(compressed: CompressedPhoto): Promise<{
   throw new Error(errorMessage);
 }
 
-// ─── Faces in profile photos ─────────────────────────────────────────
+// ─── Checks on profile photos ────────────────────────────────────────
 //
-// Checked on the device (ML Kit) BEFORE anything is uploaded: a photo that
-// fails never reaches the server or MinIO. The rules:
-// - Onboarding photos: exactly one face. A refused photo stays in the grid,
-//   marked, and Continue stays blocked until the user removes it.
-// - Adding a photo on the Profile page: at least one face (group photos ok).
-// - Setting a photo as primary: exactly one face, checked before the selfie.
+// All on the device, BEFORE anything is uploaded: a photo that fails never
+// reaches the server or MinIO.
+// 1. Origin (photoOrigin.ts): screenshots and AI-generated images are
+//    refused, from the original file's metadata, name and shape.
+// 2. Faces (ML Kit):
+//    - Onboarding photos: exactly one face. A refused photo stays in the
+//      grid, marked, and Continue stays blocked until the user removes it.
+//    - Adding a photo on the Profile page: at least one face (group photos ok).
+//    - Setting a photo as primary: exactly one face, checked before the selfie.
+// 3. AI-image model (aiImageDetector.ts), only for photos with no camera data
+//    and no metadata verdict.
 
-/** Why a photo was refused. 'check_failed' = the detector itself failed. */
-export type PhotoFaceProblem = 'no_face' | 'multiple_faces' | 'check_failed';
+/** Why a photo was refused. 'check_failed' = the face detector itself failed. */
+export type PhotoProblem = 'no_face' | 'multiple_faces' | 'screenshot' | 'ai_generated' | 'check_failed';
 
-export const PHOTO_FACE_MESSAGES: Record<PhotoFaceProblem, { title: string; message: string }> = {
+export const PHOTO_CHECK_MESSAGES: Record<PhotoProblem, { title: string; message: string }> = {
   no_face: { title: 'No face detected', message: 'Add a clear photo of your face.' },
   multiple_faces: { title: 'More than one face', message: 'Use a photo with only you in it.' },
+  screenshot: { title: 'Screenshots not allowed', message: 'Add an original photo of you, or take one with the camera.' },
+  ai_generated: { title: 'AI-generated photo', message: 'Add a real photo of you, or take one with the camera.' },
   check_failed: { title: "Couldn't check this photo", message: 'Try again.' },
 };
 
-export class PhotoFaceError extends Error {
-  constructor(public readonly problem: PhotoFaceProblem) {
-    super(`${PHOTO_FACE_MESSAGES[problem].title}. ${PHOTO_FACE_MESSAGES[problem].message}`);
-    this.name = 'PhotoFaceError';
+export class PhotoCheckError extends Error {
+  constructor(public readonly problem: PhotoProblem) {
+    super(`${PHOTO_CHECK_MESSAGES[problem].title}. ${PHOTO_CHECK_MESSAGES[problem].message}`);
+    this.name = 'PhotoCheckError';
   }
 }
 
@@ -180,7 +191,9 @@ export class PhotoFaceError extends Error {
 export type FaceRule = 'one' | 'any';
 
 /**
- * Throws PhotoFaceError unless the image at `uri` passes the face rule.
+ * Throws PhotoCheckError unless the image at `uri` passes the face rule.
+ * Faces only: new photos go through checkAndCompressPhoto, which runs this
+ * plus the origin checks; photos already on the server use it directly.
  * Run it on the compressed WebP: the orientation is baked in and the
  * 1200px image is quicker to scan than the camera original.
  */
@@ -192,10 +205,10 @@ export async function requireOneFace(uri: string, rule: FaceRule = 'one'): Promi
     count = await countFaces(uri);
   } catch (err) {
     console.warn('[photo] Face check failed:', err);
-    throw new PhotoFaceError('check_failed');
+    throw new PhotoCheckError('check_failed');
   }
-  if (count === 0) throw new PhotoFaceError('no_face');
-  if (count > 1 && rule === 'one') throw new PhotoFaceError('multiple_faces');
+  if (count === 0) throw new PhotoCheckError('no_face');
+  if (count > 1 && rule === 'one') throw new PhotoCheckError('multiple_faces');
 }
 
 /**
@@ -210,29 +223,79 @@ export async function requireFaceAtUrl(url: string, rule: FaceRule = 'one'): Pro
       // downloadAsync resolves on any HTTP status; an error page is no photo
       status = (await FileSystem.downloadAsync(url, localPath)).status;
     } catch {
-      throw new PhotoFaceError('check_failed');
+      throw new PhotoCheckError('check_failed');
     }
-    if (status < 200 || status >= 300) throw new PhotoFaceError('check_failed');
+    if (status < 200 || status >= 300) throw new PhotoCheckError('check_failed');
     await requireOneFace(localPath, rule);
   } finally {
     FileSystem.deleteAsync(localPath, { idempotent: true }).catch(() => {});
   }
 }
 
+/** The picker's result for one image, as the origin check needs it */
+export function pickedFromAsset(asset: ImagePickerAsset, fromCamera = false): PickedPhoto {
+  return {
+    uri: asset.uri,
+    fileName: asset.fileName,
+    mimeType: asset.mimeType,
+    width: asset.width,
+    height: asset.height,
+    exif: asset.exif,
+    fromCamera,
+  };
+}
+
 /**
- * Full pipeline: compress, check faces by `rule`, then upload.
- * Throws PhotoFaceError (nothing uploaded) when the face check fails.
+ * Refuse a photo the AI-image model scores at or above the threshold.
+ * A model failure lets the photo through: the metadata checks have run,
+ * and an honest user must never be locked out by a broken model.
  */
-export async function compressAndUploadPhoto(
-  uri: string,
+async function requireNotAiImage(compressed: CompressedPhoto): Promise<void> {
+  let score: number;
+  try {
+    const { aiImageScore } = await import('./aiImageDetector');
+    score = await aiImageScore(compressed.uri, compressed.width, compressed.height);
+  } catch (err) {
+    console.warn('[photo] AI-image check failed, allowing the photo:', err);
+    return;
+  }
+  if (__DEV__) console.log(`[photo] AI-image score ${score.toFixed(3)}`);
+  const { AI_IMAGE_THRESHOLD } = await import('./aiImageDetector');
+  if (score >= AI_IMAGE_THRESHOLD) throw new PhotoCheckError('ai_generated');
+}
+
+/**
+ * Every check, in order: origin (screenshot / AI metadata) on the original
+ * file, then compress, faces by `rule`, and the AI-image model when the
+ * photo has no camera data. Resolves to the compressed photo, ready to
+ * upload; throws PhotoCheckError (the compressed file deleted) otherwise.
+ */
+export async function checkAndCompressPhoto(
+  picked: PickedPhoto,
   rule: FaceRule = 'one',
-): Promise<{ id: string; url: string; thumbnailUrl: string }> {
-  const compressed = await compressPhoto(uri);
+): Promise<CompressedPhoto> {
+  const origin = checkPhotoMetadata(picked);
+  if (origin === 'screenshot' || origin === 'ai_generated') throw new PhotoCheckError(origin);
+
+  const compressed = await compressPhoto(picked.uri);
   try {
     await requireOneFace(compressed.uri, rule);
+    if (origin === 'unsure') await requireNotAiImage(compressed);
   } catch (err) {
     FileSystem.deleteAsync(compressed.uri, { idempotent: true }).catch(() => {});
     throw err;
   }
+  return compressed;
+}
+
+/**
+ * Full pipeline: every check (checkAndCompressPhoto), then upload.
+ * Throws PhotoCheckError (nothing uploaded) when a check fails.
+ */
+export async function compressAndUploadPhoto(
+  picked: PickedPhoto,
+  rule: FaceRule = 'one',
+): Promise<{ id: string; url: string; thumbnailUrl: string }> {
+  const compressed = await checkAndCompressPhoto(picked, rule);
   return await uploadPhoto(compressed);
 }
